@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -204,11 +205,16 @@ func parseDur(s string) time.Duration {
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
+	if r.URL.Path == "/" {
+		http.Redirect(w, r, "/admin", http.StatusFound)
 		return
 	}
-	http.Redirect(w, r, "/admin", http.StatusFound)
+	// Unknown path: a styled 404 for browsers, plain text for API clients (nix).
+	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+		s.notFound(w, r)
+		return
+	}
+	http.NotFound(w, r)
 }
 
 // handleHealth is a dependency-free readiness probe: it does one cheap DB read.

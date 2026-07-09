@@ -118,7 +118,11 @@ var en = map[string]string{
 	"copy.copied": "Copied",
 
 	// generic actions
-	"action.new":      "New",
-	"action.cancel":   "Cancel",
-	"footer.metrics2": "Metrics",
+	"action.new":    "New",
+	"action.cancel": "Cancel",
+
+	// not found
+	"nf.title": "Page not found",
+	"nf.sub":   "That page doesn't exist or was moved.",
+	"nf.back":  "Back to caches",
 }

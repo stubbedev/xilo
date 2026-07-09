@@ -231,6 +231,12 @@ progress { height: 6px; border-radius: 3px; }
 .foot-inner a { color: var(--pico-muted-color); text-decoration: none; }
 .foot-inner a:hover { color: var(--pico-color); }
 
+/* ---------- 404 ---------- */
+.notfound { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--x-4); padding: 4rem var(--x-5); }
+.notfound hgroup { margin: 0; }
+.notfound .ic-xl { display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 16px; background: color-mix(in srgb, var(--pico-primary) 14%, transparent); color: var(--pico-primary); }
+.notfound .ic-xl .ic { width: 32px; height: 32px; }
+
 /* ---------- misc ---------- */
 [x-cloak] { display: none !important; }
 .qr { display: block; width: 200px; height: 200px; border-radius: var(--pico-border-radius); }

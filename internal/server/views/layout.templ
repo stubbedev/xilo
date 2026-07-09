@@ -91,6 +91,20 @@ templ SectionHead(title string) {
 	</div>
 }
 
+// NotFound is the styled 404 page for browser routes.
+templ NotFound(loggedIn bool) {
+	@Layout(T("nf.title"), loggedIn, Flash{}) {
+		<article class="notfound">
+			<div class="ic-xl">@Icon("compass")</div>
+			<hgroup>
+				<h1>{ T("nf.title") }</h1>
+				<p>{ T("nf.sub") }</p>
+			</hgroup>
+			<a href="/admin" role="button" class="outline">@Icon("arrow-left") <span>{ T("nf.back") }</span></a>
+		</article>
+	}
+}
+
 // Icon renders a Lucide glyph followed by any label children, so
 // `@Icon("plus") { "New" }` produces an icon + text (children after a plain
 // component call would otherwise be swallowed).

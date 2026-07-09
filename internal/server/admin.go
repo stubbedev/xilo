@@ -317,13 +317,19 @@ func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
+// notFound renders the styled 404 page (browser routes only).
+func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotFound)
+	views.NotFound(s.loggedIn(r)).Render(r.Context(), w)
+}
+
 func (s *Server) handleCacheDetail(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return
 	}
 	c, err := s.db.GetCache(r.PathValue("name"))
 	if errors.Is(err, store.ErrNotFound) {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if err != nil {
