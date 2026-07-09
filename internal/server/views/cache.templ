@@ -1,0 +1,75 @@
+package views
+
+import (
+	"strconv"
+
+	"github.com/stubbedev/xilo/internal/store"
+)
+
+type CacheData struct {
+	Cache   store.Cache
+	Stats   store.Stats
+	Dedup   string
+	BaseURL string
+	Host    string
+	Bytes   func(int64) string
+}
+
+templ CacheView(d CacheData) {
+	@Layout(d.Cache.Name, true, Flash{}) {
+		<hgroup>
+			<h1>{ d.Cache.Name } @visBadge(d.Cache.Public)</h1>
+			<p>Cache overview and setup.</p>
+		</hgroup>
+		<h2>Stats</h2>
+		<article>
+			<div class="kpi">
+				<div class="tile"><div class="n">{ strconv.FormatInt(d.Stats.Paths, 10) }</div><div class="l">store paths</div></div>
+				<div class="tile"><div class="n">{ d.Bytes(d.Stats.LogicalBytes) }</div><div class="l">logical size</div></div>
+				<div class="tile"><div class="n">{ d.Bytes(d.Stats.PhysicalBytes) }</div><div class="l">physical (deduped)</div></div>
+				<div class="tile"><div class="n">{ d.Dedup }×</div><div class="l">dedup ratio</div></div>
+			</div>
+		</article>
+		<h2>Use this cache</h2>
+		<article>
+			<p>Add to <code>nix.conf</code> (or a flake's <code>nixConfig</code>):</p>
+			<div class="copyrow">
+				<pre>extra-substituters = { d.BaseURL }/{ d.Cache.Name }
+extra-trusted-public-keys = { d.Cache.PubKey }</pre>
+				@CopyButton("extra-substituters = " + d.BaseURL + "/" + d.Cache.Name + "\nextra-trusted-public-keys = " + d.Cache.PubKey)
+			</div>
+			if !d.Cache.Public {
+				<p>Private cache — add a pull token to <code>~/.netrc</code>:</p>
+				<pre>machine { d.Host } login xilo password &lt;token&gt;</pre>
+			}
+			<p>Push a build result:</p>
+			<pre>XILO_URL={ d.BaseURL } XILO_TOKEN=&lt;token&gt; xilo push { d.Cache.Name } ./result</pre>
+		</article>
+		<h2>Settings</h2>
+		<article>
+			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/configure") } class="inline">
+				<label><input type="checkbox" name="private" checked?={ !d.Cache.Public }/> private</label>
+				<label>priority <input type="number" name="priority" value={ strconv.Itoa(d.Cache.Priority) }/></label>
+				<label>retention <input name="retention" placeholder="720h"/></label>
+				<button type="submit">Save</button>
+			</form>
+			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/rotate") } class="inline"
+				onsubmit="return confirm('Rotate the signing key? The current trusted-public-key stops verifying.')">
+				<button class="secondary outline" type="submit">Rotate signing key</button>
+				<small>Generates a new keypair; you must redistribute the public key.</small>
+			</form>
+		</article>
+		<h2>Maintenance</h2>
+		<article>
+			<form method="post" action="/admin/gc" class="inline" onsubmit="return confirm('Run garbage collection now?')">
+				<button type="submit">Run garbage collection</button>
+				<small>Deletes chunks no path references.</small>
+			</form>
+			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/delete") } class="inline"
+				onsubmit="return confirm('Delete this cache and all its paths? This cannot be undone.')">
+				<button class="danger" type="submit">Delete cache</button>
+				<small>Removes the cache and its path metadata (chunks reclaimed on next GC).</small>
+			</form>
+		</article>
+	}
+}

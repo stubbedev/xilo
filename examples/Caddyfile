@@ -1,0 +1,12 @@
+# Terminate TLS in front of xilo with automatic Let's Encrypt certs.
+# xilo speaks plain HTTP; Caddy handles HTTPS + HTTP/2 and forwards.
+# Set base_url: "https://cache.example.com" in xilo.yaml so session cookies
+# are marked Secure and the admin setup snippets show the right URL.
+
+cache.example.com {
+	reverse_proxy 127.0.0.1:8080
+	# Large NAR uploads/downloads: don't buffer or time out mid-transfer.
+	request_body {
+		max_size 0
+	}
+}

@@ -1,0 +1,9 @@
+/bin/
+/tmp/
+/data/
+/xilo.yaml
+/result
+.direnv/
+*.db
+*.db-wal
+*.db-shm

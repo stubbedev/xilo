@@ -1,0 +1,18 @@
+# Minimal xilo deployment with local filesystem storage.
+#   docker compose up -d
+#   docker compose exec xilo /xilo cache create mycache
+# Then open http://localhost:8080/admin (password below).
+services:
+  xilo:
+    image: ghcr.io/stubbedev/xilo:master
+    ports:
+      - "8080:8080"
+    volumes:
+      - xilo-data:/data
+    environment:
+      XILO_ADMIN_PASSWORD: change-me
+      XILO_BASE_URL: http://localhost:8080
+    restart: unless-stopped
+
+volumes:
+  xilo-data:

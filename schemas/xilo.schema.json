@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/stubbedev/xilo/internal/config/config",
+  "properties": {
+    "listen": {
+      "type": "string",
+      "description": "Address the server listens on, host:port. Empty host = all interfaces."
+    },
+    "base_url": {
+      "type": "string",
+      "description": "Public base URL clients reach this cache at, e.g.\n\"https://cache.example.com\". Used to render setup snippets in the admin\nUI. Defaults to http://localhost\u003clisten\u003e when empty."
+    },
+    "data_dir": {
+      "type": "string",
+      "description": "Directory for the metadata database (and local storage, unless\nstorage.local.root is set). Created if missing."
+    },
+    "admin": {
+      "properties": {
+        "password": {
+          "type": "string",
+          "description": "Password for the admin dashboard. Overridable at runtime with\nXILO_ADMIN_PASSWORD (preferred for secrets / Docker)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "password"
+      ],
+      "description": "Admin dashboard settings."
+    },
+    "storage": {
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": [
+            "local",
+            "s3"
+          ],
+          "description": "Backend: \"local\" (filesystem) or \"s3\" (any S3-compatible bucket)."
+        },
+        "local": {
+          "properties": {
+            "root": {
+              "type": "string",
+              "description": "Root directory for stored chunks. Defaults to \u003cdata_dir\u003e/storage."
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "root"
+          ],
+          "description": "Local filesystem backend settings (used when backend=local)."
+        },
+        "s3": {
+          "properties": {
+            "endpoint": {
+              "type": "string",
+              "description": "S3 endpoint host:port, e.g. \"s3.amazonaws.com\" or \"minio.local:9000\"."
+            },
+            "bucket": {
+              "type": "string",
+              "description": "Bucket name. Must already exist."
+            },
+            "region": {
+              "type": "string",
+              "description": "Region, e.g. \"us-east-1\". Optional for MinIO."
+            },
+            "access_key": {
+              "type": "string",
+              "description": "Access key. Overridable with XILO_S3_ACCESS_KEY."
+            },
+            "secret_key": {
+              "type": "string",
+              "description": "Secret key. Overridable with XILO_S3_SECRET_KEY."
+            },
+            "insecure": {
+              "type": "boolean",
+              "description": "Use plain HTTP instead of TLS (for local MinIO). Default false."
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "endpoint",
+            "bucket",
+            "region",
+            "access_key",
+            "secret_key",
+            "insecure"
+          ],
+          "description": "S3 backend settings (used when backend=s3)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "backend",
+        "local",
+        "s3"
+      ],
+      "description": "Where chunk bytes are stored."
+    },
+    "chunking": {
+      "properties": {
+        "min_size": {
+          "type": "integer",
+          "description": "Minimum chunk size in bytes."
+        },
+        "avg_size": {
+          "type": "integer",
+          "description": "Target average chunk size in bytes."
+        },
+        "max_size": {
+          "type": "integer",
+          "description": "Maximum chunk size in bytes."
+        },
+        "nar_threshold": {
+          "type": "integer",
+          "description": "NARs smaller than this are stored as a single chunk (skip CDC overhead)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "min_size",
+        "avg_size",
+        "max_size",
+        "nar_threshold"
+      ],
+      "description": "Content-defined chunking parameters (server-dictated; push clients fetch\nthese so every client chunks identically and dedup stays global)."
+    },
+    "compression": {
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "fastest",
+            "default",
+            "better",
+            "best"
+          ],
+          "description": "zstd level: \"fastest\", \"default\", \"better\", or \"best\"."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "level"
+      ],
+      "description": "At-rest chunk compression."
+    },
+    "gc": {
+      "properties": {
+        "interval": {
+          "type": "string",
+          "description": "How often to sweep unreferenced chunks. Empty/\"0\" disables."
+        },
+        "retention": {
+          "type": "string",
+          "description": "Evict store paths not pulled within this window before sweeping.\nEmpty/\"0\" disables time-based eviction. Per-cache retention overrides this."
+        },
+        "grace": {
+          "type": "string",
+          "description": "Grace window: chunks created more recently than this are never swept, so\na chunk uploaded during an in-flight push is never collected before its\npath is registered. Must exceed your longest single push. Default 1h."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "interval",
+        "retention",
+        "grace"
+      ],
+      "description": "Background garbage collection."
+    },
+    "parallelism": {
+      "type": "integer",
+      "description": "Recommended parallel uploads advertised to push clients. 0 = auto\n(number of CPUs). Clients use this unless overridden with --jobs."
+    },
+    "upstream_keys": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "description": "Upstream cache signing-key names (e.g. \"cache.nixos.org-1\"). Paths signed\nby any of these are skipped on push — no point re-caching nixpkgs. Sent to\nclients so the skip is automatic."
+    },
+    "security": {
+      "properties": {
+        "skip_upload_verify": {
+          "type": "boolean",
+          "description": "Skip reassembling + hashing uploaded chunks against the claimed NarHash on\npush. Verification is proof-of-possession: without the real NAR a client\ncan't produce a chunk list that hashes correctly, so it can't claim\nanother tenant's path. Leave false unless you need the throughput."
+        },
+        "allow_open_bootstrap": {
+          "type": "boolean",
+          "description": "Allow anonymous push before the first token exists. Convenient for a\ntrusted single-user setup, but on a fresh public deploy it means anyone\ncan push until you mint a token. Default false: push requires a token."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "skip_upload_verify",
+        "allow_open_bootstrap"
+      ],
+      "description": "Security hardening."
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "listen",
+    "base_url",
+    "data_dir",
+    "admin",
+    "storage",
+    "chunking",
+    "compression",
+    "gc",
+    "parallelism",
+    "upstream_keys",
+    "security"
+  ],
+  "description": "Config is the root of xilo.yaml."
+}

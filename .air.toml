@@ -1,0 +1,17 @@
+# air — live reload for `just dev`. Rebuilds on .go/.templ/.css/.yaml change,
+# regenerating templ views first.
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "templ generate && go build -o ./tmp/xilo ./cmd/xilo"
+bin = "./tmp/xilo"
+args_bin = ["--config", "./xilo.yaml", "serve"]
+include_ext = ["go", "templ", "css", "yaml"]
+exclude_dir = ["tmp", "bin", "data", ".git", ".direnv"]
+exclude_regex = ["_templ.go$", "_test.go"]
+stop_on_error = true
+delay = 300
+
+[misc]
+clean_on_exit = true

@@ -1,0 +1,109 @@
+package views
+
+import (
+	"strconv"
+	"strings"
+
+	"github.com/stubbedev/xilo/internal/store"
+)
+
+templ Dashboard(caches []store.Cache, tokens []store.Token, flash Flash) {
+	@Layout("Caches", true, flash) {
+		<hgroup>
+			<h1>Caches</h1>
+			<p>Content-addressed Nix binary caches served from this instance.</p>
+		</hgroup>
+		<article>
+			<table>
+				<thead>
+					<tr><th>Name</th><th>Visibility</th><th>Priority</th><th>Public key</th></tr>
+				</thead>
+				<tbody>
+					for _, c := range caches {
+						<tr>
+							<td><a href={ templ.SafeURL("/admin/cache/" + c.Name) }><strong>{ c.Name }</strong></a></td>
+							<td>@visBadge(c.Public)</td>
+							<td>{ strconv.Itoa(c.Priority) }</td>
+							<td><small><code>{ c.PubKey }</code></small></td>
+						</tr>
+					}
+					if len(caches) == 0 {
+						<tr><td colspan="4"><small>No caches yet — create one below.</small></td></tr>
+					}
+				</tbody>
+			</table>
+		</article>
+		<h2>New cache</h2>
+		<article>
+			<form method="post" action="/admin/caches" class="inline">
+				<input name="name" placeholder="cache-name" required pattern="[a-zA-Z0-9_-]+"/>
+				<label><input type="checkbox" name="private"/> private</label>
+				<label>priority <input type="number" name="priority" value="40"/></label>
+				<button type="submit">Create cache</button>
+			</form>
+		</article>
+		<h2>Tokens</h2>
+		<article>
+			<table>
+				<thead>
+					<tr><th>ID</th><th>Name</th><th>Perms</th><th>Scope</th><th>Expires</th><th>Status</th><th></th></tr>
+				</thead>
+				<tbody>
+					for _, t := range tokens {
+						<tr>
+							<td>{ strconv.FormatInt(t.ID, 10) }</td>
+							<td>{ t.Name }</td>
+							<td>{ strings.Join(t.Perms, ", ") }</td>
+							<td>{ strings.Join(t.Caches, ", ") }</td>
+							<td><small>{ TokenExpiry(t) }</small></td>
+							<td>
+								switch TokenStatus(t) {
+									case "active":
+										<span class="badge pub">active</span>
+									case "expired":
+										<span class="badge rev">expired</span>
+									default:
+										<span class="badge rev">revoked</span>
+								}
+							</td>
+							<td>
+								if TokenActive(t) {
+									<form method="post" action={ templ.SafeURL("/admin/tokens/" + strconv.FormatInt(t.ID, 10) + "/revoke") }>
+										<button class="danger">Revoke</button>
+									</form>
+								}
+							</td>
+						</tr>
+					}
+					if len(tokens) == 0 {
+						<tr><td colspan="7"><small>No tokens yet. Create one below to grant push/pull.</small></td></tr>
+					}
+				</tbody>
+			</table>
+		</article>
+		<h2>New token</h2>
+		<article>
+			<form method="post" action="/admin/tokens" class="inline">
+				<input name="name" placeholder="token-name" required/>
+				<select name="cache">
+					<option value="*">all caches</option>
+					for _, c := range caches {
+						<option value={ c.Name }>{ c.Name }</option>
+					}
+				</select>
+				<label><input type="checkbox" name="push"/> push</label>
+				<label><input type="checkbox" name="pull" checked/> pull</label>
+				<label>ttl <input name="ttl" placeholder="720h" size="6"/></label>
+				<button type="submit">Create token</button>
+			</form>
+		</article>
+	}
+}
+
+templ visBadge(public bool) {
+	if public {
+		<span class="badge pub">public</span>
+	} else {
+		<span class="badge priv">private</span>
+	}
+}

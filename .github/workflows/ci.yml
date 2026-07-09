@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  test:
+    name: build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: verify templ output in sync
+        run: |
+          go install github.com/a-h/templ/cmd/templ@v0.3.1020
+          "$(go env GOPATH)/bin/templ" generate
+          if [ -n "$(git status --porcelain '*_templ.go')" ]; then
+            echo "::error::templ output is stale. Run 'just generate' and commit."
+            git --no-pager diff -- '*_templ.go'
+            exit 1
+          fi
+      - name: gofmt
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "unformatted:"; echo "$out"; exit 1; fi
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test -race ./...
+
+  schema:
+    name: JSON schema in sync
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Regenerate schemas/xilo.schema.json from the config.Config Go types
+      # so a new/changed field always flows into editor hinting.
+      - name: regenerate schema
+        run: |
+          mkdir -p schemas
+          go run ./cmd/xilo schema dump --out schemas/xilo.schema.json
+
+      # On PRs: fail if stale so the author regenerates + commits.
+      - name: assert in sync (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ -n "$(git status --porcelain schemas/xilo.schema.json)" ]; then
+            echo "::error::JSON schema is stale. Run 'just sync-schema' and commit."
+            git --no-pager diff schemas/xilo.schema.json
+            exit 1
+          fi
+
+      # On master/main pushes: auto-commit any drift.
+      - name: auto-commit (push)
+        if: github.event_name == 'push'
+        run: |
+          if [ -z "$(git status --porcelain schemas/xilo.schema.json)" ]; then
+            echo "schema already in sync"; exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add schemas/xilo.schema.json
+          git commit -m 'chore: auto-bump JSON schema [skip ci]'
+          git push

@@ -1,0 +1,224 @@
+// Package config defines xilo's YAML config. Every field's doc comment becomes
+// the description in the generated JSON schema (see `xilo schema dump`), so the
+// struct is the single source of truth for both runtime config and editor
+// hinting. Keep comments user-facing.
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
+
+	"gopkg.in/yaml.v3"
+)
+
+// Config is the root of xilo.yaml.
+type Config struct {
+	// Address the server listens on, host:port. Empty host = all interfaces.
+	Listen string `yaml:"listen" json:"listen"`
+	// Public base URL clients reach this cache at, e.g.
+	// "https://cache.example.com". Used to render setup snippets in the admin
+	// UI. Defaults to http://localhost<listen> when empty.
+	BaseURL string `yaml:"base_url" json:"base_url"`
+	// Directory for the metadata database (and local storage, unless
+	// storage.local.root is set). Created if missing.
+	DataDir string `yaml:"data_dir" json:"data_dir"`
+	// Admin dashboard settings.
+	Admin Admin `yaml:"admin" json:"admin"`
+	// Where chunk bytes are stored.
+	Storage Storage `yaml:"storage" json:"storage"`
+	// Content-defined chunking parameters (server-dictated; push clients fetch
+	// these so every client chunks identically and dedup stays global).
+	Chunking Chunking `yaml:"chunking" json:"chunking"`
+	// At-rest chunk compression.
+	Compression Compression `yaml:"compression" json:"compression"`
+	// Background garbage collection.
+	GC GC `yaml:"gc" json:"gc"`
+	// Recommended parallel uploads advertised to push clients. 0 = auto
+	// (number of CPUs). Clients use this unless overridden with --jobs.
+	Parallelism int `yaml:"parallelism" json:"parallelism"`
+	// Upstream cache signing-key names (e.g. "cache.nixos.org-1"). Paths signed
+	// by any of these are skipped on push — no point re-caching nixpkgs. Sent to
+	// clients so the skip is automatic.
+	UpstreamKeys []string `yaml:"upstream_keys" json:"upstream_keys"`
+	// Security hardening.
+	Security Security `yaml:"security" json:"security"`
+}
+
+// Security configures upload verification and bootstrap behavior.
+type Security struct {
+	// Skip reassembling + hashing uploaded chunks against the claimed NarHash on
+	// push. Verification is proof-of-possession: without the real NAR a client
+	// can't produce a chunk list that hashes correctly, so it can't claim
+	// another tenant's path. Leave false unless you need the throughput.
+	SkipUploadVerify bool `yaml:"skip_upload_verify" json:"skip_upload_verify"`
+	// Allow anonymous push before the first token exists. Convenient for a
+	// trusted single-user setup, but on a fresh public deploy it means anyone
+	// can push until you mint a token. Default false: push requires a token.
+	AllowOpenBootstrap bool `yaml:"allow_open_bootstrap" json:"allow_open_bootstrap"`
+}
+
+// Chunking tunes FastCDC. Smaller average size = better dedup, more overhead.
+type Chunking struct {
+	// Minimum chunk size in bytes.
+	MinSize int `yaml:"min_size" json:"min_size"`
+	// Target average chunk size in bytes.
+	AvgSize int `yaml:"avg_size" json:"avg_size"`
+	// Maximum chunk size in bytes.
+	MaxSize int `yaml:"max_size" json:"max_size"`
+	// NARs smaller than this are stored as a single chunk (skip CDC overhead).
+	NarThreshold int `yaml:"nar_threshold" json:"nar_threshold"`
+}
+
+// Compression configures how chunks are compressed at rest (zstd only —
+// no-dep, and high levels rival xz).
+type Compression struct {
+	// zstd level: "fastest", "default", "better", or "best".
+	Level string `yaml:"level" json:"level" jsonschema:"enum=fastest,enum=default,enum=better,enum=best"`
+}
+
+// GC configures the background sweeper. Durations are Go strings ("12h", "30m").
+type GC struct {
+	// How often to sweep unreferenced chunks. Empty/"0" disables.
+	Interval string `yaml:"interval" json:"interval"`
+	// Evict store paths not pulled within this window before sweeping.
+	// Empty/"0" disables time-based eviction. Per-cache retention overrides this.
+	Retention string `yaml:"retention" json:"retention"`
+	// Grace window: chunks created more recently than this are never swept, so
+	// a chunk uploaded during an in-flight push is never collected before its
+	// path is registered. Must exceed your longest single push. Default 1h.
+	Grace string `yaml:"grace" json:"grace"`
+}
+
+// Admin configures the management dashboard.
+type Admin struct {
+	// Password for the admin dashboard. Overridable at runtime with
+	// XILO_ADMIN_PASSWORD (preferred for secrets / Docker).
+	Password string `yaml:"password" json:"password"`
+}
+
+// Storage selects and configures the chunk blob backend.
+type Storage struct {
+	// Backend: "local" (filesystem) or "s3" (any S3-compatible bucket).
+	Backend string `yaml:"backend" json:"backend" jsonschema:"enum=local,enum=s3"`
+	// Local filesystem backend settings (used when backend=local).
+	Local Local `yaml:"local" json:"local"`
+	// S3 backend settings (used when backend=s3).
+	S3 S3 `yaml:"s3" json:"s3"`
+}
+
+// Local is the filesystem storage backend.
+type Local struct {
+	// Root directory for stored chunks. Defaults to <data_dir>/storage.
+	Root string `yaml:"root" json:"root"`
+}
+
+// S3 is the S3-compatible storage backend.
+type S3 struct {
+	// S3 endpoint host:port, e.g. "s3.amazonaws.com" or "minio.local:9000".
+	Endpoint string `yaml:"endpoint" json:"endpoint"`
+	// Bucket name. Must already exist.
+	Bucket string `yaml:"bucket" json:"bucket"`
+	// Region, e.g. "us-east-1". Optional for MinIO.
+	Region string `yaml:"region" json:"region"`
+	// Access key. Overridable with XILO_S3_ACCESS_KEY.
+	AccessKey string `yaml:"access_key" json:"access_key"`
+	// Secret key. Overridable with XILO_S3_SECRET_KEY.
+	SecretKey string `yaml:"secret_key" json:"secret_key"`
+	// Use plain HTTP instead of TLS (for local MinIO). Default false.
+	Insecure bool `yaml:"insecure" json:"insecure"`
+}
+
+// DBPath is the sqlite file path derived from DataDir.
+func (c *Config) DBPath() string { return filepath.Join(c.DataDir, "xilo.db") }
+
+// Load reads a YAML config file, applies defaults, then env overrides for
+// secrets. A missing file is not an error — defaults + env still yield a usable
+// config.
+func Load(path string) (*Config, error) {
+	c := &Config{}
+	if path != "" {
+		data, err := os.ReadFile(path)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		if err == nil {
+			if err := yaml.Unmarshal(data, c); err != nil {
+				return nil, fmt.Errorf("parsing %s: %w", path, err)
+			}
+		}
+	}
+	c.applyEnv()      // env first, so derived defaults build on overridden values
+	c.applyDefaults() // fills anything still empty
+	return c, c.validate()
+}
+
+func (c *Config) applyDefaults() {
+	if c.Listen == "" {
+		c.Listen = ":8080"
+	}
+	if c.DataDir == "" {
+		c.DataDir = "./data"
+	}
+	if c.BaseURL == "" {
+		c.BaseURL = "http://localhost" + c.Listen
+	}
+	if c.Storage.Backend == "" {
+		c.Storage.Backend = "local"
+	}
+	if c.Storage.Local.Root == "" {
+		c.Storage.Local.Root = filepath.Join(c.DataDir, "storage")
+	}
+	if c.Chunking.MinSize == 0 {
+		c.Chunking.MinSize = 64 << 10
+	}
+	if c.Chunking.AvgSize == 0 {
+		c.Chunking.AvgSize = 256 << 10
+	}
+	if c.Chunking.MaxSize == 0 {
+		c.Chunking.MaxSize = 1 << 20
+	}
+	if c.Chunking.NarThreshold == 0 {
+		c.Chunking.NarThreshold = c.Chunking.MinSize
+	}
+	if c.Compression.Level == "" {
+		c.Compression.Level = "default"
+	}
+	if c.Parallelism <= 0 {
+		c.Parallelism = runtime.NumCPU()
+	}
+	if c.GC.Grace == "" {
+		c.GC.Grace = "1h"
+	}
+}
+
+func (c *Config) applyEnv() {
+	if v := os.Getenv("XILO_ADMIN_PASSWORD"); v != "" {
+		c.Admin.Password = v
+	}
+	if v := os.Getenv("XILO_S3_ACCESS_KEY"); v != "" {
+		c.Storage.S3.AccessKey = v
+	}
+	if v := os.Getenv("XILO_S3_SECRET_KEY"); v != "" {
+		c.Storage.S3.SecretKey = v
+	}
+	if v := os.Getenv("XILO_LISTEN"); v != "" {
+		c.Listen = v
+	}
+	if v := os.Getenv("XILO_BASE_URL"); v != "" {
+		c.BaseURL = v
+	}
+	if v := os.Getenv("XILO_DATA_DIR"); v != "" {
+		c.DataDir = v
+	}
+}
+
+func (c *Config) validate() error {
+	switch c.Storage.Backend {
+	case "local", "s3":
+	default:
+		return fmt.Errorf("storage.backend %q invalid (want local|s3)", c.Storage.Backend)
+	}
+	return nil
+}

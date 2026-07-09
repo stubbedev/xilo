@@ -1,0 +1,38 @@
+/* Small additions on top of Pico — badges, KPI tiles, the brand mark. */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: .7rem 1.5rem;
+  border-bottom: 1px solid var(--pico-muted-border-color);
+  margin-bottom: 1.5rem;
+}
+.topbar .brand { display: flex; align-items: center; gap: .5rem; font-weight: 700; font-size: 1.15rem; }
+.topbar .logo { width: 24px; height: 24px; border-radius: 6px; background: linear-gradient(135deg, var(--pico-primary), #bb9af7); }
+.topbar nav { margin-left: auto; display: flex; gap: 1rem; align-items: center; }
+.topbar nav form, .topbar nav a { margin: 0; }
+
+.inline { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin: 0; }
+.inline > * { margin: 0; }
+.inline label { display: inline-flex; gap: .4rem; align-items: center; margin: 0; }
+.inline input[type=number] { width: 6rem; }
+
+.badge { font-size: .75rem; font-weight: 600; padding: .15rem .6rem; border-radius: 1rem; border: 1px solid var(--pico-muted-border-color); color: var(--pico-muted-color); white-space: nowrap; }
+.badge.pub { color: #2f9e44; border-color: #2f9e4455; }
+.badge.priv { color: var(--pico-primary); border-color: var(--pico-primary); }
+.badge.rev { color: #e5484d; border-color: #e5484d55; }
+
+button.danger { --pico-background-color: transparent; --pico-border-color: #e5484d88; --pico-color: #e5484d; }
+button.danger:hover { --pico-background-color: #e5484d18; }
+
+.kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; }
+.kpi .tile { background: var(--pico-card-sectioning-background-color); border: 1px solid var(--pico-muted-border-color); border-radius: var(--pico-border-radius); padding: 1rem; }
+.kpi .n { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+.kpi .l { color: var(--pico-muted-color); font-size: .8rem; margin-top: .2rem; }
+
+article.secret { border: 1px solid #2f9e4488; }
+article.secret code { word-break: break-all; }
+
+.copyrow { display: flex; gap: .6rem; align-items: center; }
+.copyrow pre, .copyrow code { flex: 1; margin: 0; }
+.copybtn { padding: .3rem .75rem; font-size: .8rem; white-space: nowrap; margin: 0; align-self: stretch; }

@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/stubbedev/xilo/master/schemas/xilo.schema.json
+# Example xilo config. Copy to xilo.yaml and edit. All fields are optional;
+# shown values are the defaults. Secrets can also come from env
+# (XILO_ADMIN_PASSWORD, XILO_S3_ACCESS_KEY, XILO_S3_SECRET_KEY).
+
+listen: ":8080"
+base_url: "http://localhost:8080" # use https://… in production so session cookies are Secure
+data_dir: "./data"
+
+admin:
+  password: "" # set via XILO_ADMIN_PASSWORD in production
+
+storage:
+  backend: local # local | s3
+  local:
+    root: "" # defaults to <data_dir>/storage
+  # s3: # any S3-compatible store (AWS, Garage, Cloudflare R2, …)
+  #   endpoint: "localhost:3900" # Garage default; "s3.amazonaws.com" for AWS
+  #   bucket: "xilo"
+  #   region: "garage" # "us-east-1" for AWS
+  #   access_key: "" # or XILO_S3_ACCESS_KEY
+  #   secret_key: "" # or XILO_S3_SECRET_KEY
+  #   insecure: false # true for a local Garage over plain HTTP
+
+# Content-defined chunking (server-dictated; clients fetch these so dedup is
+# consistent). Smaller average = better dedup, more overhead.
+chunking:
+  min_size: 65536
+  avg_size: 262144
+  max_size: 1048576
+  nar_threshold: 65536 # NARs smaller than this are stored whole (skip chunking)
+
+# At-rest chunk compression (zstd). fastest | default | better | best.
+compression:
+  level: default
+
+# Advertised parallel uploads (0 = number of CPUs). Clients use this unless
+# they pass --jobs.
+parallelism: 0
+
+# Skip pushing paths already signed by these upstream keys (don't re-cache nixpkgs).
+upstream_keys: []
+# upstream_keys: ["cache.nixos.org-1"]
+
+# Background garbage collection.
+gc:
+  interval: "" # e.g. "12h"; empty disables the background sweeper
+  retention: "" # e.g. "720h"; evict paths not pulled in this window (per-cache overrides)
+  grace: "1h" # never sweep chunks newer than this (must exceed your longest push)
+
+security:
+  skip_upload_verify: false # false = verify reassembly == NarHash on push (proof of possession)
+  allow_open_bootstrap: false # false = push always needs a token; true = open until first token
