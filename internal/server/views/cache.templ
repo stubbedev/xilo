@@ -19,26 +19,26 @@ templ CacheView(d CacheData) {
 	@Layout(d.Cache.Name, true, Flash{}) {
 		<hgroup>
 			<h1>{ d.Cache.Name } @visBadge(d.Cache.Public)</h1>
-			<p>Cache overview and setup.</p>
+			<p>{ d.BaseURL }/{ d.Cache.Name }</p>
 		</hgroup>
-		<h2>Stats</h2>
+		<h2>{ T("cd.stats") }</h2>
 		<article>
 			<div class="kpi">
-				<div class="tile"><div class="n">{ strconv.FormatInt(d.Stats.Paths, 10) }</div><div class="l">store paths</div></div>
-				<div class="tile"><div class="n">{ d.Bytes(d.Stats.LogicalBytes) }</div><div class="l">logical size</div></div>
-				<div class="tile"><div class="n">{ d.Bytes(d.Stats.PhysicalBytes) }</div><div class="l">on disk{ capLabel(d.Cache.MaxBytes, d.Bytes) }</div></div>
-				<div class="tile"><div class="n">{ d.Dedup }×</div><div class="l">dedup ratio</div></div>
+				<div class="tile"><div class="ic-lg">@Icon("package")</div><div><div class="n">{ strconv.FormatInt(d.Stats.Paths, 10) }</div><div class="l">{ T("kpi.paths") }</div></div></div>
+				<div class="tile"><div class="ic-lg">@Icon("database")</div><div><div class="n">{ d.Bytes(d.Stats.LogicalBytes) }</div><div class="l">{ T("kpi.logical") }</div></div></div>
+				<div class="tile"><div class="ic-lg">@Icon("hard-drive")</div><div><div class="n">{ d.Bytes(d.Stats.PhysicalBytes) }</div><div class="l">{ T("kpi.physical") }{ capLabel(d.Cache.MaxBytes, d.Bytes) }</div></div></div>
+				<div class="tile"><div class="ic-lg">@Icon("layers")</div><div><div class="n">{ d.Dedup }×</div><div class="l">{ T("kpi.dedup") }</div></div></div>
 			</div>
 			if d.Cache.MaxBytes > 0 {
 				<progress value={ strconv.FormatInt(d.Stats.PhysicalBytes, 10) } max={ strconv.FormatInt(d.Cache.MaxBytes, 10) }></progress>
 			}
 		</article>
-		<h2>Use this cache</h2>
+		<h2>{ T("cd.use") }</h2>
 		<article x-data="{tab:'nixconf'}">
 			<div class="tabs">
 				<button type="button" :class="{active: tab==='nixconf'}" @click="tab='nixconf'">nix.conf</button>
 				<button type="button" :class="{active: tab==='flake'}" @click="tab='flake'">flake</button>
-				<button type="button" :class="{active: tab==='cli'}" @click="tab='cli'">xilo CLI</button>
+				<button type="button" :class="{active: tab==='cli'}" @click="tab='cli'">CLI</button>
 			</div>
 			<div x-show="tab==='nixconf'">
 				<div class="copyrow">
@@ -64,41 +64,41 @@ xilo use { d.Cache.Name }</pre>
 				</div>
 			</div>
 			if !d.Cache.Public {
-				<p><small>Private cache — a pull token is required. <code>xilo use</code> writes it to <code>~/.netrc</code> automatically.</small></p>
+				<p><small>{ T("cd.private") }</small></p>
 			}
 		</article>
-		<h2>Push</h2>
+		<h2>{ T("cd.push") }</h2>
 		<article>
 			<div class="copyrow">
 				<pre>XILO_URL={ d.BaseURL } XILO_TOKEN=&lt;token&gt; xilo push { d.Cache.Name } ./result</pre>
 				@CopyButton("XILO_URL=" + d.BaseURL + " XILO_TOKEN=<token> xilo push " + d.Cache.Name + " ./result")
 			</div>
 		</article>
-		<h2>Settings</h2>
+		<h2>{ T("cd.settings") }</h2>
 		<article>
 			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/configure") } class="inline">
-				<label><input type="checkbox" name="private" checked?={ !d.Cache.Public }/> private</label>
-				<label>priority <input type="number" name="priority" value={ strconv.Itoa(d.Cache.Priority) }/></label>
-				<label>retention <input name="retention" placeholder="720h"/></label>
-				<label>max size <input name="max_bytes" placeholder="50GB" value={ capValue(d.Cache.MaxBytes, d.Bytes) }/></label>
-				<button type="submit">Save</button>
+				<label><input type="checkbox" role="switch" name="private" checked?={ !d.Cache.Public }/> { T("caches.private") }</label>
+				<label>{ T("caches.priority") } <input type="number" name="priority" value={ strconv.Itoa(d.Cache.Priority) }/></label>
+				<label>{ T("cd.retention") } <input name="retention" placeholder="720h"/></label>
+				<label>{ T("cd.maxsize") } <input name="max_bytes" placeholder="50GB" value={ capValue(d.Cache.MaxBytes, d.Bytes) }/></label>
+				<button type="submit">@Icon("save") <span>{ T("cd.save") }</span></button>
 			</form>
 			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/rotate") } class="inline"
 				onsubmit="return confirm('Rotate the signing key? The current trusted-public-key stops verifying.')">
-				<button class="secondary outline" type="submit">Rotate signing key</button>
-				<small>Generates a new keypair; you must redistribute the public key.</small>
+				<button class="secondary outline" type="submit">@Icon("key-round") <span>{ T("cd.rotate") }</span></button>
+				<small>{ T("cd.rotatehint") }</small>
 			</form>
 		</article>
-		<h2>Maintenance</h2>
+		<h2>{ T("cd.maint") }</h2>
 		<article>
 			<form method="post" action="/admin/gc" class="inline" onsubmit="return confirm('Run garbage collection now?')">
-				<button type="submit">Run garbage collection</button>
-				<small>Deletes chunks no path references.</small>
+				<button class="secondary outline" type="submit">@Icon("refresh-cw") <span>{ T("cd.gc") }</span></button>
+				<small>{ T("cd.gchint") }</small>
 			</form>
 			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/delete") } class="inline"
 				onsubmit="return confirm('Delete this cache and all its paths? This cannot be undone.')">
-				<button class="danger" type="submit">Delete cache</button>
-				<small>Removes the cache and its path metadata (chunks reclaimed on next GC).</small>
+				<button class="danger" type="submit">@Icon("trash-2") <span>{ T("cd.delete") }</span></button>
+				<small>{ T("cd.deletehint") }</small>
 			</form>
 		</article>
 	}

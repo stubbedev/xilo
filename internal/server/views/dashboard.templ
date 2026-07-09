@@ -3,29 +3,33 @@ package views
 import (
 	"strconv"
 	"strings"
+
+	"github.com/stubbedev/xilo/internal/store"
 )
 
 templ Dashboard(d DashboardData) {
-	@Layout("Caches", true, d.Flash) {
+	@Layout(T("dash.title"), true, d.Flash) {
 		<hgroup>
-			<h1>Overview</h1>
-			<p>Content-addressed Nix binary caches served from this instance.</p>
+			<h1>{ T("dash.title") }</h1>
+			<p>{ T("dash.subtitle") }</p>
 		</hgroup>
-		<article>
+		<article class="overview">
 			<div class="kpi">
-				<div class="tile"><div class="n">{ strconv.FormatInt(d.Global.Caches, 10) }</div><div class="l">caches</div></div>
-				<div class="tile"><div class="n">{ strconv.FormatInt(d.Global.Paths, 10) }</div><div class="l">store paths</div></div>
-				<div class="tile"><div class="n">{ d.Bytes(d.Global.StoredBytes) }</div><div class="l">disk used{ capSuffix(d.ServerCap, d.Bytes) }</div></div>
-				<div class="tile"><div class="n">{ dedupRatio(d.Global.LogicalBytes, d.Global.StoredBytes) }×</div><div class="l">dedup ratio</div></div>
+				<div class="tile"><div class="ic-lg">@Icon("database")</div><div><div class="n">{ strconv.FormatInt(d.Global.Caches, 10) }</div><div class="l">{ T("kpi.caches") }</div></div></div>
+				<div class="tile"><div class="ic-lg">@Icon("package")</div><div><div class="n">{ strconv.FormatInt(d.Global.Paths, 10) }</div><div class="l">{ T("kpi.paths") }</div></div></div>
+				<div class="tile"><div class="ic-lg">@Icon("hard-drive")</div><div><div class="n">{ d.Bytes(d.Global.StoredBytes) }</div><div class="l">{ T("kpi.disk") }{ capSuffix(d.ServerCap, d.Bytes) }</div></div></div>
+				<div class="tile"><div class="ic-lg">@Icon("layers")</div><div><div class="n">{ dedupRatio(d.Global.LogicalBytes, d.Global.StoredBytes) }×</div><div class="l">{ T("kpi.dedup") }</div></div></div>
 			</div>
 			if d.ServerCap > 0 {
 				<progress value={ strconv.FormatInt(d.Global.StoredBytes, 10) } max={ strconv.FormatInt(d.ServerCap, 10) }></progress>
 			}
 		</article>
-		<h2>Caches</h2>
+		@SectionHead(T("caches.title")) {
+			<button class="outline sm" type="button" onclick="document.getElementById('dlg-cache').showModal()">@Icon("plus") <span>{ T("action.new") }</span></button>
+		}
 		<article>
 			if len(d.Caches) == 0 {
-				<p><small>No caches yet — create one below.</small></p>
+				<p class="muted-row">{ T("caches.empty") }</p>
 			} else {
 				<div class="usage">
 					for _, u := range d.Caches {
@@ -36,7 +40,7 @@ templ Dashboard(d DashboardData) {
 								if u.Cache.MaxBytes > 0 {
 									{ " / " + d.Bytes(u.Cache.MaxBytes) }
 								}
-								· { strconv.FormatInt(u.Paths, 10) } paths
+								· { strconv.FormatInt(u.Paths, 10) } { T("cache.paths") }
 							</span>
 							<progress value={ strconv.FormatInt(u.Bytes, 10) } max={ strconv.FormatInt(barMax(u, d.Global.StoredBytes), 10) }></progress>
 						</div>
@@ -44,77 +48,104 @@ templ Dashboard(d DashboardData) {
 				</div>
 			}
 		</article>
-		<h2>New cache</h2>
-		<article>
-			<form method="post" action="/admin/caches" class="inline">
-				<input name="name" placeholder="cache-name" required pattern="[a-zA-Z0-9_-]+"/>
-				<label><input type="checkbox" name="private"/> private</label>
-				<label>priority <input type="number" name="priority" value="40"/></label>
-				<button type="submit">Create cache</button>
-			</form>
-		</article>
-		<h2>Tokens</h2>
+		@SectionHead(T("tokens.title")) {
+			<button class="outline sm" type="button" onclick="document.getElementById('dlg-token').showModal()">@Icon("plus") <span>{ T("action.new") }</span></button>
+		}
 		<article>
 			<table>
 				<thead>
-					<tr><th>ID</th><th>Name</th><th>Perms</th><th>Scope</th><th>Expires</th><th>Status</th><th></th></tr>
+					<tr>
+						<th>{ T("tokens.name") }</th><th>{ T("tokens.perms") }</th>
+						<th>{ T("tokens.scope") }</th><th>{ T("tokens.expires") }</th><th>{ T("tokens.status") }</th><th class="actions"></th>
+					</tr>
 				</thead>
 				<tbody>
 					for _, t := range d.Tokens {
 						<tr>
-							<td>{ strconv.FormatInt(t.ID, 10) }</td>
 							<td>{ t.Name }</td>
 							<td>{ strings.Join(t.Perms, ", ") }</td>
 							<td>{ strings.Join(t.Caches, ", ") }</td>
 							<td><small>{ TokenExpiry(t) }</small></td>
-							<td>
-								switch TokenStatus(t) {
-									case "active":
-										<span class="badge pub">active</span>
-									case "expired":
-										<span class="badge rev">expired</span>
-									default:
-										<span class="badge rev">revoked</span>
-								}
-							</td>
-							<td>
+							<td>@tokenBadge(t)</td>
+							<td class="actions">
 								if TokenActive(t) {
-									<form method="post" action={ templ.SafeURL("/admin/tokens/" + strconv.FormatInt(t.ID, 10) + "/revoke") }>
-										<button class="danger">Revoke</button>
+									<form method="post" action={ templ.SafeURL("/admin/tokens/" + strconv.FormatInt(t.ID, 10) + "/revoke") } onsubmit="return confirm('Revoke this token?')">
+										<button class="danger sm">@Icon("ban") <span>{ T("tokens.revoke") }</span></button>
 									</form>
 								}
 							</td>
 						</tr>
 					}
 					if len(d.Tokens) == 0 {
-						<tr><td colspan="7"><small>No tokens yet. Create one below to grant push/pull.</small></td></tr>
+						<tr><td colspan="6"><span class="muted-row">{ T("tokens.empty") }</span></td></tr>
 					}
 				</tbody>
 			</table>
 		</article>
-		<h2>New token</h2>
-		<article>
-			<form method="post" action="/admin/tokens" class="inline">
-				<input name="name" placeholder="token-name" required/>
-				<select name="cache">
-					<option value="*">all caches</option>
-					for _, u := range d.Caches {
-						<option value={ u.Cache.Name }>{ u.Cache.Name }</option>
-					}
-				</select>
-				<label><input type="checkbox" name="push"/> push</label>
-				<label><input type="checkbox" name="pull" checked/> pull</label>
-				<label>ttl <input name="ttl" placeholder="720h" size="6"/></label>
-				<button type="submit">Create token</button>
+		@Modal("dlg-cache", T("caches.new")) {
+			<form method="post" action="/admin/caches">
+				<label>
+					{ T("caches.name") }
+					<input name="name" placeholder="nixpkgs" required pattern="[a-zA-Z0-9_-]+" autofocus/>
+				</label>
+				<label class="switch-row"><input type="checkbox" role="switch" name="private"/> { T("caches.private") }</label>
+				<label>
+					{ T("caches.priority") }
+					<input type="number" name="priority" value="40"/>
+				</label>
+				<footer>
+					<button class="secondary" type="button" onclick="this.closest('dialog').close()">{ T("action.cancel") }</button>
+					<button type="submit">@Icon("plus") <span>{ T("caches.create") }</span></button>
+				</footer>
 			</form>
-		</article>
+		}
+		@Modal("dlg-token", T("tokens.new")) {
+			<form method="post" action="/admin/tokens">
+				<label>
+					{ T("tokens.name") }
+					<input name="name" placeholder="ci-push" required autofocus/>
+				</label>
+				<label>
+					{ T("tokens.scope") }
+					<select name="cache">
+						<option value="*">{ T("tokens.all") }</option>
+						for _, u := range d.Caches {
+							<option value={ u.Cache.Name }>{ u.Cache.Name }</option>
+						}
+					</select>
+				</label>
+				<div class="switch-row">
+					<label><input type="checkbox" role="switch" name="push"/> { T("tokens.push") }</label>
+					<label><input type="checkbox" role="switch" name="pull" checked/> { T("tokens.pull") }</label>
+				</div>
+				<label>
+					{ T("tokens.ttl") }
+					<input name="ttl" placeholder="720h"/>
+				</label>
+				<footer>
+					<button class="secondary" type="button" onclick="this.closest('dialog').close()">{ T("action.cancel") }</button>
+					<button type="submit">@Icon("plus") <span>{ T("tokens.create") }</span></button>
+				</footer>
+			</form>
+		}
 	}
 }
 
 templ visBadge(public bool) {
 	if public {
-		<span class="badge pub">public</span>
+		<span class="badge pub">{ T("vis.public") }</span>
 	} else {
-		<span class="badge priv">private</span>
+		<span class="badge priv">{ T("vis.private") }</span>
+	}
+}
+
+templ tokenBadge(t store.Token) {
+	switch TokenStatus(t) {
+		case "active":
+			<span class="badge pub">{ T("tok.active") }</span>
+		case "expired":
+			<span class="badge rev">{ T("tok.expired") }</span>
+		default:
+			<span class="badge rev">{ T("tok.revoked") }</span>
 	}
 }

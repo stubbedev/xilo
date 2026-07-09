@@ -1,38 +1,37 @@
 package views
 
 templ Settings(totpEnabled bool, flash Flash) {
-	@Layout("Settings", true, flash) {
+	@Layout(T("set.title"), true, flash) {
 		<hgroup>
-			<h1>Settings</h1>
-			<p>Admin account security.</p>
+			<h1>{ T("set.title") }</h1>
+			<p>{ T("set.subtitle") }</p>
 		</hgroup>
-		<h2>Change password</h2>
+		<h2>{ T("set.password") }</h2>
 		<article class="narrow">
 			<form method="post" action="/admin/settings/password">
-				<input type="password" name="current" placeholder="Current password" autocomplete="current-password"/>
-				<input type="password" name="new" placeholder="New password (min 8 chars)" autocomplete="new-password"/>
-				<button type="submit">Update password</button>
+				<input type="password" name="current" placeholder={ T("set.current") } autocomplete="current-password"/>
+				<input type="password" name="new" placeholder={ T("set.new") } autocomplete="new-password"/>
+				<button type="submit">@Icon("check") <span>{ T("set.update") }</span></button>
 			</form>
 		</article>
-		<h2>Two-factor authentication</h2>
+		<h2>{ T("set.2fa") }</h2>
 		<article class="narrow">
 			if totpEnabled {
-				<p>2FA is <span class="badge pub">on</span> — a 6-digit code is required at login.</p>
+				<p>2FA <span class="badge pub">{ T("set.2fa.on") }</span> — { T("set.2fa.enabled") }</p>
 				<form method="post" action="/admin/settings/totp/disable"
 					onsubmit="return confirm('Disable two-factor authentication?')">
-					<button class="danger" type="submit">Disable 2FA</button>
+					<button class="danger" type="submit">@Icon("shield-off") <span>{ T("set.2fa.disable") }</span></button>
 				</form>
 			} else {
-				<p>Add an authenticator app (Google Authenticator, 1Password, …) for a login code.</p>
+				<p>{ T("set.2fa.hint") }</p>
 				<form method="post" action="/admin/settings/totp/enroll">
-					<button type="submit">Enable 2FA</button>
+					<button type="submit">@Icon("shield") <span>{ T("set.2fa.enable") }</span></button>
 				</form>
 			}
 		</article>
 	}
 }
 
-// TOTPEnroll shows the QR + secret and a confirm-code form to finish enabling.
 templ TOTPEnroll(qrDataURI, secret string) {
 	@totpEnrollPage(qrDataURI, secret, "")
 }
@@ -42,17 +41,17 @@ templ TOTPEnrollErr(qrDataURI, secret, errMsg string) {
 }
 
 templ totpEnrollPage(qrDataURI, secret, errMsg string) {
-	@Layout("Enable 2FA", true, Flash{Msg: errMsg}) {
+	@Layout(T("set.enroll"), true, Flash{Msg: errMsg}) {
 		<hgroup>
-			<h1>Enable two-factor</h1>
-			<p>Scan the QR with your authenticator, then enter a code to confirm.</p>
+			<h1>{ T("set.enroll") }</h1>
+			<p>{ T("set.enrollhint") }</p>
 		</hgroup>
 		<article class="narrow">
-			<img class="qr" src={ qrDataURI } alt="TOTP QR code"/>
-			<p><small>Or enter this secret manually:</small><br/><code>{ secret }</code></p>
+			<img class="qr" src={ qrDataURI } alt="TOTP QR"/>
+			<p><small>{ T("set.manual") }</small><br/><code>{ secret }</code></p>
 			<form method="post" action="/admin/settings/totp/enable">
-				<input name="code" placeholder="6-digit code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" autofocus/>
-				<button type="submit">Confirm &amp; enable</button>
+				<input name="code" placeholder={ T("set.code") } inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" autofocus/>
+				<button type="submit">@Icon("check") <span>{ T("set.confirm") }</span></button>
 			</form>
 		</article>
 	}

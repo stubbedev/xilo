@@ -1,68 +1,249 @@
-/* Small additions on top of Pico — badges, KPI tiles, the brand mark. */
+/*
+ * xilo admin theme — a thin, DRY layer over Pico CSS.
+ *
+ * Strategy: pin Pico's responsive base font-size (it grows to 125%+ on wide
+ * screens, which reads as oversized for a dashboard), then drive everything
+ * from a small set of design tokens. No per-element magic numbers.
+ */
 
-/* Tighter, smaller UI than Pico's roomy defaults. */
-html { font-size: 90%; }
-:root { --pico-font-size: 95%; --pico-line-height: 1.45; --pico-spacing: .85rem; --pico-typography-spacing-vertical: .9rem; }
-main.container { padding-top: 1rem; padding-bottom: 3rem; }
-h1 { font-size: 1.6rem; }
-h2 { font-size: .8rem; margin-top: 1.5rem; }
-article { padding: 1rem 1.15rem; margin-bottom: .9rem; }
-th, td { padding-top: .5rem; padding-bottom: .5rem; font-size: .9rem; }
-hgroup > p { font-size: .9rem; }
+:root {
+  /* Pin the base so rem-based elements stay a consistent, professional size. */
+  --pico-font-size: 100%;
 
+  /* One radius for every rectangular surface — cards, inputs, buttons, tiles. */
+  --x-radius: 0.625rem; /* 10px */
+  --pico-border-radius: var(--x-radius);
+  --pico-spacing: 1rem;
+  --pico-typography-spacing-vertical: 1rem;
+  --pico-form-element-spacing-vertical: 0.55rem;
+  --pico-form-element-spacing-horizontal: 0.75rem;
+
+  /* ---- xilo design tokens ---- */
+  --x-col: 920px;                 /* content column width */
+  --x-pad: 1.5rem;                /* column horizontal padding */
+
+  /* spacing scale */
+  --x-1: 0.25rem;
+  --x-2: 0.5rem;
+  --x-3: 0.75rem;
+  --x-4: 1rem;
+  --x-5: 1.5rem;
+  --x-6: 2rem;
+
+  /* type scale (rem, ratio ~1.2) */
+  --x-fs-label: 0.75rem;          /* section labels, table headers */
+  --x-fs-sm: 0.875rem;            /* secondary text */
+  --x-fs-lead: 1.5rem;            /* KPI numbers, h1 */
+
+  /* accents (theme-independent) */
+  --x-accent-2: #7c5cff;
+  --x-ok: #2f9e44;
+  --x-danger: #e5484d;
+}
+
+/* Pin the root size against Pico's responsive up-scaling (loaded after Pico). */
+html { font-size: 100%; }
+/* Sticky footer: body is a full-height column, main grows, footer sits bottom. */
+body { font-size: var(--pico-font-size); min-height: 100vh; display: flex; flex-direction: column; }
+main.container { flex: 1 0 auto; width: 100%; }
+.site-footer { flex-shrink: 0; }
+
+/* ---------- layout: one centered column shared by topbar + body ---------- */
 .topbar {
+  border-bottom: 1px solid var(--pico-muted-border-color);
+  background: var(--pico-card-background-color);
+}
+.bar-inner {
+  max-width: var(--x-col);
+  margin-inline: auto;
+  padding: var(--x-3) var(--x-pad);
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: .7rem 1.5rem;
-  border-bottom: 1px solid var(--pico-muted-border-color);
-  margin-bottom: 1.5rem;
+  gap: var(--x-4);
 }
-.topbar .brand { display: flex; align-items: center; gap: .5rem; font-weight: 700; font-size: 1.15rem; text-decoration: none; color: var(--pico-color); }
-.topbar .brand:hover { opacity: .85; }
-.topbar .logo { width: 24px; height: 24px; border-radius: 6px; background: linear-gradient(135deg, var(--pico-primary), #bb9af7); }
-.topbar nav { margin-left: auto; display: flex; gap: 1rem; align-items: center; }
-.topbar nav form, .topbar nav a { margin: 0; }
+main.container {
+  max-width: var(--x-col);
+  margin-inline: auto;
+  padding: var(--x-5) var(--x-pad) 5rem;
+}
 
-.inline { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; margin: 0; }
-.inline > * { margin: 0; }
-.inline label { display: inline-flex; gap: .4rem; align-items: center; margin: 0; }
-.inline input[type=number] { width: 6rem; }
+/* ---------- topbar ---------- */
+.brand {
+  display: flex; align-items: center; gap: var(--x-2);
+  font-weight: 700; font-size: 1.1rem; letter-spacing: -0.01em;
+  text-decoration: none; color: var(--pico-color);
+}
+.brand:hover { opacity: .85; }
+.brand .logo {
+  width: 26px; height: 26px; border-radius: 7px; flex: none;
+  background: linear-gradient(135deg, var(--pico-primary), var(--x-accent-2));
+}
+.topbar nav { margin-left: auto; display: flex; align-items: center; gap: var(--x-5); }
+.topbar nav a { color: var(--pico-muted-color); text-decoration: none; font-size: var(--x-fs-sm); }
+.topbar nav a:hover { color: var(--pico-color); }
+.topbar nav form { margin: 0; }
+.topbar nav button { padding: 0.35rem 0.8rem; font-size: var(--x-fs-sm); }
 
-.badge { font-size: .75rem; font-weight: 600; padding: .15rem .6rem; border-radius: 1rem; border: 1px solid var(--pico-muted-border-color); color: var(--pico-muted-color); white-space: nowrap; }
-.badge.pub { color: #2f9e44; border-color: #2f9e4455; }
-.badge.priv { color: var(--pico-primary); border-color: var(--pico-primary); }
-.badge.rev { color: #e5484d; border-color: #e5484d55; }
+/* theme toggle */
+.theme-toggle {
+  width: 34px; height: 34px; padding: 0; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--x-radius); font-size: 1rem; line-height: 1;
+  background: none; border: 1px solid var(--pico-muted-border-color); color: var(--pico-muted-color);
+}
+.theme-toggle:hover { color: var(--pico-color); border-color: var(--pico-primary); }
+/* Show the glyph for the theme you'd switch TO: moon in light, sun in dark. */
+.theme-toggle .ic { display: none; }
+[data-theme=light] .theme-toggle .icon-moon { display: inline-block; }
+[data-theme=dark] .theme-toggle .icon-sun { display: inline-block; }
 
-button.danger { --pico-background-color: transparent; --pico-border-color: #e5484d88; --pico-color: #e5484d; }
-button.danger:hover { --pico-background-color: #e5484d18; }
+/* ---------- headings / sections ---------- */
+h1 { font-size: var(--x-fs-lead); margin-bottom: var(--x-1); }
+h2 {
+  font-size: var(--x-fs-label); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--pico-muted-color); margin: var(--x-6) 0 var(--x-3);
+}
+h2:first-of-type { margin-top: var(--x-2); }
+hgroup { margin-bottom: var(--x-5); }
+hgroup > p { font-size: var(--x-fs-sm); color: var(--pico-muted-color); margin: 0; }
 
-.kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .8rem; }
-.kpi .tile { background: var(--pico-card-sectioning-background-color); border: 1px solid var(--pico-muted-border-color); border-radius: var(--pico-border-radius); padding: .85rem; }
-.kpi .n { font-size: 1.45rem; font-weight: 700; line-height: 1.1; }
-.kpi .l { color: var(--pico-muted-color); font-size: .75rem; margin-top: .2rem; }
+article { padding: var(--x-4) var(--x-5); margin-bottom: var(--x-4); }
 
-/* Hide Alpine-controlled elements until Alpine initializes. */
-[x-cloak] { display: none !important; }
+/* ---------- tables ---------- */
+th, td { padding: var(--x-2) var(--x-3); font-size: var(--x-fs-sm); vertical-align: middle; }
+th {
+  font-size: var(--x-fs-label); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em; color: var(--pico-muted-color);
+}
+tbody tr:hover { background: var(--pico-card-sectioning-background-color); }
+td.actions, th.actions { text-align: right; width: 1%; white-space: nowrap; }
+td.actions form { margin: 0; }
+td[colspan] { color: var(--pico-muted-color); }
 
-/* Per-cache storage usage rows. */
-.usage { display: flex; flex-direction: column; gap: .7rem; }
-.usage .row { display: grid; grid-template-columns: 1fr auto; gap: .25rem .8rem; align-items: center; }
-.usage .name { font-weight: 600; }
-.usage .fig { color: var(--pico-muted-color); font-size: .85rem; font-variant-numeric: tabular-nums; }
-.usage progress { grid-column: 1 / -1; height: 7px; margin: 0; }
-progress { height: 8px; }
+/* ---------- buttons & forms ---------- */
+/* Pico stretches form buttons to 100%; keep every button content-width so
+   actions read as buttons, not bars. !important overrides Pico's attribute
+   selectors in one place. */
+button, [type=submit], [type=button], [type=reset], [role=button] {
+  width: auto !important;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+/* Uniform, slightly denser control sizing. */
+button, [type=submit], [role=button] { padding: 0.5rem 1rem; }
+button.danger { --pico-background-color: transparent; --pico-border-color: color-mix(in srgb, var(--x-danger) 55%, transparent); --pico-color: var(--x-danger); }
+button.danger:hover { --pico-background-color: color-mix(in srgb, var(--x-danger) 12%, transparent); }
 
-/* Tabs for the substituter setup snippets. */
-.tabs { display: flex; gap: .4rem; margin-bottom: .6rem; flex-wrap: wrap; }
-.tabs button { padding: .3rem .8rem; font-size: .85rem; background: none; border: 1px solid var(--pico-muted-border-color); color: var(--pico-muted-color); }
+/* Compact single-row forms that wrap gracefully. */
+form.inline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--x-3) var(--x-4); margin: 0; }
+form.inline > * { margin: 0; }
+form.inline label { display: inline-flex; align-items: center; gap: var(--x-2); color: var(--pico-muted-color); }
+form.inline input:not([type=checkbox]):not([type=radio]):not([type=number]),
+form.inline select { flex: 1 1 12rem; width: auto; min-width: 9rem; }
+form.inline input[type=number] { width: 4.5rem; flex: none; }
+form.inline input[name=ttl], form.inline input[name=retention], form.inline input[name=max_bytes] { flex: 0 1 7rem; min-width: 5rem; }
+form.inline button { flex: none; }
+
+/* Stacked forms (login, settings, change password). */
+article > form:not(.inline) { display: flex; flex-direction: column; align-items: flex-start; gap: var(--x-3); }
+article > form:not(.inline) input, article > form:not(.inline) select { width: 100%; margin: 0; }
+.narrow { max-width: 26rem; }
+
+/* ---------- badges ---------- */
+.badge {
+  font-size: var(--x-fs-label); font-weight: 600; white-space: nowrap;
+  padding: 0.15rem 0.6rem; border-radius: 1rem;
+  border: 1px solid var(--pico-muted-border-color); color: var(--pico-muted-color);
+}
+.badge.pub { color: var(--x-ok); border-color: color-mix(in srgb, var(--x-ok) 40%, transparent); }
+.badge.priv { color: var(--pico-primary); border-color: color-mix(in srgb, var(--pico-primary) 45%, transparent); }
+.badge.rev { color: var(--x-danger); border-color: color-mix(in srgb, var(--x-danger) 40%, transparent); }
+
+/* ---------- icons ---------- */
+.ic { width: 1em; height: 1em; vertical-align: -0.14em; flex: none; }
+button .ic, a .ic, summary .ic { width: 1.05em; height: 1.05em; }
+button, [type=submit], [role=button] { gap: 0.4rem; }
+.topbar nav a { display: inline-flex; align-items: center; gap: 0.4rem; }
+.foot-inner a { display: inline-flex; align-items: center; gap: 0.35rem; }
+.sm { padding: 0.3rem 0.7rem !important; font-size: var(--x-fs-sm); }
+
+/* ---------- section headers with an action ---------- */
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--x-3); margin: var(--x-6) 0 var(--x-3); }
+.section-head h2 { margin: 0; }
+.overview + .section-head { margin-top: var(--x-5); }
+.muted-row { color: var(--pico-muted-color); margin: 0; }
+
+/* ---------- KPI tiles (with icon) ---------- */
+.kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--x-3); }
+.kpi .tile {
+  display: flex; align-items: center; gap: var(--x-3);
+  background: var(--pico-card-sectioning-background-color);
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: var(--x-radius); padding: var(--x-4);
+}
+.kpi .n { font-size: var(--x-fs-lead); font-weight: 700; line-height: 1.1; white-space: nowrap; }
+.kpi .l { color: var(--pico-muted-color); font-size: var(--x-fs-label); margin-top: 0.1rem; white-space: nowrap; }
+.ic-lg {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 38px; height: 38px; border-radius: 10px;
+  background: color-mix(in srgb, var(--pico-primary) 14%, transparent); color: var(--pico-primary);
+}
+.ic-lg .ic { width: 20px; height: 20px; }
+
+/* ---------- modals (native <dialog>, Pico-styled) ---------- */
+dialog.modal article { max-width: 30rem; width: calc(100% - 2rem); margin: auto; }
+dialog.modal header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0; }
+dialog.modal header strong { font-size: 1.05rem; }
+dialog.modal .close { padding: 0.25rem !important; background: none; border: none; color: var(--pico-muted-color); }
+dialog.modal .close:hover { color: var(--pico-color); }
+dialog.modal form { display: flex; flex-direction: column; gap: var(--x-4); }
+dialog.modal label { display: flex; flex-direction: column; gap: 0.35rem; font-size: var(--x-fs-sm); color: var(--pico-muted-color); margin: 0; }
+dialog.modal label input, dialog.modal label select { width: 100%; margin: 0; }
+dialog.modal .switch-row { display: flex; flex-direction: row; align-items: center; gap: 1.5rem; }
+dialog.modal .switch-row label { flex-direction: row; align-items: center; gap: 0.5rem; color: var(--pico-color); }
+dialog.modal footer { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: var(--x-2); padding: 0; border: 0; background: none; }
+
+/* ---------- storage usage rows ---------- */
+.usage { display: flex; flex-direction: column; gap: var(--x-4); }
+.usage .row { display: grid; grid-template-columns: 1fr auto; gap: var(--x-1) var(--x-3); align-items: center; }
+.usage .name { display: inline-flex; align-items: center; gap: var(--x-2); font-weight: 600; }
+.usage .fig { color: var(--pico-muted-color); font-size: var(--x-fs-sm); font-variant-numeric: tabular-nums; }
+.usage progress { grid-column: 1 / -1; margin: 0; }
+progress { height: 6px; border-radius: 3px; }
+
+/* ---------- setup tabs ---------- */
+.tabs { display: flex; gap: var(--x-2); margin-bottom: var(--x-3); flex-wrap: wrap; }
+.tabs button {
+  padding: 0.3rem 0.85rem; font-size: var(--x-fs-sm);
+  background: none; border: 1px solid var(--pico-muted-border-color); color: var(--pico-muted-color);
+}
 .tabs button.active { border-color: var(--pico-primary); color: var(--pico-primary); }
+
+/* ---------- footer ---------- */
+.site-footer { border-top: 1px solid var(--pico-muted-border-color); margin-top: var(--x-6); }
+.foot-inner {
+  max-width: var(--x-col); margin-inline: auto;
+  padding: var(--x-4) var(--x-pad);
+  display: flex; justify-content: space-between; align-items: center; gap: var(--x-3);
+  color: var(--pico-muted-color); font-size: var(--x-fs-sm);
+}
+.foot-inner nav { display: flex; gap: var(--x-4); }
+.foot-inner a { color: var(--pico-muted-color); text-decoration: none; }
+.foot-inner a:hover { color: var(--pico-color); }
+
+/* ---------- misc ---------- */
+[x-cloak] { display: none !important; }
 .qr { display: block; width: 200px; height: 200px; border-radius: var(--pico-border-radius); }
-.narrow { max-width: 420px; }
-
-article.secret { border: 1px solid #2f9e4488; }
+article.secret { border-color: color-mix(in srgb, var(--x-ok) 50%, var(--pico-muted-border-color)); }
 article.secret code { word-break: break-all; }
+.copyrow { display: flex; gap: var(--x-3); align-items: stretch; }
+.copyrow pre, .copyrow code { flex: 1; margin: 0; min-width: 0; }
+/* Show full multi-line snippets instead of clipping; long keys wrap. */
+.copyrow pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.copybtn { padding: 0.3rem 0.75rem; font-size: var(--x-fs-sm); white-space: nowrap; margin: 0; align-self: flex-start; }
+pre { padding: var(--x-3) var(--x-4); }
 
-.copyrow { display: flex; gap: .6rem; align-items: center; }
-.copyrow pre, .copyrow code { flex: 1; margin: 0; }
-.copybtn { padding: .3rem .75rem; font-size: .8rem; white-space: nowrap; margin: 0; align-self: stretch; }
+/* Cache-name links read as titles: inherit text color (Pico forces --pico-color
+   to primary on <a>, and visited links differ — inherit dodges both). */
+.usage .name a, .usage .name a:visited { color: inherit; text-decoration: none; }
+.usage .name a:hover { text-decoration: underline; }

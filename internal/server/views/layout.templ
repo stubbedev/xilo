@@ -13,20 +13,33 @@ templ Layout(title string, loggedIn bool, flash Flash) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>xilo — { title }</title>
-			<link rel="stylesheet" href="/static/pico.min.css"/>
-			<link rel="stylesheet" href="/static/xilo.css"/>
-			<script defer src="/static/alpine.min.js"></script>
+			<link rel="stylesheet" href={ Asset("pico.min.css") }/>
+			<link rel="stylesheet" href={ Asset("xilo.css") }/>
+			<script defer src={ Asset("alpine.min.js") }></script>
+			// Resolve + apply the theme before paint (no flash), and expose the toggle.
+			<script>
+				(function(){var t=localStorage.getItem('theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t)})();
+				function xiloTheme(){var c=document.documentElement.getAttribute('data-theme');var n=c==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',n);localStorage.setItem('theme',n)}
+			</script>
 		</head>
 		<body>
 			<header class="topbar">
-				<a class="brand" href="/admin"><span class="logo"></span> xilo</a>
-				if loggedIn {
+				<div class="bar-inner">
+					<a class="brand" href="/admin"><span class="logo"></span> xilo</a>
 					<nav>
-						<a href="/admin">Caches</a>
-						<a href="/admin/settings">Settings</a>
-						<form method="post" action="/admin/logout"><button class="secondary outline">Log out</button></form>
+						if loggedIn {
+							<a href="/admin">@Icon("database") <span>{ T("nav.caches") }</span></a>
+							<a href="/admin/settings">@Icon("settings") <span>{ T("nav.settings") }</span></a>
+						}
+						<button class="theme-toggle" type="button" onclick="xiloTheme()" title={ T("nav.theme") } aria-label={ T("nav.theme") }>
+							@IconClass("sun", 18, "icon-sun")
+							@IconClass("moon", 18, "icon-moon")
+						</button>
+						if loggedIn {
+							<form method="post" action="/admin/logout"><button class="secondary outline">@Icon("log-out") <span>{ T("nav.logout") }</span></button></form>
+						}
 					</nav>
-				}
+				</div>
 			</header>
 			<main class="container">
 				if flash.Msg != "" {
@@ -42,14 +55,56 @@ templ Layout(title string, loggedIn bool, flash Flash) {
 				}
 				{ children... }
 			</main>
+			<footer class="site-footer">
+				<div class="foot-inner">
+					<span>{ T("footer.tagline") }</span>
+					<nav>
+						<a href="/healthz">@Icon("activity") <span>{ T("footer.health") }</span></a>
+						<a href="/metrics">@Icon("chart-line") <span>{ T("footer.metrics") }</span></a>
+					</nav>
+				</div>
+			</footer>
 		</body>
 	</html>
+}
+
+// Modal is a native <dialog> styled by Pico. Open with
+// document.getElementById(id).showModal().
+templ Modal(id, title string) {
+	<dialog id={ id } class="modal">
+		<article>
+			<header>
+				<strong>{ title }</strong>
+				<button class="close" type="button" aria-label="Close" onclick="this.closest('dialog').close()">@Icon("x")</button>
+			</header>
+			{ children... }
+		</article>
+	</dialog>
+}
+
+// SectionHead is a section title with a right-aligned action slot (typically a
+// modal-opening button).
+templ SectionHead(title string) {
+	<div class="section-head">
+		<h2>{ title }</h2>
+		{ children... }
+	</div>
+}
+
+// Icon renders a Lucide glyph followed by any label children, so
+// `@Icon("plus") { "New" }` produces an icon + text (children after a plain
+// component call would otherwise be swallowed).
+templ Icon(name string) {
+	@rawIcon(name)
+	{ children... }
 }
 
 // CopyButton copies value to the clipboard on click (Alpine.js).
 templ CopyButton(value string) {
 	<button type="button" class="outline copybtn"
 		x-data="{copied:false}" data-copy={ value }
-		@click="navigator.clipboard.writeText($el.dataset.copy); copied=true; setTimeout(()=>copied=false,1200)"
-		x-text="copied ? '✓ Copied' : 'Copy'">Copy</button>
+		@click="navigator.clipboard.writeText($el.dataset.copy); copied=true; setTimeout(()=>copied=false,1200)">
+		@Icon("copy")
+		<span x-text="copied ? '✓' : ''"></span>
+	</button>
 }
