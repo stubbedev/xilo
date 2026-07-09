@@ -8,7 +8,11 @@ base_url: "http://localhost:8080" # use https://… in production so session coo
 data_dir: "./data"
 
 admin:
-  password: "" # set via XILO_ADMIN_PASSWORD in production
+  # Bootstraps the admin account on first run (bcrypt-hashed into the DB).
+  # Set via XILO_ADMIN_PASSWORD in production. After the first run you can change
+  # it and enable TOTP 2FA from the dashboard Settings page; this value is then
+  # ignored (a stale env var can't reset the account).
+  password: ""
 
 storage:
   backend: local # local | s3
@@ -51,3 +55,9 @@ gc:
 security:
   skip_upload_verify: false # false = verify reassembly == NarHash on push (proof of possession)
   allow_open_bootstrap: false # false = push always needs a token; true = open until first token
+
+# Server-wide storage cap. When total stored (compressed) size exceeds this,
+# least-recently-pulled paths are evicted on the GC tick until back under.
+# Per-cache caps are set per cache in the dashboard. Empty/"0" = unlimited.
+limits:
+  total: "" # e.g. "500GB", "2TB"

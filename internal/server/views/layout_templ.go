@@ -48,12 +48,12 @@ func Layout(title string, loggedIn bool, flash Flash) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</title><link rel=\"stylesheet\" href=\"/static/pico.min.css\"><link rel=\"stylesheet\" href=\"/static/xilo.css\"><script defer src=\"/static/alpine.min.js\"></script></head><body><header class=\"topbar\"><span class=\"brand\"><span class=\"logo\"></span> xilo</span> ")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</title><link rel=\"stylesheet\" href=\"/static/pico.min.css\"><link rel=\"stylesheet\" href=\"/static/xilo.css\"><script defer src=\"/static/alpine.min.js\"></script></head><body><header class=\"topbar\"><a class=\"brand\" href=\"/admin\"><span class=\"logo\"></span> xilo</a> ")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if loggedIn {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<nav><a href=\"/admin\">Caches</a><form method=\"post\" action=\"/admin/logout\"><button class=\"secondary outline\">Log out</button></form></nav>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<nav><a href=\"/admin\">Caches</a> <a href=\"/admin/settings\">Settings</a><form method=\"post\" action=\"/admin/logout\"><button class=\"secondary outline\">Log out</button></form></nav>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -88,7 +88,7 @@ func Layout(title string, loggedIn bool, flash Flash) templ.Component {
 			var templ_7745c5c3_Var5 string
 			templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(flash.Msg)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/server/views/layout.templ`, Line: 33, Col: 17}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/server/views/layout.templ`, Line: 34, Col: 17}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 			if templ_7745c5c3_Err != nil {
@@ -106,7 +106,7 @@ func Layout(title string, loggedIn bool, flash Flash) templ.Component {
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(flash.Code)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/server/views/layout.templ`, Line: 36, Col: 26}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/server/views/layout.templ`, Line: 37, Col: 26}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
@@ -171,7 +171,7 @@ func CopyButton(value string) templ.Component {
 		var templ_7745c5c3_Var8 string
 		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(value)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/server/views/layout.templ`, Line: 51, Col: 43}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/server/views/layout.templ`, Line: 52, Col: 43}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 		if templ_7745c5c3_Err != nil {

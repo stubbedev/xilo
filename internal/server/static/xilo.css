@@ -1,4 +1,15 @@
 /* Small additions on top of Pico — badges, KPI tiles, the brand mark. */
+
+/* Tighter, smaller UI than Pico's roomy defaults. */
+html { font-size: 90%; }
+:root { --pico-font-size: 95%; --pico-line-height: 1.45; --pico-spacing: .85rem; --pico-typography-spacing-vertical: .9rem; }
+main.container { padding-top: 1rem; padding-bottom: 3rem; }
+h1 { font-size: 1.6rem; }
+h2 { font-size: .8rem; margin-top: 1.5rem; }
+article { padding: 1rem 1.15rem; margin-bottom: .9rem; }
+th, td { padding-top: .5rem; padding-bottom: .5rem; font-size: .9rem; }
+hgroup > p { font-size: .9rem; }
+
 .topbar {
   display: flex;
   align-items: center;
@@ -7,7 +18,8 @@
   border-bottom: 1px solid var(--pico-muted-border-color);
   margin-bottom: 1.5rem;
 }
-.topbar .brand { display: flex; align-items: center; gap: .5rem; font-weight: 700; font-size: 1.15rem; }
+.topbar .brand { display: flex; align-items: center; gap: .5rem; font-weight: 700; font-size: 1.15rem; text-decoration: none; color: var(--pico-color); }
+.topbar .brand:hover { opacity: .85; }
 .topbar .logo { width: 24px; height: 24px; border-radius: 6px; background: linear-gradient(135deg, var(--pico-primary), #bb9af7); }
 .topbar nav { margin-left: auto; display: flex; gap: 1rem; align-items: center; }
 .topbar nav form, .topbar nav a { margin: 0; }
@@ -25,10 +37,28 @@
 button.danger { --pico-background-color: transparent; --pico-border-color: #e5484d88; --pico-color: #e5484d; }
 button.danger:hover { --pico-background-color: #e5484d18; }
 
-.kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; }
-.kpi .tile { background: var(--pico-card-sectioning-background-color); border: 1px solid var(--pico-muted-border-color); border-radius: var(--pico-border-radius); padding: 1rem; }
-.kpi .n { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
-.kpi .l { color: var(--pico-muted-color); font-size: .8rem; margin-top: .2rem; }
+.kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .8rem; }
+.kpi .tile { background: var(--pico-card-sectioning-background-color); border: 1px solid var(--pico-muted-border-color); border-radius: var(--pico-border-radius); padding: .85rem; }
+.kpi .n { font-size: 1.45rem; font-weight: 700; line-height: 1.1; }
+.kpi .l { color: var(--pico-muted-color); font-size: .75rem; margin-top: .2rem; }
+
+/* Hide Alpine-controlled elements until Alpine initializes. */
+[x-cloak] { display: none !important; }
+
+/* Per-cache storage usage rows. */
+.usage { display: flex; flex-direction: column; gap: .7rem; }
+.usage .row { display: grid; grid-template-columns: 1fr auto; gap: .25rem .8rem; align-items: center; }
+.usage .name { font-weight: 600; }
+.usage .fig { color: var(--pico-muted-color); font-size: .85rem; font-variant-numeric: tabular-nums; }
+.usage progress { grid-column: 1 / -1; height: 7px; margin: 0; }
+progress { height: 8px; }
+
+/* Tabs for the substituter setup snippets. */
+.tabs { display: flex; gap: .4rem; margin-bottom: .6rem; flex-wrap: wrap; }
+.tabs button { padding: .3rem .8rem; font-size: .85rem; background: none; border: 1px solid var(--pico-muted-border-color); color: var(--pico-muted-color); }
+.tabs button.active { border-color: var(--pico-primary); color: var(--pico-primary); }
+.qr { display: block; width: 200px; height: 200px; border-radius: var(--pico-border-radius); }
+.narrow { max-width: 420px; }
 
 article.secret { border: 1px solid #2f9e4488; }
 article.secret code { word-break: break-all; }

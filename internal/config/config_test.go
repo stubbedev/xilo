@@ -5,6 +5,33 @@ import (
 	"testing"
 )
 
+func TestParseBytes(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int64
+	}{
+		{"", 0}, {"0", 0},
+		{"1024", 1024},
+		{"1KB", 1 << 10}, {"1K", 1 << 10}, {"1KiB", 1 << 10},
+		{"1MB", 1 << 20}, {"500GB", 500 << 30}, {"2TB", 2 << 40},
+		{"1.5GB", int64(1.5 * float64(1<<30))},
+		{" 10 GB ", 10 << 30},
+	}
+	for _, c := range cases {
+		got, err := ParseBytes(c.in)
+		if err != nil {
+			t.Errorf("ParseBytes(%q) error: %v", c.in, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("ParseBytes(%q)=%d want %d", c.in, got, c.want)
+		}
+	}
+	if _, err := ParseBytes("garbage"); err == nil {
+		t.Error("expected error for garbage")
+	}
+}
+
 func TestDefaults(t *testing.T) {
 	c, err := Load("/does/not/exist.yaml") // missing file → defaults
 	if err != nil {

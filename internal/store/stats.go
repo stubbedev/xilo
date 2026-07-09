@@ -11,6 +11,30 @@ type Stats struct {
 	PhysicalBytes int64 // compressed size of distinct chunks
 }
 
+// Global is the server-wide overview for the dashboard. StoredBytes is the true
+// on-disk footprint (sum of every distinct chunk's compressed size).
+type Global struct {
+	Caches       int64
+	Paths        int64
+	Chunks       int64
+	StoredBytes  int64 // compressed, actual disk
+	LogicalBytes int64 // sum of NarSize across all paths
+}
+
+func (db *DB) GlobalStats() (Global, error) {
+	var g Global
+	if err := db.r.QueryRow(`SELECT COUNT(*) FROM caches`).Scan(&g.Caches); err != nil {
+		return g, err
+	}
+	if err := db.r.QueryRow(`SELECT COUNT(*), COALESCE(SUM(nar_size),0) FROM paths`).Scan(&g.Paths, &g.LogicalBytes); err != nil {
+		return g, err
+	}
+	if err := db.r.QueryRow(`SELECT COUNT(*), COALESCE(SUM(csize),0) FROM chunks`).Scan(&g.Chunks, &g.StoredBytes); err != nil {
+		return g, err
+	}
+	return g, nil
+}
+
 func (db *DB) CacheStats(cacheID int64) (Stats, error) {
 	var st Stats
 	rows, err := db.r.Query(`SELECT nar_size, chunks FROM paths WHERE cache_id=?`, cacheID)

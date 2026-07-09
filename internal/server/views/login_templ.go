@@ -8,7 +8,7 @@ package views
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
-func Login(noPassword bool, flash Flash) templ.Component {
+func Login(noPassword, totpEnabled bool, flash Flash) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -41,12 +41,22 @@ func Login(noPassword bool, flash Flash) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<hgroup><h1>Admin</h1><p>Sign in to manage caches and tokens.</p></hgroup><article><form method=\"post\" action=\"/admin/login\" class=\"inline\"><input type=\"password\" name=\"password\" placeholder=\"Admin password\" autofocus> <button type=\"submit\">Log in</button></form></article>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<hgroup><h1>Admin</h1><p>Sign in to manage caches and tokens.</p></hgroup><article class=\"narrow\"><form method=\"post\" action=\"/admin/login\"><input type=\"password\" name=\"password\" placeholder=\"Password\" autofocus> ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			if totpEnabled {
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<input name=\"code\" placeholder=\"6-digit 2FA code\" inputmode=\"numeric\" autocomplete=\"one-time-code\" pattern=\"[0-9]*\"> ")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<button type=\"submit\">Log in</button></form></article>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if noPassword {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<p><small>No admin password is set. Configure <code>admin.password</code> or <code>XILO_ADMIN_PASSWORD</code>.</small></p>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<p><small>No admin password is set. Configure <code>admin.password</code> or <code>XILO_ADMIN_PASSWORD</code> and restart.</small></p>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

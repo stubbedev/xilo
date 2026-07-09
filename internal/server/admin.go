@@ -2,7 +2,6 @@ package server
 
 import (
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -13,6 +12,9 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
+	"github.com/stubbedev/xilo/internal/config"
 	"github.com/stubbedev/xilo/internal/server/views"
 	"github.com/stubbedev/xilo/internal/store"
 )
@@ -108,11 +110,22 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/tokens", s.handleCreateToken)
 	mux.HandleFunc("POST /admin/tokens/{id}/revoke", s.handleRevokeToken)
 	mux.HandleFunc("POST /admin/gc", s.handleGC)
+	mux.HandleFunc("GET /admin/settings", s.handleSettings)
+	mux.HandleFunc("POST /admin/settings/password", s.handleChangePassword)
+	mux.HandleFunc("POST /admin/settings/totp/enroll", s.handleTOTPEnroll)
+	mux.HandleFunc("POST /admin/settings/totp/enable", s.handleTOTPEnable)
+	mux.HandleFunc("POST /admin/settings/totp/disable", s.handleTOTPDisable)
+}
+
+// totpEnabled reports whether admin 2FA is on (ignoring errors → treated as off).
+func (s *Server) totpEnabled() bool {
+	_, enabled, _ := s.db.TOTP()
+	return enabled
 }
 
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	if !s.loggedIn(r) {
-		views.Login(s.cfg.Admin.Password == "", views.Flash{}).Render(r.Context(), w)
+		views.Login(!s.db.AdminExists(), s.totpEnabled(), views.Flash{}).Render(r.Context(), w)
 		return
 	}
 	s.renderDashboard(w, r, views.Flash{})
@@ -124,21 +137,57 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	usages := make([]views.CacheUsage, 0, len(caches))
+	for _, c := range caches {
+		st, err := s.db.CacheStats(c.ID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		usages = append(usages, views.CacheUsage{Cache: c, Bytes: st.PhysicalBytes, Paths: st.Paths})
+	}
+	global, err := s.db.GlobalStats()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	tokens, err := s.db.ListTokens()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	views.Dashboard(caches, tokens, flash).Render(r.Context(), w)
+	views.Dashboard(views.DashboardData{
+		Global:    global,
+		Caches:    usages,
+		Tokens:    tokens,
+		Flash:     flash,
+		ServerCap: s.cfg.Limits.TotalBytes(),
+		Bytes:     humanBytes,
+	}).Render(r.Context(), w)
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	pass := r.FormValue("password")
-	want := s.cfg.Admin.Password
-	if want == "" || subtle.ConstantTimeCompare([]byte(pass), []byte(want)) != 1 {
-		views.Login(want == "", views.Flash{Msg: "Invalid password"}).Render(r.Context(), w)
+	hash, err := s.db.AdminPasswordHash()
+	if errors.Is(err, store.ErrNotFound) {
+		views.Login(true, false, views.Flash{}).Render(r.Context(), w)
 		return
 	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	secret, totpOn, _ := s.db.TOTP()
+
+	pass := r.FormValue("password")
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(pass)) != nil {
+		views.Login(false, totpOn, views.Flash{Msg: "Invalid password"}).Render(r.Context(), w)
+		return
+	}
+	if totpOn && !totpVerify(secret, r.FormValue("code"), time.Now()) {
+		views.Login(false, true, views.Flash{Msg: "Invalid 2FA code"}).Render(r.Context(), w)
+		return
+	}
+
 	id, err := s.sess.create()
 	if err != nil {
 		http.Error(w, "session error", http.StatusInternalServerError)
@@ -149,6 +198,92 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.secureCookies(),
 	})
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	views.Settings(s.totpEnabled(), views.Flash{}).Render(r.Context(), w)
+}
+
+func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	hash, _ := s.db.AdminPasswordHash()
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(r.FormValue("current"))) != nil {
+		views.Settings(s.totpEnabled(), views.Flash{Msg: "Current password is incorrect"}).Render(r.Context(), w)
+		return
+	}
+	next := r.FormValue("new")
+	if len(next) < 8 {
+		views.Settings(s.totpEnabled(), views.Flash{Msg: "New password must be at least 8 characters"}).Render(r.Context(), w)
+		return
+	}
+	nh, err := bcrypt.GenerateFromPassword([]byte(next), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := s.db.SetAdminPassword(string(nh)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	views.Settings(s.totpEnabled(), views.Flash{Msg: "Password changed."}).Render(r.Context(), w)
+}
+
+// handleTOTPEnroll generates a fresh secret, stores it (not yet enabled), and
+// shows the QR + a confirm-code form.
+func (s *Server) handleTOTPEnroll(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	secret, err := newTOTPSecret()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := s.db.SetTOTPSecret(secret); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	uri := totpURI(secret, "xilo", hostOf(s.cfg.BaseURL))
+	qr, err := totpQRDataURI(uri)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	views.TOTPEnroll(qr, secretB32(secret)).Render(r.Context(), w)
+}
+
+func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	secret, _, _ := s.db.TOTP()
+	if len(secret) == 0 || !totpVerify(secret, r.FormValue("code"), time.Now()) {
+		uri := totpURI(secret, "xilo", hostOf(s.cfg.BaseURL))
+		qr, _ := totpQRDataURI(uri)
+		views.TOTPEnrollErr(qr, secretB32(secret), "That code didn't match — try again.").Render(r.Context(), w)
+		return
+	}
+	if err := s.db.SetTOTPEnabled(true); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	views.Settings(true, views.Flash{Msg: "Two-factor authentication enabled."}).Render(r.Context(), w)
+}
+
+func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	if err := s.db.SetTOTPEnabled(false); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	views.Settings(false, views.Flash{Msg: "Two-factor authentication disabled."}).Render(r.Context(), w)
 }
 
 // secureCookies marks session cookies Secure when the public base URL is HTTPS
@@ -247,7 +382,16 @@ func (s *Server) handleConfigureCache(w http.ResponseWriter, r *http.Request) {
 			retention = int64(d.Seconds())
 		}
 	}
-	if err := s.db.UpdateCache(c.ID, public, priority, retention); err != nil {
+	maxBytes := c.MaxBytes
+	if mb := strings.TrimSpace(r.FormValue("max_bytes")); mb != "" {
+		n, err := config.ParseBytes(mb)
+		if err != nil {
+			http.Error(w, "bad max size: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		maxBytes = n
+	}
+	if err := s.db.UpdateCache(c.ID, public, priority, retention, maxBytes); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

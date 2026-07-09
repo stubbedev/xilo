@@ -1,0 +1,59 @@
+package views
+
+templ Settings(totpEnabled bool, flash Flash) {
+	@Layout("Settings", true, flash) {
+		<hgroup>
+			<h1>Settings</h1>
+			<p>Admin account security.</p>
+		</hgroup>
+		<h2>Change password</h2>
+		<article class="narrow">
+			<form method="post" action="/admin/settings/password">
+				<input type="password" name="current" placeholder="Current password" autocomplete="current-password"/>
+				<input type="password" name="new" placeholder="New password (min 8 chars)" autocomplete="new-password"/>
+				<button type="submit">Update password</button>
+			</form>
+		</article>
+		<h2>Two-factor authentication</h2>
+		<article class="narrow">
+			if totpEnabled {
+				<p>2FA is <span class="badge pub">on</span> — a 6-digit code is required at login.</p>
+				<form method="post" action="/admin/settings/totp/disable"
+					onsubmit="return confirm('Disable two-factor authentication?')">
+					<button class="danger" type="submit">Disable 2FA</button>
+				</form>
+			} else {
+				<p>Add an authenticator app (Google Authenticator, 1Password, …) for a login code.</p>
+				<form method="post" action="/admin/settings/totp/enroll">
+					<button type="submit">Enable 2FA</button>
+				</form>
+			}
+		</article>
+	}
+}
+
+// TOTPEnroll shows the QR + secret and a confirm-code form to finish enabling.
+templ TOTPEnroll(qrDataURI, secret string) {
+	@totpEnrollPage(qrDataURI, secret, "")
+}
+
+templ TOTPEnrollErr(qrDataURI, secret, errMsg string) {
+	@totpEnrollPage(qrDataURI, secret, errMsg)
+}
+
+templ totpEnrollPage(qrDataURI, secret, errMsg string) {
+	@Layout("Enable 2FA", true, Flash{Msg: errMsg}) {
+		<hgroup>
+			<h1>Enable two-factor</h1>
+			<p>Scan the QR with your authenticator, then enter a code to confirm.</p>
+		</hgroup>
+		<article class="narrow">
+			<img class="qr" src={ qrDataURI } alt="TOTP QR code"/>
+			<p><small>Or enter this secret manually:</small><br/><code>{ secret }</code></p>
+			<form method="post" action="/admin/settings/totp/enable">
+				<input name="code" placeholder="6-digit code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" autofocus/>
+				<button type="submit">Confirm &amp; enable</button>
+			</form>
+		</article>
+	}
+}

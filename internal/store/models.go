@@ -18,12 +18,13 @@ type Cache struct {
 	Public    bool
 	Priority  int
 	Retention int64  // per-cache retention seconds; 0 = use global
+	MaxBytes  int64  // per-cache storage cap (compressed); 0 = unlimited
 	PubKey    string // "<name>:<base64 pub>"
 	PrivKey   ed25519.PrivateKey
 	Created   int64
 }
 
-const cacheCols = `id,name,public,priority,retention,pubkey,privkey,created`
+const cacheCols = `id,name,public,priority,retention,max_bytes,pubkey,privkey,created`
 
 type Path struct {
 	StorePath string
@@ -71,7 +72,7 @@ func scanCache(row interface{ Scan(...any) error }) (*Cache, error) {
 	var c Cache
 	var pub int
 	var priv []byte
-	if err := row.Scan(&c.ID, &c.Name, &pub, &c.Priority, &c.Retention, &c.PubKey, &priv, &c.Created); err != nil {
+	if err := row.Scan(&c.ID, &c.Name, &pub, &c.Priority, &c.Retention, &c.MaxBytes, &c.PubKey, &priv, &c.Created); err != nil {
 		return nil, err
 	}
 	c.Public = pub != 0
@@ -106,11 +107,11 @@ func (db *DB) ListCaches() ([]Cache, error) {
 }
 
 // UpdateCache changes the mutable cache settings (visibility, priority,
-// per-cache retention seconds).
-func (db *DB) UpdateCache(id int64, public bool, priority int, retention int64) error {
+// per-cache retention seconds, storage cap bytes).
+func (db *DB) UpdateCache(id int64, public bool, priority int, retention, maxBytes int64) error {
 	return db.write(func(tx *sql.Tx) error {
-		_, err := tx.Exec(`UPDATE caches SET public=?, priority=?, retention=? WHERE id=?`,
-			b2i(public), priority, retention, id)
+		_, err := tx.Exec(`UPDATE caches SET public=?, priority=?, retention=?, max_bytes=? WHERE id=?`,
+			b2i(public), priority, retention, maxBytes, id)
 		return err
 	})
 }

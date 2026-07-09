@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -44,6 +46,54 @@ type Config struct {
 	UpstreamKeys []string `yaml:"upstream_keys" json:"upstream_keys"`
 	// Security hardening.
 	Security Security `yaml:"security" json:"security"`
+	// Server-wide storage limits.
+	Limits Limits `yaml:"limits" json:"limits"`
+}
+
+// Limits caps total storage. Per-cache caps are set per cache in the dashboard.
+type Limits struct {
+	// Total stored (compressed) size across all caches before least-recently-
+	// pulled paths are evicted. Human sizes: "500GB", "2TB", "100MB". Empty or
+	// "0" = unlimited.
+	Total string `yaml:"total" json:"total"`
+}
+
+// TotalBytes parses Limits.Total; 0 means unlimited or unparseable.
+func (l Limits) TotalBytes() int64 {
+	n, _ := ParseBytes(l.Total)
+	return n
+}
+
+// ParseBytes parses "500GB"/"2TB"/"1024" (binary KiB/MiB/… units) into bytes.
+func ParseBytes(s string) (int64, error) {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "0" {
+		return 0, nil
+	}
+	units := []struct {
+		suffix string
+		mult   int64
+	}{
+		{"TIB", 1 << 40}, {"GIB", 1 << 30}, {"MIB", 1 << 20}, {"KIB", 1 << 10},
+		{"TB", 1 << 40}, {"GB", 1 << 30}, {"MB", 1 << 20}, {"KB", 1 << 10},
+		{"T", 1 << 40}, {"G", 1 << 30}, {"M", 1 << 20}, {"K", 1 << 10}, {"B", 1},
+	}
+	up := strings.ToUpper(s)
+	for _, u := range units {
+		if strings.HasSuffix(up, u.suffix) {
+			num := strings.TrimSpace(up[:len(up)-len(u.suffix)])
+			f, err := strconv.ParseFloat(num, 64)
+			if err != nil {
+				return 0, fmt.Errorf("bad size %q: %w", s, err)
+			}
+			return int64(f * float64(u.mult)), nil
+		}
+	}
+	n, err := strconv.ParseInt(up, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("bad size %q", s)
+	}
+	return n, nil
 }
 
 // Security configures upload verification and bootstrap behavior.

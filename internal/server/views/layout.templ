@@ -19,10 +19,11 @@ templ Layout(title string, loggedIn bool, flash Flash) {
 		</head>
 		<body>
 			<header class="topbar">
-				<span class="brand"><span class="logo"></span> xilo</span>
+				<a class="brand" href="/admin"><span class="logo"></span> xilo</a>
 				if loggedIn {
 					<nav>
 						<a href="/admin">Caches</a>
+						<a href="/admin/settings">Settings</a>
 						<form method="post" action="/admin/logout"><button class="secondary outline">Log out</button></form>
 					</nav>
 				}

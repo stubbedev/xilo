@@ -1,19 +1,22 @@
 package views
 
-templ Login(noPassword bool, flash Flash) {
+templ Login(noPassword, totpEnabled bool, flash Flash) {
 	@Layout("Login", false, flash) {
 		<hgroup>
 			<h1>Admin</h1>
 			<p>Sign in to manage caches and tokens.</p>
 		</hgroup>
-		<article>
-			<form method="post" action="/admin/login" class="inline">
-				<input type="password" name="password" placeholder="Admin password" autofocus/>
+		<article class="narrow">
+			<form method="post" action="/admin/login">
+				<input type="password" name="password" placeholder="Password" autofocus/>
+				if totpEnabled {
+					<input name="code" placeholder="6-digit 2FA code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*"/>
+				}
 				<button type="submit">Log in</button>
 			</form>
 		</article>
 		if noPassword {
-			<p><small>No admin password is set. Configure <code>admin.password</code> or <code>XILO_ADMIN_PASSWORD</code>.</small></p>
+			<p><small>No admin password is set. Configure <code>admin.password</code> or <code>XILO_ADMIN_PASSWORD</code> and restart.</small></p>
 		}
 	}
 }

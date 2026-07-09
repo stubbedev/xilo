@@ -26,24 +26,53 @@ templ CacheView(d CacheData) {
 			<div class="kpi">
 				<div class="tile"><div class="n">{ strconv.FormatInt(d.Stats.Paths, 10) }</div><div class="l">store paths</div></div>
 				<div class="tile"><div class="n">{ d.Bytes(d.Stats.LogicalBytes) }</div><div class="l">logical size</div></div>
-				<div class="tile"><div class="n">{ d.Bytes(d.Stats.PhysicalBytes) }</div><div class="l">physical (deduped)</div></div>
+				<div class="tile"><div class="n">{ d.Bytes(d.Stats.PhysicalBytes) }</div><div class="l">on disk{ capLabel(d.Cache.MaxBytes, d.Bytes) }</div></div>
 				<div class="tile"><div class="n">{ d.Dedup }×</div><div class="l">dedup ratio</div></div>
 			</div>
+			if d.Cache.MaxBytes > 0 {
+				<progress value={ strconv.FormatInt(d.Stats.PhysicalBytes, 10) } max={ strconv.FormatInt(d.Cache.MaxBytes, 10) }></progress>
+			}
 		</article>
 		<h2>Use this cache</h2>
-		<article>
-			<p>Add to <code>nix.conf</code> (or a flake's <code>nixConfig</code>):</p>
-			<div class="copyrow">
-				<pre>extra-substituters = { d.BaseURL }/{ d.Cache.Name }
+		<article x-data="{tab:'nixconf'}">
+			<div class="tabs">
+				<button type="button" :class="{active: tab==='nixconf'}" @click="tab='nixconf'">nix.conf</button>
+				<button type="button" :class="{active: tab==='flake'}" @click="tab='flake'">flake</button>
+				<button type="button" :class="{active: tab==='cli'}" @click="tab='cli'">xilo CLI</button>
+			</div>
+			<div x-show="tab==='nixconf'">
+				<div class="copyrow">
+					<pre>extra-substituters = { d.BaseURL }/{ d.Cache.Name }
 extra-trusted-public-keys = { d.Cache.PubKey }</pre>
-				@CopyButton("extra-substituters = " + d.BaseURL + "/" + d.Cache.Name + "\nextra-trusted-public-keys = " + d.Cache.PubKey)
+					@CopyButton("extra-substituters = " + d.BaseURL + "/" + d.Cache.Name + "\nextra-trusted-public-keys = " + d.Cache.PubKey)
+				</div>
+			</div>
+			<div x-show="tab==='flake'" x-cloak>
+				<div class="copyrow">
+					<pre>nixConfig = {'{'}
+  extra-substituters = [ "{ d.BaseURL }/{ d.Cache.Name }" ];
+  extra-trusted-public-keys = [ "{ d.Cache.PubKey }" ];
+{'}'};</pre>
+					@CopyButton("nixConfig = {\n  extra-substituters = [ \"" + d.BaseURL + "/" + d.Cache.Name + "\" ];\n  extra-trusted-public-keys = [ \"" + d.Cache.PubKey + "\" ];\n};")
+				</div>
+			</div>
+			<div x-show="tab==='cli'" x-cloak>
+				<div class="copyrow">
+					<pre>xilo login { d.BaseURL } --token &lt;token&gt;
+xilo use { d.Cache.Name }</pre>
+					@CopyButton("xilo login " + d.BaseURL + " --token <token>\nxilo use " + d.Cache.Name)
+				</div>
 			</div>
 			if !d.Cache.Public {
-				<p>Private cache — add a pull token to <code>~/.netrc</code>:</p>
-				<pre>machine { d.Host } login xilo password &lt;token&gt;</pre>
+				<p><small>Private cache — a pull token is required. <code>xilo use</code> writes it to <code>~/.netrc</code> automatically.</small></p>
 			}
-			<p>Push a build result:</p>
-			<pre>XILO_URL={ d.BaseURL } XILO_TOKEN=&lt;token&gt; xilo push { d.Cache.Name } ./result</pre>
+		</article>
+		<h2>Push</h2>
+		<article>
+			<div class="copyrow">
+				<pre>XILO_URL={ d.BaseURL } XILO_TOKEN=&lt;token&gt; xilo push { d.Cache.Name } ./result</pre>
+				@CopyButton("XILO_URL=" + d.BaseURL + " XILO_TOKEN=<token> xilo push " + d.Cache.Name + " ./result")
+			</div>
 		</article>
 		<h2>Settings</h2>
 		<article>
@@ -51,6 +80,7 @@ extra-trusted-public-keys = { d.Cache.PubKey }</pre>
 				<label><input type="checkbox" name="private" checked?={ !d.Cache.Public }/> private</label>
 				<label>priority <input type="number" name="priority" value={ strconv.Itoa(d.Cache.Priority) }/></label>
 				<label>retention <input name="retention" placeholder="720h"/></label>
+				<label>max size <input name="max_bytes" placeholder="50GB" value={ capValue(d.Cache.MaxBytes, d.Bytes) }/></label>
 				<button type="submit">Save</button>
 			</form>
 			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/rotate") } class="inline"

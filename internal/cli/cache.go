@@ -118,6 +118,7 @@ func cacheInfoCmd() *cobra.Command {
 			fmt.Printf("visibility:  %s\n", visibility(ca.Public))
 			fmt.Printf("priority:    %d\n", ca.Priority)
 			fmt.Printf("retention:   %s\n", retentionStr(ca.Retention))
+			fmt.Printf("max size:    %s\n", capStr(ca.MaxBytes))
 			fmt.Printf("public key:  %s\n", ca.PubKey)
 			fmt.Printf("substituter: %s/%s\n", cfg.BaseURL, ca.Name)
 			fmt.Printf("paths:       %d\n", st.Paths)
@@ -140,9 +141,10 @@ func cacheConfigureCmd() *cobra.Command {
 	var priority int
 	var public, private bool
 	var retention time.Duration
+	var maxSize string
 	c := &cobra.Command{
 		Use:   "configure <name>",
-		Short: "Change a cache's visibility, priority, or retention",
+		Short: "Change a cache's visibility, priority, retention, or storage cap",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			_, db, err := openDB()
@@ -169,10 +171,18 @@ func cacheConfigureCmd() *cobra.Command {
 			if cmd.Flags().Changed("retention") {
 				ret = int64(retention.Seconds())
 			}
-			if err := db.UpdateCache(ca.ID, vis, prio, ret); err != nil {
+			maxBytes := ca.MaxBytes
+			if cmd.Flags().Changed("max-size") {
+				maxBytes, err = config.ParseBytes(maxSize)
+				if err != nil {
+					return err
+				}
+			}
+			if err := db.UpdateCache(ca.ID, vis, prio, ret, maxBytes); err != nil {
 				return err
 			}
-			fmt.Printf("updated %s: %s priority=%d retention=%s\n", ca.Name, visibility(vis), prio, retentionStr(ret))
+			fmt.Printf("updated %s: %s priority=%d retention=%s max=%s\n",
+				ca.Name, visibility(vis), prio, retentionStr(ret), capStr(maxBytes))
 			return nil
 		},
 	}
@@ -180,7 +190,15 @@ func cacheConfigureCmd() *cobra.Command {
 	c.Flags().BoolVar(&private, "private", false, "make the cache private")
 	c.Flags().IntVar(&priority, "priority", 40, "substituter priority")
 	c.Flags().DurationVar(&retention, "retention", 0, "per-cache retention window (0 = global default)")
+	c.Flags().StringVar(&maxSize, "max-size", "", "per-cache storage cap, e.g. 50GB (0 = unlimited)")
 	return c
+}
+
+func capStr(b int64) string {
+	if b <= 0 {
+		return "unlimited"
+	}
+	return fmt.Sprintf("%d bytes", b)
 }
 
 func cacheRotateCmd() *cobra.Command {
