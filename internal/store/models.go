@@ -256,6 +256,94 @@ func (db *DB) GetPath(cacheID int64, storeHash string) (*Path, error) {
 	return &p, nil
 }
 
+// PathInfo is a dashboard listing row: the store path, its NAR size, and when
+// it was last pulled.
+type PathInfo struct {
+	StorePath string
+	NarSize   int64
+	Accessed  int64
+}
+
+// fuzzyPattern turns a search term into a LIKE pattern that matches its
+// characters in order with anything between ("ffx" → %f%f%x%). LIKE wildcards
+// in the term are escaped.
+func fuzzyPattern(term string) string {
+	var b strings.Builder
+	b.WriteByte('%')
+	for _, r := range term {
+		if r == '%' || r == '_' || r == '\\' {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+		b.WriteByte('%')
+	}
+	return b.String()
+}
+
+// SearchPaths lists a page of a cache's paths. The query is split on
+// whitespace; every term must fuzzy-match the store path (characters in
+// order, case-insensitive). sortKey (path|size|pulled) + sortDir (asc|desc)
+// pick an explicit order; with no sortKey, substring hits rank above pure
+// fuzzy ones and ties order by most recently pulled. total is the match
+// count before limit/offset.
+func (db *DB) SearchPaths(cacheID int64, q string, limit, offset int, sortKey, sortDir string) (paths []PathInfo, total int64, err error) {
+	where := `cache_id=?`
+	args := []any{cacheID}
+	rank := `0`
+	var rankArgs []any
+	for _, term := range strings.Fields(q) {
+		where += ` AND store_path LIKE ? ESCAPE '\'`
+		args = append(args, fuzzyPattern(term))
+		rank += ` + (instr(lower(store_path), lower(?)) > 0)`
+		rankArgs = append(rankArgs, term)
+	}
+	// Explicit column sort wins; otherwise fuzzy rank (when searching) then
+	// recency. Column and direction come from a whitelist — never the query.
+	dir := ` DESC`
+	if sortDir == "asc" {
+		dir = ` ASC`
+	}
+	var order string
+	switch sortKey {
+	case "path":
+		order = `store_path COLLATE NOCASE` + dir
+		rankArgs = nil
+	case "size":
+		order = `nar_size` + dir + `, accessed DESC`
+		rankArgs = nil
+	case "pulled":
+		order = `accessed` + dir
+		rankArgs = nil
+	default:
+		// A bare integer in ORDER BY is a column ordinal to SQLite, so the
+		// rank expression is only included when there are search terms.
+		order = `accessed DESC`
+		if len(rankArgs) > 0 {
+			order = `(` + rank + `) DESC, accessed DESC`
+		}
+	}
+	args = append(args, rankArgs...)
+	args = append(args, limit, offset)
+	rows, err := db.r.Query(
+		`SELECT store_path, nar_size, accessed, COUNT(*) OVER ()
+		   FROM paths
+		  WHERE `+where+`
+		  ORDER BY `+order+` LIMIT ? OFFSET ?`,
+		args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p PathInfo
+		if err := rows.Scan(&p.StorePath, &p.NarSize, &p.Accessed, &total); err != nil {
+			return nil, 0, err
+		}
+		paths = append(paths, p)
+	}
+	return paths, total, rows.Err()
+}
+
 // ChunkKeys returns the storage keys for chunk hashes, preserving order. Batched
 // (one query per ~batchVars hashes) instead of N+1 point lookups.
 func (db *DB) ChunkKeys(hashes []string) ([]string, error) {

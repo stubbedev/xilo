@@ -53,13 +53,11 @@ main.container { flex: 1 0 auto; width: 100%; }
   border-bottom: 1px solid var(--pico-muted-border-color);
   background: var(--pico-card-background-color);
 }
-.bar-inner {
+nav.bar-inner {
   max-width: var(--x-col);
   margin-inline: auto;
   padding: var(--x-3) var(--x-pad);
-  display: flex;
-  align-items: center;
-  gap: var(--x-4);
+  flex-wrap: wrap; /* phones: controls wrap under the brand instead of overflowing */
 }
 main.container {
   max-width: var(--x-col);
@@ -80,28 +78,28 @@ main.container {
   background: linear-gradient(135deg, var(--pico-primary), var(--x-accent-2));
 }
 .brand .logo-ic { width: 16px; height: 16px; color: #fff; }
-.topbar nav { margin-left: auto; display: flex; align-items: center; gap: var(--x-4); }
-.topbar nav a { color: var(--pico-muted-color); text-decoration: none; font-size: var(--x-fs-sm); }
-.topbar nav a:hover { color: var(--pico-primary); }
-.topbar nav a[aria-current=page] { color: var(--pico-primary); font-weight: 600; }
 .topbar nav form { margin: 0; }
-.topbar nav .sep { width: 1px; height: 1.25rem; background: var(--pico-muted-border-color); flex: none; }
+.topbar nav li { padding: 0; }
+.topbar nav ul { gap: var(--x-1); }
 
-/* Topbar controls read as one family: borderless ghosts, same height. */
-.topbar nav button.ghost {
-  height: 34px; padding: 0 0.7rem; font-size: var(--x-fs-sm);
-  background: none; border: none; color: var(--pico-muted-color); box-shadow: none;
+/* Links and action buttons are semantically different (GET nav vs POST/JS),
+   but render as ONE control family: identical 34px ghost chips. */
+.topbar nav a, .topbar nav button.ghost {
+  height: 34px; padding: 0 0.65rem; margin: 0; flex: none;
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+  border-radius: var(--x-radius); font-size: var(--x-fs-sm); line-height: 1;
+  background: none; border: none; box-shadow: none;
+  color: var(--pico-muted-color); text-decoration: none; font-weight: 400;
 }
+.topbar nav a:hover, .topbar nav button.theme-toggle:hover { color: var(--pico-primary); background: color-mix(in srgb, var(--pico-primary) 10%, transparent); }
 .topbar nav button.ghost:hover { color: var(--x-danger); background: color-mix(in srgb, var(--x-danger) 10%, transparent); }
-.theme-toggle {
-  width: 34px; height: 34px; padding: 0; flex: none;
-  display: inline-flex; align-items: center; justify-content: center;
-  border-radius: var(--x-radius); font-size: 1rem; line-height: 1;
-  background: none; border: none; color: var(--pico-muted-color); box-shadow: none;
-}
-.theme-toggle:hover { color: var(--pico-primary); background: color-mix(in srgb, var(--pico-primary) 10%, transparent); }
+.topbar nav a[aria-current=page] { color: var(--pico-primary); font-weight: 600; }
+/* Mouse clicks leave :focus behind — Pico's ring lingers as a colored blob.
+   Keep the ring for keyboard (:focus-visible) only. */
+.topbar nav button.ghost:focus { box-shadow: none; }
+.topbar nav button.ghost:focus-visible { outline: 2px solid var(--pico-primary); outline-offset: 2px; }
 /* Show the glyph for the theme you'd switch TO: moon in light, sun in dark. */
-.theme-toggle .ic { display: none; }
+.theme-toggle .ic { width: 18px; height: 18px; display: none; }
 [data-theme=light] .theme-toggle .icon-moon { display: inline-block; }
 [data-theme=dark] .theme-toggle .icon-sun { display: inline-block; }
 
@@ -122,16 +120,46 @@ article {
   border: 1px solid var(--pico-muted-border-color);
   box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
 }
+/* Symmetric cards: Pico gives tables/forms/progress trailing margins that
+   inflate the bottom padding — zero them at the card edges. */
+article > :first-child { margin-top: 0; }
+article > :last-child { margin-bottom: 0; }
+/* Capacity bar under KPI tiles breathes instead of hugging them. */
+.kpi + progress { margin: var(--x-4) 0 0 !important; }
 
 /* ---------- tables ---------- */
+/* Phones: wide tables scroll inside their card instead of breaking the page.
+   (Hover tooltips don't exist on touch, so the overflow clip costs nothing.) */
+@media (max-width: 640px) {
+  article:has(table) { overflow-x: auto; }
+}
 th, td { padding: var(--x-2) var(--x-3); font-size: var(--x-fs-sm); vertical-align: middle; }
+/* Edge cells align with the rest of the card's content instead of adding
+   their own 12px inset. */
+th:first-child, td:first-child { padding-left: 0; }
+th:last-child, td:last-child { padding-right: 0; }
 th {
   font-size: var(--x-fs-label); font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.04em; color: var(--pico-muted-color);
 }
 tbody tr:hover { background: var(--pico-card-sectioning-background-color); }
 td.actions, th.actions { text-align: right; width: 1%; white-space: nowrap; }
-td.actions form { margin: 0; }
+td.actions form { margin: 0; display: inline-flex; vertical-align: middle; }
+td.actions .iconbtn ~ form, td.actions form ~ .iconbtn { margin-left: var(--x-2); }
+
+/* Row actions: circular icon buttons in the same visual language as the
+   status/permission badges — ring at rest, color on hover. */
+button.iconbtn, .iconbtn {
+  width: 30px !important; height: 30px; padding: 0 !important; margin: 0; flex: none;
+  display: inline-flex; align-items: center; justify-content: center; vertical-align: middle;
+  background: none; box-shadow: none; border-radius: 50%;
+  border: 1px solid var(--pico-muted-border-color);
+  color: var(--pico-muted-color);
+}
+.iconbtn:hover { color: var(--pico-primary); border-color: color-mix(in srgb, var(--pico-primary) 45%, transparent); background: color-mix(in srgb, var(--pico-primary) 10%, transparent); }
+.iconbtn.danger:hover { color: var(--x-danger); border-color: color-mix(in srgb, var(--x-danger) 45%, transparent); background: color-mix(in srgb, var(--x-danger) 10%, transparent); }
+.iconbtn:focus { box-shadow: none; }
+.iconbtn:focus-visible { outline: 2px solid var(--pico-primary); outline-offset: 2px; }
 td[colspan] { color: var(--pico-muted-color); }
 
 /* ---------- buttons & forms ---------- */
@@ -142,8 +170,8 @@ button, [type=submit], [type=button], [type=reset], [role=button] {
   width: auto !important;
   display: inline-flex; align-items: center; justify-content: center;
 }
-/* Uniform, slightly denser control sizing. */
-button, [type=submit], [role=button] { padding: 0.5rem 1rem; }
+/* Buttons share the form-control height (same vertical padding as inputs). */
+button, [type=submit], [role=button] { padding: var(--pico-form-element-spacing-vertical) 1rem; }
 button.danger { --pico-background-color: transparent; --pico-border-color: color-mix(in srgb, var(--x-danger) 55%, transparent); --pico-color: var(--x-danger); }
 button.danger:hover { --pico-background-color: color-mix(in srgb, var(--x-danger) 12%, transparent); --pico-color: var(--x-danger); color: var(--x-danger); }
 
@@ -151,11 +179,20 @@ button.danger:hover { --pico-background-color: color-mix(in srgb, var(--x-danger
    fields share the row equally, actions row below. */
 form.fields { display: flex; flex-wrap: wrap; gap: var(--x-4); margin: 0; }
 form.fields label { flex: 1 1 12rem; display: flex; flex-direction: column; gap: 0.35rem; font-size: var(--x-fs-sm); color: var(--pico-muted-color); margin: 0; }
-form.fields input { width: 100%; margin: 0; }
+form.fields input:not([type=checkbox]) { width: 100%; margin: 0; }
 form.fields .fields-foot { flex-basis: 100%; display: flex; align-items: center; justify-content: space-between; gap: var(--x-4); }
 form.fields .fields-foot > :only-child { margin-left: auto; }
-form.fields .fields-foot label.switch { flex: none; flex-direction: row; align-items: center; gap: var(--x-2); color: var(--pico-color); }
-form.fields .fields-foot label.switch input { width: auto; }
+/* A switch presented like any other labeled field: caption above, control below. */
+form.fields label.switch-col input { align-self: flex-start; margin-top: 0.45rem; }
+/* Unit pairs (number + select) share their field's row; the select hugs its text. */
+form.fields [role=group] { margin: 0; }
+form.fields [role=group] select { flex: 0 0 auto; width: auto; margin: 0; margin-left: -1px; }
+form.fields [role=group] input { margin: 0; }
+dialog.modal [role=group] { margin: 0; }
+dialog.modal [role=group] select { flex: 0 0 auto; width: auto; margin: 0; margin-left: -1px; }
+dialog.modal label small { color: var(--pico-muted-color); font-size: var(--x-fs-label); }
+dialog.modal fieldset.ttl-wrap { margin: 0; padding: 0; border: 0; }
+dialog.modal fieldset.ttl-wrap label { margin: 0; }
 
 /* Compact single-row forms that wrap gracefully. */
 form.inline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--x-3) var(--x-4); margin: 0; }
@@ -167,15 +204,19 @@ form.inline input[type=number] { width: 4.5rem; flex: none; }
 form.inline input[name=ttl], form.inline input[name=retention], form.inline input[name=max_bytes] { flex: 0 1 7rem; min-width: 5rem; }
 form.inline button { flex: none; }
 
-/* Stacked forms (login, settings, change password). */
-article > form:not(.inline):not(.fields) { display: flex; flex-direction: column; align-items: flex-start; gap: var(--x-3); }
-article > form:not(.inline):not(.fields) input, article > form:not(.inline):not(.fields) select { width: 100%; margin: 0; }
-.narrow { max-width: 26rem; margin-inline: auto; }
+/* Stacked forms (login, enroll, 2FA) — classless only; .inline/.fields/
+   .searchrow lay themselves out. */
+article > form:not([class]) { display: flex; flex-direction: column; align-items: flex-start; gap: var(--x-3); }
+article > form:not([class]) input:not([type=checkbox]):not([type=radio]), article > form:not([class]) select { width: 100%; margin: 0; }
+.narrow { max-width: 26rem; margin-inline: auto; text-align: center; }
+.narrow form button { width: 100% !important; }
 
-/* Text left, action right (2FA card and similar). */
+/* Text left, action right (2FA card, maintenance rows and similar). */
 .row-split { display: flex; align-items: center; justify-content: space-between; gap: var(--x-4); flex-wrap: wrap; }
 .row-split p, .row-split form { margin: 0; }
-.row-split p { display: inline-flex; align-items: center; gap: var(--x-2); }
+.row-split p { display: inline-flex; align-items: center; gap: var(--x-2); color: var(--pico-muted-color); font-size: var(--x-fs-sm); }
+.row-split + .row-split, .rule-above { border-top: 1px solid var(--pico-muted-border-color); margin-top: var(--x-4); padding-top: var(--x-4); }
+.row-split form button { white-space: nowrap; }
 
 /* ---------- badges ---------- */
 .badge {
@@ -198,11 +239,20 @@ button .ic, a .ic, summary .ic { width: 1.05em; height: 1.05em; }
 button, [type=submit], [role=button] { gap: 0.4rem; }
 .topbar nav a { display: inline-flex; align-items: center; gap: 0.4rem; }
 .foot-inner a { display: inline-flex; align-items: center; gap: 0.35rem; }
-.sm { padding: 0.3rem 0.7rem !important; font-size: var(--x-fs-sm); }
+.sm, .tabs button, .copybtn {
+  height: 32px; padding: 0 0.8rem !important; font-size: var(--x-fs-sm); line-height: 1;
+  display: inline-flex; align-items: center;
+}
 
 /* ---------- section headers with an action ---------- */
 .section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--x-3); margin: var(--x-6) 0 var(--x-3); }
-.section-head h2 { margin: 0; }
+.section-head h2 { margin: 0; flex: 1; }
+.section-head .headsearch { margin: 0; width: 21rem; }
+.section-head .headsearch input,
+.section-head .headsearch button {
+  height: 36px; padding-top: 0; padding-bottom: 0; font-size: var(--x-fs-sm); margin: 0;
+}
+.section-head .headsearch button { flex: 0 0 auto !important; padding-inline: 0.9rem; }
 .overview + .section-head { margin-top: var(--x-5); }
 .muted-row { color: var(--pico-muted-color); margin: 0; }
 
@@ -224,17 +274,31 @@ button, [type=submit], [role=button] { gap: 0.4rem; }
 .ic-lg .ic { width: 20px; height: 20px; }
 
 /* ---------- modals (native <dialog>, Pico-styled) ---------- */
-dialog.modal article { max-width: 30rem; width: calc(100% - 2rem); margin: auto; }
-dialog.modal header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0; }
+/* Dialogs render from wherever they sit in the DOM (e.g. inside td.actions,
+   which is right-aligned and nowrap) — reset inherited text styles. */
+dialog.modal { text-align: left; white-space: normal; }
+dialog.modal article { max-width: 30rem; width: calc(100% - 2rem); margin: auto; padding: 0; overflow-x: hidden; }
+/* Own the modal's vertical rhythm: symmetric header and body padding instead
+   of Pico's negative-margin header math (tuned to spacing vars we override). */
+dialog.modal header { margin: 0; padding: var(--x-4) var(--x-5); }
+dialog.modal header p { margin: 0; }
+dialog.modal article > form { padding: var(--x-4) var(--x-5) var(--x-5); }
 dialog.modal header strong { font-size: 1.05rem; }
-dialog.modal .close { padding: 0.25rem !important; background: none; border: none; color: var(--pico-muted-color); }
-dialog.modal .close:hover { color: var(--pico-primary); background: none; }
-dialog.modal form { display: flex; flex-direction: column; gap: var(--x-4); }
+/* Pico's close icon sizes itself 1rem; win back the size from the global
+   width:auto!important button reset. */
+dialog.modal header [rel=prev] { width: 1rem !important; height: 1rem; padding: 0 !important; }
+dialog.modal header [rel=prev]:focus { box-shadow: none; }
+dialog.modal header [rel=prev]:focus-visible { outline: 2px solid var(--pico-primary); outline-offset: 2px; }
+/* Footer lives inside the <form>, so Pico's article>footer styling misses it. */
+dialog.modal form footer { display: flex; justify-content: flex-end; gap: 0.6rem; margin: var(--x-2) 0 0; padding: 0; border: 0; background: none; }
+/* Stretch beats the stacked-form flex-start that would shrink labels (and the
+   footer) to content width. */
+dialog.modal form { display: flex; flex-direction: column; align-items: stretch; gap: var(--x-4); }
 dialog.modal label { display: flex; flex-direction: column; gap: 0.35rem; font-size: var(--x-fs-sm); color: var(--pico-muted-color); margin: 0; }
-dialog.modal label input, dialog.modal label select { width: 100%; margin: 0; }
+dialog.modal label input:not([type=checkbox]):not([type=radio]), dialog.modal label select { width: 100%; margin: 0; }
+dialog.modal .switch-row input { flex: none; }
 dialog.modal .switch-row { display: flex; flex-direction: row; align-items: center; gap: 1.5rem; }
 dialog.modal .switch-row label { flex-direction: row; align-items: center; gap: 0.5rem; color: var(--pico-color); }
-dialog.modal footer { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: var(--x-2); padding: 0; border: 0; background: none; }
 
 /* ---------- storage usage rows ---------- */
 .usage { display: flex; flex-direction: column; gap: var(--x-4); }
@@ -242,27 +306,87 @@ dialog.modal footer { display: flex; justify-content: flex-end; gap: 0.6rem; mar
 .usage .name { display: inline-flex; align-items: center; gap: var(--x-2); font-weight: 600; }
 .usage .fig { color: var(--pico-muted-color); font-size: var(--x-fs-sm); font-variant-numeric: tabular-nums; }
 .usage progress { grid-column: 1 / -1; margin: 0; }
-progress { height: 6px; border-radius: 3px; }
+/* Traffic-light usage bars: green = headroom, orange = filling (≥75% of cap),
+   red = at/near cap (≥95%). */
+progress { display: block; height: 6px; border-radius: 3px; --pico-progress-color: var(--x-ok); }
+progress.warn { --pico-progress-color: var(--pico-primary); }
+progress.over { --pico-progress-color: var(--x-danger); }
+.fig .pct { margin-left: var(--x-2); font-weight: 600; color: var(--x-ok); }
+.fig .pct.warn { color: var(--pico-primary); }
+.fig .pct.over { color: var(--x-danger); }
+
+/* ---------- path search (cache detail) ---------- */
+.searchrow { margin: 0 0 var(--x-3); }
+.searchrow fieldset { margin: 0; }
+.searchrow button { flex: 0 0 auto !important; }
+td.pathcell code { background: none; padding: 0; font-size: var(--x-fs-sm); overflow-wrap: anywhere; }
+td.num, th.num { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ---------- setup tabs ---------- */
 .tabs { display: flex; gap: var(--x-2); margin-bottom: var(--x-3); flex-wrap: wrap; }
 .tabs button {
-  padding: 0.3rem 0.85rem; font-size: var(--x-fs-sm);
   background: none; border: 1px solid var(--pico-muted-border-color); color: var(--pico-muted-color);
 }
 .tabs button.active { border-color: var(--pico-primary); color: var(--pico-primary); }
 
 /* ---------- footer ---------- */
 .site-footer { border-top: 1px solid var(--pico-muted-border-color); margin-top: var(--x-6); }
-.foot-inner {
+nav.foot-inner {
   max-width: var(--x-col); margin-inline: auto;
   padding: var(--x-4) var(--x-pad);
-  display: flex; justify-content: space-between; align-items: center; gap: var(--x-3);
   color: var(--pico-muted-color); font-size: var(--x-fs-sm);
 }
-.foot-inner nav { display: flex; gap: var(--x-4); }
+nav.foot-inner li { padding-top: 0; padding-bottom: 0; }
 .foot-inner a { color: var(--pico-muted-color); text-decoration: none; }
 .foot-inner a:hover { color: var(--pico-primary); }
+
+td.permcell { white-space: nowrap; }
+td.permcell .icon-badge + .icon-badge { margin-left: 0.35rem; }
+
+/* Pico keeps tooltip pseudo-elements in layout even when invisible, which
+   creates phantom horizontal overflow (modals grew scrollbars). Take them out
+   of layout until they're actually shown. */
+[data-tooltip]:not(:hover):not(:focus-visible)::before,
+[data-tooltip]:not(:hover):not(:focus-visible)::after { display: none; }
+
+/* ---------- cache settings row ---------- */
+.prio-row { flex-basis: 100%; display: flex; align-items: flex-end; gap: var(--x-4); }
+.prio-row > label { flex: 1; margin: 0; }
+.vis-btn.priv { color: var(--pico-primary); border-color: color-mix(in srgb, var(--pico-primary) 45%, transparent); }
+.vis-btn.pub { color: var(--x-ok); border-color: color-mix(in srgb, var(--x-ok) 40%, transparent); }
+.vis-btn span { display: inline-flex; }
+/* Saving feedback without reserving layout: the form dims during the POST. */
+#cache-settings.htmx-request { opacity: 0.6; transition: opacity 0.15s ease; }
+.vis-row { align-items: center; justify-content: space-between; }
+
+/* ---------- priority slider ---------- */
+.range-head { display: flex; align-items: center; justify-content: space-between; }
+.range-val {
+  font-variant-numeric: tabular-nums; font-weight: 600; color: var(--pico-color);
+  border-bottom: none; cursor: default;
+}
+.range-row { display: flex; align-items: center; gap: var(--x-3); }
+/* 100 (min) lives on the left, 1 (max) on the right: RTL flips the track so
+   dragging right raises priority. The submitted value is unchanged. */
+.range-row input[type=range] { flex: 1; width: auto; margin: 0; direction: rtl; }
+.range-end {
+  display: inline-flex; align-items: center; gap: 0.3rem; flex: none;
+  color: var(--pico-muted-color); font-size: var(--x-fs-label); font-variant-numeric: tabular-nums;
+}
+input[type=range] { width: 100%; margin: 0; }
+
+/* ---------- sortable headers ---------- */
+th .sorth { display: inline-flex; align-items: center; gap: 0.25rem; color: inherit; text-decoration: none; }
+th .sorth:hover { color: var(--pico-primary); }
+th .sort-ic { width: 12px; height: 12px; }
+
+/* ---------- pagination ---------- */
+.pager { display: flex; align-items: center; justify-content: space-between; gap: var(--x-3); margin-top: var(--x-3); }
+.pager .pager-pos { color: var(--pico-muted-color); font-size: var(--x-fs-sm); font-variant-numeric: tabular-nums; }
+.pager .pager-slot { min-width: 5.5rem; }
+/* Pico's nav-link rules (the pager is a <nav>) force display:block — restore
+   the centered flex box the .sm sizing expects. */
+.pager a[role=button] { display: inline-flex !important; align-items: center; gap: 0.35rem; text-decoration: none; }
 
 /* ---------- auth card (login) ---------- */
 .auth {
@@ -323,7 +447,7 @@ article.secret code { word-break: break-all; }
 .copyrow pre, .copyrow code { flex: 1; margin: 0; min-width: 0; }
 /* Show full multi-line snippets instead of clipping; long keys wrap. */
 .copyrow pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-.copybtn { padding: 0.3rem 0.75rem; font-size: var(--x-fs-sm); white-space: nowrap; margin: 0; align-self: flex-start; }
+.copybtn { white-space: nowrap; margin: 0; align-self: flex-start; }
 pre { padding: var(--x-3) var(--x-4); }
 
 /* Cache-name links read as titles: inherit text color (Pico forces --pico-color

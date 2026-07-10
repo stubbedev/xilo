@@ -258,3 +258,53 @@ func TestTouchPath(t *testing.T) {
 		t.Fatalf("accessed=%d, want bumped to 2e9", accessed)
 	}
 }
+
+func TestSearchPathsFuzzy(t *testing.T) {
+	db := openTest(t)
+	c, _ := db.CreateCache("c", true, 40)
+	put := func(hash32, name string) {
+		p := &Path{StorePath: "/nix/store/" + hash32 + "-" + name, NarHash: "sha256:h", NarSize: 1}
+		if err := db.PutPath(c.ID, hash32, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put("11111111111111111111111111111111", "firefox-128.0")
+	put("22222222222222222222222222222222", "ripgrep-14.1.0")
+	put("33333333333333333333333333333333", "hello-2.12")
+
+	// exact substring
+	got, total, err := db.SearchPaths(c.ID, "firefox", 10, 0, "", "")
+	if err != nil || total != 1 || len(got) != 1 {
+		t.Fatalf("substring: got %d/%d err=%v", len(got), total, err)
+	}
+	// fuzzy subsequence: r-p-g-p hits ripgrep only
+	got, total, _ = db.SearchPaths(c.ID, "rpgrp", 10, 0, "", "")
+	if total != 1 || len(got) != 1 || !strings.Contains(got[0].StorePath, "ripgrep") {
+		t.Fatalf("fuzzy: got %v total %d", got, total)
+	}
+	// multi-term AND
+	_, total, _ = db.SearchPaths(c.ID, "fire 128", 10, 0, "", "")
+	if total != 1 {
+		t.Fatalf("multi-term: total %d", total)
+	}
+	// case-insensitive
+	_, total, _ = db.SearchPaths(c.ID, "FIREFOX", 10, 0, "", "")
+	if total != 1 {
+		t.Fatalf("case: total %d", total)
+	}
+	// LIKE wildcards in the term are literal, not wildcards
+	_, total, _ = db.SearchPaths(c.ID, "%", 10, 0, "", "")
+	if total != 0 {
+		t.Fatalf("escape: %% matched %d paths", total)
+	}
+	// no query = everything
+	_, total, _ = db.SearchPaths(c.ID, "", 10, 0, "", "")
+	if total != 3 {
+		t.Fatalf("empty q: total %d", total)
+	}
+	// explicit column sort
+	got, _, _ = db.SearchPaths(c.ID, "", 10, 0, "path", "asc")
+	if len(got) != 3 || !strings.Contains(got[0].StorePath, "firefox") {
+		t.Fatalf("sort path asc: %v", got)
+	}
+}

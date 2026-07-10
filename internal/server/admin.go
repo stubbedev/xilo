@@ -5,8 +5,10 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,7 +16,6 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/stubbedev/xilo/internal/config"
 	"github.com/stubbedev/xilo/internal/server/views"
 	"github.com/stubbedev/xilo/internal/store"
 )
@@ -108,6 +109,7 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/cache/{name}/rotate", s.handleRotateKey)
 	mux.HandleFunc("POST /admin/cache/{name}/delete", s.handleDeleteCache)
 	mux.HandleFunc("POST /admin/tokens", s.handleCreateToken)
+	mux.HandleFunc("POST /admin/tokens/{id}/edit", s.handleEditToken)
 	mux.HandleFunc("POST /admin/tokens/{id}/revoke", s.handleRevokeToken)
 	mux.HandleFunc("POST /admin/gc", s.handleGC)
 	mux.HandleFunc("GET /admin/settings", s.handleSettings)
@@ -156,13 +158,49 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	cq := strings.TrimSpace(r.URL.Query().Get("caches[q]"))
+	if cq != "" {
+		kept := usages[:0]
+		for _, u := range usages {
+			if fuzzyMatch(u.Cache.Name, cq) {
+				kept = append(kept, u)
+			}
+		}
+		usages = kept
+	}
+	tq := strings.TrimSpace(r.URL.Query().Get("tokens[q]"))
+	if tq != "" {
+		kept := tokens[:0]
+		for _, t := range tokens {
+			if fuzzyMatch(t.Name+" "+strings.Join(t.Caches, " "), tq) {
+				kept = append(kept, t)
+			}
+		}
+		tokens = kept
+	}
+	tkey, tdir := sortParams(r, "tokens[sort]", "tokens[dir]", "name", "perms", "scope", "expires", "status")
+	sortTokens(tokens, tkey, tdir)
+	cnum, csize := pageParams(r, "caches", 25)
+	tnum, tsize := pageParams(r, "tokens", 25)
+	pagedCaches, cpage, cpages := views.PageOf(usages, cnum, csize)
+	pagedTokens, tpage, tpages := views.PageOf(tokens, tnum, tsize)
+	q := r.URL.Query()
 	views.Dashboard(views.DashboardData{
-		Global:    global,
-		Caches:    usages,
-		Tokens:    tokens,
-		Flash:     flash,
-		ServerCap: s.cfg.Limits.TotalBytes(),
-		Bytes:     humanBytes,
+		Global:     global,
+		Caches:     pagedCaches,
+		Tokens:     pagedTokens,
+		Flash:      flash,
+		ServerCap:  s.cfg.Limits.TotalBytes(),
+		Bytes:      humanBytes,
+		CacheQuery: cq,
+		TokenQuery: tq,
+		CachePager: withTarget(makePager("/admin", q, "caches", cpage, cpages), "#cache-list"),
+		TokenPager: withTarget(makePager("/admin", q, "tokens", tpage, tpages), "#token-list"),
+		TokenSort: views.SortCtx{
+			Path: "/admin", Query: q,
+			SortParam: "tokens[sort]", DirParam: "tokens[dir]", PageParam: "tokens[number]",
+			Key: tkey, Dir: tdir, Target: "#token-list",
+		},
 	}).Render(r.Context(), w)
 }
 
@@ -300,15 +338,190 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
+// fuzzyMatch reports whether every whitespace-separated term of q matches s
+// as a case-insensitive subsequence — the in-memory twin of the SQL search.
+func fuzzyMatch(s, q string) bool {
+	s = strings.ToLower(s)
+	for _, term := range strings.Fields(strings.ToLower(q)) {
+		si := 0
+		for _, r := range term {
+			idx := strings.IndexRune(s[si:], r)
+			if idx < 0 {
+				return false
+			}
+			si += idx + 1
+		}
+	}
+	return true
+}
+
+// sortParams reads and whitelists a table's sort key + direction.
+func sortParams(r *http.Request, keyParam, dirParam string, allowed ...string) (key, dir string) {
+	q := r.URL.Query()
+	k := q.Get(keyParam)
+	for _, a := range allowed {
+		if k == a {
+			key = k
+			break
+		}
+	}
+	dir = "desc"
+	if q.Get(dirParam) == "asc" {
+		dir = "asc"
+	}
+	return key, dir
+}
+
+// sortTokens orders tokens by a column key, in place.
+func sortTokens(tokens []store.Token, key, dir string) {
+	if key == "" {
+		return
+	}
+	less := func(a, b store.Token) bool {
+		switch key {
+		case "perms":
+			return strings.Join(a.Perms, ",") < strings.Join(b.Perms, ",")
+		case "scope":
+			return strings.Join(a.Caches, ",") < strings.Join(b.Caches, ",")
+		case "expires":
+			// never (0) sorts after every real date
+			ae, be := a.Expires, b.Expires
+			if ae == 0 {
+				ae = math.MaxInt64
+			}
+			if be == 0 {
+				be = math.MaxInt64
+			}
+			return ae < be
+		case "status":
+			return views.TokenStatus(a) < views.TokenStatus(b)
+		default: // name
+			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+		}
+	}
+	sort.SliceStable(tokens, func(i, j int) bool {
+		if dir == "asc" {
+			return less(tokens[i], tokens[j])
+		}
+		return less(tokens[j], tokens[i])
+	})
+}
+
+// withTarget scopes a pager's htmx swaps to one region.
+func withTarget(p views.Pager, target string) views.Pager {
+	p.Target = target
+	return p
+}
+
+// pageParams reads a listing's "<group>[number]" and "<group>[size]" query
+// params (JSON:API style). number is clamped to >= 1; size falls back to
+// defSize and is capped at 200 so a URL can't request unbounded pages.
+func pageParams(r *http.Request, group string, defSize int) (number, size int) {
+	q := r.URL.Query()
+	number, _ = strconv.Atoi(q.Get(group + "[number]"))
+	if number < 1 {
+		number = 1
+	}
+	size, _ = strconv.Atoi(q.Get(group + "[size]"))
+	if size < 1 {
+		size = defSize
+	}
+	if size > 200 {
+		size = 200
+	}
+	return number, size
+}
+
+// makePager builds prev/next URLs for a listing, preserving other params
+// (including the group's [size], which rides along untouched).
+func makePager(path string, params url.Values, group string, page, pages int) views.Pager {
+	mk := func(n int) string {
+		v := url.Values{}
+		for k, vs := range params {
+			v[k] = vs
+		}
+		v.Set(group+"[number]", strconv.Itoa(n))
+		return path + "?" + v.Encode()
+	}
+	pg := views.Pager{Page: page, Pages: pages}
+	if page > 1 {
+		pg.Prev = mk(page - 1)
+	}
+	if page < pages {
+		pg.Next = mk(page + 1)
+	}
+	return pg
+}
+
+// formSeconds reads a "<name>_value" + "<name>_unit" (h|d) pair. ok is false
+// when the value is empty or unparsable — callers keep their current setting.
+func formSeconds(r *http.Request, name string) (secs int64, ok bool) {
+	v := strings.TrimSpace(r.FormValue(name + "_value"))
+	if v == "" {
+		return 0, false
+	}
+	n, err := strconv.ParseFloat(v, 64)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	var mult float64
+	switch r.FormValue(name + "_unit") {
+	case "y":
+		mult = 31536000 // 365 d
+	case "mo":
+		mult = 2592000 // 30 d
+	case "d":
+		mult = 86400
+	default:
+		mult = 3600 // h
+	}
+	return int64(n * mult), true
+}
+
+// formBytes reads a "<name>_value" + "<name>_unit" (MiB|GiB|TiB) pair with the
+// same empty-keeps-current contract as formSeconds.
+func formBytes(r *http.Request, name string) (bytes int64, ok bool) {
+	v := strings.TrimSpace(r.FormValue(name + "_value"))
+	if v == "" {
+		return 0, false
+	}
+	n, err := strconv.ParseFloat(v, 64)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	var shift uint
+	switch r.FormValue(name + "_unit") {
+	case "TiB":
+		shift = 40
+	case "MiB":
+		shift = 20
+	default:
+		shift = 30 // GiB
+	}
+	return int64(n * float64(int64(1)<<shift)), true
+}
+
+// clampPriority bounds a form priority to [1,100]; fallback for absent/invalid.
+func clampPriority(v string, fallback int) int {
+	p, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || p == 0 {
+		return fallback
+	}
+	if p < 1 {
+		return 1
+	}
+	if p > 100 {
+		return 100
+	}
+	return p
+}
+
 func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
-	priority, _ := strconv.Atoi(r.FormValue("priority"))
-	if priority == 0 {
-		priority = 40
-	}
+	priority := clampPriority(r.FormValue("priority"), 40)
 	public := r.FormValue("private") == ""
 	if _, err := s.db.CreateCache(name, public, priority); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -345,13 +558,43 @@ func (s *Server) handleCacheDetail(w http.ResponseWriter, r *http.Request) {
 	if st.PhysicalBytes > 0 {
 		dedup = fmt.Sprintf("%.2f", float64(st.LogicalBytes)/float64(st.PhysicalBytes))
 	}
+	page, perPage := pageParams(r, "page", 25)
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	skey, sdir := sortParams(r, "sort", "dir", "path", "size", "pulled")
+	paths, total, err := s.db.SearchPaths(c.ID, q, perPage, (page-1)*perPage, skey, sdir)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	pages := int((total + int64(perPage) - 1) / int64(perPage))
+	if pages < 1 {
+		pages = 1
+	}
+	if page > pages && total > 0 {
+		// Past the end (e.g. stale link): show the last page instead of nothing.
+		page = pages
+		paths, total, err = s.db.SearchPaths(c.ID, q, perPage, (page-1)*perPage, skey, sdir)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 	views.CacheView(views.CacheData{
-		Cache:   *c,
-		Stats:   st,
-		Dedup:   dedup,
-		BaseURL: s.cfg.BaseURL,
-		Host:    hostOf(s.cfg.BaseURL),
-		Bytes:   humanBytes,
+		Cache:     *c,
+		Stats:     st,
+		Dedup:     dedup,
+		BaseURL:   s.cfg.BaseURL,
+		Host:      hostOf(s.cfg.BaseURL),
+		Bytes:     humanBytes,
+		Paths:     paths,
+		PathQuery: q,
+		PathTotal: total,
+		PathPager: makePager("/admin/cache/"+c.Name, r.URL.Query(), "page", page, pages),
+		PathSort: views.SortCtx{
+			Path: "/admin/cache/" + c.Name, Query: r.URL.Query(),
+			SortParam: "sort", DirParam: "dir", PageParam: "page[number]",
+			Key: skey, Dir: sdir,
+		},
 	}).Render(r.Context(), w)
 }
 
@@ -377,27 +620,16 @@ func (s *Server) handleConfigureCache(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	priority, _ := strconv.Atoi(r.FormValue("priority"))
-	if priority == 0 {
-		priority = c.Priority
-	}
+	priority := clampPriority(r.FormValue("priority"), c.Priority)
 	public := r.FormValue("private") == ""
-	// Empty or unparsable keeps the current value ("0" clears it); a blank
-	// field must not silently wipe an existing retention.
+	// Empty keeps the current value; an explicit 0 clears the setting.
 	retention := c.Retention
-	if rt := strings.TrimSpace(r.FormValue("retention")); rt != "" {
-		if d, err := time.ParseDuration(rt); err == nil {
-			retention = int64(d.Seconds())
-		}
+	if secs, ok := formSeconds(r, "retention"); ok {
+		retention = secs
 	}
 	maxBytes := c.MaxBytes
-	if mb := strings.TrimSpace(r.FormValue("max_bytes")); mb != "" {
-		n, err := config.ParseBytes(mb)
-		if err != nil {
-			http.Error(w, "bad max size: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		maxBytes = n
+	if b, ok := formBytes(r, "max"); ok {
+		maxBytes = b
 	}
 	if err := s.db.UpdateCache(c.ID, public, priority, retention, maxBytes); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -460,13 +692,8 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		perms = []string{"pull"}
 	}
 	var expires int64
-	if ttl := strings.TrimSpace(r.FormValue("ttl")); ttl != "" {
-		d, err := time.ParseDuration(ttl)
-		if err != nil {
-			http.Error(w, "bad ttl: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		expires = time.Now().Add(d).Unix()
+	if secs, ok := formSeconds(r, "ttl"); ok && secs > 0 {
+		expires = time.Now().Unix() + secs
 	}
 	secret, t, err := s.db.CreateToken(name, caches, perms, expires)
 	if err != nil {
@@ -477,6 +704,51 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		Msg:  fmt.Sprintf("Token %q created — copy it now, it will not be shown again:", t.Name),
 		Code: secret,
 	})
+}
+
+// handleEditToken rewrites a token's metadata. Expiry: the permanent switch
+// clears it, a TTL value re-sets it counting from now, and leaving the TTL
+// empty keeps the stored expiry.
+func (s *Server) handleEditToken(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	t, err := s.db.GetToken(id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.notFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		name = t.Name
+	}
+	var caches []string
+	if c := r.FormValue("cache"); c != "" && c != "*" {
+		caches = []string{c}
+	}
+	var perms []string
+	if r.FormValue("push") != "" {
+		perms = append(perms, "push")
+	}
+	if r.FormValue("pull") != "" {
+		perms = append(perms, "pull")
+	}
+	expires := t.Expires
+	if r.FormValue("permanent") != "" {
+		expires = 0
+	} else if secs, ok := formSeconds(r, "ttl"); ok && secs > 0 {
+		expires = time.Now().Unix() + secs
+	}
+	if err := s.db.UpdateToken(id, name, caches, perms, expires); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
 func (s *Server) handleRevokeToken(w http.ResponseWriter, r *http.Request) {

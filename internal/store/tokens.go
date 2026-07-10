@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -90,6 +91,32 @@ func scanToken(row interface{ Scan(...any) error }) (*Token, error) {
 
 // Expired reports whether the token has a set expiry in the past.
 func (t *Token) Expired(now int64) bool { return t.Expires != 0 && now >= t.Expires }
+
+// GetToken fetches one token's metadata by id.
+func (db *DB) GetToken(id int64) (*Token, error) {
+	row := db.r.QueryRow(`SELECT id,name,caches,perms,revoked,expires,created FROM tokens WHERE id=?`, id)
+	t, err := scanToken(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return t, err
+}
+
+// UpdateToken rewrites a token's metadata (name, scope, perms, expiry). The
+// secret itself is immutable — rotating credentials means a new token.
+func (db *DB) UpdateToken(id int64, name string, caches, perms []string, expires int64) error {
+	if len(caches) == 0 {
+		caches = []string{"*"}
+	}
+	if len(perms) == 0 {
+		perms = []string{"pull"}
+	}
+	return db.write(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE tokens SET name=?, caches=?, perms=?, expires=? WHERE id=?`,
+			name, strings.Join(caches, ","), strings.Join(perms, ","), expires, id)
+		return err
+	})
+}
 
 // RevokeToken flags a token revoked by id. Revocation is immediate — the next
 // request re-reads this row.

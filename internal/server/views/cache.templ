@@ -7,12 +7,17 @@ import (
 )
 
 type CacheData struct {
-	Cache   store.Cache
-	Stats   store.Stats
-	Dedup   string
-	BaseURL string
-	Host    string
-	Bytes   func(int64) string
+	Cache     store.Cache
+	Stats     store.Stats
+	Dedup     string
+	BaseURL   string
+	Host      string
+	Bytes     func(int64) string
+	Paths     []store.PathInfo
+	PathQuery string
+	PathTotal int64
+	PathPager Pager
+	PathSort  SortCtx
 }
 
 templ CacheView(d CacheData) {
@@ -30,8 +35,18 @@ templ CacheView(d CacheData) {
 				<div class="tile"><div class="ic-lg">@Icon("layers")</div><div><div class="n">{ d.Dedup }×</div><div class="l">{ T("kpi.dedup") }</div></div></div>
 			</div>
 			if d.Cache.MaxBytes > 0 {
-				<progress value={ strconv.FormatInt(d.Stats.PhysicalBytes, 10) } max={ strconv.FormatInt(d.Cache.MaxBytes, 10) }></progress>
+				<progress class={ fillClass(d.Stats.PhysicalBytes, d.Cache.MaxBytes) } value={ strconv.FormatInt(d.Stats.PhysicalBytes, 10) } max={ strconv.FormatInt(d.Cache.MaxBytes, 10) }></progress>
 			}
+		</article>
+		<h2>{ T("cd.paths") }</h2>
+		<article>
+			<form method="get" class="searchrow" role="search"
+				hx-get={ "/admin/cache/" + d.Cache.Name } hx-trigger="input changed delay:350ms from:find input, search from:find input"
+				hx-target="#path-results" hx-select="#path-results" hx-swap="outerHTML" hx-push-url="true">
+				<input type="search" name="q" value={ d.PathQuery } placeholder={ T("cd.search") } aria-label={ T("cd.search") } autocomplete="off"/>
+				<button type="submit">@Icon("search") <span>{ T("cd.dosearch") }</span></button>
+			</form>
+			@pathResults(d)
 		</article>
 		<h2>{ T("cd.use") }</h2>
 		<article x-data="{tab:'nixconf'}">
@@ -42,25 +57,20 @@ templ CacheView(d CacheData) {
 			</div>
 			<div x-show="tab==='nixconf'">
 				<div class="copyrow">
-					<pre>extra-substituters = { d.BaseURL }/{ d.Cache.Name }
-extra-trusted-public-keys = { d.Cache.PubKey }</pre>
-					@CopyButton("extra-substituters = " + d.BaseURL + "/" + d.Cache.Name + "\nextra-trusted-public-keys = " + d.Cache.PubKey)
+					<pre>{ snippetNixConf(d) }</pre>
+					@CopyButton(snippetNixConf(d))
 				</div>
 			</div>
 			<div x-show="tab==='flake'" x-cloak>
 				<div class="copyrow">
-					<pre>nixConfig = {'{'}
-  extra-substituters = [ "{ d.BaseURL }/{ d.Cache.Name }" ];
-  extra-trusted-public-keys = [ "{ d.Cache.PubKey }" ];
-{'}'};</pre>
-					@CopyButton("nixConfig = {\n  extra-substituters = [ \"" + d.BaseURL + "/" + d.Cache.Name + "\" ];\n  extra-trusted-public-keys = [ \"" + d.Cache.PubKey + "\" ];\n};")
+					<pre>{ snippetFlake(d) }</pre>
+					@CopyButton(snippetFlake(d))
 				</div>
 			</div>
 			<div x-show="tab==='cli'" x-cloak>
 				<div class="copyrow">
-					<pre>xilo login { d.BaseURL } --token &lt;token&gt;
-xilo use { d.Cache.Name }</pre>
-					@CopyButton("xilo login " + d.BaseURL + " --token <token>\nxilo use " + d.Cache.Name)
+					<pre>{ snippetCLI(d) }</pre>
+					@CopyButton(snippetCLI(d))
 				</div>
 			</div>
 			if !d.Cache.Public {
@@ -70,38 +80,156 @@ xilo use { d.Cache.Name }</pre>
 		<h2>{ T("cd.push") }</h2>
 		<article>
 			<div class="copyrow">
-				<pre>XILO_URL={ d.BaseURL } XILO_TOKEN=&lt;token&gt; xilo push { d.Cache.Name } ./result</pre>
-				@CopyButton("XILO_URL=" + d.BaseURL + " XILO_TOKEN=<token> xilo push " + d.Cache.Name + " ./result")
+				<pre>{ snippetPush(d) }</pre>
+				@CopyButton(snippetPush(d))
 			</div>
 		</article>
 		<h2>{ T("cd.settings") }</h2>
 		<article>
-			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/configure") } class="fields">
-				<label>{ T("caches.priority") } <input type="number" name="priority" value={ strconv.Itoa(d.Cache.Priority) }/></label>
-				<label>{ T("cd.retention") } <input name="retention" placeholder="720h" value={ retValue(d.Cache.Retention) }/></label>
-				<label>{ T("cd.maxsize") } <input name="max_bytes" placeholder="50GB" value={ capValue(d.Cache.MaxBytes, d.Bytes) }/></label>
-				<div class="fields-foot">
-					<label class="switch"><input type="checkbox" role="switch" name="private" checked?={ !d.Cache.Public }/> { T("caches.private") }</label>
-					<button type="submit">@Icon("save") <span>{ T("cd.save") }</span></button>
+			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/configure") } class="fields" id="cache-settings"
+				hx-post={ "/admin/cache/" + d.Cache.Name + "/configure" }
+				hx-trigger="input delay:600ms"
+				hx-target="#cache-settings" hx-select="#cache-settings" hx-swap="outerHTML">
+				<div class="prio-row">
+					@priorityInput(d.Cache.Priority)
+					@visToggle(!d.Cache.Public)
 				</div>
+				<label>
+					{ T("cd.retention") }
+					@durInput("retention", d.Cache.Retention)
+				</label>
+				<label>
+					{ T("cd.maxsize") }
+					@sizeInput("max", d.Cache.MaxBytes)
+				</label>
 			</form>
-			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/rotate") } class="inline"
-				onsubmit="return confirm('Rotate the signing key? The current trusted-public-key stops verifying.')">
-				<button class="secondary outline" type="submit">@Icon("key-round") <span>{ T("cd.rotate") }</span></button>
-				<small>{ T("cd.rotatehint") }</small>
-			</form>
+			<div class="row-split rule-above">
+				<p>{ T("cd.rotatehint") }</p>
+				<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/rotate") }
+					onsubmit="return confirm('Rotate the signing key? The current trusted-public-key stops verifying.')">
+					<button class="secondary outline" type="submit">@Icon("key-round") <span>{ T("cd.rotate") }</span></button>
+				</form>
+			</div>
 		</article>
 		<h2>{ T("cd.maint") }</h2>
 		<article>
-			<form method="post" action="/admin/gc" class="inline" onsubmit="return confirm('Run garbage collection now?')">
-				<button class="secondary outline" type="submit">@Icon("refresh-cw") <span>{ T("cd.gc") }</span></button>
-				<small>{ T("cd.gchint") }</small>
-			</form>
-			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/delete") } class="inline"
-				onsubmit="return confirm('Delete this cache and all its paths? This cannot be undone.')">
-				<button class="danger" type="submit">@Icon("trash-2") <span>{ T("cd.delete") }</span></button>
-				<small>{ T("cd.deletehint") }</small>
-			</form>
+			<div class="row-split">
+				<p>{ T("cd.gchint") }</p>
+				<form method="post" action="/admin/gc" onsubmit="return confirm('Run garbage collection now?')">
+					<button class="secondary outline" type="submit">@Icon("refresh-cw") <span>{ T("cd.gc") }</span></button>
+				</form>
+			</div>
+			<div class="row-split">
+				<p>{ T("cd.deletehint") }</p>
+				<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/delete") }
+					onsubmit="return confirm('Delete this cache and all its paths? This cannot be undone.')">
+					<button class="danger" type="submit">@Icon("trash-2") <span>{ T("cd.delete") }</span></button>
+				</form>
+			</div>
 		</article>
 	}
+}
+
+// durInput is a number + unit pair posting <name>_value and <name>_unit.
+templ durInput(name string, secs int64) {
+	{{ v, u := durParts(secs) }}
+	<div role="group">
+		<input type="number" name={ name + "_value" } min="0" step="1" value={ v } placeholder="30"/>
+		<select name={ name + "_unit" } aria-label="unit">
+			<option value="h" selected?={ u == "h" }>{ T("unit.hours") }</option>
+			<option value="d" selected?={ u == "d" }>{ T("unit.days") }</option>
+			<option value="mo" selected?={ u == "mo" }>{ T("unit.months") }</option>
+			<option value="y" selected?={ u == "y" }>{ T("unit.years") }</option>
+		</select>
+	</div>
+}
+
+// sizeInput is a number + binary-unit pair posting <name>_value and <name>_unit.
+templ sizeInput(name string, bytes int64) {
+	{{ v, u := sizeParts(bytes) }}
+	<div role="group">
+		<input type="number" name={ name + "_value" } min="0" step="1" value={ v } placeholder="50"/>
+		<select name={ name + "_unit" } aria-label="unit">
+			<option value="MiB" selected?={ u == "MiB" }>MiB</option>
+			<option value="GiB" selected?={ u == "GiB" }>GiB</option>
+			<option value="TiB" selected?={ u == "TiB" }>TiB</option>
+		</select>
+	</div>
+}
+
+// pathResults is the swap target for live search: everything below the
+// search box re-renders per keystroke.
+templ pathResults(d CacheData) {
+	<div id="path-results" hx-target="#path-results" hx-select="#path-results" hx-swap="outerHTML show:none">
+		if len(d.Paths) == 0 {
+			<div class="empty">
+				@Icon("package-search")
+				if d.PathQuery != "" {
+					<p>{ T("cd.nomatch") }</p>
+				} else {
+					<p>{ T("cd.pathsempty") }</p>
+				}
+			</div>
+		} else {
+			<table class="striped">
+				<thead>
+					<tr>
+						@SortTH(d.PathSort, "path", T("paths.path"))
+						@SortTH(d.PathSort, "size", T("paths.size"))
+						@SortTH(d.PathSort, "pulled", T("paths.pulled"))
+					</tr>
+				</thead>
+				<tbody>
+					for _, p := range d.Paths {
+						<tr>
+							<td class="pathcell"><code>{ p.StorePath }</code></td>
+							<td class="num">{ d.Bytes(p.NarSize) }</td>
+							<td class="num"><small>{ Ago(p.Accessed) }</small></td>
+						</tr>
+					}
+				</tbody>
+			</table>
+			@PagerNav(d.PathPager)
+		}
+	</div>
+}
+
+// priorityInput is a bounded slider with a live value readout; "lower wins"
+// lives in a tooltip instead of a hint line.
+templ priorityInput(value int) {
+	<label x-data={ "{p: " + strconv.Itoa(value) + "}" }>
+		<span class="range-head">
+			{ T("caches.priority") }
+			<output class="range-val" x-text="p">{ strconv.Itoa(value) }</output>
+		</span>
+		<span class="range-row">
+			<span class="range-end">
+				@IconClass("signal-low", 14, "")
+				100
+			</span>
+			<input type="range" name="priority" min="1" max="100" step="1" value={ strconv.Itoa(value) } x-model="p"/>
+			<span class="range-end">
+				1
+				@IconClass("signal-high", 14, "")
+			</span>
+		</span>
+	</label>
+}
+
+// visToggle is a hidden checkbox driven by an icon button that flips between
+// globe-lock (private) and globe-check (public).
+templ visToggle(private bool) {
+	<span class="vis-toggle" x-data={ "{priv: " + strconv.FormatBool(private) + "}" }>
+		<input type="hidden" name="private" :value="priv ? 'on' : ''" value={ visValue(private) }/>
+		<button type="button" class="iconbtn vis-btn" :class="priv ? 'priv' : 'pub'" data-placement="left"
+			:data-tooltip={ "priv ? '" + T("vis.private") + "' : '" + T("vis.public") + "'" }
+			@click="priv = !priv; $nextTick(() => $el.dispatchEvent(new Event('input', {bubbles: true})))">
+			<span x-show="priv">
+				@IconClass("globe-lock", 16, "")
+			</span>
+			<span x-show="!priv" x-cloak>
+				@IconClass("globe-check", 16, "")
+			</span>
+		</button>
+	</span>
 }
