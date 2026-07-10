@@ -38,7 +38,7 @@ func capSuffix(cap int64, bytes func(int64) string) string {
 // capLabel is like capSuffix for the per-cache stat tile.
 func capLabel(cap int64, bytes func(int64) string) string {
 	if cap <= 0 {
-		return " (no cap)"
+		return " (" + T("cache.nocap") + ")"
 	}
 	return " / " + bytes(cap)
 }

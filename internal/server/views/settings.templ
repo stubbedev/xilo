@@ -22,7 +22,7 @@ templ Settings(totpEnabled bool, passkeys []store.Passkey, flash Flash) {
 						<small>· { Ago(pk.Created) }</small>
 					</p>
 					<form method="post" action={ templ.SafeURL("/admin/passkeys/" + strconv.FormatInt(pk.ID, 10) + "/delete") } data-confirm={ T("confirm.passkey") }>
-						<button class="iconbtn danger" data-tooltip={ T("set.passkeys.remove") }>@IconClass("trash-2", 16, "")</button>
+						<button class="iconbtn danger" aria-label={ T("set.passkeys.remove") } data-tooltip={ T("set.passkeys.remove") }>@IconClass("trash-2", 16, "")</button>
 					</form>
 				</div>
 			}

@@ -159,17 +159,11 @@ templ StatusPage(d StatusData) {
 		</div>
 		<article>
 			<div class="kpi">
-				<div class="tile">
-					<div class="ic-lg">@Icon("activity")</div>
-					<div>
-						if d.Healthy {
-							<div class="n ok-text" id="kpi-health">{ T("status.ok") }</div>
-						} else {
-							<div class="n bad-text" id="kpi-health">{ T("status.err") }</div>
-						}
-						<div class="l">{ T("status.health") }</div>
-					</div>
-				</div>
+				if d.Healthy {
+					@KPITile("activity", T("status.ok"), T("status.health"), "kpi-health", "ok-text")
+				} else {
+					@KPITile("activity", T("status.err"), T("status.health"), "kpi-health", "bad-text")
+				}
 				@KPITile("clock", d.Uptime, T("status.uptime"), "kpi-uptime")
 				@KPITile("target", d.HitPct, T("status.hits"), "kpi-hits")
 				@KPITile("hard-drive", d.Bytes(d.Global.StoredBytes), T("status.stored"), "kpi-stored")

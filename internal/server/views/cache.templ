@@ -38,14 +38,10 @@ templ CacheView(d CacheData) {
 				<progress class={ fillClass(d.Stats.PhysicalBytes, d.Cache.MaxBytes) } value={ strconv.FormatInt(d.Stats.PhysicalBytes, 10) } max={ strconv.FormatInt(d.Cache.MaxBytes, 10) }></progress>
 			}
 		</article>
-		<h2>{ T("cd.paths") }</h2>
+		@SectionHead(T("cd.paths")) {
+			@SearchBox("/admin/cache/"+d.Cache.Name, "q", d.PathQuery, T("cd.search"), "#path-results")
+		}
 		<article>
-			<form method="get" class="searchrow" role="search"
-				hx-get={ "/admin/cache/" + d.Cache.Name } hx-trigger="input changed delay:350ms from:find input, search from:find input"
-				hx-target="#path-results" hx-select="#path-results" hx-swap="outerHTML" hx-push-url="true">
-				<input type="search" name="q" value={ d.PathQuery } placeholder={ T("cd.search") } aria-label={ T("cd.search") } autocomplete="off"/>
-				<button type="submit">@Icon("search") <span>{ T("cd.dosearch") }</span></button>
-			</form>
 			@pathResults(d)
 		</article>
 		<h2>{ T("cd.use") }</h2>
@@ -197,7 +193,7 @@ templ priorityInput(value int) {
 templ visToggle(private bool) {
 	<span class="vis-toggle" x-data={ "{priv: " + strconv.FormatBool(private) + "}" }>
 		<input type="hidden" name="private" :value="priv ? 'on' : ''" value={ visValue(private) }/>
-		<button type="button" class="iconbtn vis-btn" :class="priv ? 'priv' : 'pub'" data-placement="left"
+		<button type="button" class="iconbtn vis-btn" :class="priv ? 'priv' : 'pub'" data-placement="left" aria-label={ T("caches.visibility") }
 			:data-tooltip={ "priv ? '" + T("vis.private") + "' : '" + T("vis.public") + "'" }
 			@click="priv = !priv; $nextTick(() => $el.dispatchEvent(new Event('input', {bubbles: true})))">
 			<span x-show="priv">

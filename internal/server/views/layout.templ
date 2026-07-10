@@ -14,7 +14,7 @@ templ Layout(title string, loggedIn bool, flash Flash) {
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>Xilo — { title }</title>
 			<link rel="icon" type="image/svg+xml" href={ Asset("favicon.svg") }/>
-				<link rel="stylesheet" href={ Asset("pico.min.css") }/>
+			<link rel="stylesheet" href={ Asset("pico.min.css") }/>
 			<link rel="stylesheet" href={ Asset("xilo.css") }/>
 			<script src={ Asset("htmx.min.js") }></script>
 			<script defer src={ Asset("alpine.min.js") }></script>
@@ -183,24 +183,32 @@ templ SectionHead(title string) {
 	</div>
 }
 
-// HeadSearch is a section's live-search input plus a New button opening the
-// given modal. Targets swap themselves via hx-select.
-templ HeadSearch(qName, qVal, placeholder, target, dlg string) {
+// SearchBox is the shared live-search form: typing swaps the target region in
+// place; children (e.g. a New button) sit to the input's right.
+templ SearchBox(action, qName, qVal, placeholder, target string) {
 	<form class="headsearch" role="search"
-		hx-get="/admin" hx-trigger="input changed delay:350ms from:find input, search from:find input"
+		hx-get={ action } hx-trigger="input changed delay:350ms from:find input, search from:find input"
 		hx-target={ target } hx-select={ target } hx-swap="outerHTML" hx-push-url="true">
 		<input type="search" name={ qName } value={ qVal } placeholder={ placeholder } aria-label={ placeholder } autocomplete="off"/>
-		<button type="button" data-dlg={ dlg } onclick="document.getElementById(this.dataset.dlg).showModal()">@Icon("plus") <span>{ T("action.new") }</span></button>
+		{ children... }
 	</form>
 }
 
-// KPITile is one stat tile; a non-empty id marks the value for live updates.
-templ KPITile(icon, value, label, id string) {
+// HeadSearch is a section's SearchBox plus a New button opening the given modal.
+templ HeadSearch(qName, qVal, placeholder, target, dlg string) {
+	@SearchBox("/admin", qName, qVal, placeholder, target) {
+		<button type="button" data-dlg={ dlg } onclick="document.getElementById(this.dataset.dlg).showModal()">@Icon("plus") <span>{ T("action.new") }</span></button>
+	}
+}
+
+// KPITile is one stat tile; a non-empty id marks the value for live updates;
+// extra classes (e.g. "ok-text") color the value.
+templ KPITile(icon, value, label, id string, nclass ...string) {
 	<div class="tile">
 		<div class="ic-lg">@Icon(icon)</div>
 		<div>
 			<div
-				class="n"
+				class={ cls("n", nclass...) }
 				if id != "" {
 					id={ id }
 				}
@@ -276,7 +284,7 @@ templ Icon(name string) {
 templ CopyButton(value string) {
 	<button type="button" class="outline copybtn"
 		x-data="{copied:false}" data-copy={ value }
-		data-tooltip={ T("copy") }
+		aria-label={ T("copy") } data-tooltip={ T("copy") }
 		:data-tooltip={ "copied ? '" + T("copy.copied") + "' : '" + T("copy") + "'" }
 		@click="navigator.clipboard.writeText($el.dataset.copy); copied=true; setTimeout(()=>copied=false,1200)">
 		@Icon("copy")

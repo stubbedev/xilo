@@ -2,11 +2,17 @@ package views
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/a-h/templ"
 	"github.com/stubbedev/xilo/internal/store"
 )
+
+// cls joins a base class with optional extras into one class attribute value.
+func cls(base string, extra ...string) string {
+	return strings.Join(append([]string{base}, extra...), " ")
+}
 
 // TokenStatus is the display state of a token.
 func TokenStatus(t store.Token) string {
@@ -23,7 +29,7 @@ func TokenStatus(t store.Token) string {
 // TokenExpiry renders a token's expiry as a date, or "never".
 func TokenExpiry(t store.Token) string {
 	if t.Expires == 0 {
-		return "never"
+		return T("tok.never")
 	}
 	return time.Unix(t.Expires, 0).Format("2006-01-02")
 }

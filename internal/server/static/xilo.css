@@ -29,6 +29,7 @@
   --x-4: 1rem;
   --x-5: 1.5rem;
   --x-6: 2rem;
+  --x-gap: 0.4rem;                /* icon ↔ label gap inside any control */
 
   /* type scale (rem, ratio ~1.2) */
   --x-fs-label: 0.75rem;          /* section labels, table headers */
@@ -91,7 +92,7 @@ main.container {
    but render as ONE control family: identical 34px ghost chips. */
 .topbar nav a, .topbar nav button.ghost {
   height: 34px; padding: 0 0.65rem; margin: 0; flex: none;
-  display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--x-gap);
   border-radius: var(--x-radius); font-size: var(--x-fs-sm); line-height: 1;
   background: none; border: none; box-shadow: none;
   color: var(--pico-muted-color); text-decoration: none; font-weight: 400;
@@ -102,9 +103,11 @@ main.container {
 .topbar nav button.ghost:not(.theme-toggle):hover { color: var(--x-danger); background: color-mix(in srgb, var(--x-danger) 10%, transparent); }
 .topbar nav a[aria-current=page] { color: var(--pico-primary); font-weight: 600; }
 /* Mouse clicks leave :focus behind — Pico's ring lingers as a colored blob.
-   Keep the ring for keyboard (:focus-visible) only. */
-.topbar nav button.ghost:focus { box-shadow: none; }
-.topbar nav button.ghost:focus-visible { outline: 2px solid var(--pico-primary); outline-offset: 2px; }
+   Keep the ring for keyboard (:focus-visible) only, on every chrome-less button. */
+.topbar nav button.ghost:focus, .iconbtn:focus, dialog.modal header [rel=prev]:focus { box-shadow: none; }
+.topbar nav button.ghost:focus-visible, .iconbtn:focus-visible, dialog.modal header [rel=prev]:focus-visible {
+  outline: 2px solid var(--pico-primary); outline-offset: 2px;
+}
 /* Show the glyph for the theme you'd switch TO: moon in light, sun in dark. */
 .theme-toggle .ic { width: 18px; height: 18px; display: none; }
 [data-theme=light] .theme-toggle .icon-moon { display: inline-block; }
@@ -180,8 +183,6 @@ button.iconbtn, .iconbtn {
 }
 .iconbtn:hover { color: var(--pico-primary); border-color: color-mix(in srgb, var(--pico-primary) 45%, transparent); background: color-mix(in srgb, var(--pico-primary) 10%, transparent); }
 .iconbtn.danger:hover { color: var(--x-danger); border-color: color-mix(in srgb, var(--x-danger) 45%, transparent); background: color-mix(in srgb, var(--x-danger) 10%, transparent); }
-.iconbtn:focus { box-shadow: none; }
-.iconbtn:focus-visible { outline: 2px solid var(--pico-primary); outline-offset: 2px; }
 td[colspan] { color: var(--pico-muted-color); }
 
 /* ---------- buttons & forms ---------- */
@@ -191,6 +192,7 @@ td[colspan] { color: var(--pico-muted-color); }
 button, [type=submit], [type=button], [type=reset], [role=button] {
   width: auto !important;
   display: inline-flex; align-items: center; justify-content: center;
+  gap: var(--x-gap);
 }
 /* Buttons share the form-control height (same vertical padding as inputs). */
 button, [type=submit], [role=button] { padding: var(--pico-form-element-spacing-vertical) 1rem; }
@@ -219,10 +221,16 @@ button.danger:not(.iconbtn):hover {
   --pico-color: #fff;
 }
 
+/* One field anatomy everywhere a label captions a control: muted caption
+   above, control below (settings forms, modal forms, the date popover). */
+form.fields label, dialog.modal label, .seg-pop label {
+  display: flex; flex-direction: column; gap: 0.35rem;
+  font-size: var(--x-fs-sm); color: var(--pico-muted-color); margin: 0;
+}
 /* Labeled field row (cache settings, change password): label above input,
    fields share the row equally, actions row below. */
 form.fields { display: flex; flex-wrap: wrap; gap: var(--x-4); margin: 0; }
-form.fields label { flex: 1 1 12rem; display: flex; flex-direction: column; gap: 0.35rem; font-size: var(--x-fs-sm); color: var(--pico-muted-color); margin: 0; }
+form.fields label { flex: 1 1 12rem; }
 form.fields input:not([type=checkbox]) { width: 100%; margin: 0; }
 form.fields .fields-foot { flex-basis: 100%; display: flex; align-items: center; justify-content: space-between; gap: var(--x-4); }
 form.fields .fields-foot > :only-child { margin-left: auto; }
@@ -238,30 +246,16 @@ form.pw-fields label:first-child, form.pw-fields .fields-foot { grid-column: 1 /
 .pw-hint { font-size: var(--x-fs-sm); color: var(--pico-muted-color); }
 .pw-hint.ok { color: var(--x-ok); }
 .pw-hint.warn { color: var(--pico-primary); }
-/* A switch presented like any other labeled field: caption above, control below. */
-form.fields label.switch-col input { align-self: flex-start; margin-top: 0.45rem; }
 /* Unit pairs (number + select) share their field's row; the select hugs its text. */
-form.fields [role=group] { margin: 0; }
-form.fields [role=group] select { flex: 0 0 auto; width: auto; margin: 0; margin-left: -1px; }
-form.fields [role=group] input { margin: 0; }
-dialog.modal [role=group] { margin: 0; }
-dialog.modal [role=group] select { flex: 0 0 auto; width: auto; margin: 0; margin-left: -1px; }
+form.fields [role=group], dialog.modal [role=group] { margin: 0; }
+form.fields [role=group] input, dialog.modal [role=group] input { margin: 0; }
+form.fields [role=group] select, dialog.modal [role=group] select { flex: 0 0 auto; width: auto; margin: 0 0 0 -1px; }
 dialog.modal label small { color: var(--pico-muted-color); font-size: var(--x-fs-label); }
 dialog.modal fieldset.ttl-wrap { margin: 0; padding: 0; border: 0; }
 dialog.modal fieldset.ttl-wrap label { margin: 0; }
 
-/* Compact single-row forms that wrap gracefully. */
-form.inline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--x-3) var(--x-4); margin: 0; }
-form.inline > * { margin: 0; }
-form.inline label { display: inline-flex; align-items: center; gap: var(--x-2); color: var(--pico-muted-color); }
-form.inline input:not([type=checkbox]):not([type=radio]):not([type=number]),
-form.inline select { flex: 1 1 12rem; width: auto; min-width: 9rem; }
-form.inline input[type=number] { width: 4.5rem; flex: none; }
-form.inline input[name=ttl], form.inline input[name=retention], form.inline input[name=max_bytes] { flex: 0 1 7rem; min-width: 5rem; }
-form.inline button { flex: none; }
-
-/* Stacked forms (login, enroll, 2FA) — classless only; .inline/.fields/
-   .searchrow lay themselves out. */
+/* Stacked forms (login, enroll, 2FA) — classless only; .fields and
+   .headsearch lay themselves out. */
 article > form:not([class]) { display: flex; flex-direction: column; align-items: flex-start; gap: var(--x-3); }
 article > form:not([class]) input:not([type=checkbox]):not([type=radio]), article > form:not([class]) select { width: 100%; margin: 0; }
 .narrow { max-width: 26rem; margin-inline: auto; text-align: center; }
@@ -292,18 +286,15 @@ article > form:not([class]) input:not([type=checkbox]):not([type=radio]), articl
 /* ---------- icons ---------- */
 .ic { width: 1em; height: 1em; vertical-align: -0.14em; flex: none; }
 button .ic, a .ic, summary .ic { width: 1.05em; height: 1.05em; }
-button, [type=submit], [role=button] { gap: 0.4rem; }
-.topbar nav a { display: inline-flex; align-items: center; gap: 0.4rem; }
-.foot-inner a { display: inline-flex; align-items: center; gap: 0.35rem; }
 .sm, .tabs button, .copybtn {
   height: 32px; padding: 0 0.8rem !important; font-size: var(--x-fs-sm); line-height: 1;
   display: inline-flex; align-items: center;
 }
 
 /* ---------- section headers with an action ---------- */
-.section-head { display: flex; align-items: center; justify-content: space-between; gap: var(--x-3); margin: var(--x-6) 0 var(--x-3); }
+.section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--x-3); margin: var(--x-6) 0 var(--x-3); }
 .section-head h2 { margin: 0; flex: 1; }
-.section-head .headsearch { margin: 0; width: 21rem; }
+.section-head .headsearch { margin: 0; width: 21rem; max-width: 100%; }
 .section-head .headsearch input,
 .section-head .headsearch button {
   height: 36px; padding-top: 0; padding-bottom: 0; font-size: var(--x-fs-sm); margin: 0;
@@ -349,8 +340,6 @@ dialog.modal header [rel=prev] {
   margin: 0; float: none; order: 2; flex: none;
   background-size: auto 1rem; background-position: center;
 }
-dialog.modal header [rel=prev]:focus { box-shadow: none; }
-dialog.modal header [rel=prev]:focus-visible { outline: 2px solid var(--pico-primary); outline-offset: 2px; }
 /* Footer lives inside the <form>, so Pico's article>footer styling misses it. */
 dialog.modal form footer, dialog.modal .modal-foot { display: flex; justify-content: flex-end; gap: 0.6rem; margin: var(--x-2) 0 0; padding: 0; border: 0; background: none; }
 /* Pico's trailing button margins skew flex stretch (the last child is zeroed
@@ -362,7 +351,6 @@ dialog.modal .modal-foot { margin-top: var(--x-4); }
 /* Stretch beats the stacked-form flex-start that would shrink labels (and the
    footer) to content width. */
 dialog.modal form { display: flex; flex-direction: column; align-items: stretch; gap: var(--x-4); }
-dialog.modal label { display: flex; flex-direction: column; gap: 0.35rem; font-size: var(--x-fs-sm); color: var(--pico-muted-color); margin: 0; }
 dialog.modal label input:not([type=checkbox]):not([type=radio]), dialog.modal label select { width: 100%; margin: 0; }
 dialog.modal .switch-row input { flex: none; }
 dialog.modal .switch-row { display: flex; flex-direction: row; align-items: center; gap: 1.5rem; }
@@ -390,10 +378,7 @@ progress.over { --pico-progress-color: var(--x-danger); }
 .fig .pct.warn { color: var(--pico-primary); }
 .fig .pct.over { color: var(--x-danger); }
 
-/* ---------- path search (cache detail) ---------- */
-.searchrow { margin: 0 0 var(--x-3); }
-.searchrow fieldset { margin: 0; }
-.searchrow button { flex: 0 0 auto !important; }
+/* ---------- paths table (cache detail) ---------- */
 td.pathcell code { background: none; padding: 0; font-size: var(--x-fs-sm); overflow-wrap: anywhere; }
 td.num, th.num { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
 
@@ -405,13 +390,14 @@ td.num, th.num { white-space: nowrap; text-align: right; font-variant-numeric: t
 }
 .status-head hgroup { flex: 1 1 16rem; margin-bottom: 0; }
 .status-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--x-3); }
-/* Segmented pill groups (window presets, refresh rate). */
+/* Segmented pill groups (window presets, refresh rate). Wrap on phones
+   rather than overflowing the column. */
 .seg {
-  display: inline-flex; align-items: stretch;
+  display: inline-flex; align-items: stretch; flex-wrap: wrap;
   border: 1px solid var(--pico-muted-border-color); border-radius: var(--x-radius);
 }
 .seg-btn {
-  display: inline-flex; align-items: center; gap: 0.35rem;
+  display: inline-flex; align-items: center; gap: var(--x-gap);
   padding: 0.45rem 0.65rem !important; margin: 0; height: auto;
   font-size: var(--x-fs-sm); font-weight: 400; line-height: 1;
   color: var(--pico-muted-color); text-decoration: none; cursor: pointer;
@@ -438,10 +424,6 @@ a.seg-btn:hover, summary.seg-btn:hover { color: var(--pico-primary); background:
   background: var(--pico-card-background-color);
   border: 1px solid var(--pico-muted-border-color); border-radius: var(--x-radius);
   box-shadow: 0 10px 30px rgb(0 0 0 / 30%);
-}
-.seg-pop label {
-  display: flex; flex-direction: column; gap: 0.35rem; margin: 0;
-  font-size: var(--x-fs-sm); color: var(--pico-muted-color);
 }
 .seg-pop input[type=date] { width: 100%; margin: 0; }
 .seg-pop button { align-self: flex-end; }
@@ -481,7 +463,10 @@ nav.foot-inner {
   color: var(--pico-muted-color); font-size: var(--x-fs-sm);
 }
 nav.foot-inner li { padding-top: 0; padding-bottom: 0; }
-.foot-inner a { color: var(--pico-muted-color); text-decoration: none; }
+.foot-inner a {
+  display: inline-flex; align-items: center; gap: var(--x-gap);
+  color: var(--pico-muted-color); text-decoration: none;
+}
 .foot-inner a:hover { color: var(--pico-primary); }
 
 td.permcell { white-space: nowrap; }
@@ -536,7 +521,7 @@ th.num .sorth { flex-direction: row-reverse; }
 .pager .pager-slot { min-width: 5.5rem; }
 /* Pico's nav-link rules (the pager is a <nav>) force display:block — restore
    the centered flex box the .sm sizing expects. */
-.pager a[role=button] { display: inline-flex !important; align-items: center; gap: 0.35rem; text-decoration: none; }
+.pager a[role=button] { display: inline-flex !important; align-items: center; gap: var(--x-gap); text-decoration: none; }
 
 /* ---------- auth card (login) ---------- */
 .auth {

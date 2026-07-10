@@ -86,7 +86,7 @@ templ Dashboard(d DashboardData) {
 							<td>@tokenBadge(t)</td>
 							<td class="actions">
 								if !t.Revoked {
-									<button class="iconbtn" type="button" data-tooltip={ T("tokens.edit") }
+									<button class="iconbtn" type="button" aria-label={ T("tokens.edit") } data-tooltip={ T("tokens.edit") }
 										data-dlg={ "dlg-token-edit-" + strconv.FormatInt(t.ID, 10) }
 										onclick="document.getElementById(this.dataset.dlg).showModal()">
 										@IconClass("square-pen", 16, "")
@@ -95,7 +95,7 @@ templ Dashboard(d DashboardData) {
 								}
 								if TokenActive(t) {
 									<form method="post" action={ templ.SafeURL("/admin/tokens/" + strconv.FormatInt(t.ID, 10) + "/revoke") } data-confirm={ T("confirm.revoke") }>
-										<button class="iconbtn danger" data-tooltip={ T("tokens.revoke") }>@IconClass("ban", 16, "")</button>
+										<button class="iconbtn danger" aria-label={ T("tokens.revoke") } data-tooltip={ T("tokens.revoke") }>@IconClass("ban", 16, "")</button>
 									</form>
 								}
 							</td>
