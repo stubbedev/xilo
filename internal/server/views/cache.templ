@@ -22,7 +22,7 @@ type CacheData struct {
 
 templ CacheView(d CacheData) {
 	@Layout(d.Cache.Name, true, Flash{}) {
-		<hgroup>
+		<hgroup id="cache-head">
 			<h1>{ d.Cache.Name } @visBadge(d.Cache.Public)</h1>
 			<p>{ d.BaseURL }/{ d.Cache.Name }</p>
 		</hgroup>
@@ -89,7 +89,7 @@ templ CacheView(d CacheData) {
 			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/configure") } class="fields" id="cache-settings"
 				hx-post={ "/admin/cache/" + d.Cache.Name + "/configure" }
 				hx-trigger="input delay:600ms"
-				hx-target="#cache-settings" hx-select="#cache-settings" hx-swap="outerHTML">
+				hx-target="#cache-settings" hx-select="#cache-settings" hx-select-oob="#cache-head" hx-swap="outerHTML">
 				<div class="prio-row">
 					@priorityInput(d.Cache.Priority)
 					@visToggle(!d.Cache.Public)
@@ -105,8 +105,7 @@ templ CacheView(d CacheData) {
 			</form>
 			<div class="row-split rule-above">
 				<p>{ T("cd.rotatehint") }</p>
-				<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/rotate") }
-					onsubmit="return confirm('Rotate the signing key? The current trusted-public-key stops verifying.')">
+				<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/rotate") } data-confirm={ T("confirm.rotate") }>
 					<button class="secondary outline" type="submit">@Icon("key-round") <span>{ T("cd.rotate") }</span></button>
 				</form>
 			</div>
@@ -115,14 +114,13 @@ templ CacheView(d CacheData) {
 		<article>
 			<div class="row-split">
 				<p>{ T("cd.gchint") }</p>
-				<form method="post" action="/admin/gc" onsubmit="return confirm('Run garbage collection now?')">
+				<form method="post" action="/admin/gc" data-confirm={ T("confirm.gc") }>
 					<button class="secondary outline" type="submit">@Icon("refresh-cw") <span>{ T("cd.gc") }</span></button>
 				</form>
 			</div>
 			<div class="row-split">
 				<p>{ T("cd.deletehint") }</p>
-				<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/delete") }
-					onsubmit="return confirm('Delete this cache and all its paths? This cannot be undone.')">
+				<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/delete") } data-confirm={ T("confirm.delete") }>
 					<button class="danger" type="submit">@Icon("trash-2") <span>{ T("cd.delete") }</span></button>
 				</form>
 			</div>

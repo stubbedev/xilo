@@ -148,9 +148,18 @@ var en = map[string]string{
 	"pager.prev": "Prev",
 	"pager.next": "Next",
 
+	// confirmations
+	"confirm.title":  "Are you sure?",
+	"confirm.revoke": "Revoke this token? Clients using it lose access immediately.",
+	"confirm.rotate": "Rotate the signing key? The current trusted-public-key stops verifying.",
+	"confirm.gc":     "Run garbage collection now?",
+	"confirm.delete": "Delete this cache and all its paths? This cannot be undone.",
+	"confirm.2fa":    "Disable two-factor authentication?",
+
 	// generic actions
-	"action.new":    "New",
-	"action.cancel": "Cancel",
+	"action.new":     "New",
+	"action.cancel":  "Cancel",
+	"action.confirm": "Confirm",
 
 	// not found
 	"nf.title": "Page not found",

@@ -21,8 +21,7 @@ templ Settings(totpEnabled bool, flash Flash) {
 			if totpEnabled {
 				<div class="row-split">
 					<p>@Icon("shield-check") <span class="badge pub">{ T("set.2fa.on") }</span> { T("set.2fa.enabled") }</p>
-					<form method="post" action="/admin/settings/totp/disable"
-						onsubmit="return confirm('Disable two-factor authentication?')">
+					<form method="post" action="/admin/settings/totp/disable" data-confirm={ T("confirm.2fa") }>
 						<button class="danger" type="submit">@Icon("shield-off") <span>{ T("set.2fa.disable") }</span></button>
 					</form>
 				</div>

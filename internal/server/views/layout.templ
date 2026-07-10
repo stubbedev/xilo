@@ -25,6 +25,25 @@ templ Layout(title string, loggedIn bool, flash Flash) {
 				// htmx drives navigation (hx-boost on <body>): swaps ride the View
 				// Transitions API for the same cross-fade as real navigation.
 				addEventListener('DOMContentLoaded',function(){htmx.config.globalViewTransitions=true});
+				// Forms with data-confirm get a real <dialog> instead of window.confirm.
+				// Capture phase runs before hx-boost; a confirmed re-submit passes through.
+				var xiloConfirmForm=null;
+				document.addEventListener('submit',function(e){
+					var f=e.target;
+					if(!f.dataset||!f.dataset.confirm||f.dataset.confirmed){return}
+					e.preventDefault();e.stopImmediatePropagation();
+					xiloConfirmForm=f;
+					document.getElementById('confirm-msg').textContent=f.dataset.confirm;
+					document.getElementById('dlg-confirm').showModal();
+				},true);
+				function xiloConfirmOK(){
+					document.getElementById('dlg-confirm').close();
+					var f=xiloConfirmForm;xiloConfirmForm=null;
+					if(!f){return}
+					f.dataset.confirmed='1';
+					f.requestSubmit();
+					setTimeout(function(){delete f.dataset.confirmed},200);
+				}
 				// Click on a modal's backdrop closes it (the backdrop IS the <dialog>
 				// element; content clicks target its children). The pointerdown guard
 				// keeps a text-selection drag that ends on the backdrop from closing.
@@ -76,6 +95,21 @@ templ Layout(title string, loggedIn bool, flash Flash) {
 				}
 				{ children... }
 			</main>
+			<dialog id="dlg-confirm" class="modal">
+				<article>
+					<header>
+						<button type="button" aria-label="Close" rel="prev" onclick="this.closest('dialog').close()"></button>
+						<p><strong>{ T("confirm.title") }</strong></p>
+					</header>
+					<div class="modal-body">
+						<p id="confirm-msg"></p>
+						<div class="modal-foot">
+							<button type="button" class="secondary" onclick="this.closest('dialog').close()">{ T("action.cancel") }</button>
+							<button type="button" class="danger" onclick="xiloConfirmOK()">{ T("action.confirm") }</button>
+						</div>
+					</div>
+				</article>
+			</dialog>
 			<footer class="site-footer">
 				<nav class="foot-inner" aria-label="Meta">
 					<ul>

@@ -106,7 +106,7 @@ templ Dashboard(d DashboardData) {
 									@tokenEditModal(t, d.Caches)
 								}
 								if TokenActive(t) {
-									<form method="post" action={ templ.SafeURL("/admin/tokens/" + strconv.FormatInt(t.ID, 10) + "/revoke") } onsubmit="return confirm('Revoke this token?')">
+									<form method="post" action={ templ.SafeURL("/admin/tokens/" + strconv.FormatInt(t.ID, 10) + "/revoke") } data-confirm={ T("confirm.revoke") }>
 										<button class="iconbtn danger" data-tooltip={ T("tokens.revoke") }>@IconClass("ban", 16, "")</button>
 									</form>
 								}

@@ -105,6 +105,7 @@ main.container {
 
 /* ---------- headings / sections ---------- */
 h1 { font-size: var(--x-fs-lead); margin-bottom: var(--x-1); }
+h1 .badge { margin-left: var(--x-2); vertical-align: 0.1em; }
 h2 {
   font-size: var(--x-fs-label); font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.06em;
@@ -280,17 +281,26 @@ dialog.modal { text-align: left; white-space: normal; }
 dialog.modal article { max-width: 30rem; width: calc(100% - 2rem); margin: auto; padding: 0; overflow-x: hidden; }
 /* Own the modal's vertical rhythm: symmetric header and body padding instead
    of Pico's negative-margin header math (tuned to spacing vars we override). */
-dialog.modal header { margin: 0; padding: var(--x-4) var(--x-5); }
-dialog.modal header p { margin: 0; }
+/* Flex header: title left, close right, both centered; the 1.5rem close box
+   makes its top and right insets equal. */
+dialog.modal header { margin: 0; padding: var(--x-4) var(--x-4) var(--x-4) var(--x-5); display: flex; align-items: center; justify-content: space-between; }
+dialog.modal header p { margin: 0; order: 1; }
 dialog.modal article > form { padding: var(--x-4) var(--x-5) var(--x-5); }
 dialog.modal header strong { font-size: 1.05rem; }
 /* Pico's close icon sizes itself 1rem; win back the size from the global
    width:auto!important button reset. */
-dialog.modal header [rel=prev] { width: 1rem !important; height: 1rem; padding: 0 !important; }
+dialog.modal header [rel=prev] {
+  width: 1.5rem !important; height: 1.5rem; padding: 0 !important;
+  margin: 0; float: none; order: 2; flex: none;
+  background-size: auto 1rem; background-position: center;
+}
 dialog.modal header [rel=prev]:focus { box-shadow: none; }
 dialog.modal header [rel=prev]:focus-visible { outline: 2px solid var(--pico-primary); outline-offset: 2px; }
 /* Footer lives inside the <form>, so Pico's article>footer styling misses it. */
-dialog.modal form footer { display: flex; justify-content: flex-end; gap: 0.6rem; margin: var(--x-2) 0 0; padding: 0; border: 0; background: none; }
+dialog.modal form footer, dialog.modal .modal-foot { display: flex; justify-content: flex-end; gap: 0.6rem; margin: var(--x-2) 0 0; padding: 0; border: 0; background: none; }
+dialog.modal .modal-body { padding: var(--x-4) var(--x-5); }
+dialog.modal .modal-body p { margin: 0; }
+dialog.modal .modal-foot { margin-top: var(--x-4); }
 /* Stretch beats the stacked-form flex-start that would shrink labels (and the
    footer) to content width. */
 dialog.modal form { display: flex; flex-direction: column; align-items: stretch; gap: var(--x-4); }
