@@ -4,7 +4,7 @@
 # Then open http://localhost:8080/admin (password below).
 services:
   xilo:
-    image: ghcr.io/stubbedev/xilo:master
+    image: ghcr.io/stubbedev/xilo:latest
     ports:
       - "8080:8080"
     volumes:

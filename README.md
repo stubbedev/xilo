@@ -13,7 +13,7 @@ Self-hosted [Nix binary cache](https://nix.dev/manual/nix/latest/store/types/htt
 
 ```sh
 docker run -d -p 8080:8080 -v xilo-data:/data \
-  -e XILO_ADMIN_PASSWORD=change-me ghcr.io/stubbedev/xilo:master
+  -e XILO_ADMIN_PASSWORD=change-me ghcr.io/stubbedev/xilo:latest
 ```
 
 For a VPS, [`examples/docker-compose.yml`](./examples/docker-compose.yml) is the
@@ -25,6 +25,60 @@ Open <http://localhost:8080/admin>, log in, create a cache. Or from the CLI:
 ```sh
 xilo cache create mycache          # prints the public key + nix.conf snippet
 ```
+
+### Nix / NixOS
+
+The flake ships the binary (client CLI + `xilo serve` in one), a NixOS
+module, and a home-manager module:
+
+```sh
+nix run github:stubbedev/xilo -- --help    # try it
+nix profile install github:stubbedev/xilo  # just the CLI
+```
+
+NixOS — server as a systemd unit plus the CLI in `systemPackages`:
+
+```nix
+{
+  inputs.xilo.url = "github:stubbedev/xilo";
+}
+```
+
+```nix
+{ inputs, ... }: {
+  imports = [ inputs.xilo.nixosModules.default ];
+
+  services.xilo = {
+    enable = true;
+    settings = {
+      # rendered to xilo.yaml; see xilo.example.yaml for all keys.
+      # listen defaults to ":8080", data_dir to /var/lib/xilo.
+      base_url = "https://cache.example.com";
+    };
+    # Secrets stay out of the Nix store:
+    environmentFile = "/run/secrets/xilo.env"; # XILO_ADMIN_PASSWORD=…
+  };
+}
+```
+
+home-manager — user-level CLI, optionally with a user config:
+
+```nix
+{ inputs, ... }: {
+  imports = [ inputs.xilo.homeModules.default ];
+
+  programs.xilo = {
+    enable = true;
+    # Optional; writes ~/.config/xilo/xilo.yaml (picked up by `xilo serve`).
+    settings.listen = ":8090";
+  };
+}
+```
+
+`xilo serve` resolves its config as: `--config` / `XILO_CONFIG` →
+`./xilo.yaml` → `$XDG_CONFIG_HOME/xilo/xilo.yaml` → `/etc/xilo/xilo.yaml`.
+Dependency bumps and the flake's `vendorHash` are managed by `just update`
+(never edit by hand).
 
 ### Pull (substitute)
 

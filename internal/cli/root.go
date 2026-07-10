@@ -3,6 +3,7 @@ package cli
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
@@ -30,6 +31,20 @@ func Root() *cobra.Command {
 func defaultConfig() string {
 	if v := os.Getenv("XILO_CONFIG"); v != "" {
 		return v
+	}
+	if _, err := os.Stat("xilo.yaml"); err == nil {
+		return "xilo.yaml"
+	}
+	// XDG user config (used by the home-manager module).
+	if dir, err := os.UserConfigDir(); err == nil {
+		p := filepath.Join(dir, "xilo", "xilo.yaml")
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	// System-wide fallback (used by the NixOS module and other service installs).
+	if _, err := os.Stat("/etc/xilo/xilo.yaml"); err == nil {
+		return "/etc/xilo/xilo.yaml"
 	}
 	return "xilo.yaml"
 }
