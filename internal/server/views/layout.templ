@@ -25,6 +25,40 @@ templ Layout(title string, loggedIn bool, flash Flash) {
 				// htmx drives navigation (hx-boost on <body>): swaps ride the View
 				// Transitions API for the same cross-fade as real navigation.
 				addEventListener('DOMContentLoaded',function(){htmx.config.globalViewTransitions=true});
+				// WebAuthn: base64url <-> ArrayBuffer plumbing for passkey ceremonies.
+				function b64uToBuf(s){s=s.replace(/-/g,'+').replace(/_/g,'/');var b=atob(s),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++){a[i]=b.charCodeAt(i)}return a.buffer}
+				function bufToB64u(b){var a=new Uint8Array(b),s='';for(var i=0;i<a.length;i++){s+=String.fromCharCode(a[i])}return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+				async function xiloPasskeyRegister(){
+					var res=await fetch('/admin/passkeys/register/begin',{method:'POST'});
+					if(!res.ok){alert(await res.text());return}
+					var opts=(await res.json()).publicKey;
+					opts.challenge=b64uToBuf(opts.challenge);
+					opts.user.id=b64uToBuf(opts.user.id);
+					(opts.excludeCredentials||[]).forEach(function(c){c.id=b64uToBuf(c.id)});
+					var cred;
+					try{cred=await navigator.credentials.create({publicKey:opts})}catch(e){return}
+					var body={id:cred.id,rawId:bufToB64u(cred.rawId),type:cred.type,response:{
+						attestationObject:bufToB64u(cred.response.attestationObject),
+						clientDataJSON:bufToB64u(cred.response.clientDataJSON)}};
+					var fin=await fetch('/admin/passkeys/register/finish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+					if(fin.ok){location.reload()}else{alert(await fin.text())}
+				}
+				async function xiloPasskeyLogin(){
+					var res=await fetch('/admin/login/passkey/begin',{method:'POST'});
+					if(!res.ok){alert(await res.text());return}
+					var opts=(await res.json()).publicKey;
+					opts.challenge=b64uToBuf(opts.challenge);
+					(opts.allowCredentials||[]).forEach(function(c){c.id=b64uToBuf(c.id)});
+					var cred;
+					try{cred=await navigator.credentials.get({publicKey:opts})}catch(e){return}
+					var body={id:cred.id,rawId:bufToB64u(cred.rawId),type:cred.type,response:{
+						authenticatorData:bufToB64u(cred.response.authenticatorData),
+						clientDataJSON:bufToB64u(cred.response.clientDataJSON),
+						signature:bufToB64u(cred.response.signature),
+						userHandle:cred.response.userHandle?bufToB64u(cred.response.userHandle):null}};
+					var fin=await fetch('/admin/login/passkey/finish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+					if(fin.ok){location.href='/admin'}else{alert(await fin.text())}
+				}
 				// Forms with data-confirm get a real <dialog> instead of window.confirm.
 				// Capture phase runs before hx-boost; a confirmed re-submit passes through.
 				var xiloConfirmForm=null;

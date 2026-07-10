@@ -1,6 +1,6 @@
 package views
 
-templ Login(noPassword, totpEnabled bool, flash Flash) {
+templ Login(noPassword, hasPasskeys bool, flash Flash) {
 	@Layout(T("login.title"), false, flash) {
 		<article class="auth">
 			<div class="ic-lg">@Icon("lock")</div>
@@ -10,14 +10,33 @@ templ Login(noPassword, totpEnabled bool, flash Flash) {
 			</hgroup>
 			<form method="post" action="/admin/login">
 				<input type="password" name="password" placeholder={ T("login.password") } autocomplete="current-password" autofocus/>
-				if totpEnabled {
-					<input name="code" placeholder={ T("login.code") } inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*"/>
-				}
 				<button type="submit">{ T("login.submit") }</button>
 			</form>
+			if hasPasskeys {
+				<button type="button" class="outline" onclick="xiloPasskeyLogin()">@Icon("fingerprint") <span>{ T("login.passkey") }</span></button>
+			}
 			if noPassword {
 				<p><small>{ T("login.nopassword") }</small></p>
 			}
+		</article>
+	}
+}
+
+// LoginCode is the second sign-in step when 2FA is enabled.
+templ LoginCode(pending string, flash Flash) {
+	@Layout(T("login.codetitle"), false, flash) {
+		<article class="auth">
+			<div class="ic-lg">@Icon("shield")</div>
+			<hgroup>
+				<h1>{ T("login.codetitle") }</h1>
+				<p>{ T("login.codesub") }</p>
+			</hgroup>
+			<form method="post" action="/admin/login/code">
+				<input type="hidden" name="pending" value={ pending }/>
+				<input name="code" placeholder={ T("login.code") } inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6" autofocus/>
+				<button type="submit">{ T("login.verify") }</button>
+			</form>
+			<p><small><a href="/admin">{ T("login.back") }</a></small></p>
 		</article>
 	}
 }

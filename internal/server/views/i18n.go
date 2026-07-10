@@ -28,6 +28,11 @@ var en = map[string]string{
 	"login.code":       "2FA code",
 	"login.submit":     "Sign in",
 	"login.nopassword": "No admin password set. Configure admin.password or XILO_ADMIN_PASSWORD.",
+	"login.passkey":    "Sign in with a passkey",
+	"login.codetitle":  "Two-factor code",
+	"login.codesub":    "Enter the 6-digit code from your authenticator app.",
+	"login.verify":     "Verify",
+	"login.back":       "Back to sign in",
 
 	// dashboard — overview
 	"dash.title":    "Overview",
@@ -147,6 +152,13 @@ var en = map[string]string{
 	// pagination
 	"pager.prev": "Prev",
 	"pager.next": "Next",
+
+	// passkeys
+	"set.passkeys":        "Passkeys",
+	"set.passkeys.hint":   "Sign in with a hardware key or platform authenticator instead of a password.",
+	"set.passkeys.add":    "Add passkey",
+	"set.passkeys.remove": "Remove",
+	"confirm.passkey":     "Remove this passkey? You can no longer sign in with it.",
 
 	// confirmations
 	"confirm.title":  "Are you sure?",

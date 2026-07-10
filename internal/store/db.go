@@ -150,6 +150,12 @@ func migrate(w *sql.DB) error {
 			expires INTEGER NOT NULL DEFAULT 0,
 			created INTEGER NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS passkeys (
+			id         INTEGER PRIMARY KEY,
+			name       TEXT NOT NULL,
+			credential BLOB NOT NULL,
+			created    INTEGER NOT NULL
+		)`,
 	}
 	for _, s := range stmts {
 		if _, err := w.Exec(s); err != nil {

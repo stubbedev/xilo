@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/stubbedev/xilo/internal/config"
@@ -29,6 +30,10 @@ type Server struct {
 	enc       *zstd.Encoder // EncodeAll — safe for concurrent use
 	dec       *zstd.Decoder // DecodeAll — safe for concurrent use
 	sess      *sessions
+	ceremony  ceremonies // in-flight WebAuthn challenges
+	wanOnce   sync.Once
+	wan       *webauthn.WebAuthn
+	wanErr    error
 	zstdPool  sync.Pool     // *zstd.Encoder for streaming NAR responses
 	uploadSem chan struct{} // bounds concurrent server-side chunk read+encode
 	metrics   metrics
@@ -86,6 +91,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /{cache}/api/path", s.handlePutPath)
 
 	s.registerAdmin(mux)
+	s.registerPasskeyRoutes(mux)
 	s.registerStatic(mux)
 
 	mux.HandleFunc("GET /healthz", s.handleHealth)

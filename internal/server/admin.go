@@ -29,11 +29,49 @@ const sessionTTL = 12 * time.Hour
 // admin just logs in again. ponytail: no persistent store needed for a
 // single-admin dashboard.
 type sessions struct {
-	mu  sync.Mutex
-	ids map[string]time.Time
+	mu      sync.Mutex
+	ids     map[string]time.Time
+	pending map[string]time.Time // password accepted, awaiting 2FA code
 }
 
-func newSessions() *sessions { return &sessions{ids: map[string]time.Time{}} }
+func newSessions() *sessions {
+	return &sessions{ids: map[string]time.Time{}, pending: map[string]time.Time{}}
+}
+
+// pendingTTL bounds how long the 2FA step may take after the password step.
+const pendingTTL = 3 * time.Minute
+
+// createPending issues a one-shot pre-auth ticket for the 2FA step.
+func (s *sessions) createPending() (string, error) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	id := base64.RawURLEncoding.EncodeToString(b)
+	s.mu.Lock()
+	s.pending[id] = time.Now().Add(pendingTTL)
+	s.mu.Unlock()
+	return id, nil
+}
+
+// pendingValid reports whether a pre-auth ticket is still live.
+func (s *sessions) pendingValid(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	exp, ok := s.pending[id]
+	if !ok || time.Now().After(exp) {
+		delete(s.pending, id)
+		return false
+	}
+	return true
+}
+
+// consumePending burns a ticket after a successful code check.
+func (s *sessions) consumePending(id string) {
+	s.mu.Lock()
+	delete(s.pending, id)
+	s.mu.Unlock()
+}
 
 func (s *sessions) create() (string, error) {
 	b := make([]byte, 24)
@@ -102,6 +140,7 @@ func (s *Server) sameOrigin(r *http.Request) bool {
 func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin", s.handleAdmin)
 	mux.HandleFunc("POST /admin/login", s.handleLogin)
+	mux.HandleFunc("POST /admin/login/code", s.handleLoginCode)
 	mux.HandleFunc("POST /admin/logout", s.handleLogout)
 	mux.HandleFunc("POST /admin/caches", s.handleCreateCache)
 	mux.HandleFunc("GET /admin/cache/{name}", s.handleCacheDetail)
@@ -119,6 +158,12 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/settings/totp/disable", s.handleTOTPDisable)
 }
 
+// hasPasskeys reports whether any WebAuthn credential is registered.
+func (s *Server) hasPasskeys() bool {
+	pks, _ := s.db.ListPasskeys()
+	return len(pks) > 0
+}
+
 // totpEnabled reports whether admin 2FA is on (ignoring errors → treated as off).
 func (s *Server) totpEnabled() bool {
 	_, enabled, _ := s.db.TOTP()
@@ -127,7 +172,7 @@ func (s *Server) totpEnabled() bool {
 
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	if !s.loggedIn(r) {
-		views.Login(!s.db.AdminExists(), s.totpEnabled(), views.Flash{}).Render(r.Context(), w)
+		views.Login(!s.db.AdminExists(), s.hasPasskeys(), views.Flash{}).Render(r.Context(), w)
 		return
 	}
 	s.renderDashboard(w, r, views.Flash{})
@@ -207,25 +252,55 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	hash, err := s.db.AdminPasswordHash()
 	if errors.Is(err, store.ErrNotFound) {
-		views.Login(true, false, views.Flash{}).Render(r.Context(), w)
+		views.Login(true, s.hasPasskeys(), views.Flash{}).Render(r.Context(), w)
 		return
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	secret, totpOn, _ := s.db.TOTP()
-
-	pass := r.FormValue("password")
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(pass)) != nil {
-		views.Login(false, totpOn, views.Flash{Msg: "Invalid password"}).Render(r.Context(), w)
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(r.FormValue("password"))) != nil {
+		views.Login(false, s.hasPasskeys(), views.Flash{Msg: "Invalid password"}).Render(r.Context(), w)
 		return
 	}
-	if totpOn && !totpVerify(secret, r.FormValue("code"), time.Now()) {
-		views.Login(false, true, views.Flash{Msg: "Invalid 2FA code"}).Render(r.Context(), w)
+	// Password accepted. With 2FA on, the code is a second step gated by a
+	// short-lived pre-auth ticket — the password never rides along again.
+	if s.totpEnabled() {
+		pid, err := s.sess.createPending()
+		if err != nil {
+			http.Error(w, "session error", http.StatusInternalServerError)
+			return
+		}
+		views.LoginCode(pid, views.Flash{}).Render(r.Context(), w)
 		return
 	}
+	s.grantSession(w, r)
+}
 
+// handleLoginCode is step two: a valid pre-auth ticket plus a TOTP code.
+func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
+	pid := r.FormValue("pending")
+	if !s.sess.pendingValid(pid) {
+		views.Login(false, s.hasPasskeys(), views.Flash{Msg: "That sign-in attempt expired — enter your password again."}).Render(r.Context(), w)
+		return
+	}
+	secret, on, _ := s.db.TOTP()
+	if !on {
+		// 2FA turned off mid-flight; the password step already passed.
+		s.sess.consumePending(pid)
+		s.grantSession(w, r)
+		return
+	}
+	if !totpVerify(secret, r.FormValue("code"), time.Now()) {
+		views.LoginCode(pid, views.Flash{Msg: "Invalid 2FA code"}).Render(r.Context(), w)
+		return
+	}
+	s.sess.consumePending(pid)
+	s.grantSession(w, r)
+}
+
+// grantSession issues the session cookie and lands on the dashboard.
+func (s *Server) grantSession(w http.ResponseWriter, r *http.Request) {
 	id, err := s.sess.create()
 	if err != nil {
 		http.Error(w, "session error", http.StatusInternalServerError)
@@ -242,7 +317,17 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return
 	}
-	views.Settings(s.totpEnabled(), views.Flash{}).Render(r.Context(), w)
+	s.renderSettings(w, r, views.Flash{})
+}
+
+// renderSettings gathers the settings page inputs (2FA state, passkeys).
+func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, flash views.Flash) {
+	pks, err := s.db.ListPasskeys()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	views.Settings(s.totpEnabled(), pks, flash).Render(r.Context(), w)
 }
 
 func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
@@ -251,12 +336,12 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	hash, _ := s.db.AdminPasswordHash()
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(r.FormValue("current"))) != nil {
-		views.Settings(s.totpEnabled(), views.Flash{Msg: "Current password is incorrect"}).Render(r.Context(), w)
+		s.renderSettings(w, r, views.Flash{Msg: "Current password is incorrect"})
 		return
 	}
 	next := r.FormValue("new")
 	if len(next) < 8 {
-		views.Settings(s.totpEnabled(), views.Flash{Msg: "New password must be at least 8 characters"}).Render(r.Context(), w)
+		s.renderSettings(w, r, views.Flash{Msg: "New password must be at least 8 characters"})
 		return
 	}
 	nh, err := bcrypt.GenerateFromPassword([]byte(next), bcrypt.DefaultCost)
@@ -268,7 +353,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	views.Settings(s.totpEnabled(), views.Flash{Msg: "Password changed."}).Render(r.Context(), w)
+	s.renderSettings(w, r, views.Flash{Msg: "Password changed."})
 }
 
 // handleTOTPEnroll generates a fresh secret, stores it (not yet enabled), and
@@ -310,7 +395,7 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	views.Settings(true, views.Flash{Msg: "Two-factor authentication enabled."}).Render(r.Context(), w)
+	s.renderSettings(w, r, views.Flash{Msg: "Two-factor authentication enabled."})
 }
 
 func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
@@ -321,7 +406,7 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	views.Settings(false, views.Flash{Msg: "Two-factor authentication disabled."}).Render(r.Context(), w)
+	s.renderSettings(w, r, views.Flash{Msg: "Two-factor authentication disabled."})
 }
 
 // secureCookies marks session cookies Secure when the public base URL is HTTPS

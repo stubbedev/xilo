@@ -1,6 +1,12 @@
 package views
 
-templ Settings(totpEnabled bool, flash Flash) {
+import (
+	"strconv"
+
+	"github.com/stubbedev/xilo/internal/store"
+)
+
+templ Settings(totpEnabled bool, passkeys []store.Passkey, flash Flash) {
 	@Layout(T("set.title"), true, flash) {
 		<hgroup>
 			<h1>{ T("set.title") }</h1>
@@ -15,6 +21,25 @@ templ Settings(totpEnabled bool, flash Flash) {
 					<button type="submit">@Icon("check") <span>{ T("set.update") }</span></button>
 				</div>
 			</form>
+		</article>
+		<h2>{ T("set.passkeys") }</h2>
+		<article>
+			for _, pk := range passkeys {
+				<div class="row-split">
+					<p>
+						@Icon("fingerprint")
+						{ pk.Name }
+						<small>· { Ago(pk.Created) }</small>
+					</p>
+					<form method="post" action={ templ.SafeURL("/admin/passkeys/" + strconv.FormatInt(pk.ID, 10) + "/delete") } data-confirm={ T("confirm.passkey") }>
+						<button class="iconbtn danger" data-tooltip={ T("set.passkeys.remove") }>@IconClass("trash-2", 16, "")</button>
+					</form>
+				</div>
+			}
+			<div class={ "row-split" , templ.KV("rule-above", len(passkeys) > 0) }>
+				<p>{ T("set.passkeys.hint") }</p>
+				<button type="button" onclick="xiloPasskeyRegister()">@Icon("fingerprint") <span>{ T("set.passkeys.add") }</span></button>
+			</div>
 		</article>
 		<h2>{ T("set.2fa") }</h2>
 		<article>
