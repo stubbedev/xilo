@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stubbedev/xilo/internal/api"
 	"github.com/stubbedev/xilo/internal/chunk"
@@ -612,5 +613,35 @@ func TestBadBaseURLRequestErrors(t *testing.T) {
 	}
 	if err := c.putPath(ctx, api.PathReq{}); err == nil {
 		t.Fatal("putPath should fail")
+	}
+}
+
+// A consume error mid-stream (upload failure) must kill the dump subprocess:
+// nix-store still has more NAR than the pipe buffer holds, and without the
+// kill Wait() blocks forever (regression: chaos test hung 15+ min).
+func TestRunDumpKillsWriterOnConsumeError(t *testing.T) {
+	dir := t.TempDir()
+	// A writer that produces far more than any pipe buffer (~64KiB).
+	script := "#!/bin/sh\nhead -c 50000000 /dev/zero\n"
+	if err := os.WriteFile(filepath.Join(dir, "nix-store"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	done := make(chan error, 1)
+	go func() {
+		done <- runDump(context.Background(), "/nix/store/whatever", func(r io.Reader) error {
+			buf := make([]byte, 1024)
+			r.Read(buf) // take one bite, then abandon the stream
+			return errAbort
+		})
+	}()
+	select {
+	case err := <-done:
+		if err != errAbort {
+			t.Fatalf("err = %v, want errAbort", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("runDump hung after consume error (dump subprocess not killed)")
 	}
 }

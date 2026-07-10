@@ -352,6 +352,9 @@ func dumpChunks(ctx context.Context, path string, params chunk.Params, fn func(c
 
 func runDump(ctx context.Context, path string, consume func(io.Reader) error) error {
 	cmd := exec.CommandContext(ctx, "nix-store", "--dump", path)
+	// If the process (or a child holding the pipe) lingers after Kill/ctx
+	// cancel, give up on its I/O rather than blocking Wait forever.
+	cmd.WaitDelay = 5 * time.Second
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -362,6 +365,12 @@ func runDump(ctx context.Context, path string, consume func(io.Reader) error) er
 		return err
 	}
 	consumeErr := consume(stdout)
+	if consumeErr != nil {
+		// The consumer stopped mid-stream (e.g. an upload failed). nix-store
+		// still has NAR bytes to write; with no reader the pipe fills and
+		// Wait() would block forever — kill the writer first.
+		_ = cmd.Process.Kill()
+	}
 	waitErr := cmd.Wait()
 	if consumeErr != nil {
 		return consumeErr
