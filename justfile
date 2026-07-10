@@ -71,8 +71,41 @@ schema-check: build
     fi
     echo "schema in sync"
 
+# ─────────────────────────── Nix ───────────────────────────
+
+# Update everything: flake inputs + Go deps, then resync vendorHash.
+# The only supported way to bump dependencies — never edit hashes by hand.
+update:
+    nix flake update
+    go get -u ./...
+    go mod tidy
+    just sync-vendor-hash
+
+# Re-pin flake.nix vendorHash from go.mod/go.sum. Same contract as
+# sync-schema: anything that can be regenerated is. Run after any dep
+# change (`just update` does it for you).
+sync-vendor-hash:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    sed -i 's|vendorHash = "[^"]*";|vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";|' flake.nix
+    got=$( (nix build .#default --no-link 2>&1 || true) | sed -n 's/.*got: *//p' | head -1)
+    if [ -z "$got" ]; then
+        echo "sync-vendor-hash: could not extract vendor hash from nix build output" >&2
+        exit 1
+    fi
+    sed -i "s|vendorHash = \"[^\"]*\";|vendorHash = \"$got\";|" flake.nix
+    echo "vendorHash → $got"
+    nix build .#default --no-link
+    echo "nix build OK"
+
+# Strict read-only check: the nix package builds with the committed
+# vendorHash (catches go.mod/flake drift; what CI runs on PRs).
+nix-check:
+    nix build .#default --no-link
+    @echo "nix package in sync"
+
 # Everything CI checks.
-check: lint test schema-check
+check: lint test schema-check nix-check
 
 # ─────────────────────────── Run & Dev ───────────────────────────
 
