@@ -13,7 +13,8 @@ templ Layout(title string, loggedIn bool, flash Flash) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>xilo — { title }</title>
-			<link rel="stylesheet" href={ Asset("pico.min.css") }/>
+			<link rel="icon" type="image/svg+xml" href={ Asset("favicon.svg") }/>
+				<link rel="stylesheet" href={ Asset("pico.min.css") }/>
 			<link rel="stylesheet" href={ Asset("xilo.css") }/>
 			<script defer src={ Asset("alpine.min.js") }></script>
 			// Resolve + apply the theme before paint (no flash), and expose the toggle.
@@ -25,7 +26,7 @@ templ Layout(title string, loggedIn bool, flash Flash) {
 		<body>
 			<header class="topbar">
 				<div class="bar-inner">
-					<a class="brand" href="/admin"><span class="logo"></span> xilo</a>
+					<a class="brand" href="/admin"><span class="logo">@IconClass("paper-bag", 16, "logo-ic")</span> xilo</a>
 					<nav>
 						if loggedIn {
 							<a href="/admin">@Icon("database") <span>{ T("nav.caches") }</span></a>

@@ -76,11 +76,13 @@ main.container {
 .brand:hover { opacity: .85; }
 .brand .logo {
   width: 26px; height: 26px; border-radius: 7px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
   background: linear-gradient(135deg, var(--pico-primary), var(--x-accent-2));
 }
+.brand .logo-ic { width: 16px; height: 16px; color: #fff; }
 .topbar nav { margin-left: auto; display: flex; align-items: center; gap: var(--x-5); }
 .topbar nav a { color: var(--pico-muted-color); text-decoration: none; font-size: var(--x-fs-sm); }
-.topbar nav a:hover { color: var(--pico-color); }
+.topbar nav a:hover { color: var(--pico-primary); }
 .topbar nav form { margin: 0; }
 .topbar nav button { padding: 0.35rem 0.8rem; font-size: var(--x-fs-sm); }
 
@@ -91,7 +93,7 @@ main.container {
   border-radius: var(--x-radius); font-size: 1rem; line-height: 1;
   background: none; border: 1px solid var(--pico-muted-border-color); color: var(--pico-muted-color);
 }
-.theme-toggle:hover { color: var(--pico-color); border-color: var(--pico-primary); }
+.theme-toggle:hover { color: var(--pico-primary); border-color: var(--pico-primary); background: color-mix(in srgb, var(--pico-primary) 10%, transparent); }
 /* Show the glyph for the theme you'd switch TO: moon in light, sun in dark. */
 .theme-toggle .ic { display: none; }
 [data-theme=light] .theme-toggle .icon-moon { display: inline-block; }
@@ -132,7 +134,7 @@ button, [type=submit], [type=button], [type=reset], [role=button] {
 /* Uniform, slightly denser control sizing. */
 button, [type=submit], [role=button] { padding: 0.5rem 1rem; }
 button.danger { --pico-background-color: transparent; --pico-border-color: color-mix(in srgb, var(--x-danger) 55%, transparent); --pico-color: var(--x-danger); }
-button.danger:hover { --pico-background-color: color-mix(in srgb, var(--x-danger) 12%, transparent); }
+button.danger:hover { --pico-background-color: color-mix(in srgb, var(--x-danger) 12%, transparent); --pico-color: var(--x-danger); color: var(--x-danger); }
 
 /* Compact single-row forms that wrap gracefully. */
 form.inline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--x-3) var(--x-4); margin: 0; }
@@ -195,7 +197,7 @@ dialog.modal article { max-width: 30rem; width: calc(100% - 2rem); margin: auto;
 dialog.modal header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0; }
 dialog.modal header strong { font-size: 1.05rem; }
 dialog.modal .close { padding: 0.25rem !important; background: none; border: none; color: var(--pico-muted-color); }
-dialog.modal .close:hover { color: var(--pico-color); }
+dialog.modal .close:hover { color: var(--pico-primary); background: none; }
 dialog.modal form { display: flex; flex-direction: column; gap: var(--x-4); }
 dialog.modal label { display: flex; flex-direction: column; gap: 0.35rem; font-size: var(--x-fs-sm); color: var(--pico-muted-color); margin: 0; }
 dialog.modal label input, dialog.modal label select { width: 100%; margin: 0; }
@@ -229,7 +231,7 @@ progress { height: 6px; border-radius: 3px; }
 }
 .foot-inner nav { display: flex; gap: var(--x-4); }
 .foot-inner a { color: var(--pico-muted-color); text-decoration: none; }
-.foot-inner a:hover { color: var(--pico-color); }
+.foot-inner a:hover { color: var(--pico-primary); }
 
 /* ---------- 404 ---------- */
 .notfound { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--x-4); padding: 4rem var(--x-5); }

@@ -19,9 +19,9 @@ var staticFS embed.FS
 // /static/nix-cache-info matches both), so each file is its own literal path,
 // which the router treats as strictly more specific.
 func (s *Server) registerStatic(mux *http.ServeMux) {
-	types := map[string]string{".css": "text/css; charset=utf-8", ".js": "application/javascript; charset=utf-8"}
+	types := map[string]string{".css": "text/css; charset=utf-8", ".js": "application/javascript; charset=utf-8", ".svg": "image/svg+xml"}
 	versions := map[string]string{}
-	for _, name := range []string{"pico.min.css", "xilo.css", "alpine.min.js"} {
+	for _, name := range []string{"pico.min.css", "xilo.css", "alpine.min.js", "favicon.svg"} {
 		data, err := staticFS.ReadFile("static/" + name)
 		if err != nil {
 			panic(err)
