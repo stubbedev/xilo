@@ -156,12 +156,25 @@ func (s *Server) middleware(h http.Handler) http.Handler {
 				}
 			}
 			elapsed := time.Since(start)
-			s.metrics.reqTotal.Add(1)
-			s.metrics.reqDurNs.Add(elapsed.Nanoseconds())
+			if isCacheTraffic(r.URL.Path) {
+				s.metrics.reqTotal.Add(1)
+				s.metrics.reqDurNs.Add(elapsed.Nanoseconds())
+			}
 			log.Printf("%s %s %d %s", r.Method, r.URL.Path, lw.status, elapsed.Round(time.Millisecond))
 		}()
 		h.ServeHTTP(lw, r)
 	})
+}
+
+// isCacheTraffic reports whether a request is real binary-cache work (pull
+// protocol or push API). The dashboard, static assets and monitoring probes
+// would otherwise drown the stats in their own polling noise.
+func isCacheTraffic(path string) bool {
+	return path != "/" &&
+		!strings.HasPrefix(path, "/admin") &&
+		!strings.HasPrefix(path, "/static/") &&
+		path != "/healthz" && path != "/metrics" &&
+		path != "/favicon.ico"
 }
 
 type logWriter struct {

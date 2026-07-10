@@ -40,8 +40,8 @@ func (m *metrics) counters() []struct {
 		{"xilo_chunks_deduped_total", "chunk uploads already present (deduped)", m.chunksDedup.Load()},
 		{"xilo_paths_pushed_total", "store paths registered", m.pathsPushed.Load()},
 		{"xilo_auth_failures_total", "rejected auth attempts", m.authFailures.Load()},
-		{"xilo_http_requests_total", "HTTP requests handled", m.reqTotal.Load()},
-		{"xilo_http_request_duration_ns_total", "summed request wall time in nanoseconds", m.reqDurNs.Load()},
+		{"xilo_http_requests_total", "cache-protocol HTTP requests handled (admin/static/probes excluded)", m.reqTotal.Load()},
+		{"xilo_http_request_duration_ns_total", "summed cache-protocol request wall time in nanoseconds", m.reqDurNs.Load()},
 	}
 }
 
