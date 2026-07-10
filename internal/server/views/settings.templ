@@ -12,16 +12,6 @@ templ Settings(totpEnabled bool, passkeys []store.Passkey, flash Flash) {
 			<h1>{ T("set.title") }</h1>
 			<p>{ T("set.subtitle") }</p>
 		</hgroup>
-		<h2>{ T("set.password") }</h2>
-		<article>
-			<form method="post" action="/admin/settings/password" class="fields">
-				<label>{ T("set.current") } <input type="password" name="current" autocomplete="current-password"/></label>
-				<label>{ T("set.new") } <input type="password" name="new" autocomplete="new-password"/></label>
-				<div class="fields-foot">
-					<button type="submit">@Icon("check") <span>{ T("set.update") }</span></button>
-				</div>
-			</form>
-		</article>
 		<h2>{ T("set.passkeys") }</h2>
 		<article>
 			for _, pk := range passkeys {
@@ -59,6 +49,46 @@ templ Settings(totpEnabled bool, passkeys []store.Passkey, flash Flash) {
 				</div>
 			}
 		</article>
+		<h2>{ T("set.password") }</h2>
+		<article>
+			<form method="post" action="/admin/settings/password" class="fields pw-fields">
+				<label>{ T("set.current") } <input type="password" name="current" autocomplete="current-password" required/></label>
+				<label>{ T("set.new") } <input type="password" name="new" autocomplete="new-password" required { pwCheckAttrs()... }/></label>
+				<label>{ T("set.new2") } <input type="password" name="confirm" autocomplete="new-password" required { pwCheckAttrs()... }/></label>
+				<div class="fields-foot">
+					<span id="pw-hint"></span>
+					<button type="submit">@Icon("check") <span>{ T("set.update") }</span></button>
+				</div>
+			</form>
+		</article>
+	}
+}
+
+// pwCheckAttrs wires a password input to the server-side strength check: the
+// browser only debounces and swaps in whatever hint the server renders.
+func pwCheckAttrs() templ.Attributes {
+	return templ.Attributes{
+		"hx-post":    "/admin/settings/password/check",
+		"hx-trigger": "input changed delay:400ms",
+		"hx-include": "closest form",
+		"hx-params":  "new,confirm",
+		"hx-target":  "#pw-hint",
+		"hx-swap":    "innerHTML",
+	}
+}
+
+// PwHint renders the server's verdict on the new password pair. Empty state
+// renders nothing (clears the hint).
+templ PwHint(state string) {
+	switch state {
+		case "short":
+			<small class="pw-hint warn">{ T("set.pw.short") }</small>
+		case "mismatch":
+			<small class="pw-hint warn">{ T("set.pw.mismatch") }</small>
+		case "weak":
+			<small class="pw-hint warn">{ T("set.pw.weak") }</small>
+		case "strong":
+			<small class="pw-hint ok">{ T("set.pw.strong") }</small>
 	}
 }
 

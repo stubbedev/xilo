@@ -2,7 +2,9 @@ package server
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -13,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -25,17 +28,24 @@ const sessionCookie = "xilo_session"
 // sessionTTL bounds how long an admin session cookie stays valid.
 const sessionTTL = 12 * time.Hour
 
-// sessions is an in-memory map of session ID → expiry. Dropped on restart — the
-// admin just logs in again. ponytail: no persistent store needed for a
-// single-admin dashboard.
+// sessions persists login sessions in the store (hashed, so a DB read never
+// yields a usable cookie value) — logins survive server restarts. The 2FA
+// pending tickets stay in memory: they live 3 minutes and a restart mid-login
+// just means retyping the password.
 type sessions struct {
 	mu      sync.Mutex
-	ids     map[string]time.Time
+	db      *store.DB
 	pending map[string]time.Time // password accepted, awaiting 2FA code
 }
 
-func newSessions() *sessions {
-	return &sessions{ids: map[string]time.Time{}, pending: map[string]time.Time{}}
+func newSessions(db *store.DB) *sessions {
+	return &sessions{db: db, pending: map[string]time.Time{}}
+}
+
+// hashSession derives the storage key for a session id.
+func hashSession(id string) string {
+	sum := sha256.Sum256([]byte(id))
+	return hex.EncodeToString(sum[:])
 }
 
 // pendingTTL bounds how long the 2FA step may take after the password step.
@@ -79,30 +89,18 @@ func (s *sessions) create() (string, error) {
 		return "", err // never emit a low-entropy session id
 	}
 	id := base64.RawURLEncoding.EncodeToString(b)
-	s.mu.Lock()
-	s.ids[id] = time.Now().Add(sessionTTL)
-	s.mu.Unlock()
+	if err := s.db.CreateSession(hashSession(id), time.Now().Add(sessionTTL)); err != nil {
+		return "", err
+	}
 	return id, nil
 }
 
 func (s *sessions) valid(id string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	exp, ok := s.ids[id]
-	if !ok {
-		return false
-	}
-	if time.Now().After(exp) {
-		delete(s.ids, id)
-		return false
-	}
-	return true
+	return s.db.SessionValid(hashSession(id))
 }
 
 func (s *sessions) drop(id string) {
-	s.mu.Lock()
-	delete(s.ids, id)
-	s.mu.Unlock()
+	_ = s.db.DropSession(hashSession(id))
 }
 
 func (s *Server) loggedIn(r *http.Request) bool {
@@ -152,7 +150,10 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/tokens/{id}/revoke", s.handleRevokeToken)
 	mux.HandleFunc("POST /admin/gc", s.handleGC)
 	mux.HandleFunc("GET /admin/settings", s.handleSettings)
+	mux.HandleFunc("GET /admin/status", s.handleStatus)
+	mux.HandleFunc("GET /admin/status/data", s.handleStatusData)
 	mux.HandleFunc("POST /admin/settings/password", s.handleChangePassword)
+	mux.HandleFunc("POST /admin/settings/password/check", s.handlePasswordCheck)
 	mux.HandleFunc("POST /admin/settings/totp/enroll", s.handleTOTPEnroll)
 	mux.HandleFunc("POST /admin/settings/totp/enable", s.handleTOTPEnable)
 	mux.HandleFunc("POST /admin/settings/totp/disable", s.handleTOTPDisable)
@@ -306,11 +307,18 @@ func (s *Server) grantSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session error", http.StatusInternalServerError)
 		return
 	}
+	s.setSessionCookie(w, id)
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+// setSessionCookie sets the session cookie with Max-Age matching the
+// server-side TTL, so the login survives browser restarts until it expires.
+func (s *Server) setSessionCookie(w http.ResponseWriter, id string) {
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: id, Path: "/",
+		MaxAge:   int(sessionTTL.Seconds()),
 		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.secureCookies(),
 	})
-	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -340,8 +348,12 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next := r.FormValue("new")
-	if len(next) < 8 {
+	switch pwState(next, r.FormValue("confirm")) {
+	case "short", "":
 		s.renderSettings(w, r, views.Flash{Msg: "New password must be at least 8 characters"})
+		return
+	case "mismatch":
+		s.renderSettings(w, r, views.Flash{Msg: "Passwords do not match"})
 		return
 	}
 	nh, err := bcrypt.GenerateFromPassword([]byte(next), bcrypt.DefaultCost)
@@ -354,6 +366,54 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.renderSettings(w, r, views.Flash{Msg: "Password changed."})
+}
+
+// pwState is the single source of truth for new-password validation: the
+// debounced hint endpoint and the final submit both go through it.
+// "" (empty), "short", "mismatch" reject; "weak" and "strong" pass.
+func pwState(pw, confirm string) string {
+	if pw == "" {
+		return ""
+	}
+	if len(pw) < 8 {
+		return "short"
+	}
+	if confirm != "" && confirm != pw {
+		return "mismatch"
+	}
+	var lower, upper, digit, other bool
+	for _, r := range pw {
+		switch {
+		case unicode.IsLower(r):
+			lower = true
+		case unicode.IsUpper(r):
+			upper = true
+		case unicode.IsDigit(r):
+			digit = true
+		default:
+			other = true
+		}
+	}
+	classes := 0
+	for _, b := range []bool{lower, upper, digit, other} {
+		if b {
+			classes++
+		}
+	}
+	if (len(pw) >= 12 && classes >= 3) || len(pw) >= 16 {
+		return "strong"
+	}
+	return "weak"
+}
+
+// handlePasswordCheck renders the live hint for the settings form. Read-only:
+// it never mutates, so a session (no same-origin dance) is enough.
+func (s *Server) handlePasswordCheck(w http.ResponseWriter, r *http.Request) {
+	if !s.loggedIn(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	views.PwHint(pwState(r.FormValue("new"), r.FormValue("confirm"))).Render(r.Context(), w)
 }
 
 // handleTOTPEnroll generates a fresh secret, stores it (not yet enabled), and

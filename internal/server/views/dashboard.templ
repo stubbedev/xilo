@@ -158,16 +158,19 @@ templ Dashboard(d DashboardData) {
 						}
 					</select>
 				</label>
-				<div class="switch-row">
-					<label><input type="checkbox" role="switch" name="push"/> { T("tokens.push") }</label>
-					<label><input type="checkbox" role="switch" name="pull" checked/> { T("tokens.pull") }</label>
-				</div>
-				<label class="switch-row"><input type="checkbox" role="switch" x-model="permanent"/> { T("tokens.permanent") }</label>
-				<fieldset class="ttl-wrap" x-show="!permanent" :disabled="permanent">
-					<label>
-						{ T("tokens.ttl") }
+				<fieldset class="switch-group">
+					<legend>{ T("tokens.perms") }</legend>
+					<div class="switch-row">
+						<label><input type="checkbox" role="switch" name="push"/> { T("tokens.push") }</label>
+						<label><input type="checkbox" role="switch" name="pull" checked/> { T("tokens.pull") }</label>
+					</div>
+				</fieldset>
+				<fieldset class="switch-group">
+					<legend>{ T("tokens.expires") }</legend>
+					<label class="switch-row"><input type="checkbox" role="switch" x-model="permanent"/> { T("tokens.permanent") }</label>
+					<fieldset class="ttl-wrap" x-show="!permanent" :disabled="permanent">
 						@durInput("ttl", 30*86400)
-					</label>
+					</fieldset>
 				</fieldset>
 				<footer>
 					<button class="secondary" type="button" onclick="this.closest('dialog').close()">{ T("action.cancel") }</button>
@@ -195,16 +198,19 @@ templ tokenEditModal(t store.Token, caches []CacheUsage) {
 					}
 				</select>
 			</label>
-			<div class="switch-row">
-				<label><input type="checkbox" role="switch" name="push" checked?={ hasPerm(t, "push") }/> { T("tokens.push") }</label>
-				<label><input type="checkbox" role="switch" name="pull" checked?={ hasPerm(t, "pull") }/> { T("tokens.pull") }</label>
-			</div>
-			<label class="switch-row"><input type="checkbox" role="switch" name="permanent" x-model="permanent"/> { T("tokens.permanent") }</label>
-			<fieldset class="ttl-wrap" x-show="!permanent" :disabled="permanent">
-				<label>
-					{ T("tokens.ttl") }
+			<fieldset class="switch-group">
+				<legend>{ T("tokens.perms") }</legend>
+				<div class="switch-row">
+					<label><input type="checkbox" role="switch" name="push" checked?={ hasPerm(t, "push") }/> { T("tokens.push") }</label>
+					<label><input type="checkbox" role="switch" name="pull" checked?={ hasPerm(t, "pull") }/> { T("tokens.pull") }</label>
+				</div>
+			</fieldset>
+			<fieldset class="switch-group">
+				<legend>{ T("tokens.expires") }</legend>
+				<label class="switch-row"><input type="checkbox" role="switch" name="permanent" x-model="permanent"/> { T("tokens.permanent") }</label>
+				<fieldset class="ttl-wrap" x-show="!permanent" :disabled="permanent">
 					@durInput("ttl", Remaining(t.Expires))
-				</label>
+				</fieldset>
 			</fieldset>
 			<footer>
 				<button class="secondary" type="button" onclick="this.closest('dialog').close()">{ T("action.cancel") }</button>
@@ -219,9 +225,9 @@ templ permBadges(perms []string) {
 	for _, p := range perms {
 		switch p {
 			case "push":
-				<span class="badge priv icon-badge" data-tooltip={ T("tokens.pushtip") }>@IconClass("database-arrow-up", 16, "")</span>
+				<span class="badge priv icon-badge" data-tooltip={ T("tokens.push") }>@IconClass("database-arrow-up", 16, "")</span>
 			case "pull":
-				<span class="badge pub icon-badge" data-tooltip={ T("tokens.pulltip") }>@IconClass("database-arrow-down", 16, "")</span>
+				<span class="badge pub icon-badge" data-tooltip={ T("tokens.pull") }>@IconClass("database-arrow-down", 16, "")</span>
 		}
 	}
 }

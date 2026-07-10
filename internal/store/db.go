@@ -156,6 +156,17 @@ func migrate(w *sql.DB) error {
 			credential BLOB NOT NULL,
 			created    INTEGER NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS sessions (
+			id      TEXT PRIMARY KEY,
+			expires INTEGER NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS metrics_minutes (
+			ts     INTEGER PRIMARY KEY,
+			req    REAL NOT NULL,
+			lat    REAL NOT NULL,
+			bps    REAL NOT NULL,
+			stored INTEGER NOT NULL
+		)`,
 	}
 	for _, s := range stmts {
 		if _, err := w.Exec(s); err != nil {

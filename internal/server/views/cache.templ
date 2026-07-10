@@ -173,8 +173,8 @@ templ pathResults(d CacheData) {
 				<thead>
 					<tr>
 						@SortTH(d.PathSort, "path", T("paths.path"))
-						@SortTH(d.PathSort, "size", T("paths.size"))
-						@SortTH(d.PathSort, "pulled", T("paths.pulled"))
+						@SortTH(d.PathSort, "size", T("paths.size"), "num")
+						@SortTH(d.PathSort, "pulled", T("paths.pulled"), "num")
 					</tr>
 				</thead>
 				<tbody>

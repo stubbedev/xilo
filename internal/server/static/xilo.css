@@ -66,11 +66,15 @@ main.container {
 }
 
 /* ---------- topbar ---------- */
-.brand {
+/* Outranks the .topbar nav a chip color so the brand stays pumpkin on every
+   page, not just when aria-current lands on it. */
+.brand, .topbar nav a.brand {
   display: flex; align-items: center; gap: var(--x-2);
   font-weight: 700; font-size: 1.1rem; letter-spacing: -0.01em;
-  text-decoration: none; color: var(--pico-color);
+  text-decoration: none; color: var(--pico-primary);
 }
+/* The brand name keeps its pumpkin color wherever it appears in copy. */
+.brand-name { color: var(--pico-primary); font-weight: 600; }
 .brand:hover { opacity: .85; }
 .brand .logo {
   width: 26px; height: 26px; border-radius: 7px; flex: none;
@@ -121,10 +125,19 @@ article {
   border: 1px solid var(--pico-muted-border-color);
   box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
 }
-/* Symmetric cards: Pico gives tables/forms/progress trailing margins that
-   inflate the bottom padding — zero them at the card edges. */
-article > :first-child { margin-top: 0; }
-article > :last-child { margin-bottom: 0; }
+/* Symmetric containers, globally: Pico gives buttons/inputs/forms/tables a
+   trailing margin-bottom, so the last child of any padded box reads as extra
+   bottom padding (bottom gap = padding + stray margin). Zero the edge margins
+   in every container at :where() zero specificity — any deliberate margin
+   rule still wins. */
+article > :last-child, section > :last-child, aside > :last-child,
+form > :last-child, fieldset > :last-child, dialog > :last-child,
+figure > :last-child, hgroup > :last-child, td > :last-child,
+th > :last-child, li > :last-child, div > :last-child { margin-bottom: 0; }
+article > :first-child, section > :first-child, aside > :first-child,
+form > :first-child, fieldset > :first-child, dialog > :first-child,
+figure > :first-child, hgroup > :first-child, td > :first-child,
+th > :first-child, li > :first-child, div > :first-child { margin-top: 0; }
 /* Capacity bar under KPI tiles breathes instead of hugging them. */
 .kpi + progress { margin: var(--x-4) 0 0 !important; }
 
@@ -134,14 +147,19 @@ article > :last-child { margin-bottom: 0; }
 @media (max-width: 640px) {
   article:has(table) { overflow-x: auto; }
 }
+/* Pico collapses borders, which kills border-radius on cells — separate them
+   so the table can share the card's rounding. */
+table { border-collapse: separate; border-spacing: 0; }
 th, td { padding: var(--x-2) var(--x-3); font-size: var(--x-fs-sm); vertical-align: middle; }
-/* Edge cells align with the rest of the card's content instead of adding
-   their own 12px inset. */
-th:first-child, td:first-child { padding-left: 0; }
-th:last-child, td:last-child { padding-right: 0; }
+thead th:first-child { border-top-left-radius: var(--x-radius); }
+thead th:last-child { border-top-right-radius: var(--x-radius); }
+tbody tr:last-child td:first-child { border-bottom-left-radius: var(--x-radius); }
+tbody tr:last-child td:last-child { border-bottom-right-radius: var(--x-radius); }
+tbody tr:last-child td { border-bottom: 0; }
 th {
   font-size: var(--x-fs-label); font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.04em; color: var(--pico-muted-color);
+  user-select: none;
 }
 tbody tr:hover { background: var(--pico-card-sectioning-background-color); }
 td.actions, th.actions { text-align: right; width: 1%; white-space: nowrap; }
@@ -183,6 +201,18 @@ form.fields label { flex: 1 1 12rem; display: flex; flex-direction: column; gap:
 form.fields input:not([type=checkbox]) { width: 100%; margin: 0; }
 form.fields .fields-foot { flex-basis: 100%; display: flex; align-items: center; justify-content: space-between; gap: var(--x-4); }
 form.fields .fields-foot > :only-child { margin-left: auto; }
+/* The action stays pinned right even when the hint slot is empty. */
+form.fields .fields-foot button { margin-left: auto; }
+/* Change password: current on its own row, the new/repeat pair together
+   below it — three abreast reads as three unrelated fields. */
+form.pw-fields { display: grid; grid-template-columns: 1fr 1fr; }
+form.pw-fields label:first-child, form.pw-fields .fields-foot { grid-column: 1 / -1; }
+@media (max-width: 640px) {
+  form.pw-fields { grid-template-columns: 1fr; }
+}
+.pw-hint { font-size: var(--x-fs-sm); color: var(--pico-muted-color); }
+.pw-hint.ok { color: var(--x-ok); }
+.pw-hint.warn { color: var(--pico-primary); }
 /* A switch presented like any other labeled field: caption above, control below. */
 form.fields label.switch-col input { align-self: flex-start; margin-top: 0.45rem; }
 /* Unit pairs (number + select) share their field's row; the select hugs its text. */
@@ -309,6 +339,13 @@ dialog.modal label input:not([type=checkbox]):not([type=radio]), dialog.modal la
 dialog.modal .switch-row input { flex: none; }
 dialog.modal .switch-row { display: flex; flex-direction: row; align-items: center; gap: 1.5rem; }
 dialog.modal .switch-row label { flex-direction: row; align-items: center; gap: 0.5rem; color: var(--pico-color); }
+/* Switch groups share the field anatomy: muted caption above, control below. */
+dialog.modal fieldset.switch-group { margin: 0; padding: 0; border: 0; }
+dialog.modal fieldset.switch-group legend {
+  padding: 0; margin: 0 0 0.35rem;
+  font-size: var(--x-fs-sm); color: var(--pico-muted-color);
+}
+dialog.modal .switch-group .ttl-wrap { margin-top: var(--x-3); }
 
 /* ---------- storage usage rows ---------- */
 .usage { display: flex; flex-direction: column; gap: var(--x-4); }
@@ -331,6 +368,75 @@ progress.over { --pico-progress-color: var(--x-danger); }
 .searchrow button { flex: 0 0 auto !important; }
 td.pathcell code { background: none; padding: 0; font-size: var(--x-fs-sm); overflow-wrap: anywhere; }
 td.num, th.num { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- status dashboard ---------- */
+.status-head {
+  display: flex; flex-wrap: wrap; align-items: flex-end;
+  justify-content: space-between; gap: var(--x-3) var(--x-4);
+  margin-bottom: var(--x-4);
+}
+.status-head hgroup { flex: 1 1 16rem; margin-bottom: 0; }
+.status-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--x-3); }
+/* Segmented pill groups (window presets, refresh rate). */
+.seg {
+  display: inline-flex; align-items: stretch;
+  border: 1px solid var(--pico-muted-border-color); border-radius: var(--x-radius);
+}
+.seg-btn {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.45rem 0.65rem !important; margin: 0; height: auto;
+  font-size: var(--x-fs-sm); font-weight: 400; line-height: 1;
+  color: var(--pico-muted-color); text-decoration: none; cursor: pointer;
+  background: none; border: 0; border-right: 1px solid var(--pico-muted-border-color);
+  box-shadow: none;
+}
+.seg > :first-child, .seg > :first-child .seg-btn { border-top-left-radius: calc(var(--x-radius) - 1px); border-bottom-left-radius: calc(var(--x-radius) - 1px); }
+.seg > :last-child, .seg > :last-child summary.seg-btn { border-top-right-radius: calc(var(--x-radius) - 1px); border-bottom-right-radius: calc(var(--x-radius) - 1px); }
+.seg > a:last-child, .seg-custom summary { border-right: 0; }
+a.seg-btn:hover, summary.seg-btn:hover { color: var(--pico-primary); background: color-mix(in srgb, var(--pico-primary) 8%, transparent); }
+.seg-btn.active { color: var(--pico-primary); background: color-mix(in srgb, var(--pico-primary) 13%, transparent); font-weight: 600; }
+.seg-label { cursor: default; }
+.seg .ic { width: 13px; height: 13px; }
+/* Custom range popover: a native <details> dressed as a dropdown card. */
+.seg-custom { position: relative; display: inline-flex; margin: 0; padding: 0; }
+.seg-custom summary, .seg-custom[open] > summary { list-style: none; margin: 0 !important; }
+.seg-custom summary::marker { display: none; }
+/* Pico dresses every <details> as an accordion; strip its chevron + height. */
+.seg-custom summary::after { display: none !important; }
+.seg-pop {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 30;
+  display: flex; flex-direction: column; gap: var(--x-3);
+  min-width: 15rem; padding: var(--x-4);
+  background: var(--pico-card-background-color);
+  border: 1px solid var(--pico-muted-border-color); border-radius: var(--x-radius);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 30%);
+}
+.seg-pop label {
+  display: flex; flex-direction: column; gap: 0.35rem; margin: 0;
+  font-size: var(--x-fs-sm); color: var(--pico-muted-color);
+}
+.seg-pop input[type=date] { width: 100%; margin: 0; }
+.seg-pop button { align-self: flex-end; }
+.charts { display: grid; grid-template-columns: 1fr 1fr; gap: var(--x-4); margin-top: var(--x-4); }
+@media (max-width: 640px) {
+  .charts { grid-template-columns: 1fr; }
+}
+article.chart { margin-bottom: 0; }
+.chart-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: var(--x-3); padding: 0; background: none; border: 0;
+}
+.chart-head .l {
+  font-size: var(--x-fs-label); font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--pico-muted-color);
+}
+.chart-head .vals { display: flex; align-items: baseline; gap: var(--x-2); }
+.chart-head .v { font-weight: 700; font-variant-numeric: tabular-nums; }
+.chart-head .peak { color: var(--pico-muted-color); font-size: var(--x-fs-label); font-variant-numeric: tabular-nums; }
+.echart { width: 100%; height: 220px; }
+.status-updated { margin: var(--x-3) 0 0; font-size: var(--x-fs-label); color: var(--pico-muted-color); text-align: right; }
+.ok-text { color: var(--x-ok); }
+.bad-text { color: var(--x-danger); }
 
 /* ---------- setup tabs ---------- */
 .tabs { display: flex; gap: var(--x-2); margin-bottom: var(--x-3); flex-wrap: wrap; }
@@ -389,6 +495,12 @@ input[type=range] { width: 100%; margin: 0; }
 th .sorth { display: inline-flex; align-items: center; gap: 0.25rem; color: inherit; text-decoration: none; }
 th .sorth:hover { color: var(--pico-primary); }
 th .sort-ic { width: 12px; height: 12px; }
+/* Inactive columns reserve the chevron's slot so column widths don't shift
+   when the sort moves. */
+th[aria-sort=none] .sorth::after { content: ""; width: 12px; flex: none; }
+/* Right-aligned columns: chevron flips to the left so the label stays flush
+   with the numbers below it. */
+th.num .sorth { flex-direction: row-reverse; }
 
 /* ---------- pagination ---------- */
 .pager { display: flex; align-items: center; justify-content: space-between; gap: var(--x-3); margin-top: var(--x-3); }

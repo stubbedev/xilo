@@ -12,7 +12,7 @@ templ Layout(title string, loggedIn bool, flash Flash) {
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<title>xilo — { title }</title>
+			<title>Xilo — { title }</title>
 			<link rel="icon" type="image/svg+xml" href={ Asset("favicon.svg") }/>
 				<link rel="stylesheet" href={ Asset("pico.min.css") }/>
 			<link rel="stylesheet" href={ Asset("xilo.css") }/>
@@ -84,6 +84,8 @@ templ Layout(title string, loggedIn bool, flash Flash) {
 				var xiloDownOnBackdrop=false;
 				document.addEventListener('pointerdown',function(e){xiloDownOnBackdrop=e.target.tagName==='DIALOG'});
 				document.addEventListener('click',function(e){if(xiloDownOnBackdrop&&e.target.tagName==='DIALOG'&&e.target.open){e.target.close()}});
+				// Clicking outside an open dropdown (details.seg-custom) closes it.
+				document.addEventListener('click',function(e){document.querySelectorAll('details.seg-custom[open]').forEach(function(d){if(!d.contains(e.target)){d.removeAttribute('open')}})});
 				// Mark the active topbar link (cache detail pages count as "Caches");
 				// re-run after boosted navigations since the page never reloads.
 				function xiloMarkNav(){var p=location.pathname;document.querySelectorAll('.topbar nav a').forEach(function(a){var h=a.getAttribute('href');if(p===h||(h!=='/admin'&&p.indexOf(h+'/')===0)||(h==='/admin'&&p.indexOf('/admin/cache/')===0)){a.setAttribute('aria-current','page')}else{a.removeAttribute('aria-current')}})}
@@ -96,7 +98,7 @@ templ Layout(title string, loggedIn bool, flash Flash) {
 			<header class="topbar">
 				<nav class="bar-inner" aria-label="Main">
 					<ul>
-						<li><a class="brand" href="/admin"><span class="logo">@IconClass("paper-bag", 16, "logo-ic")</span> xilo</a></li>
+						<li><a class="brand" href="/admin"><span class="logo">@IconClass("paper-bag", 16, "logo-ic")</span> Xilo</a></li>
 					</ul>
 					<ul>
 						if loggedIn {
@@ -147,11 +149,10 @@ templ Layout(title string, loggedIn bool, flash Flash) {
 			<footer class="site-footer">
 				<nav class="foot-inner" aria-label="Meta">
 					<ul>
-						<li>{ T("footer.tagline") }</li>
+						<li><span class="brand-name">Xilo</span> { T("footer.tagline") }</li>
 					</ul>
 					<ul>
-						<li><a href="/healthz">@Icon("activity") <span>{ T("footer.health") }</span></a></li>
-						<li><a href="/metrics">@Icon("chart-line") <span>{ T("footer.metrics") }</span></a></li>
+						<li><a href="/admin/status">@Icon("activity") <span>{ T("footer.status") }</span></a></li>
 					</ul>
 				</nav>
 			</footer>
@@ -236,8 +237,8 @@ templ PagerNav(p Pager) {
 }
 
 // SortTH is a clickable, direction-indicating table header cell.
-templ SortTH(s SortCtx, key, label string) {
-	<th aria-sort={ ariaSort(s, key) }>
+templ SortTH(s SortCtx, key, label string, class ...string) {
+	<th class={ class } aria-sort={ ariaSort(s, key) }>
 		<a class="sorth" href={ templ.SafeURL(s.URL(key)) } { hxSwapAttrs(s.Target)... }>
 			{ label }
 			if s.Key == key {

@@ -259,10 +259,7 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 		http.Error(w, "session error", http.StatusInternalServerError)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name: sessionCookie, Value: id, Path: "/",
-		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.secureCookies(),
-	})
+	s.setSessionCookie(w, id)
 	jsonOut(w, map[string]bool{"ok": true})
 }
 

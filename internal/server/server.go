@@ -37,6 +37,8 @@ type Server struct {
 	zstdPool  sync.Pool     // *zstd.Encoder for streaming NAR responses
 	uploadSem chan struct{} // bounds concurrent server-side chunk read+encode
 	metrics   metrics
+	stat      statusRing
+	started   time.Time
 }
 
 func New(cfg *config.Config, db *store.DB, st storage.Storage) (*Server, error) {
@@ -50,7 +52,8 @@ func New(cfg *config.Config, db *store.DB, st storage.Storage) (*Server, error) 
 	}
 	return &Server{
 		cfg: cfg, db: db, st: st, enc: enc, dec: dec,
-		sess:      newSessions(),
+		sess:      newSessions(db),
+		started:   time.Now(),
 		uploadSem: make(chan struct{}, max(4, 2*runtime.NumCPU())),
 		zstdPool: sync.Pool{New: func() any {
 			// Fast level for on-the-fly wire compression (dedup already
@@ -108,6 +111,7 @@ func (s *Server) Run() error {
 // shuts down gracefully (drains in-flight requests).
 func (s *Server) RunContext(ctx context.Context) error {
 	s.startGC()
+	s.startStatusSampler(ctx)
 
 	srv := &http.Server{
 		Addr:    s.cfg.Listen,
@@ -151,7 +155,10 @@ func (s *Server) middleware(h http.Handler) http.Handler {
 					http.Error(lw, "internal error", http.StatusInternalServerError)
 				}
 			}
-			log.Printf("%s %s %d %s", r.Method, r.URL.Path, lw.status, time.Since(start).Round(time.Millisecond))
+			elapsed := time.Since(start)
+			s.metrics.reqTotal.Add(1)
+			s.metrics.reqDurNs.Add(elapsed.Nanoseconds())
+			log.Printf("%s %s %d %s", r.Method, r.URL.Path, lw.status, elapsed.Round(time.Millisecond))
 		}()
 		h.ServeHTTP(lw, r)
 	})
@@ -229,8 +236,19 @@ func (s *Server) notFoundNegotiated(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleHealth is a dependency-free readiness probe: it does one cheap DB read.
+// ?format=json (or Accept: application/json) returns the machine shape.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	if _, err := s.db.ListCaches(); err != nil {
+	_, err := s.db.ListCaches()
+	if wantsJSON(r) {
+		status := "ok"
+		if err != nil {
+			status = "error"
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+		jsonOut(w, map[string]any{"status": status, "uptime_seconds": int64(time.Since(s.started).Seconds())})
+		return
+	}
+	if err != nil {
 		http.Error(w, "db error", http.StatusServiceUnavailable)
 		return
 	}
