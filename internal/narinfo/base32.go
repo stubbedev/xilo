@@ -35,6 +35,10 @@ func Base32Encode(b []byte) string {
 // Base32Decode is the inverse of Base32Encode.
 func Base32Decode(s string) ([]byte, error) {
 	outLen := len(s) * 5 / 8
+	if len(s) > 0 && outLen == 0 {
+		// 1 char = 5 bits < 1 byte; indexing out[0] below would panic.
+		return nil, fmt.Errorf("invalid nix-base32 %q: too short", s)
+	}
 	out := make([]byte, outLen)
 	for n := 0; n < len(s); n++ {
 		c := s[len(s)-1-n]

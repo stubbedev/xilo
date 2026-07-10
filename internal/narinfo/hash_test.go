@@ -119,3 +119,14 @@ func TestFingerprintUsesFullPathsSignVerify(t *testing.T) {
 		t.Fatal("signature did not verify")
 	}
 }
+
+// A 1-char string encodes 5 bits — less than one output byte. Must error, not
+// panic (out[0] on an empty slice).
+func TestBase32DecodeTooShort(t *testing.T) {
+	if _, err := Base32Decode("a"); err == nil {
+		t.Fatal("expected error for 1-char input")
+	}
+	if b, err := Base32Decode(""); err != nil || len(b) != 0 {
+		t.Fatalf("empty input: %v %v", b, err)
+	}
+}

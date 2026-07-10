@@ -1,0 +1,18 @@
+# Server-only stack for the CLI e2e suite (tests/e2e/cli.sh): the xilo image
+# with the port published so the host-side CLI + host Nix can reach it.
+name: xilo-e2e
+
+services:
+  xilo:
+    build:
+      context: ../..
+    environment:
+      XILO_ADMIN_PASSWORD: e2e-admin
+      XILO_BASE_URL: http://127.0.0.1:18080
+    ports:
+      - "127.0.0.1:18080:8080"
+    volumes:
+      - xilo-e2e-data:/data
+
+volumes:
+  xilo-e2e-data:

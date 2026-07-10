@@ -13,6 +13,7 @@ no Nix store needed, fully hermetic.
 
 | script | what it measures | what fails it |
 |---|---|---|
+| `ops.js` | **every operation, once, with correctness assertions**: health/metrics/statics, full push wire protocol incl. all rejection paths (wrong hash, wrong order, wrong size, bad JSON, unknown chunk), narinfo contract (signature, headers, negative cache), byte-exact NAR on identity/gzip/zstd, the full private-cache auth matrix (anonymous/pull/push/revoked/wrong-scope tokens), and the whole admin surface — cache CRUD + rotate + GC + delete, token create/edit/revoke, search/sort/paging, status ranges, password change, complete TOTP 2FA cycle (enroll → enable → 2FA login → disable, codes computed in-script) | any single failed check (`rate==1`) |
 | `perf.js` | staggered scenarios over everything a fast substituter needs: narinfo hit + miss (mass query), NAR pull (identity, zstd stored-frame wire, 64 MiB big NAR), dedup re-push (the CI hot path), fresh push, a 4→32 VU push **saturation ramp**, and a **mixed window** (pushers + narinfo storm + pulls at once — reads must stay <300 ms p95 under full ingest) | error rate ≥ 1 %, per-scenario latency floors (loose; the tracked summary is the signal) |
 | `churn.js` | integrity under hostile GC (5 s sweeps, 30 s retention, 15 s grace): recurring dedup pushes, an orphan flood keeping the sweeper busy, and a lapsing path set that gets evicted+swept then re-pushed — every pushed NAR is pulled back and byte-hash-verified | any dropped or corrupt NAR (`nar_broken > 0`) |
 
@@ -22,9 +23,11 @@ known payload (seed paths are 4 × 256 KiB; the big NAR is 64 MiB).
 ## Run
 
 ```sh
+just k6-ops      # operations conformance (fast, every endpoint)
 just k6-perf     # throughput/latency numbers
 just k6-churn    # integrity soak (3m; DURATION=10m just k6-churn for longer)
 just k6-race     # churn against a `go run -race` server build
+just e2e         # CLI end-to-end (tests/e2e/cli.sh — real nix + container)
 ```
 
 Or raw compose — see the header of [`compose.yaml`](./compose.yaml).

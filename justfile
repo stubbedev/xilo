@@ -129,6 +129,17 @@ docker-run: docker-build
 
 # ─────────────────────────── k6 (tests/k6/) ───────────────────────────
 
+# Operations conformance: every wire + admin operation with correctness
+# assertions (auth matrix, TOTP cycle, byte-exact NARs on all encodings).
+k6-ops:
+    docker compose -f tests/k6/compose.yaml run --rm k6 run /scripts/ops.js
+    docker compose -f tests/k6/compose.yaml down -v
+
+# CLI end-to-end: every xilo subcommand against a containerized server,
+# real nix closure push, `nix copy` as the pull verifier. Needs nix + docker.
+e2e:
+    ./tests/e2e/cli.sh
+
 # Perf numbers: narinfo QPS, NAR pull, push pipeline. Tracked per release.
 k6-perf:
     docker compose -f tests/k6/compose.yaml run --rm k6

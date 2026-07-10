@@ -61,6 +61,62 @@ func TestSignVerify(t *testing.T) {
 	}
 }
 
+func TestBase32EncodeEmpty(t *testing.T) {
+	if got := Base32Encode(nil); got != "" {
+		t.Fatalf("Base32Encode(nil) = %q, want \"\"", got)
+	}
+}
+
+func TestBase32DecodeNonzeroCarry(t *testing.T) {
+	// "z0": the high digit overflows the single output byte → carry error.
+	if _, err := Base32Decode("z0"); err == nil {
+		t.Fatal("expected nonzero-carry error")
+	}
+}
+
+func TestNarHashParseError(t *testing.T) {
+	if _, err := NarHash("bogus"); err == nil {
+		t.Fatal("expected error for unrecognized hash")
+	}
+	// 64 chars matching hex length but with non-hex chars.
+	if _, err := ParseHash("sha256:" + strings.Repeat("z", 64)); err == nil {
+		t.Fatal("expected hex decode error")
+	}
+}
+
+func TestPublicKeyString(t *testing.T) {
+	pub, _, _ := ed25519.GenerateKey(nil)
+	got := PublicKeyString("mycache", pub)
+	want := "mycache:" + base64.StdEncoding.EncodeToString(pub)
+	if got != want {
+		t.Fatalf("PublicKeyString = %q, want %q", got, want)
+	}
+}
+
+func TestNarInfoStringMinimal(t *testing.T) {
+	// No deriver, no sigs: those lines must be absent.
+	ni := &NarInfo{StorePath: "/nix/store/aaa-foo", URL: "nar/aaa.nar", Compression: "none"}
+	out := ni.String()
+	if strings.Contains(out, "Deriver:") || strings.Contains(out, "Sig:") {
+		t.Fatalf("minimal render has optional lines:\n%s", out)
+	}
+	if !strings.Contains(out, "References: \n") {
+		t.Fatalf("missing empty References line:\n%s", out)
+	}
+}
+
+func TestBaseName(t *testing.T) {
+	if got := BaseName("/nix/store/aaa-foo"); got != "aaa-foo" {
+		t.Fatalf("BaseName = %q", got)
+	}
+	if got := BaseName("aaa-foo"); got != "aaa-foo" {
+		t.Fatalf("BaseName no-prefix = %q", got)
+	}
+	if got := BaseName(""); got != "" {
+		t.Fatalf("BaseName empty = %q", got)
+	}
+}
+
 func TestNarInfoString(t *testing.T) {
 	ni := &NarInfo{
 		StorePath: "/nix/store/aaa-foo", URL: "nar/aaa.nar", Compression: "none",

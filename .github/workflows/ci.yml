@@ -26,6 +26,32 @@ jobs:
       - run: go build ./...
       - run: go test -race ./...
 
+  e2e:
+    name: CLI end-to-end (real nix + containerized server)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: DeterminateSystems/nix-installer-action@main
+      - name: generate templ views
+        run: go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
+      - name: run CLI e2e suite
+        run: ./tests/e2e/cli.sh
+
+  ops:
+    name: k6 operations conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: run ops suite
+        run: docker compose -f tests/k6/compose.yaml run --rm k6 run /scripts/ops.js
+      - name: teardown
+        if: always()
+        run: docker compose -f tests/k6/compose.yaml down -v
+
   schema:
     name: JSON schema in sync
     runs-on: ubuntu-latest
