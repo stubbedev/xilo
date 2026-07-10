@@ -425,13 +425,28 @@ func TestReadAllInto(t *testing.T) {
 }
 
 func TestReadAhead(t *testing.T) {
-	s, _, _ := newTestServerCfg(t, func(cfg *config.Config) { cfg.Parallelism = 1 })
+	// Local backend: shallow fixed window (no GET latency to hide).
+	s, _, _ := newTestServerCfg(t, func(cfg *config.Config) { cfg.Parallelism = 16 })
 	if s.readAhead() != 4 {
-		t.Errorf("readAhead floor = %d want 4", s.readAhead())
+		t.Errorf("local readAhead = %d want 4", s.readAhead())
 	}
-	s2, _, _ := newTestServerCfg(t, func(cfg *config.Config) { cfg.Parallelism = 16 })
+	// S3: deep window scaled to parallelism, floor 4. (Client construction
+	// needs endpoint+bucket but performs no network I/O.)
+	s3cfg := func(par int) func(*config.Config) {
+		return func(cfg *config.Config) {
+			cfg.Storage.Backend = "s3"
+			cfg.Storage.S3.Endpoint = "s3.invalid"
+			cfg.Storage.S3.Bucket = "b"
+			cfg.Parallelism = par
+		}
+	}
+	s2, _, _ := newTestServerCfg(t, s3cfg(16))
 	if s2.readAhead() != 16 {
-		t.Errorf("readAhead = %d want 16", s2.readAhead())
+		t.Errorf("s3 readAhead = %d want 16", s2.readAhead())
+	}
+	s3, _, _ := newTestServerCfg(t, s3cfg(1))
+	if s3.readAhead() != 4 {
+		t.Errorf("s3 readAhead floor = %d want 4", s3.readAhead())
 	}
 }
 

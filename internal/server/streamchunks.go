@@ -3,28 +3,62 @@ package server
 import (
 	"context"
 	"io"
+	"sync"
 
 	"github.com/stubbedev/xilo/internal/store"
 )
 
+// chunkBufPool recycles chunk-sized buffers across requests. Under parallel
+// pulls the prefetch pipeline otherwise allocates (raw + compressed) per
+// chunk and leaves the garbage to GC — pooling keeps steady-state RSS flat.
+var chunkBufPool = sync.Pool{New: func() any { b := make([]byte, 0, 1<<20); return &b }}
+
+func getChunkBuf(capHint int64) []byte {
+	b := *(chunkBufPool.Get().(*[]byte))
+	if int64(cap(b)) < capHint {
+		return make([]byte, 0, capHint)
+	}
+	return b[:0]
+}
+
+func putChunkBuf(b []byte) {
+	if cap(b) > 4<<20 { // don't hoard oversized one-offs
+		return
+	}
+	chunkBufPool.Put(&b)
+}
+
 // fetchChunk gets one compressed chunk from storage and decompresses it.
+// The returned buffer is pool-owned: eachOrdered returns it to the pool after
+// the consumer callback runs.
 func (s *Server) fetchChunk(ctx context.Context, ref store.ChunkRef) ([]byte, error) {
 	compressed, err := s.fetchChunkRaw(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
-	return s.dec.DecodeAll(compressed, make([]byte, 0, ref.Size))
+	raw, err := s.dec.DecodeAll(compressed, getChunkBuf(ref.Size))
+	putChunkBuf(compressed)
+	if err != nil {
+		putChunkBuf(raw)
+		return nil, err
+	}
+	return raw, nil
 }
 
 // fetchChunkRaw gets one chunk from storage as stored (a complete zstd frame).
+// The returned buffer is pool-owned (see fetchChunk).
 func (s *Server) fetchChunkRaw(ctx context.Context, ref store.ChunkRef) ([]byte, error) {
 	rc, err := s.st.Get(ctx, ref.Key)
 	if err != nil {
 		return nil, err
 	}
 	defer rc.Close()
-	buf := make([]byte, 0, ref.CSize)
-	return readAllInto(buf, rc)
+	buf, err := readAllInto(getChunkBuf(ref.CSize), rc)
+	if err != nil {
+		putChunkBuf(buf)
+		return nil, err
+	}
+	return buf, nil
 }
 
 // readAllInto is io.ReadAll into a pre-sized buffer (csize is known from the
@@ -86,7 +120,9 @@ func eachOrdered(ctx context.Context, refs []store.ChunkRef, ahead int,
 		if r.err != nil {
 			return r.err
 		}
-		if err := fn(r.data); err != nil {
+		err := fn(r.data)
+		putChunkBuf(r.data)
+		if err != nil {
 			return err
 		}
 		if j := i + ahead; j < len(refs) {
@@ -96,8 +132,14 @@ func eachOrdered(ctx context.Context, refs []store.ChunkRef, ahead int,
 	return nil
 }
 
-// readAhead is the chunk prefetch depth for serving/verification.
+// readAhead is the chunk prefetch depth for serving/verification. Deep
+// prefetch exists to hide per-object GET latency; local disk has none worth
+// hiding, so a shallow window there halves pull-path memory at no throughput
+// cost.
 func (s *Server) readAhead() int {
+	if s.cfg.Storage.Backend == "local" {
+		return 4
+	}
 	n := s.cfg.Parallelism
 	if n < 4 {
 		n = 4

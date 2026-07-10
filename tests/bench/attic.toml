@@ -1,0 +1,20 @@
+# atticd config for the head-to-head bench: sqlite + local storage + the same
+# chunking parameters as xilo's defaults, so the comparison is apples-to-apples.
+listen = "[::]:8080"
+
+[jwt]
+[jwt.signing]
+token-hs256-secret-base64 = "@SECRET@"
+
+[database]
+url = "sqlite:///data/server.db?mode=rwc"
+
+[storage]
+type = "local"
+path = "/data/storage"
+
+[chunking]
+nar-size-threshold = 65536
+min-size = 65536
+avg-size = 262144
+max-size = 1048576

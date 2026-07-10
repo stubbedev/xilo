@@ -15,7 +15,11 @@ FROM gcr.io/distroless/static-debian12
 COPY --from=build /xilo /xilo
 # Defaults: config at /xilo.yaml (mount to override), data + local storage at
 # /data (declare as a volume), listen on 8080.
-ENV XILO_LISTEN=":8080"
+# GOMEMLIMIT keeps steady-state RSS predictable on small VPSes (Go's GC
+# otherwise lets the heap balloon under parallel NAR streaming). Override
+# with -e GOMEMLIMIT=1GiB on bigger machines if you want more page cache
+# headroom traded for fewer GC cycles.
+ENV XILO_LISTEN=":8080" GOMEMLIMIT="192MiB"
 WORKDIR /
 VOLUME /data
 EXPOSE 8080

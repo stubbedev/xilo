@@ -7,7 +7,25 @@ Self-hosted [Nix binary cache](https://nix.dev/manual/nix/latest/store/types/htt
 - can **revoke push/pull tokens** instantly
 - does **content-addressed chunked dedup** (FastCDC) across all caches
 - stores chunks on **local disk or any S3-compatible bucket** (AWS, [Garage](https://garagehq.deuxfleurs.fr/), R2, …)
-- publishes a **27 MB distroless Docker image**
+- ships a **9 MB distroless Docker image** and serves zstd pulls straight from
+  stored frames (zero compression CPU on the hot path)
+
+Head-to-head against attic (same machine, same 91-path/1 GB closure, same
+chunking, sqlite + local storage both sides — reproduce with
+[`tests/bench/bench.sh`](./tests/bench/bench.sh)):
+
+| metric | xilo | attic |
+|---|---|---|
+| cold push (1 GB closure) | **5.2 s** | 5.7 s |
+| dedup re-push | **0.1 s** | 0.3 s |
+| narinfo QPS (16 conns) | **5 981** | 1 887 |
+| NAR pull throughput | **695 MB/s** | 216 MB/s |
+| server max RSS under that load | **108 MiB** | 197 MiB |
+| CPU per MB/s served | **0.7 %** | 1.1 % |
+| Docker image | **9 MB** | 87 MB |
+
+(attic's per-NAR p95 was ~50 ms better in this run — it was serving a third
+of the bytes. Numbers from 2026-07; rerun the script for your hardware.)
 
 ## Quick start
 

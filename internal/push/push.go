@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/stubbedev/xilo/internal/api"
 	"github.com/stubbedev/xilo/internal/chunk"
@@ -45,10 +46,17 @@ func NewClient(base, cache, token string, jobsOverride int) *Client {
 	return &Client{
 		// Default transport keeps only 2 idle conns per host — at jobs=NumCPU
 		// that means re-dialing (and re-TLS-handshaking) on nearly every chunk.
-		http: &http.Client{Transport: &http.Transport{
-			MaxIdleConns:        128,
-			MaxIdleConnsPerHost: 64,
-		}},
+		// The overall timeout bounds every request: the largest body is one
+		// chunk (~2MiB), so 5m is generous even on very slow links — without
+		// it, a server dying mid-upload leaves the client stuck in TCP
+		// retransmission for 15-30 minutes (hangs CI jobs).
+		http: &http.Client{
+			Timeout: 5 * time.Minute,
+			Transport: &http.Transport{
+				MaxIdleConns:        128,
+				MaxIdleConnsPerHost: 64,
+			},
+		},
 		base:         strings.TrimRight(base, "/"),
 		cache:        cache,
 		token:        token,

@@ -157,5 +157,18 @@ k6-race:
     docker compose -f tests/k6/compose.yaml --profile race run --rm k6-race
     docker compose -f tests/k6/compose.yaml --profile race down -v
 
+# Edge-dimension stress: 1000-chunk NAR, 1MiB chunks, 10k-path narinfo storm.
+k6-deep:
+    docker compose -f tests/k6/compose.yaml run --rm k6 run /scripts/deep.js
+    docker compose -f tests/k6/compose.yaml down -v
+
+# Chaos: SIGKILL mid-push, restart, prove nothing corrupted. Needs nix + docker.
+chaos:
+    ./tests/e2e/chaos.sh
+
+# Head-to-head vs attic on this machine (push, pull, RSS/CPU). ~5 min.
+bench-attic:
+    ./tests/bench/bench.sh
+
 clean:
     rm -rf bin/
