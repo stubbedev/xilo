@@ -110,7 +110,9 @@ func statusScript(d StatusData) string {
 			Object.keys(charts).forEach(function(k){charts[k].dispose()});
 			return;
 		}
-		if(!window.echarts){return}
+		// After a boosted navigation the echarts <script> loads async; retry
+		// shortly so the first paint doesn't wait a whole poll interval.
+		if(!window.echarts){setTimeout(tick,100);return}
 		fetch(URL).then(function(r){return r.ok?r.json():null}).then(function(d){if(d){apply(d)}}).catch(function(){});
 	}
 	addEventListener('resize',function(){Object.keys(charts).forEach(function(k){charts[k].resize()})});
