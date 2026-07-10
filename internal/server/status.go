@@ -364,7 +364,6 @@ func bucketMax(vals []float64, per int) []float64 {
 	return out
 }
 
-
 // statusRangeQ is a validated chart range: either a live preset window
 // (WinMin minutes back from now) or a custom date range [From, To).
 type statusRangeQ struct {
