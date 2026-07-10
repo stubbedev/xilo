@@ -7,3 +7,6 @@
 *.db
 *.db-wal
 *.db-shm
+
+# templ output — generated at build time, never committed
+*_templ.go

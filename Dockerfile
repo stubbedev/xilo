@@ -6,6 +6,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 ARG VERSION=docker
+# Views are generated at build time (*_templ.go is not committed); templ's
+# version comes from go.mod so it can't drift.
+RUN go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
 RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o /xilo ./cmd/xilo
 
 FROM gcr.io/distroless/static-debian12

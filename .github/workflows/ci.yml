@@ -15,15 +15,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: verify templ output in sync
-        run: |
-          go install github.com/a-h/templ/cmd/templ@v0.3.1020
-          "$(go env GOPATH)/bin/templ" generate
-          if [ -n "$(git status --porcelain '*_templ.go')" ]; then
-            echo "::error::templ output is stale. Run 'just generate' and commit."
-            git --no-pager diff -- '*_templ.go'
-            exit 1
-          fi
+      # *_templ.go is not committed — generate it (templ version from go.mod).
+      - name: generate templ views
+        run: go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
       - name: gofmt
         run: |
           out=$(gofmt -l .)
@@ -51,6 +45,7 @@ jobs:
       # so a new/changed field always flows into editor hinting.
       - name: regenerate schema
         run: |
+          go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
           mkdir -p schemas
           go run ./cmd/xilo schema dump --out schemas/xilo.schema.json
 

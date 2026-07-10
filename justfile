@@ -35,12 +35,13 @@ install:
 fmt:
     gofmt -w .
 
-# Vet + build + test — the local gate.
-lint:
+# Vet + build + test — the local gate. Views regenerate first: *_templ.go is
+# never committed, only built.
+lint: generate
     gofmt -l .
     go vet ./...
 
-test:
+test: generate
     go test ./...
 
 # ─────────────────────────── Codegen ───────────────────────────
@@ -57,18 +58,6 @@ sync-schema: build
         echo "sync-schema: schema already in sync"; \
     fi
 
-# Strict read-only check that committed templ output is in sync (CI gate).
-templ-check:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    templ generate
-    if [ -n "$(git status --porcelain '*_templ.go')" ]; then
-        echo "::error::templ output is stale. Run 'just generate' and commit."
-        git --no-pager diff -- '*_templ.go'
-        exit 1
-    fi
-    echo "templ output in sync"
-
 # Strict read-only schema check (what CI runs on PRs).
 schema-check: build
     #!/usr/bin/env bash
@@ -83,7 +72,7 @@ schema-check: build
     echo "schema in sync"
 
 # Everything CI checks.
-check: lint test templ-check schema-check
+check: lint test schema-check
 
 # ─────────────────────────── Run & Dev ───────────────────────────
 
