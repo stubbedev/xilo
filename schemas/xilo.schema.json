@@ -56,15 +56,15 @@
           "properties": {
             "endpoint": {
               "type": "string",
-              "description": "S3 endpoint host:port, e.g. \"s3.amazonaws.com\" or \"minio.local:9000\"."
+              "description": "S3 endpoint host:port, e.g. \"s3.amazonaws.com\" or \"minio.local:9000\".\nOverridable with XILO_S3_ENDPOINT."
             },
             "bucket": {
               "type": "string",
-              "description": "Bucket name. Must already exist."
+              "description": "Bucket name. Must already exist. Overridable with XILO_S3_BUCKET;\nsetting it via env also selects the s3 backend unless the config file\nsays otherwise."
             },
             "region": {
               "type": "string",
-              "description": "Region, e.g. \"us-east-1\". Optional for MinIO."
+              "description": "Region, e.g. \"us-east-1\". Optional for MinIO. Overridable with XILO_S3_REGION."
             },
             "access_key": {
               "type": "string",
@@ -76,7 +76,7 @@
             },
             "insecure": {
               "type": "boolean",
-              "description": "Use plain HTTP instead of TLS (for local MinIO). Default false."
+              "description": "Use plain HTTP instead of TLS (for local MinIO). Default false.\nOverridable with XILO_S3_INSECURE=true."
             }
           },
           "additionalProperties": false,

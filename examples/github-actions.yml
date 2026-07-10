@@ -1,0 +1,24 @@
+# Build with Nix in GitHub Actions and push the closure to a xilo cache.
+# Copy to .github/workflows/ and set the XILO_TOKEN repo secret to a push
+# token from the dashboard. The xilo action installs the CLI, saves the
+# login, and adds the cache as a substituter — so this build also *pulls*
+# everything previously cached.
+name: build
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: stubbedev/xilo@master
+        with:
+          url: https://cache.example.com
+          cache: mycache
+          token: ${{ secrets.XILO_TOKEN }}
+      - run: nix build
+      - run: xilo push mycache ./result

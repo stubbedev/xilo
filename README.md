@@ -16,6 +16,10 @@ docker run -d -p 8080:8080 -v xilo-data:/data \
   -e XILO_ADMIN_PASSWORD=change-me ghcr.io/stubbedev/xilo:master
 ```
 
+For a VPS, [`examples/docker-compose.yml`](./examples/docker-compose.yml) is the
+same thing with a restart policy and an optional S3 block; add
+[`examples/Caddyfile`](./examples/Caddyfile) for TLS.
+
 Open <http://localhost:8080/admin>, log in, create a cache. Or from the CLI:
 
 ```sh
@@ -54,6 +58,25 @@ inotify watcher:
 ```sh
 xilo watch mycache   # auto-pushes newly-built store paths
 ```
+
+### GitHub Actions
+
+The repo doubles as a composite action: it installs the CLI, saves the login,
+and adds the cache as a substituter, so the build pulls what previous runs
+cached and `xilo push` needs no env:
+
+```yaml
+- uses: DeterminateSystems/nix-installer-action@main
+- uses: stubbedev/xilo@master
+  with:
+    url: https://cache.example.com
+    cache: mycache
+    token: ${{ secrets.XILO_TOKEN }} # a push token from the dashboard
+- run: nix build
+- run: xilo push mycache ./result
+```
+
+Full workflow in [`examples/github-actions.yml`](./examples/github-actions.yml).
 
 ### Convenience
 
@@ -102,6 +125,11 @@ storage:
     secret_key: "" # or XILO_S3_SECRET_KEY
     insecure: true # plain HTTP for a local Garage
 ```
+
+Or entirely from env — setting `XILO_S3_BUCKET` selects the s3 backend, so a
+Docker deployment needs no config file (`XILO_S3_ENDPOINT`, `XILO_S3_BUCKET`,
+`XILO_S3_REGION`, `XILO_S3_ACCESS_KEY`, `XILO_S3_SECRET_KEY`,
+`XILO_S3_INSECURE`). The SQLite database stays in `data_dir`.
 
 ## Garbage collection
 

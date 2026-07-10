@@ -33,10 +33,12 @@ jobs:
           # templ must run as a host binary regardless of the target platform;
           # its version comes from go.mod so it can't drift.
           GOOS= GOARCH= go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
-          v="${GITHUB_REF_NAME}"
-          out="xilo-${v}-${GOOS}-${GOARCH}"
-          go build -trimpath -ldflags="-s -w -X main.version=${v}" -o "$out" ./cmd/xilo
-          tar -czf "${out}.tar.gz" "$out"
+          # Asset names carry no version (the release tag does) so the stable
+          # URL releases/latest/download/xilo-<os>-<arch>.tar.gz always works —
+          # the GitHub Action and install docs rely on it.
+          out="xilo-${GOOS}-${GOARCH}"
+          go build -trimpath -ldflags="-s -w -X main.version=${GITHUB_REF_NAME}" -o xilo ./cmd/xilo
+          tar -czf "${out}.tar.gz" xilo
           sha256sum "${out}.tar.gz" > "${out}.tar.gz.sha256"
       - uses: actions/upload-artifact@v7
         with:

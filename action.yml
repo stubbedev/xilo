@@ -1,0 +1,62 @@
+# Composite action: install the xilo CLI and point Nix at a xilo cache.
+#
+#   - uses: stubbedev/xilo@master
+#     with:
+#       url: https://cache.example.com
+#       cache: mycache
+#       token: ${{ secrets.XILO_TOKEN }}
+#
+# After this step, builds substitute from the cache and `xilo push <cache> <path>`
+# uploads results (the token is saved via `xilo login`, no env needed).
+# Run your Nix installer step before this one — `xilo use` writes
+# ~/.config/nix/nix.conf, which Nix reads on the next invocation.
+name: xilo
+description: Install the xilo CLI and configure Nix to pull from (and push to) a xilo cache
+branding:
+  icon: package
+  color: blue
+
+inputs:
+  url:
+    description: xilo server base URL, e.g. https://cache.example.com
+    required: true
+  cache:
+    description: Cache to add as a substituter (nix.conf + trusted key, netrc if private)
+    required: true
+  token:
+    description: Push/pull token (store it in a repo secret). Optional for pulling from a public cache.
+    default: ""
+  version:
+    description: xilo release to install, e.g. v0.3.0. Defaults to the latest release.
+    default: latest
+
+runs:
+  using: composite
+  steps:
+    - name: Install xilo
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        case "$(uname -s)-$(uname -m)" in
+          Linux-x86_64)  plat=linux-amd64 ;;
+          Linux-aarch64) plat=linux-arm64 ;;
+          Darwin-x86_64) plat=darwin-amd64 ;;
+          Darwin-arm64)  plat=darwin-arm64 ;;
+          *) echo "unsupported platform: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+        esac
+        if [ "$VERSION" = latest ]; then rel="latest/download"; else rel="download/$VERSION"; fi
+        curl -fsSL "https://github.com/stubbedev/xilo/releases/${rel}/xilo-${plat}.tar.gz" | tar -xz -C "$RUNNER_TEMP"
+        mkdir -p "$HOME/.local/bin"
+        mv "$RUNNER_TEMP/xilo" "$HOME/.local/bin/xilo"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+    - name: Configure cache
+      shell: bash
+      env:
+        XILO_URL: ${{ inputs.url }}
+        XILO_TOKEN: ${{ inputs.token }}
+        XILO_CACHE: ${{ inputs.cache }}
+      run: |
+        "$HOME/.local/bin/xilo" login "$XILO_URL"
+        "$HOME/.local/bin/xilo" use "$XILO_CACHE"

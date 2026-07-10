@@ -48,6 +48,23 @@ func TestDefaults(t *testing.T) {
 	}
 }
 
+func TestS3FromEnv(t *testing.T) {
+	t.Setenv("XILO_S3_BUCKET", "xilo")
+	t.Setenv("XILO_S3_ENDPOINT", "s3.example.com")
+	t.Setenv("XILO_S3_REGION", "us-east-1")
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A bucket from env selects the s3 backend without a config file.
+	if c.Storage.Backend != "s3" {
+		t.Fatalf("backend = %q, want s3", c.Storage.Backend)
+	}
+	if c.Storage.S3.Endpoint != "s3.example.com" || c.Storage.S3.Region != "us-east-1" {
+		t.Fatalf("s3 config = %+v", c.Storage.S3)
+	}
+}
+
 func TestEnvBeforeDefaults(t *testing.T) {
 	t.Setenv("XILO_DATA_DIR", "/srv/xilo")
 	t.Setenv("XILO_LISTEN", ":9000")

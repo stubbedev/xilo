@@ -164,19 +164,24 @@ type Local struct {
 	Root string `yaml:"root" json:"root"`
 }
 
-// S3 is the S3-compatible storage backend.
+// S3 is the S3-compatible storage backend. Every field is overridable from the
+// environment (XILO_S3_*) so a Docker deployment needs no config file.
 type S3 struct {
 	// S3 endpoint host:port, e.g. "s3.amazonaws.com" or "minio.local:9000".
+	// Overridable with XILO_S3_ENDPOINT.
 	Endpoint string `yaml:"endpoint" json:"endpoint"`
-	// Bucket name. Must already exist.
+	// Bucket name. Must already exist. Overridable with XILO_S3_BUCKET;
+	// setting it via env also selects the s3 backend unless the config file
+	// says otherwise.
 	Bucket string `yaml:"bucket" json:"bucket"`
-	// Region, e.g. "us-east-1". Optional for MinIO.
+	// Region, e.g. "us-east-1". Optional for MinIO. Overridable with XILO_S3_REGION.
 	Region string `yaml:"region" json:"region"`
 	// Access key. Overridable with XILO_S3_ACCESS_KEY.
 	AccessKey string `yaml:"access_key" json:"access_key"`
 	// Secret key. Overridable with XILO_S3_SECRET_KEY.
 	SecretKey string `yaml:"secret_key" json:"secret_key"`
 	// Use plain HTTP instead of TLS (for local MinIO). Default false.
+	// Overridable with XILO_S3_INSECURE=true.
 	Insecure bool `yaml:"insecure" json:"insecure"`
 }
 
@@ -252,6 +257,23 @@ func (c *Config) applyEnv() {
 	}
 	if v := os.Getenv("XILO_S3_SECRET_KEY"); v != "" {
 		c.Storage.S3.SecretKey = v
+	}
+	if v := os.Getenv("XILO_S3_ENDPOINT"); v != "" {
+		c.Storage.S3.Endpoint = v
+	}
+	if v := os.Getenv("XILO_S3_BUCKET"); v != "" {
+		c.Storage.S3.Bucket = v
+		// A bucket from the environment means "use S3" — unless the config
+		// file explicitly chose a backend.
+		if c.Storage.Backend == "" {
+			c.Storage.Backend = "s3"
+		}
+	}
+	if v := os.Getenv("XILO_S3_REGION"); v != "" {
+		c.Storage.S3.Region = v
+	}
+	if v := os.Getenv("XILO_S3_INSECURE"); v == "true" || v == "1" {
+		c.Storage.S3.Insecure = true
 	}
 	if v := os.Getenv("XILO_LISTEN"); v != "" {
 		c.Listen = v

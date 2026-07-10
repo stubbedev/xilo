@@ -1,7 +1,10 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/stubbedev/xilo/master/schemas/xilo.schema.json
 # Example xilo config. Copy to xilo.yaml and edit. All fields are optional;
 # shown values are the defaults. Secrets can also come from env
-# (XILO_ADMIN_PASSWORD, XILO_S3_ACCESS_KEY, XILO_S3_SECRET_KEY).
+# (XILO_ADMIN_PASSWORD, XILO_S3_ACCESS_KEY, XILO_S3_SECRET_KEY), and the whole
+# S3 block from XILO_S3_ENDPOINT / XILO_S3_BUCKET / XILO_S3_REGION /
+# XILO_S3_INSECURE — setting XILO_S3_BUCKET selects the s3 backend, so a
+# Docker deployment needs no config file at all.
 
 listen: ":8080"
 base_url: "http://localhost:8080" # use https://… in production so session cookies are Secure
