@@ -6,6 +6,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"runtime"
 
@@ -88,8 +89,16 @@ func (db *DB) runWrite(w *sql.DB, t wtask) {
 }
 
 // write runs fn inside a transaction on the single writer connection. Every
-// mutation in this package goes through here.
-func (db *DB) write(fn func(*sql.Tx) error) error {
+// mutation in this package goes through here. Safe to call during/after Close:
+// fire-and-forget writers (TouchPath, metrics flush, GC tick) can race
+// shutdown, and a send on the closed channel must degrade to an error, not a
+// process-killing panic.
+func (db *DB) write(fn func(*sql.Tx) error) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = errors.New("store: closed")
+		}
+	}()
 	resp := make(chan error, 1)
 	db.wr <- wtask{fn: fn, resp: resp}
 	return <-resp

@@ -146,14 +146,31 @@ func (db *DB) DeleteCache(id int64) error {
 // ---- chunks ----
 
 // PutChunk records a stored chunk (uncompressed + compressed sizes).
-// Idempotent (INSERT OR IGNORE). created stamps the ingest time so GC can grant
-// a grace window and never sweep a chunk mid-push.
+// Idempotent; a re-upload re-stamps created so the GC grace window restarts.
 func (db *DB) PutChunk(hash string, size, csize int64, storageKey string, now int64) error {
 	return db.write(func(tx *sql.Tx) error {
 		_, err := tx.Exec(
-			`INSERT OR IGNORE INTO chunks (hash,size,csize,storage_key,created) VALUES (?,?,?,?,?)`,
+			`INSERT INTO chunks (hash,size,csize,storage_key,created) VALUES (?,?,?,?,?)
+			 ON CONFLICT(hash) DO UPDATE SET created=excluded.created`,
 			hash, size, csize, storageKey, now)
 		return err
+	})
+}
+
+// TouchChunks re-stamps created on existing chunks. Called whenever the server
+// promises a pusher that these chunks are present (so it will skip uploading
+// them) — the restarted grace window guarantees GC can't sweep them before the
+// push registers its path.
+func (db *DB) TouchChunks(hashes []string, now int64) error {
+	if len(hashes) == 0 {
+		return nil
+	}
+	return db.eachBatch(hashes, func(batch []string) error {
+		return db.write(func(tx *sql.Tx) error {
+			args := append([]any{now}, toArgs(batch)...)
+			_, err := tx.Exec(`UPDATE chunks SET created=? WHERE hash IN (`+placeholders(len(batch))+`)`, args...)
+			return err
+		})
 	})
 }
 
@@ -348,36 +365,36 @@ func (db *DB) SearchPaths(cacheID int64, q string, limit, offset int, sortKey, s
 
 // ChunkKeys returns the storage keys for chunk hashes, preserving order. Batched
 // (one query per ~batchVars hashes) instead of N+1 point lookups.
-func (db *DB) ChunkKeys(hashes []string) ([]string, error) {
-	byHash := make(map[string]string, len(hashes))
+func (db *DB) ChunkKeys(hashes []string) ([]ChunkRef, error) {
+	byHash := make(map[string]ChunkRef, len(hashes))
 	err := db.eachBatch(hashes, func(batch []string) error {
-		q := `SELECT hash, storage_key FROM chunks WHERE hash IN (` + placeholders(len(batch)) + `)`
+		q := `SELECT hash, storage_key, size, csize FROM chunks WHERE hash IN (` + placeholders(len(batch)) + `)`
 		rows, err := db.r.Query(q, toArgs(batch)...)
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var h, k string
-			if err := rows.Scan(&h, &k); err != nil {
+			var c ChunkRef
+			if err := rows.Scan(&c.Hash, &c.Key, &c.Size, &c.CSize); err != nil {
 				return err
 			}
-			byHash[h] = k
+			byHash[c.Hash] = c
 		}
 		return rows.Err()
 	})
 	if err != nil {
 		return nil, err
 	}
-	keys := make([]string, len(hashes))
+	out := make([]ChunkRef, len(hashes))
 	for i, h := range hashes {
-		k, ok := byHash[h]
+		c, ok := byHash[h]
 		if !ok {
 			return nil, ErrNotFound
 		}
-		keys[i] = k
+		out[i] = c
 	}
-	return keys, nil
+	return out, nil
 }
 
 // ---- helpers ----

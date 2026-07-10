@@ -39,10 +39,30 @@ func (l *Local) Put(ctx context.Context, key string, r io.Reader) error {
 		tmp.Close()
 		return err
 	}
+	// fsync before rename: a power loss must never leave a truncated blob
+	// behind a durable DB row — dedup would then trust the poisoned chunk
+	// forever (it is never re-uploaded and never GC'd while referenced).
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, dst)
+	if err := os.Rename(tmpName, dst); err != nil {
+		return err
+	}
+	return syncDir(filepath.Dir(dst))
+}
+
+// syncDir fsyncs a directory so a just-renamed file survives power loss.
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }
 
 func (l *Local) Get(ctx context.Context, key string) (io.ReadCloser, error) {

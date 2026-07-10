@@ -1,0 +1,80 @@
+# k6 test rig. From the repo root:
+#
+#   perf numbers:    docker compose -f tests/k6/compose.yaml run --rm k6
+#   integrity soak:  XILO_E2E_CONFIG=server-churn.yaml \
+#                    docker compose -f tests/k6/compose.yaml run --rm k6 run /scripts/churn.js
+#   race-built soak: docker compose -f tests/k6/compose.yaml --profile race run --rm k6-race
+#
+# `run --rm k6 …` starts the server via depends_on; k6's setup() waits on
+# /healthz and creates the cache through the admin API (the distroless image
+# has no shell for a compose healthcheck or seed script).
+# Tear down with: docker compose -f tests/k6/compose.yaml down -v
+name: xilo-k6
+
+services:
+  xilo:
+    build:
+      context: ../..
+    environment:
+      XILO_ADMIN_PASSWORD: k6-admin
+    volumes:
+      - ./${XILO_E2E_CONFIG:-server-perf.yaml}:/xilo.yaml:ro
+
+  k6:
+    image: grafana/k6:0.57.0
+    user: "0:0" # the named volume is root-owned; throwaway container anyway
+    volumes:
+      - .:/scripts
+      - k6-out:/out
+    working_dir: /scripts
+    environment:
+      BASE_URL: http://xilo:8080
+      CACHE: k6
+      ADMIN_PASSWORD: k6-admin
+      DURATION: ${DURATION:-3m}
+    command: ["run", "--summary-export=/out/summary.json", "/scripts/perf.js"]
+    depends_on:
+      - xilo
+
+  # Race-detector server: same code run with `go run -race` on a glibc base.
+  # Source is copied out of the read-only bind mount because templ generates
+  # views into the tree. First start downloads modules — the gomod volume
+  # caches them for reruns.
+  xilo-race:
+    profiles: [race]
+    image: golang:1.26
+    volumes:
+      - ../..:/src:ro
+      - gomod:/go
+      - ./server-churn.yaml:/xilo.yaml:ro
+    environment:
+      XILO_ADMIN_PASSWORD: k6-admin
+      GOFLAGS: -buildvcs=false
+    command:
+      - sh
+      - -c
+      - |
+        cp -r /src /build && cd /build &&
+        go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate &&
+        exec go run -race ./cmd/xilo serve --config /xilo.yaml
+
+  k6-race:
+    profiles: [race]
+    image: grafana/k6:0.57.0
+    user: "0:0"
+    volumes:
+      - .:/scripts
+      - k6-out:/out
+    working_dir: /scripts
+    environment:
+      BASE_URL: http://xilo-race:8080
+      CACHE: k6
+      ADMIN_PASSWORD: k6-admin
+      DURATION: ${DURATION:-3m}
+    command: ["run", "--summary-export=/out/summary.json", "/scripts/churn.js"]
+    depends_on:
+      - xilo-race
+
+volumes:
+  k6-out:
+  gomod:

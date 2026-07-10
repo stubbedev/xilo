@@ -606,7 +606,7 @@ func formSeconds(r *http.Request, name string) (secs int64, ok bool) {
 		return 0, false
 	}
 	n, err := strconv.ParseFloat(v, 64)
-	if err != nil || n < 0 {
+	if err != nil || n < 0 || math.IsNaN(n) || math.IsInf(n, 0) {
 		return 0, false
 	}
 	var mult float64
@@ -631,7 +631,7 @@ func formBytes(r *http.Request, name string) (bytes int64, ok bool) {
 		return 0, false
 	}
 	n, err := strconv.ParseFloat(v, 64)
-	if err != nil || n < 0 {
+	if err != nil || n < 0 || math.IsNaN(n) || math.IsInf(n, 0) {
 		return 0, false
 	}
 	var shift uint

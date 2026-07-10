@@ -127,5 +127,24 @@ docker-build:
 docker-run: docker-build
     docker run --rm -p 8080:8080 -v xilo-data:/data xilo:dev
 
+# ─────────────────────────── k6 (tests/k6/) ───────────────────────────
+
+# Perf numbers: narinfo QPS, NAR pull, push pipeline. Tracked per release.
+k6-perf:
+    docker compose -f tests/k6/compose.yaml run --rm k6
+    docker compose -f tests/k6/compose.yaml down -v
+
+# Integrity soak: hostile GC vs concurrent dedup pushes; any dropped or
+# corrupt NAR fails. DURATION=10m just k6-churn for a longer run.
+k6-churn:
+    XILO_E2E_CONFIG=server-churn.yaml docker compose -f tests/k6/compose.yaml \
+        run --rm k6 run --summary-export=/out/summary.json /scripts/churn.js
+    docker compose -f tests/k6/compose.yaml down -v
+
+# Churn against a race-detector server build (slow start, catches data races).
+k6-race:
+    docker compose -f tests/k6/compose.yaml --profile race run --rm k6-race
+    docker compose -f tests/k6/compose.yaml --profile race down -v
+
 clean:
     rm -rf bin/

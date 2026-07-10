@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/klauspost/compress/zstd"
-
 	"github.com/stubbedev/xilo/internal/narinfo"
 	"github.com/stubbedev/xilo/internal/store"
 )
@@ -102,9 +100,13 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// LRU by last pull: a download starting now must not be the next eviction
+	// victim (same async bump as narinfo — nix fetches nar right after).
+	go s.db.TouchPath(c.ID, storeHash, timeNow(), 3600)
+
 	// Resolve all chunk keys up front — if any is missing we can still return a
 	// clean error before committing a 200 + Content-Length.
-	keys, err := s.db.ChunkKeys(p.Chunks)
+	refs, err := s.db.ChunkKeys(p.Chunks)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -118,9 +120,28 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", `"`+storeHash+`"`)
 	s.metrics.narServed.Add(1)
 
+	// zstd clients get the stored frames verbatim: chunks are complete zstd
+	// frames and a concatenation of frames is a valid stream (RFC 8878), so
+	// the whole transfer costs zero compression CPU and has an exact
+	// Content-Length. Identity/gzip clients pay the decompress (+ gzip).
+	if negotiateEncoding(r.Header.Get("Accept-Encoding")) == "zstd" {
+		var clen int64
+		for _, ref := range refs {
+			clen += ref.CSize
+		}
+		w.Header().Set("Content-Encoding", "zstd")
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", clen))
+		_ = s.eachChunkOrderedRaw(r.Context(), refs, s.readAhead(), func(frame []byte) error {
+			s.metrics.narBytes.Add(int64(len(frame)))
+			_, werr := w.Write(frame)
+			return werr
+		})
+		return
+	}
+
 	out, done := s.narWriter(w, r, p.NarSize)
 	defer done()
-	err = s.eachChunkOrdered(r.Context(), keys, s.readAhead(), func(raw []byte) error {
+	err = s.eachChunkOrdered(r.Context(), refs, s.readAhead(), func(raw []byte) error {
 		s.metrics.narBytes.Add(int64(len(raw)))
 		_, werr := out.Write(raw)
 		return werr
@@ -132,14 +153,10 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 
 // narWriter picks a transfer encoding from Accept-Encoding and returns the
 // writer to stream the NAR into plus a cleanup func. Raw transfers keep a
-// Content-Length; compressed ones are chunked.
+// Content-Length; gzip ones are chunked. (zstd never reaches here — it is
+// served as stored frames in handleNar.)
 func (s *Server) narWriter(w http.ResponseWriter, r *http.Request, narSize uint64) (io.Writer, func()) {
 	switch negotiateEncoding(r.Header.Get("Accept-Encoding")) {
-	case "zstd":
-		w.Header().Set("Content-Encoding", "zstd")
-		ze := s.zstdPool.Get().(*zstd.Encoder)
-		ze.Reset(w)
-		return ze, func() { ze.Close(); s.zstdPool.Put(ze) }
 	case "gzip":
 		w.Header().Set("Content-Encoding", "gzip")
 		gz := gzip.NewWriter(w)

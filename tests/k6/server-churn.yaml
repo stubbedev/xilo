@@ -1,0 +1,13 @@
+# xilo config for the k6 churn/integrity soak: GC tuned to be maximally
+# hostile — sweeping every 5s, evicting paths after 30s, minimal grace — so
+# the GC-vs-push race window is exercised constantly. Production defaults are
+# nothing like this; that is the point.
+listen: ":8080"
+base_url: "http://xilo:8080"
+data_dir: "/data"
+security:
+  allow_open_bootstrap: true
+gc:
+  interval: "5s"
+  retention: "30s"
+  grace: "15s"

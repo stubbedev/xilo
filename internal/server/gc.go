@@ -37,7 +37,7 @@ func (s *Server) runGC(ctx context.Context) (deleted int, freed int64, err error
 		return 0, 0, err
 	}
 
-	grace := parseDur(s.cfg.GC.Grace)
+	grace := parseDurSafe(s.cfg.GC.Grace, time.Hour)
 	graceCutoff := now.Add(-grace).Unix()
 	return s.db.GC(ctx, s.st, graceCutoff)
 }

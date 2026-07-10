@@ -226,6 +226,61 @@ func TestGCGraceAndMarkSweep(t *testing.T) {
 	}
 }
 
+// A push that dedups against an old orphaned chunk re-stamps created
+// (TouchChunks); the sweep's transactional re-check must then spare it even
+// though the sweep snapshot predates the stamp.
+func TestGCSparesTouchedChunk(t *testing.T) {
+	db := openTest(t)
+	st, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	db.PutChunk("reused", 100, 40, storage.ChunkKey("reused"), 100) // old orphan
+	st.Put(ctx, storage.ChunkKey("reused"), strings.NewReader("reused"))
+
+	// Simulate the push side of the race: the server promised presence and
+	// re-stamped created after GC would have snapshotted.
+	if err := db.TouchChunks([]string{"reused"}, 9_000); err != nil {
+		t.Fatal(err)
+	}
+	// deleteChunkRowIf re-checks created inside the tx — must refuse.
+	ok, err := db.deleteChunkRowIf("reused", 5_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("deleteChunkRowIf removed a re-stamped chunk")
+	}
+	if !db.HasChunk("reused") {
+		t.Fatal("re-stamped chunk vanished")
+	}
+
+	// Full sweep honors the new stamp too.
+	deleted, _, err := db.GC(ctx, st, 5_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 0 || !db.HasChunk("reused") {
+		t.Fatalf("GC swept a re-stamped chunk (deleted=%d)", deleted)
+	}
+}
+
+// A re-upload of an existing chunk must also restart its grace window.
+func TestPutChunkRestampsCreated(t *testing.T) {
+	db := openTest(t)
+	db.PutChunk("c", 100, 40, "k", 100)
+	db.PutChunk("c", 100, 40, "k", 9_000) // re-upload
+	ok, err := db.deleteChunkRowIf("c", 5_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("re-uploaded chunk was sweepable under old stamp")
+	}
+}
+
 func TestCacheStatsScoped(t *testing.T) {
 	db := openTest(t)
 	c, _ := db.CreateCache("c", true, 40)

@@ -98,7 +98,30 @@ func (s *Server) handleMissingChunks(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Everything we just promised as present will be skipped by the pusher —
+	// re-stamp created so the GC grace window covers the rest of its push.
+	if len(missing) < len(req.Hashes) {
+		if err := s.db.TouchChunks(present(req.Hashes, missing), timeNow()); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 	writeJSON(w, api.MissingResp{Missing: missing})
+}
+
+// present returns hashes minus the missing subset.
+func present(hashes, missing []string) []string {
+	miss := make(map[string]bool, len(missing))
+	for _, h := range missing {
+		miss[h] = true
+	}
+	out := make([]string, 0, len(hashes)-len(missing))
+	for _, h := range hashes {
+		if !miss[h] {
+			out = append(out, h)
+		}
+	}
+	return out
 }
 
 // handlePutChunk stores one chunk. Body is the raw (uncompressed) chunk; the
@@ -113,10 +136,6 @@ func (s *Server) handlePutChunk(w http.ResponseWriter, r *http.Request) {
 	}
 	want := r.PathValue("hash")
 
-	// Bound concurrent read+encode across all pushers to cap memory.
-	s.uploadSem <- struct{}{}
-	defer func() { <-s.uploadSem }()
-
 	raw, err := io.ReadAll(io.LimitReader(r.Body, s.maxChunkBody()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -130,12 +149,19 @@ func (s *Server) handlePutChunk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Skip a chunk already recorded (row+blob present) — idempotent, saves the
-	// compress+write. Checking the DB row (not just the blob) keeps them consistent.
+	// compress+write. Checking the DB row (not just the blob) keeps them
+	// consistent. Re-stamp created: this client will rely on the chunk staying.
 	if s.db.HasChunk(want) {
+		_ = s.db.TouchChunks([]string{want}, timeNow())
 		s.metrics.chunksDedup.Add(1)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+
+	// Bound concurrent encode+store to cap memory — acquired AFTER the body
+	// read so a slow uploader link can't starve fast pushers of slots.
+	s.uploadSem <- struct{}{}
+	defer func() { <-s.uploadSem }()
 
 	key := storage.ChunkKey(want)
 	compressed := s.enc.EncodeAll(raw, nil)
@@ -165,7 +191,14 @@ func (s *Server) handlePutPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// All referenced chunks must already be present.
+	// Re-stamp all referenced chunks BEFORE checking presence: from here to the
+	// PutPath commit the GC grace window must cover them, and the stamp-then-
+	// check order means a chunk the sweeper deletes in between is reported
+	// missing (client re-uploads) instead of registered dangling.
+	if err := s.db.TouchChunks(req.Chunks, timeNow()); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	missing, err := s.db.MissingChunks(req.Chunks)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -212,13 +245,13 @@ func (s *Server) handlePutPath(w http.ResponseWriter, r *http.Request) {
 // bounded look-ahead) and checks the digest + total size against the claimed
 // NarHash/NarSize.
 func (s *Server) verifyReassembly(r *http.Request, chunkHashes []string, narHash string, narSize uint64) error {
-	keys, err := s.db.ChunkKeys(chunkHashes)
+	refs, err := s.db.ChunkKeys(chunkHashes)
 	if err != nil {
 		return err
 	}
 	h := sha256.New()
 	var total uint64
-	err = s.eachChunkOrdered(r.Context(), keys, s.readAhead(), func(raw []byte) error {
+	err = s.eachChunkOrdered(r.Context(), refs, s.readAhead(), func(raw []byte) error {
 		h.Write(raw)
 		total += uint64(len(raw))
 		return nil

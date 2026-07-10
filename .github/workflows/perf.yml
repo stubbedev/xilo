@@ -1,0 +1,56 @@
+name: Perf
+
+on:
+  push:
+    branches: [master, main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  k6:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: perf suite
+        run: docker compose -f tests/k6/compose.yaml run --rm k6
+
+      - name: export perf summary
+        run: |
+          docker compose -f tests/k6/compose.yaml run --rm --entrypoint cat k6 /out/summary.json > k6-perf-summary.json
+
+      - name: integrity churn (hostile GC)
+        run: |
+          XILO_E2E_CONFIG=server-churn.yaml docker compose -f tests/k6/compose.yaml \
+            run --rm k6 run --summary-export=/out/summary.json /scripts/churn.js
+          docker compose -f tests/k6/compose.yaml run --rm --entrypoint cat k6 /out/summary.json > k6-churn-summary.json
+
+      - name: job summary
+        if: always()
+        run: |
+          summarize() {
+            [ -f "$2" ] || return 0
+            echo "### $1" >> "$GITHUB_STEP_SUMMARY"
+            echo '| metric | p50 | p95 | p99 |' >> "$GITHUB_STEP_SUMMARY"
+            echo '|---|---|---|---|' >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.metrics | to_entries[]
+              | select(.key | startswith("http_req_duration"))
+              | "| \(.key) | \(.value["med"] // 0 | round)ms | \(.value["p(95)"] // 0 | round)ms | \(.value["p(99)"] // .value["p(95)"] // 0 | round)ms |"' \
+              "$2" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '"| http_reqs (count) | \(.metrics.http_reqs.count) | | |",
+                   "| http_req_failed (rate) | \(.metrics.http_req_failed.value // 0) | | |"' \
+              "$2" >> "$GITHUB_STEP_SUMMARY" || true
+            echo >> "$GITHUB_STEP_SUMMARY"
+          }
+          summarize "perf" k6-perf-summary.json
+          summarize "churn" k6-churn-summary.json
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: k6-summary-${{ github.ref_name }}-${{ github.run_number }}
+          path: k6-*-summary.json
+
+      - name: teardown
+        if: always()
+        run: docker compose -f tests/k6/compose.yaml down -v

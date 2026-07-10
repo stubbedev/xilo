@@ -43,7 +43,12 @@ type Client struct {
 // parallelism the server advertises (its CPU capacity).
 func NewClient(base, cache, token string, jobsOverride int) *Client {
 	return &Client{
-		http:         &http.Client{},
+		// Default transport keeps only 2 idle conns per host — at jobs=NumCPU
+		// that means re-dialing (and re-TLS-handshaking) on nearly every chunk.
+		http: &http.Client{Transport: &http.Transport{
+			MaxIdleConns:        128,
+			MaxIdleConnsPerHost: 64,
+		}},
 		base:         strings.TrimRight(base, "/"),
 		cache:        cache,
 		token:        token,

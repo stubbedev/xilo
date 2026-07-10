@@ -38,8 +38,13 @@ func gcCmd() *cobra.Command {
 				return err
 			}
 			// Grace window: never sweep chunks newer than this (mirrors the
-			// server so a manual gc can't race an in-flight push).
-			grace, _ := time.ParseDuration(cfg.GC.Grace)
+			// server so a manual gc can't race an in-flight push). A bad
+			// duration fails SAFE to 1h — grace 0 would sweep in-flight chunks.
+			grace, perr := time.ParseDuration(cfg.GC.Grace)
+			if perr != nil && cfg.GC.Grace != "" && cfg.GC.Grace != "0" {
+				fmt.Printf("bad gc.grace %q, using 1h\n", cfg.GC.Grace)
+				grace = time.Hour
+			}
 			graceCutoff := time.Now().Add(-grace).Unix()
 			deleted, freed, err := db.GC(cmd.Context(), st, graceCutoff)
 			if err != nil {

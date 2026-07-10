@@ -34,8 +34,7 @@ type Server struct {
 	wanOnce   sync.Once
 	wan       *webauthn.WebAuthn
 	wanErr    error
-	zstdPool  sync.Pool     // *zstd.Encoder for streaming NAR responses
-	uploadSem chan struct{} // bounds concurrent server-side chunk read+encode
+	uploadSem chan struct{} // bounds concurrent server-side chunk encode+store
 	metrics   metrics
 	stat      statusRing
 	started   time.Time
@@ -55,12 +54,6 @@ func New(cfg *config.Config, db *store.DB, st storage.Storage) (*Server, error) 
 		sess:      newSessions(db),
 		started:   time.Now(),
 		uploadSem: make(chan struct{}, max(4, 2*runtime.NumCPU())),
-		zstdPool: sync.Pool{New: func() any {
-			// Fast level for on-the-fly wire compression (dedup already
-			// happens at rest with the configured level).
-			w, _ := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedFastest))
-			return w
-		}},
 	}, nil
 }
 
@@ -110,7 +103,11 @@ func (s *Server) Run() error {
 // RunContext serves until the context is cancelled or SIGINT/SIGTERM, then
 // shuts down gracefully (drains in-flight requests).
 func (s *Server) RunContext(ctx context.Context) error {
-	s.startGC()
+	// Background loops get the signal-aware ctx so they stop at shutdown
+	// instead of writing to a closed DB.
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	s.startGC(ctx)
 	s.startStatusSampler(ctx)
 
 	srv := &http.Server{
@@ -122,9 +119,6 @@ func (s *Server) RunContext(ctx context.Context) error {
 		IdleTimeout:       120 * time.Second,
 		ErrorLog:          log.Default(),
 	}
-
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	errc := make(chan error, 1)
 	go func() {
@@ -198,7 +192,7 @@ func (w *logWriter) Write(b []byte) (int, error) {
 func (w *logWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // startGC launches the background sweeper if gc.interval is set.
-func (s *Server) startGC() {
+func (s *Server) startGC(ctx context.Context) {
 	interval := parseDur(s.cfg.GC.Interval)
 	if interval <= 0 {
 		return
@@ -207,8 +201,13 @@ func (s *Server) startGC() {
 	go func() {
 		t := time.NewTicker(interval)
 		defer t.Stop()
-		for range t.C {
-			if del, freed, err := s.runGC(context.Background()); err != nil {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+			if del, freed, err := s.runGC(ctx); err != nil {
 				log.Printf("gc: %v", err)
 			} else if del > 0 {
 				log.Printf("gc: swept %d chunks, freed %d bytes", del, freed)
@@ -226,6 +225,21 @@ func parseDur(s string) time.Duration {
 	if err != nil {
 		log.Printf("config: bad duration %q: %v", s, err)
 		return 0
+	}
+	return d
+}
+
+// parseDurSafe is parseDur for durations where "unparsable" must fail SAFE
+// (fall back to def), not fail open. A typo'd gc.grace returning 0 would make
+// every unreferenced chunk instantly sweepable.
+func parseDurSafe(s string, def time.Duration) time.Duration {
+	if s == "" || s == "0" {
+		return 0 // explicit opt-out
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		log.Printf("config: bad duration %q: %v (using %s)", s, err, def)
+		return def
 	}
 	return d
 }

@@ -11,10 +11,15 @@ import (
 
 // GC deletes stored chunks no path references. Mark-sweep over the
 // content-addressed chunk store, with a grace window: only chunks created
-// before graceCutoff are eligible, so a chunk uploaded during a concurrent push
-// (row written, path not yet registered) is never swept out from under it.
-// Each blob is removed together with its row, so a mid-sweep storage error
-// can't leave a dangling row pointing at a deleted blob.
+// before graceCutoff are eligible, and `created` is re-stamped whenever the
+// server promises a chunk's presence to a pusher (missing-chunks / dedup hit /
+// put-path), so a chunk an in-flight push relies on is never swept.
+//
+// Delete order is row THEN blob: the row delete re-checks `created` in the
+// same transaction, so a push that just re-stamped the chunk wins the race.
+// Once the row is gone the chunk is invisible to dedup — a concurrent push
+// re-uploads it — and the worst crash outcome is an orphaned blob (leaked,
+// never a registered path pointing at missing data).
 func (db *DB) GC(ctx context.Context, st storage.Storage, graceCutoff int64) (deleted int, freed int64, err error) {
 	live, err := db.LiveChunkSet()
 	if err != nil {
@@ -28,10 +33,14 @@ func (db *DB) GC(ctx context.Context, st storage.Storage, graceCutoff int64) (de
 		if live[c.Hash] || c.Created >= graceCutoff {
 			continue
 		}
-		if err := st.Delete(ctx, c.Key); err != nil {
+		ok, err := db.deleteChunkRowIf(c.Hash, graceCutoff)
+		if err != nil {
 			return deleted, freed, err
 		}
-		if err := db.DeleteChunkRows([]string{c.Hash}); err != nil {
+		if !ok {
+			continue // re-stamped by a concurrent push since the snapshot
+		}
+		if err := st.Delete(ctx, c.Key); err != nil {
 			return deleted, freed, err
 		}
 		freed += c.CSize
@@ -87,25 +96,21 @@ func (db *DB) AllChunks() ([]ChunkRef, error) {
 	return out, rows.Err()
 }
 
-// DeleteChunkRows removes chunk metadata rows (storage blobs are deleted
-// separately by the caller).
-func (db *DB) DeleteChunkRows(hashes []string) error {
-	if len(hashes) == 0 {
-		return nil
-	}
-	return db.write(func(tx *sql.Tx) error {
-		stmt, err := tx.Prepare(`DELETE FROM chunks WHERE hash=?`)
+// deleteChunkRowIf removes a chunk row only if it is still older than the
+// grace cutoff, reporting whether the delete happened. The transactional
+// re-check is what closes the GC-vs-push race: a push that re-stamped the
+// chunk after the sweep snapshot keeps it.
+func (db *DB) deleteChunkRowIf(hash string, graceCutoff int64) (bool, error) {
+	var n int64
+	err := db.write(func(tx *sql.Tx) error {
+		res, err := tx.Exec(`DELETE FROM chunks WHERE hash=? AND created<?`, hash, graceCutoff)
 		if err != nil {
 			return err
 		}
-		defer stmt.Close()
-		for _, h := range hashes {
-			if _, err := stmt.Exec(h); err != nil {
-				return err
-			}
-		}
-		return nil
+		n, err = res.RowsAffected()
+		return err
 	})
+	return n > 0, err
 }
 
 // EvictPathsOlderThan deletes path rows across all caches not accessed since

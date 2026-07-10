@@ -1,0 +1,7 @@
+# xilo config for the k6 perf suite: quiet GC, open bootstrap (no token
+# plumbing needed in a throwaway container — auth stays on in production).
+listen: ":8080"
+base_url: "http://xilo:8080"
+data_dir: "/data"
+security:
+  allow_open_bootstrap: true
