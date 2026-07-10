@@ -183,6 +183,73 @@ templ SectionHead(title string) {
 	</div>
 }
 
+// HeadSearch is a section's live-search input plus a New button opening the
+// given modal. Targets swap themselves via hx-select.
+templ HeadSearch(qName, qVal, placeholder, target, dlg string) {
+	<form class="headsearch" role="search"
+		hx-get="/admin" hx-trigger="input changed delay:350ms from:find input, search from:find input"
+		hx-target={ target } hx-select={ target } hx-swap="outerHTML" hx-push-url="true">
+		<input type="search" name={ qName } value={ qVal } placeholder={ placeholder } aria-label={ placeholder } autocomplete="off"/>
+		<button type="button" data-dlg={ dlg } onclick="document.getElementById(this.dataset.dlg).showModal()">@Icon("plus") <span>{ T("action.new") }</span></button>
+	</form>
+}
+
+// KPITile is one stat tile; a non-empty id marks the value for live updates.
+templ KPITile(icon, value, label, id string) {
+	<div class="tile">
+		<div class="ic-lg">@Icon(icon)</div>
+		<div>
+			<div
+				class="n"
+				if id != "" {
+					id={ id }
+				}
+			>{ value }</div>
+			<div class="l">{ label }</div>
+		</div>
+	</div>
+}
+
+// Empty is the shared empty-state block: icon, message, optional action.
+templ Empty(icon, msg string) {
+	<div class="empty">
+		@Icon(icon)
+		<p>{ msg }</p>
+		{ children... }
+	</div>
+}
+
+// IconBadge is a circular status badge whose label lives in the tooltip.
+templ IconBadge(variant, tooltip, icon string) {
+	<span class={ "badge", variant, "icon-badge" } data-tooltip={ tooltip }>@IconClass(icon, 16, "")</span>
+}
+
+// ModalFoot is the shared dialog footer: quiet cancel, prominent submit.
+templ ModalFoot(icon, label string) {
+	<footer>
+		<button class="secondary" type="button" onclick="this.closest('dialog').close()">{ T("action.cancel") }</button>
+		<button type="submit">@Icon(icon) <span>{ label }</span></button>
+	</footer>
+}
+
+// ActionRow is a hint with a right-aligned POST action; confirm (optional)
+// routes the submit through the shared confirmation dialog. extra adds a
+// wrapper class (e.g. "rule-above").
+templ ActionRow(hint, action, confirm, btnClass, icon, label, extra string) {
+	<div class={ "row-split", extra }>
+		<p>{ hint }</p>
+		<form
+			method="post"
+			action={ templ.SafeURL(action) }
+			if confirm != "" {
+				data-confirm={ confirm }
+			}
+		>
+			<button class={ btnClass } type="submit">@Icon(icon) <span>{ label }</span></button>
+		</form>
+	</div>
+}
+
 // NotFound is the styled 404 page for browser routes.
 templ NotFound(loggedIn bool) {
 	@Layout(T("nf.title"), loggedIn, Flash{}) {

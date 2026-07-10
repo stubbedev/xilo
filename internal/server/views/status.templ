@@ -170,13 +170,13 @@ templ StatusPage(d StatusData) {
 						<div class="l">{ T("status.health") }</div>
 					</div>
 				</div>
-				<div class="tile"><div class="ic-lg">@Icon("clock")</div><div><div class="n" id="kpi-uptime">{ d.Uptime }</div><div class="l">{ T("status.uptime") }</div></div></div>
-				<div class="tile"><div class="ic-lg">@Icon("target")</div><div><div class="n" id="kpi-hits">{ d.HitPct }</div><div class="l">{ T("status.hits") }</div></div></div>
-				<div class="tile"><div class="ic-lg">@Icon("hard-drive")</div><div><div class="n" id="kpi-stored">{ d.Bytes(d.Global.StoredBytes) }</div><div class="l">{ T("status.stored") }</div></div></div>
-				<div class="tile"><div class="ic-lg">@Icon("package")</div><div><div class="n" id="kpi-paths">{ strconv.FormatInt(d.Global.Paths, 10) }</div><div class="l">{ T("kpi.paths") }</div></div></div>
-				<div class="tile"><div class="ic-lg">@Icon("download")</div><div><div class="n" id="kpi-nars">{ strconv.FormatInt(d.NarServed, 10) }</div><div class="l">{ T("status.nars") }</div></div></div>
-				<div class="tile"><div class="ic-lg">@Icon("network")</div><div><div class="n" id="kpi-reqs">{ strconv.FormatInt(d.Requests, 10) }</div><div class="l">{ T("status.reqs") }</div></div></div>
-				<div class="tile"><div class="ic-lg">@Icon("shield")</div><div><div class="n" id="kpi-auth">{ strconv.FormatInt(d.AuthFails, 10) }</div><div class="l">{ T("status.authfail") }</div></div></div>
+				@KPITile("clock", d.Uptime, T("status.uptime"), "kpi-uptime")
+				@KPITile("target", d.HitPct, T("status.hits"), "kpi-hits")
+				@KPITile("hard-drive", d.Bytes(d.Global.StoredBytes), T("status.stored"), "kpi-stored")
+				@KPITile("package", strconv.FormatInt(d.Global.Paths, 10), T("kpi.paths"), "kpi-paths")
+				@KPITile("download", strconv.FormatInt(d.NarServed, 10), T("status.nars"), "kpi-nars")
+				@KPITile("network", strconv.FormatInt(d.Requests, 10), T("status.reqs"), "kpi-reqs")
+				@KPITile("shield", strconv.FormatInt(d.AuthFails, 10), T("status.authfail"), "kpi-auth")
 			</div>
 		</article>
 		<div class="charts">

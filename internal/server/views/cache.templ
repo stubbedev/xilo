@@ -29,10 +29,10 @@ templ CacheView(d CacheData) {
 		<h2>{ T("cd.stats") }</h2>
 		<article>
 			<div class="kpi">
-				<div class="tile"><div class="ic-lg">@Icon("package")</div><div><div class="n">{ strconv.FormatInt(d.Stats.Paths, 10) }</div><div class="l">{ T("kpi.paths") }</div></div></div>
-				<div class="tile"><div class="ic-lg">@Icon("database")</div><div><div class="n">{ d.Bytes(d.Stats.LogicalBytes) }</div><div class="l">{ T("kpi.logical") }</div></div></div>
-				<div class="tile"><div class="ic-lg">@Icon("hard-drive")</div><div><div class="n">{ d.Bytes(d.Stats.PhysicalBytes) }</div><div class="l">{ T("kpi.physical") }{ capLabel(d.Cache.MaxBytes, d.Bytes) }</div></div></div>
-				<div class="tile"><div class="ic-lg">@Icon("layers")</div><div><div class="n">{ d.Dedup }×</div><div class="l">{ T("kpi.dedup") }</div></div></div>
+				@KPITile("package", strconv.FormatInt(d.Stats.Paths, 10), T("kpi.paths"), "")
+				@KPITile("database", d.Bytes(d.Stats.LogicalBytes), T("kpi.logical"), "")
+				@KPITile("hard-drive", d.Bytes(d.Stats.PhysicalBytes), T("kpi.physical")+capLabel(d.Cache.MaxBytes, d.Bytes), "")
+				@KPITile("layers", d.Dedup+"×", T("kpi.dedup"), "")
 			</div>
 			if d.Cache.MaxBytes > 0 {
 				<progress class={ fillClass(d.Stats.PhysicalBytes, d.Cache.MaxBytes) } value={ strconv.FormatInt(d.Stats.PhysicalBytes, 10) } max={ strconv.FormatInt(d.Cache.MaxBytes, 10) }></progress>
@@ -56,22 +56,13 @@ templ CacheView(d CacheData) {
 				<button type="button" :class="{active: tab==='cli'}" @click="tab='cli'">CLI</button>
 			</div>
 			<div x-show="tab==='nixconf'">
-				<div class="copyrow">
-					<pre>{ snippetNixConf(d) }</pre>
-					@CopyButton(snippetNixConf(d))
-				</div>
+				@copyRow(snippetNixConf(d))
 			</div>
 			<div x-show="tab==='flake'" x-cloak>
-				<div class="copyrow">
-					<pre>{ snippetFlake(d) }</pre>
-					@CopyButton(snippetFlake(d))
-				</div>
+				@copyRow(snippetFlake(d))
 			</div>
 			<div x-show="tab==='cli'" x-cloak>
-				<div class="copyrow">
-					<pre>{ snippetCLI(d) }</pre>
-					@CopyButton(snippetCLI(d))
-				</div>
+				@copyRow(snippetCLI(d))
 			</div>
 			if !d.Cache.Public {
 				<p><small>{ T("cd.private") }</small></p>
@@ -79,10 +70,7 @@ templ CacheView(d CacheData) {
 		</article>
 		<h2>{ T("cd.push") }</h2>
 		<article>
-			<div class="copyrow">
-				<pre>{ snippetPush(d) }</pre>
-				@CopyButton(snippetPush(d))
-			</div>
+			@copyRow(snippetPush(d))
 		</article>
 		<h2>{ T("cd.settings") }</h2>
 		<article>
@@ -103,29 +91,22 @@ templ CacheView(d CacheData) {
 					@sizeInput("max", d.Cache.MaxBytes)
 				</label>
 			</form>
-			<div class="row-split rule-above">
-				<p>{ T("cd.rotatehint") }</p>
-				<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/rotate") } data-confirm={ T("confirm.rotate") }>
-					<button class="secondary outline" type="submit">@Icon("key-round") <span>{ T("cd.rotate") }</span></button>
-				</form>
-			</div>
+			@ActionRow(T("cd.rotatehint"), "/admin/cache/"+d.Cache.Name+"/rotate", T("confirm.rotate"), "secondary", "key-round", T("cd.rotate"), "rule-above")
 		</article>
 		<h2>{ T("cd.maint") }</h2>
 		<article>
-			<div class="row-split">
-				<p>{ T("cd.gchint") }</p>
-				<form method="post" action="/admin/gc" data-confirm={ T("confirm.gc") }>
-					<button class="secondary outline" type="submit">@Icon("refresh-cw") <span>{ T("cd.gc") }</span></button>
-				</form>
-			</div>
-			<div class="row-split">
-				<p>{ T("cd.deletehint") }</p>
-				<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/delete") } data-confirm={ T("confirm.delete") }>
-					<button class="danger" type="submit">@Icon("trash-2") <span>{ T("cd.delete") }</span></button>
-				</form>
-			</div>
+			@ActionRow(T("cd.gchint"), "/admin/gc", T("confirm.gc"), "secondary", "refresh-cw", T("cd.gc"), "")
+			@ActionRow(T("cd.deletehint"), "/admin/cache/"+d.Cache.Name+"/delete", T("confirm.delete"), "danger", "trash-2", T("cd.delete"), "")
 		</article>
 	}
+}
+
+// copyRow is a snippet block with its copy-to-clipboard button.
+templ copyRow(text string) {
+	<div class="copyrow">
+		<pre>{ text }</pre>
+		@CopyButton(text)
+	</div>
 }
 
 // durInput is a number + unit pair posting <name>_value and <name>_unit.
@@ -160,14 +141,11 @@ templ sizeInput(name string, bytes int64) {
 templ pathResults(d CacheData) {
 	<div id="path-results" hx-target="#path-results" hx-select="#path-results" hx-swap="outerHTML show:none">
 		if len(d.Paths) == 0 {
-			<div class="empty">
-				@Icon("package-search")
-				if d.PathQuery != "" {
-					<p>{ T("cd.nomatch") }</p>
-				} else {
-					<p>{ T("cd.pathsempty") }</p>
-				}
-			</div>
+			if d.PathQuery != "" {
+				@Empty("package-search", T("cd.nomatch"))
+			} else {
+				@Empty("package-search", T("cd.pathsempty"))
+			}
 		} else {
 			<table class="striped">
 				<thead>

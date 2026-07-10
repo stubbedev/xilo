@@ -41,12 +41,7 @@ templ Settings(totpEnabled bool, passkeys []store.Passkey, flash Flash) {
 					</form>
 				</div>
 			} else {
-				<div class="row-split">
-					<p>{ T("set.2fa.hint") }</p>
-					<form method="post" action="/admin/settings/totp/enroll">
-						<button type="submit">@Icon("shield") <span>{ T("set.2fa.enable") }</span></button>
-					</form>
-				</div>
+				@ActionRow(T("set.2fa.hint"), "/admin/settings/totp/enroll", "", "", "shield", T("set.2fa.enable"), "")
 			}
 		</article>
 		<h2>{ T("set.password") }</h2>

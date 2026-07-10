@@ -38,8 +38,9 @@
   /* accents (theme-independent) — warm ramp to match Pico's pumpkin flavor */
   --x-accent-2: #b45309;
   --x-ok: #2f9e44;
-  --x-danger: #e5484d;
+  --x-danger: #c0353a; /* deep warm red: reads as kin to the pumpkin ramp */
 }
+[data-theme=dark] { --x-danger: #e5484d; } /* needs more brightness on dark */
 
 /* Pin the root size against Pico's responsive up-scaling (loaded after Pico). */
 html { font-size: 100%; }
@@ -96,7 +97,9 @@ main.container {
   color: var(--pico-muted-color); text-decoration: none; font-weight: 400;
 }
 .topbar nav a:hover, .topbar nav button.theme-toggle:hover { color: var(--pico-primary); background: color-mix(in srgb, var(--pico-primary) 10%, transparent); }
-.topbar nav button.ghost:hover { color: var(--x-danger); background: color-mix(in srgb, var(--x-danger) 10%, transparent); }
+/* Danger hover is for destructive actions (logout) only — the theme toggle
+   hovers pumpkin like every other nav control. */
+.topbar nav button.ghost:not(.theme-toggle):hover { color: var(--x-danger); background: color-mix(in srgb, var(--x-danger) 10%, transparent); }
 .topbar nav a[aria-current=page] { color: var(--pico-primary); font-weight: 600; }
 /* Mouse clicks leave :focus behind — Pico's ring lingers as a colored blob.
    Keep the ring for keyboard (:focus-visible) only. */
@@ -191,8 +194,30 @@ button, [type=submit], [type=button], [type=reset], [role=button] {
 }
 /* Buttons share the form-control height (same vertical padding as inputs). */
 button, [type=submit], [role=button] { padding: var(--pico-form-element-spacing-vertical) 1rem; }
-button.danger { --pico-background-color: transparent; --pico-border-color: color-mix(in srgb, var(--x-danger) 55%, transparent); --pico-color: var(--x-danger); }
-button.danger:hover { --pico-background-color: color-mix(in srgb, var(--x-danger) 12%, transparent); --pico-color: var(--x-danger); color: var(--x-danger); }
+/* One button language across the app (incl. the shared confirm dialog):
+   primary = solid pumpkin (Pico default), secondary = quiet neutral outline
+   (Pico's solid slate reads off-palette), danger = solid red for destructive
+   actions. Icon buttons keep their own ring style. */
+button.secondary:not(.iconbtn), [role=button].secondary {
+  --pico-background-color: transparent;
+  --pico-border-color: var(--pico-muted-border-color);
+  --pico-color: var(--pico-color);
+}
+button.secondary:not(.iconbtn):hover, [role=button].secondary:hover {
+  --pico-background-color: color-mix(in srgb, var(--pico-muted-color) 10%, transparent);
+  --pico-border-color: var(--pico-muted-color);
+  --pico-color: var(--pico-color);
+}
+button.danger:not(.iconbtn) {
+  --pico-background-color: var(--x-danger);
+  --pico-border-color: var(--x-danger);
+  --pico-color: #fff;
+}
+button.danger:not(.iconbtn):hover {
+  --pico-background-color: color-mix(in srgb, var(--x-danger) 85%, black);
+  --pico-border-color: color-mix(in srgb, var(--x-danger) 85%, black);
+  --pico-color: #fff;
+}
 
 /* Labeled field row (cache settings, change password): label above input,
    fields share the row equally, actions row below. */
@@ -328,6 +353,9 @@ dialog.modal header [rel=prev]:focus { box-shadow: none; }
 dialog.modal header [rel=prev]:focus-visible { outline: 2px solid var(--pico-primary); outline-offset: 2px; }
 /* Footer lives inside the <form>, so Pico's article>footer styling misses it. */
 dialog.modal form footer, dialog.modal .modal-foot { display: flex; justify-content: flex-end; gap: 0.6rem; margin: var(--x-2) 0 0; padding: 0; border: 0; background: none; }
+/* Pico's trailing button margins skew flex stretch (the last child is zeroed
+   by the edge-margin rule, siblings are not → unequal heights). Zero them all. */
+dialog.modal form footer > *, dialog.modal .modal-foot > * { margin: 0; }
 dialog.modal .modal-body { padding: var(--x-4) var(--x-5); }
 dialog.modal .modal-body p { margin: 0; }
 dialog.modal .modal-foot { margin-top: var(--x-4); }
