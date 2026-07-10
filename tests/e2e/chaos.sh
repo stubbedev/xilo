@@ -33,7 +33,9 @@ XILO_TOKEN=$($COMPOSE exec -T xilo /xilo token create chaos --push --pull 2>/dev
 export XILO_TOKEN
 
 echo "== baseline closure push =="
-BASELINE=$(realpath "$(command -v bash)" | grep -oE '/nix/store/[^/]+')
+BASELINE=$(realpath "$(command -v bash)" 2>/dev/null | grep -oE '/nix/store/[^/]+')
+[ -n "$BASELINE" ] || BASELINE=$(nix build nixpkgs#hello --no-link --print-out-paths 2>/dev/null | head -1)
+[ -n "$BASELINE" ] || { echo "no pushable store path found"; exit 1; }
 "$XILO" push chaos "$BASELINE" --quiet && pass "baseline push" || fail "baseline push"
 
 echo "== kill -9 mid-push =="

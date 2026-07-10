@@ -16,9 +16,24 @@ FAILS=0
 
 pass() { echo "PASS: $1"; }
 fail() { echo "FAIL: $1"; FAILS=$((FAILS + 1)); }
-assert() { # assert <name> <command...>
-  local name=$1; shift
-  if "$@" >/dev/null 2>&1; then pass "$name"; else fail "$name"; fi
+assert() { # assert <name> <command...> — failure prints the command output
+  local name=$1 out rc; shift
+  out=$("$@" 2>&1); rc=$?
+  if [ $rc -eq 0 ]; then pass "$name"; else
+    fail "$name"
+    echo "  cmd: $*" >&2
+    echo "$out" | sed 's/^/  out: /' | head -5 >&2
+  fi
+}
+
+# closure_root prints a store path with a real closure to push. Prefers a
+# host binary that lives in /nix/store (dev machines); falls back to building
+# nixpkgs#hello (CI runners, where /usr/bin/bash is not a store path).
+closure_root() {
+  local p
+  p=$(realpath "$(command -v bash)" 2>/dev/null | grep -oE '/nix/store/[^/]+')
+  [ -n "$p" ] && { echo "$p"; return; }
+  nix build nixpkgs#hello --no-link --print-out-paths 2>/dev/null | head -1
 }
 
 cleanup() {
@@ -77,7 +92,9 @@ assert "login saves config" "$XILO" login $URL --token "$TOK"
 grep -q "$TOK" "$XDG_CONFIG_HOME/xilo/config.yaml" && pass "config file holds token" || fail "config file holds token"
 
 echo "== push (real nix closure) =="
-CLOSURE_ROOT=$(realpath "$(command -v bash)" | grep -oE '/nix/store/[^/]+')
+CLOSURE_ROOT=$(closure_root)
+[ -n "$CLOSURE_ROOT" ] || { echo "no pushable store path found"; exit 1; }
+echo "closure root: $CLOSURE_ROOT"
 assert "push --dry-run" "$XILO" push e2e "$CLOSURE_ROOT" --dry-run
 assert "push closure" "$XILO" push e2e "$CLOSURE_ROOT" --quiet
 assert "re-push dedups" bash -c "\"$XILO\" push e2e \"$CLOSURE_ROOT\" 2>&1 | grep -q 'already cached'"

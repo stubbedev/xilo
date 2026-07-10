@@ -45,7 +45,9 @@ func pushCmd() *cobra.Command {
 	return c
 }
 
-// resolvePaths expands a lone "-" into newline-separated paths read from stdin.
+// resolvePaths expands a lone "-" into newline-separated paths read from
+// stdin, and drops empty arguments (a shell var that resolved to "" would
+// otherwise reach nix as a bogus path).
 func resolvePaths(args []string) ([]string, error) {
 	if len(args) == 1 && args[0] == "-" {
 		var paths []string
@@ -58,5 +60,11 @@ func resolvePaths(args []string) ([]string, error) {
 		}
 		return paths, sc.Err()
 	}
-	return args, nil
+	var paths []string
+	for _, a := range args {
+		if p := strings.TrimSpace(a); p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths, nil
 }

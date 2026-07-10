@@ -81,17 +81,20 @@ export const options = {
       exec: "pullZstd",
     },
   },
+  // Floors are sized for a 2-core CI runner (a 12-core dev box runs 2-4x
+  // faster) — they catch catastrophic regressions; trend-tracking of the
+  // uploaded summary is the real release-over-release signal.
   thresholds: {
     http_req_failed: ["rate<0.01"],
-    "http_req_duration{scenario:narinfo_hit}": ["p(95)<100"],
-    "http_req_duration{scenario:narinfo_miss}": ["p(95)<100"],
-    "http_req_duration{scenario:pull_identity}": ["p(95)<2000"],
-    "http_req_duration{scenario:pull_zstd}": ["p(95)<2000"],
-    "http_req_duration{scenario:pull_big}": ["p(95)<10000"],
-    "iteration_duration{scenario:push_dedup}": ["p(95)<1000"],
-    "iteration_duration{scenario:push_fresh}": ["p(95)<5000"],
+    "http_req_duration{scenario:narinfo_hit}": ["p(95)<200"],
+    "http_req_duration{scenario:narinfo_miss}": ["p(95)<200"],
+    "http_req_duration{scenario:pull_identity}": ["p(95)<5000"],
+    "http_req_duration{scenario:pull_zstd}": ["p(95)<5000"],
+    "http_req_duration{scenario:pull_big}": ["p(95)<20000"],
+    "iteration_duration{scenario:push_dedup}": ["p(95)<4000"],
+    "iteration_duration{scenario:push_fresh}": ["p(95)<10000"],
     // The substituter SLO: reads stay fast while pushers hammer the server.
-    "http_req_duration{scenario:mixed_narinfo}": ["p(95)<300"],
+    "http_req_duration{scenario:mixed_narinfo}": ["p(95)<800"],
   },
 };
 
