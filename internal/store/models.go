@@ -306,7 +306,9 @@ func (db *DB) SearchPaths(cacheID int64, q string, limit, offset int, sortKey, s
 	var order string
 	switch sortKey {
 	case "path":
-		order = `store_path COLLATE NOCASE` + dir
+		// Order by the name after "/nix/store/<32-char-hash>-" (char 45) so
+		// the column sorts by package name, not by hash noise.
+		order = `substr(store_path, 45) COLLATE NOCASE` + dir
 		rankArgs = nil
 	case "size":
 		order = `nar_size` + dir + `, accessed DESC`

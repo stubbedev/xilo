@@ -153,8 +153,14 @@ templ pathResults(d CacheData) {
 				</thead>
 				<tbody>
 					for _, p := range d.Paths {
+						{{ hash, name := pathParts(p.StorePath) }}
 						<tr>
-							<td class="pathcell"><code>{ p.StorePath }</code></td>
+							<td class="pathcell" title={ p.StorePath }>
+								<span class="pname">{ name }</span>
+								if hash != "" {
+									<code class="phash">{ hash }</code>
+								}
+							</td>
 							<td class="num">{ d.Bytes(p.NarSize) }</td>
 							<td class="num"><small>{ Ago(p.Accessed) }</small></td>
 						</tr>

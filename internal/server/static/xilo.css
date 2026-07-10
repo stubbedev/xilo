@@ -379,7 +379,12 @@ progress.over { --pico-progress-color: var(--x-danger); }
 .fig .pct.over { color: var(--x-danger); }
 
 /* ---------- paths table (cache detail) ---------- */
-td.pathcell code { background: none; padding: 0; font-size: var(--x-fs-sm); overflow-wrap: anywhere; }
+/* Name first, short hash muted beside it; the full path lives in the title. */
+td.pathcell { overflow-wrap: anywhere; }
+td.pathcell .phash {
+  background: none; padding: 0; margin-left: var(--x-1);
+  color: var(--pico-muted-color); font-size: var(--x-fs-label);
+}
 td.num, th.num { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ---------- status dashboard ---------- */
@@ -563,6 +568,40 @@ th.num .sorth { flex-direction: row-reverse; }
   article { transition: box-shadow 0.15s ease; }
 }
 dialog.modal::backdrop { background: rgb(0 0 0 / 35%); backdrop-filter: blur(3px); }
+
+/* ---------- mobile ---------- */
+@media (max-width: 640px) {
+  :root { --x-pad: 1rem; --x-fs-lead: 1.25rem; }
+  /* Chrome controls go icon-only: labels stay in the accessibility tree
+     (sr-only) so buttons keep their names, but only the glyph paints. */
+  .topbar nav a:not(.brand) > span,
+  .topbar nav button.ghost > span,
+  .headsearch button > span,
+  .pager a > span,
+  .foot-inner a > span {
+    position: absolute; width: 1px; height: 1px; margin: -1px;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+  /* Search takes the full row under its section title. */
+  .section-head .headsearch { width: 100%; }
+  /* Cards hug the narrow column so their content keeps two KPI tiles per row. */
+  article { padding: var(--x-4); }
+  .kpi { grid-template-columns: repeat(2, 1fr); gap: var(--x-2); }
+  .kpi .tile { padding: var(--x-3); gap: var(--x-2); }
+  .ic-lg { width: 30px; height: 30px; }
+  .ic-lg .ic { width: 16px; height: 16px; }
+  /* Usage rows stack: name, figures, bar — instead of squeezing side by side. */
+  .usage .row { grid-template-columns: 1fr; }
+  .usage .fig { font-size: var(--x-fs-label); }
+  /* Tighter table cells; the card already scrolls sideways when needed. */
+  th, td { padding: var(--x-1) var(--x-2); }
+  /* Tables bleed to the card edge — a padded gutter just wastes the width.
+     First/last cells carry the inset; the pager restores its own. */
+  article:has(table) { padding: 0; }
+  th:first-child, td:first-child { padding-left: var(--x-4); }
+  th:last-child, td:last-child { padding-right: var(--x-4); }
+  article:has(table) .pager { padding: 0 var(--x-4) var(--x-3); }
+}
 
 /* ---------- empty states ---------- */
 .empty {

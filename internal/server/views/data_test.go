@@ -82,3 +82,17 @@ func TestPageOf(t *testing.T) {
 		t.Errorf("empty: len=%d p=%d pages=%d", len(page), p, pages)
 	}
 }
+
+func TestPathParts(t *testing.T) {
+	cases := []struct{ in, hash, name string }{
+		{"/nix/store/8kvxvr3pmsypxiypq4g8zy13glnfr7nx-glibc-2.42-67", "8kvxvr3p", "glibc-2.42-67"},
+		{"/nix/store/short-x", "short", "x"},
+		{"/nix/store/nodash", "", "nodash"},
+		{"not-a-store-path", "", "not-a-store-path"},
+	}
+	for _, c := range cases {
+		if h, n := pathParts(c.in); h != c.hash || n != c.name {
+			t.Errorf("pathParts(%q) = %q %q, want %q %q", c.in, h, n, c.hash, c.name)
+		}
+	}
+}

@@ -14,6 +14,23 @@ func cls(base string, extra ...string) string {
 	return strings.Join(append([]string{base}, extra...), " ")
 }
 
+// pathParts splits "/nix/store/<hash>-<name>" for compact display: an 8-char
+// short hash and the package name. Unparseable paths return "" and the path.
+func pathParts(p string) (hash, name string) {
+	s, ok := strings.CutPrefix(p, "/nix/store/")
+	if !ok {
+		return "", p
+	}
+	hash, name, ok = strings.Cut(s, "-")
+	if !ok {
+		return "", s
+	}
+	if len(hash) > 8 {
+		hash = hash[:8]
+	}
+	return hash, name
+}
+
 // TokenStatus is the display state of a token.
 func TokenStatus(t store.Token) string {
 	switch {
