@@ -382,7 +382,9 @@ func (s *Server) handleConfigureCache(w http.ResponseWriter, r *http.Request) {
 		priority = c.Priority
 	}
 	public := r.FormValue("private") == ""
-	var retention int64
+	// Empty or unparsable keeps the current value ("0" clears it); a blank
+	// field must not silently wipe an existing retention.
+	retention := c.Retention
 	if rt := strings.TrimSpace(r.FormValue("retention")); rt != "" {
 		if d, err := time.ParseDuration(rt); err == nil {
 			retention = int64(d.Seconds())

@@ -21,6 +21,8 @@ templ Layout(title string, loggedIn bool, flash Flash) {
 			<script>
 				(function(){var t=localStorage.getItem('theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t)})();
 				function xiloTheme(){var c=document.documentElement.getAttribute('data-theme');var n=c==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',n);localStorage.setItem('theme',n)}
+				// Mark the active topbar link (cache detail pages count as "Caches").
+				addEventListener('DOMContentLoaded',function(){var p=location.pathname;document.querySelectorAll('.topbar nav a').forEach(function(a){var h=a.getAttribute('href');if(p===h||(h!=='/admin'&&p.indexOf(h+'/')===0)||(h==='/admin'&&p.indexOf('/admin/cache/')===0)){a.setAttribute('aria-current','page')}})});
 			</script>
 		</head>
 		<body>
@@ -32,12 +34,13 @@ templ Layout(title string, loggedIn bool, flash Flash) {
 							<a href="/admin">@Icon("database") <span>{ T("nav.caches") }</span></a>
 							<a href="/admin/settings">@Icon("settings") <span>{ T("nav.settings") }</span></a>
 						}
+						<span class="sep" aria-hidden="true"></span>
 						<button class="theme-toggle" type="button" onclick="xiloTheme()" title={ T("nav.theme") } aria-label={ T("nav.theme") }>
 							@IconClass("sun", 18, "icon-sun")
 							@IconClass("moon", 18, "icon-moon")
 						</button>
 						if loggedIn {
-							<form method="post" action="/admin/logout"><button class="secondary outline">@Icon("log-out") <span>{ T("nav.logout") }</span></button></form>
+							<form method="post" action="/admin/logout"><button class="ghost">@Icon("log-out") <span>{ T("nav.logout") }</span></button></form>
 						}
 					</nav>
 				</div>

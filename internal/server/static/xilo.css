@@ -35,8 +35,8 @@
   --x-fs-sm: 0.875rem;            /* secondary text */
   --x-fs-lead: 1.5rem;            /* KPI numbers, h1 */
 
-  /* accents (theme-independent) */
-  --x-accent-2: #7c5cff;
+  /* accents (theme-independent) — warm ramp to match Pico's pumpkin flavor */
+  --x-accent-2: #b45309;
   --x-ok: #2f9e44;
   --x-danger: #e5484d;
 }
@@ -80,20 +80,26 @@ main.container {
   background: linear-gradient(135deg, var(--pico-primary), var(--x-accent-2));
 }
 .brand .logo-ic { width: 16px; height: 16px; color: #fff; }
-.topbar nav { margin-left: auto; display: flex; align-items: center; gap: var(--x-5); }
+.topbar nav { margin-left: auto; display: flex; align-items: center; gap: var(--x-4); }
 .topbar nav a { color: var(--pico-muted-color); text-decoration: none; font-size: var(--x-fs-sm); }
 .topbar nav a:hover { color: var(--pico-primary); }
+.topbar nav a[aria-current=page] { color: var(--pico-primary); font-weight: 600; }
 .topbar nav form { margin: 0; }
-.topbar nav button { padding: 0.35rem 0.8rem; font-size: var(--x-fs-sm); }
+.topbar nav .sep { width: 1px; height: 1.25rem; background: var(--pico-muted-border-color); flex: none; }
 
-/* theme toggle */
+/* Topbar controls read as one family: borderless ghosts, same height. */
+.topbar nav button.ghost {
+  height: 34px; padding: 0 0.7rem; font-size: var(--x-fs-sm);
+  background: none; border: none; color: var(--pico-muted-color); box-shadow: none;
+}
+.topbar nav button.ghost:hover { color: var(--x-danger); background: color-mix(in srgb, var(--x-danger) 10%, transparent); }
 .theme-toggle {
   width: 34px; height: 34px; padding: 0; flex: none;
   display: inline-flex; align-items: center; justify-content: center;
   border-radius: var(--x-radius); font-size: 1rem; line-height: 1;
-  background: none; border: 1px solid var(--pico-muted-border-color); color: var(--pico-muted-color);
+  background: none; border: none; color: var(--pico-muted-color); box-shadow: none;
 }
-.theme-toggle:hover { color: var(--pico-primary); border-color: var(--pico-primary); background: color-mix(in srgb, var(--pico-primary) 10%, transparent); }
+.theme-toggle:hover { color: var(--pico-primary); background: color-mix(in srgb, var(--pico-primary) 10%, transparent); }
 /* Show the glyph for the theme you'd switch TO: moon in light, sun in dark. */
 .theme-toggle .ic { display: none; }
 [data-theme=light] .theme-toggle .icon-moon { display: inline-block; }
@@ -110,7 +116,12 @@ h2:first-of-type { margin-top: var(--x-2); }
 hgroup { margin-bottom: var(--x-5); }
 hgroup > p { font-size: var(--x-fs-sm); color: var(--pico-muted-color); margin: 0; }
 
-article { padding: var(--x-4) var(--x-5); margin-bottom: var(--x-4); }
+/* Tight, modern card shadow instead of Pico's wide ambient ring. */
+article {
+  padding: var(--x-4) var(--x-5); margin-bottom: var(--x-4);
+  border: 1px solid var(--pico-muted-border-color);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+}
 
 /* ---------- tables ---------- */
 th, td { padding: var(--x-2) var(--x-3); font-size: var(--x-fs-sm); vertical-align: middle; }
@@ -136,6 +147,16 @@ button, [type=submit], [role=button] { padding: 0.5rem 1rem; }
 button.danger { --pico-background-color: transparent; --pico-border-color: color-mix(in srgb, var(--x-danger) 55%, transparent); --pico-color: var(--x-danger); }
 button.danger:hover { --pico-background-color: color-mix(in srgb, var(--x-danger) 12%, transparent); --pico-color: var(--x-danger); color: var(--x-danger); }
 
+/* Labeled field row (cache settings, change password): label above input,
+   fields share the row equally, actions row below. */
+form.fields { display: flex; flex-wrap: wrap; gap: var(--x-4); margin: 0; }
+form.fields label { flex: 1 1 12rem; display: flex; flex-direction: column; gap: 0.35rem; font-size: var(--x-fs-sm); color: var(--pico-muted-color); margin: 0; }
+form.fields input { width: 100%; margin: 0; }
+form.fields .fields-foot { flex-basis: 100%; display: flex; align-items: center; justify-content: space-between; gap: var(--x-4); }
+form.fields .fields-foot > :only-child { margin-left: auto; }
+form.fields .fields-foot label.switch { flex: none; flex-direction: row; align-items: center; gap: var(--x-2); color: var(--pico-color); }
+form.fields .fields-foot label.switch input { width: auto; }
+
 /* Compact single-row forms that wrap gracefully. */
 form.inline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--x-3) var(--x-4); margin: 0; }
 form.inline > * { margin: 0; }
@@ -147,16 +168,26 @@ form.inline input[name=ttl], form.inline input[name=retention], form.inline inpu
 form.inline button { flex: none; }
 
 /* Stacked forms (login, settings, change password). */
-article > form:not(.inline) { display: flex; flex-direction: column; align-items: flex-start; gap: var(--x-3); }
-article > form:not(.inline) input, article > form:not(.inline) select { width: 100%; margin: 0; }
-.narrow { max-width: 26rem; }
+article > form:not(.inline):not(.fields) { display: flex; flex-direction: column; align-items: flex-start; gap: var(--x-3); }
+article > form:not(.inline):not(.fields) input, article > form:not(.inline):not(.fields) select { width: 100%; margin: 0; }
+.narrow { max-width: 26rem; margin-inline: auto; }
+
+/* Text left, action right (2FA card and similar). */
+.row-split { display: flex; align-items: center; justify-content: space-between; gap: var(--x-4); flex-wrap: wrap; }
+.row-split p, .row-split form { margin: 0; }
+.row-split p { display: inline-flex; align-items: center; gap: var(--x-2); }
 
 /* ---------- badges ---------- */
 .badge {
+  display: inline-flex; align-items: center; gap: 0.3rem;
   font-size: var(--x-fs-label); font-weight: 600; white-space: nowrap;
   padding: 0.15rem 0.6rem; border-radius: 1rem;
   border: 1px solid var(--pico-muted-border-color); color: var(--pico-muted-color);
 }
+.badge .ic { width: 0.85em; height: 0.85em; }
+/* Icon-only badge: bigger glyph, label lives in the Pico tooltip. */
+.badge.icon-badge { padding: 0.3rem; border-radius: 50%; border-bottom: 1px solid; cursor: default; }
+.badge.icon-badge .ic { width: 16px; height: 16px; }
 .badge.pub { color: var(--x-ok); border-color: color-mix(in srgb, var(--x-ok) 40%, transparent); }
 .badge.priv { color: var(--pico-primary); border-color: color-mix(in srgb, var(--pico-primary) 45%, transparent); }
 .badge.rev { color: var(--x-danger); border-color: color-mix(in srgb, var(--x-danger) 40%, transparent); }
@@ -233,15 +264,59 @@ progress { height: 6px; border-radius: 3px; }
 .foot-inner a { color: var(--pico-muted-color); text-decoration: none; }
 .foot-inner a:hover { color: var(--pico-primary); }
 
+/* ---------- auth card (login) ---------- */
+.auth {
+  max-width: 24rem; margin: 10vh auto 0;
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: var(--x-4); padding: var(--x-6) var(--x-5);
+}
+.auth hgroup { margin: 0; }
+.auth form { align-self: stretch; align-items: stretch; }
+.auth form button { width: 100% !important; }
+
 /* ---------- 404 ---------- */
 .notfound { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--x-4); padding: 4rem var(--x-5); }
 .notfound hgroup { margin: 0; }
 .notfound .ic-xl { display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 16px; background: color-mix(in srgb, var(--pico-primary) 14%, transparent); color: var(--pico-primary); }
 .notfound .ic-xl .ic { width: 32px; height: 32px; }
 
+/* ---------- motion (respects prefers-reduced-motion) ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  /* Cross-page fade on navigation — MPA feels like an app, zero JS. */
+  @view-transition { navigation: auto; }
+
+  /* Modal enter/exit: fade + lift, backdrop fade. Uses @starting-style so the
+     native <dialog> animates on showModal() without any script. */
+  dialog.modal {
+    opacity: 0; transform: translateY(10px) scale(0.98);
+    transition: opacity 0.18s ease, transform 0.18s ease,
+      overlay 0.18s ease allow-discrete, display 0.18s ease allow-discrete;
+  }
+  dialog.modal[open] { opacity: 1; transform: none; }
+  @starting-style {
+    dialog.modal[open] { opacity: 0; transform: translateY(10px) scale(0.98); }
+  }
+  dialog.modal::backdrop { transition: background-color 0.18s ease, backdrop-filter 0.18s ease; }
+
+  button, [role=button], .topbar nav a, .foot-inner a, .badge {
+    transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  article { transition: box-shadow 0.15s ease; }
+}
+dialog.modal::backdrop { background: rgb(0 0 0 / 35%); backdrop-filter: blur(3px); }
+
+/* ---------- empty states ---------- */
+.empty {
+  display: flex; flex-direction: column; align-items: center; gap: var(--x-2);
+  padding: var(--x-6) var(--x-4); text-align: center; color: var(--pico-muted-color);
+}
+.empty > .ic { width: 26px; height: 26px; opacity: 0.45; }
+.empty p { margin: 0; font-size: var(--x-fs-sm); }
+td .empty { padding: var(--x-4); }
+
 /* ---------- misc ---------- */
 [x-cloak] { display: none !important; }
-.qr { display: block; width: 200px; height: 200px; border-radius: var(--pico-border-radius); }
+.qr { display: block; width: 200px; height: 200px; border-radius: var(--pico-border-radius); margin-inline: auto; }
 article.secret { border-color: color-mix(in srgb, var(--x-ok) 50%, var(--pico-muted-border-color)); }
 article.secret code { word-break: break-all; }
 .copyrow { display: flex; gap: var(--x-3); align-items: stretch; }

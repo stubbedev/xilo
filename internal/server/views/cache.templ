@@ -76,12 +76,14 @@ xilo use { d.Cache.Name }</pre>
 		</article>
 		<h2>{ T("cd.settings") }</h2>
 		<article>
-			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/configure") } class="inline">
-				<label><input type="checkbox" role="switch" name="private" checked?={ !d.Cache.Public }/> { T("caches.private") }</label>
+			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/configure") } class="fields">
 				<label>{ T("caches.priority") } <input type="number" name="priority" value={ strconv.Itoa(d.Cache.Priority) }/></label>
-				<label>{ T("cd.retention") } <input name="retention" placeholder="720h"/></label>
+				<label>{ T("cd.retention") } <input name="retention" placeholder="720h" value={ retValue(d.Cache.Retention) }/></label>
 				<label>{ T("cd.maxsize") } <input name="max_bytes" placeholder="50GB" value={ capValue(d.Cache.MaxBytes, d.Bytes) }/></label>
-				<button type="submit">@Icon("save") <span>{ T("cd.save") }</span></button>
+				<div class="fields-foot">
+					<label class="switch"><input type="checkbox" role="switch" name="private" checked?={ !d.Cache.Public }/> { T("caches.private") }</label>
+					<button type="submit">@Icon("save") <span>{ T("cd.save") }</span></button>
+				</div>
 			</form>
 			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/rotate") } class="inline"
 				onsubmit="return confirm('Rotate the signing key? The current trusted-public-key stops verifying.')">

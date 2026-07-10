@@ -209,7 +209,12 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin", http.StatusFound)
 		return
 	}
-	// Unknown path: a styled 404 for browsers, plain text for API clients (nix).
+	s.notFoundNegotiated(w, r)
+}
+
+// notFoundNegotiated writes a styled 404 for browsers, plain text for API
+// clients (nix).
+func (s *Server) notFoundNegotiated(w http.ResponseWriter, r *http.Request) {
 	if strings.Contains(r.Header.Get("Accept"), "text/html") {
 		s.notFound(w, r)
 		return

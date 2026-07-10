@@ -7,26 +7,32 @@ templ Settings(totpEnabled bool, flash Flash) {
 			<p>{ T("set.subtitle") }</p>
 		</hgroup>
 		<h2>{ T("set.password") }</h2>
-		<article class="narrow">
-			<form method="post" action="/admin/settings/password">
-				<input type="password" name="current" placeholder={ T("set.current") } autocomplete="current-password"/>
-				<input type="password" name="new" placeholder={ T("set.new") } autocomplete="new-password"/>
-				<button type="submit">@Icon("check") <span>{ T("set.update") }</span></button>
+		<article>
+			<form method="post" action="/admin/settings/password" class="fields">
+				<label>{ T("set.current") } <input type="password" name="current" autocomplete="current-password"/></label>
+				<label>{ T("set.new") } <input type="password" name="new" autocomplete="new-password"/></label>
+				<div class="fields-foot">
+					<button type="submit">@Icon("check") <span>{ T("set.update") }</span></button>
+				</div>
 			</form>
 		</article>
 		<h2>{ T("set.2fa") }</h2>
-		<article class="narrow">
+		<article>
 			if totpEnabled {
-				<p>2FA <span class="badge pub">{ T("set.2fa.on") }</span> — { T("set.2fa.enabled") }</p>
-				<form method="post" action="/admin/settings/totp/disable"
-					onsubmit="return confirm('Disable two-factor authentication?')">
-					<button class="danger" type="submit">@Icon("shield-off") <span>{ T("set.2fa.disable") }</span></button>
-				</form>
+				<div class="row-split">
+					<p>@Icon("shield-check") <span class="badge pub">{ T("set.2fa.on") }</span> { T("set.2fa.enabled") }</p>
+					<form method="post" action="/admin/settings/totp/disable"
+						onsubmit="return confirm('Disable two-factor authentication?')">
+						<button class="danger" type="submit">@Icon("shield-off") <span>{ T("set.2fa.disable") }</span></button>
+					</form>
+				</div>
 			} else {
-				<p>{ T("set.2fa.hint") }</p>
-				<form method="post" action="/admin/settings/totp/enroll">
-					<button type="submit">@Icon("shield") <span>{ T("set.2fa.enable") }</span></button>
-				</form>
+				<div class="row-split">
+					<p>{ T("set.2fa.hint") }</p>
+					<form method="post" action="/admin/settings/totp/enroll">
+						<button type="submit">@Icon("shield") <span>{ T("set.2fa.enable") }</span></button>
+					</form>
+				</div>
 			}
 		</article>
 	}

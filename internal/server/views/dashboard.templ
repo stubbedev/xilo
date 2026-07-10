@@ -29,7 +29,11 @@ templ Dashboard(d DashboardData) {
 		}
 		<article>
 			if len(d.Caches) == 0 {
-				<p class="muted-row">{ T("caches.empty") }</p>
+				<div class="empty">
+					@Icon("database")
+					<p>{ T("caches.empty") }</p>
+					<button class="outline sm" type="button" onclick="document.getElementById('dlg-cache').showModal()">@Icon("plus") <span>{ T("caches.new") }</span></button>
+				</div>
 			} else {
 				<div class="usage">
 					for _, u := range d.Caches {
@@ -64,7 +68,13 @@ templ Dashboard(d DashboardData) {
 						<tr>
 							<td>{ t.Name }</td>
 							<td>{ strings.Join(t.Perms, ", ") }</td>
-							<td>{ strings.Join(t.Caches, ", ") }</td>
+							<td>
+								if scopeAll(t.Caches) {
+									<span class="muted-row">{ T("tokens.all") }</span>
+								} else {
+									{ strings.Join(t.Caches, ", ") }
+								}
+							</td>
 							<td><small>{ TokenExpiry(t) }</small></td>
 							<td>@tokenBadge(t)</td>
 							<td class="actions">
@@ -77,7 +87,7 @@ templ Dashboard(d DashboardData) {
 						</tr>
 					}
 					if len(d.Tokens) == 0 {
-						<tr><td colspan="6"><span class="muted-row">{ T("tokens.empty") }</span></td></tr>
+						<tr><td colspan="6"><div class="empty">@Icon("key-round") <p>{ T("tokens.empty") }</p></div></td></tr>
 					}
 				</tbody>
 			</table>
@@ -133,19 +143,19 @@ templ Dashboard(d DashboardData) {
 
 templ visBadge(public bool) {
 	if public {
-		<span class="badge pub">{ T("vis.public") }</span>
+		<span class="badge pub icon-badge" data-tooltip={ T("vis.public") }>@IconClass("globe-check", 16, "")</span>
 	} else {
-		<span class="badge priv">{ T("vis.private") }</span>
+		<span class="badge priv icon-badge" data-tooltip={ T("vis.private") }>@IconClass("globe-lock", 16, "")</span>
 	}
 }
 
 templ tokenBadge(t store.Token) {
 	switch TokenStatus(t) {
 		case "active":
-			<span class="badge pub">{ T("tok.active") }</span>
+			<span class="badge pub icon-badge" data-tooltip={ T("tok.active") }>@IconClass("circle-check", 16, "")</span>
 		case "expired":
-			<span class="badge rev">{ T("tok.expired") }</span>
+			<span class="badge rev icon-badge" data-tooltip={ T("tok.expired") }>@IconClass("clock", 16, "")</span>
 		default:
-			<span class="badge rev">{ T("tok.revoked") }</span>
+			<span class="badge rev icon-badge" data-tooltip={ T("tok.revoked") }>@IconClass("ban", 16, "")</span>
 	}
 }

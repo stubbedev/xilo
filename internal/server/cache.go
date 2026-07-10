@@ -30,7 +30,8 @@ func (s *Server) handleCacheInfo(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleNarinfo(w http.ResponseWriter, r *http.Request) {
 	file := r.PathValue("file")
 	if !strings.HasSuffix(file, ".narinfo") {
-		http.NotFound(w, r)
+		// Also catches stray browser URLs like /admin/typo (cache="admin").
+		s.notFoundNegotiated(w, r)
 		return
 	}
 	c, ok := s.cache(w, r)

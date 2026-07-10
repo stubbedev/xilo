@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/stubbedev/xilo/internal/store"
 )
@@ -39,6 +40,23 @@ func capLabel(cap int64, bytes func(int64) string) string {
 		return " (no cap)"
 	}
 	return " / " + bytes(cap)
+}
+
+// scopeAll reports whether a token's cache list means "every cache".
+func scopeAll(caches []string) bool {
+	return len(caches) == 0 || (len(caches) == 1 && caches[0] == "*")
+}
+
+// retValue prefills the retention input with the current value in hours
+// (retention granularity is coarse; hours read better than "720h0m0s").
+func retValue(secs int64) string {
+	if secs <= 0 {
+		return ""
+	}
+	if secs%3600 == 0 {
+		return fmt.Sprintf("%dh", secs/3600)
+	}
+	return (time.Duration(secs) * time.Second).String()
 }
 
 // capValue prefills the max-size input with the current cap (or empty).
