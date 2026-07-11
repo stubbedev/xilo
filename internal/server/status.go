@@ -258,10 +258,10 @@ type statusJSON struct {
 	Uptime    string                     `json:"uptime"`
 	HitPct    string                     `json:"hitPct"`
 	Stored    string                     `json:"stored"`
-	Paths     int64                      `json:"paths"`
-	Nars      int64                      `json:"nars"`
-	Requests  int64                      `json:"requests"`
-	AuthFails int64                      `json:"authFails"`
+	Paths     string                     `json:"paths"`
+	Nars      string                     `json:"nars"`
+	Requests  string                     `json:"requests"`
+	AuthFails string                     `json:"authFails"`
 	Updated   string                     `json:"updated"`
 	MinT      int64                      `json:"minT"` // unix ms, chart x range
 	MaxT      int64                      `json:"maxT"`
@@ -295,10 +295,10 @@ func (s *Server) buildStatusJSON(q statusRangeQ) statusJSON {
 		Uptime:    humanDur(time.Since(s.started)),
 		HitPct:    hitPct(m.narinfoHit.Load(), m.narinfoMiss.Load()),
 		Stored:    humanBytes(g.StoredBytes),
-		Paths:     g.Paths,
-		Nars:      m.narServed.Load(),
-		Requests:  m.reqTotal.Load(),
-		AuthFails: m.authFailures.Load(),
+		Paths:     views.Count(g.Paths),
+		Nars:      views.Count(m.narServed.Load()),
+		Requests:  views.Count(m.reqTotal.Load()),
+		AuthFails: views.Count(m.authFailures.Load()),
 		Updated:   time.Now().Format("15:04:05"),
 		MinT:      set.minT * 1000,
 		MaxT:      set.maxT * 1000,

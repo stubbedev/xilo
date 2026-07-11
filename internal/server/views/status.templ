@@ -169,10 +169,10 @@ templ StatusPage(d StatusData) {
 				@KPITile("clock", d.Uptime, T("status.uptime"), "kpi-uptime")
 				@KPITile("target", d.HitPct, T("status.hits"), "kpi-hits")
 				@KPITile("hard-drive", d.Bytes(d.Global.StoredBytes), T("status.stored"), "kpi-stored")
-				@KPITile("package", strconv.FormatInt(d.Global.Paths, 10), T("kpi.paths"), "kpi-paths")
-				@KPITile("download", strconv.FormatInt(d.NarServed, 10), T("status.nars"), "kpi-nars")
-				@KPITile("network", strconv.FormatInt(d.Requests, 10), T("status.reqs"), "kpi-reqs")
-				@KPITile("shield", strconv.FormatInt(d.AuthFails, 10), T("status.authfail"), "kpi-auth")
+				@KPITile("package", Count(d.Global.Paths), T("kpi.paths"), "kpi-paths")
+				@KPITile("download", Count(d.NarServed), T("status.nars"), "kpi-nars")
+				@KPITile("network", Count(d.Requests), T("status.reqs"), "kpi-reqs")
+				@KPITile("shield", Count(d.AuthFails), T("status.authfail"), "kpi-auth")
 			</div>
 		</article>
 		<div class="charts">

@@ -4,20 +4,20 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/stubbedev/xilo/internal/store"
 )
 
-// barMax is the <progress> max for a cache bar: its cap when capped, else the
-// global stored total so bars are comparable (min 1 to avoid divide-by-zero).
-func barMax(u CacheUsage, globalStored int64) int64 {
-	if u.Cache.MaxBytes > 0 {
-		return u.Cache.MaxBytes
+// unlimitedClass styles an uncapped cache's bar: nothing bounds it, so a
+// partial fill is meaningless (raw MiB read as a percentage). It renders as a
+// FULL striped bar — green while healthy, warn-colored when the server-wide
+// cap is under pressure (global eviction will bite uncapped caches too).
+func unlimitedClass(globalStored, serverCap int64) string {
+	if c := fillClass(globalStored, serverCap); c != "" {
+		return "unlimited " + c
 	}
-	if globalStored < 1 {
-		return 1
-	}
-	return globalStored
+	return "unlimited"
 }
 
 func dedupRatio(logical, stored int64) string {
@@ -203,3 +203,24 @@ func (u CacheUsage) Pct() int {
 func (u CacheUsage) Over() bool {
 	return u.Cache.MaxBytes > 0 && u.Bytes >= u.Cache.MaxBytes
 }
+
+// Count condenses large counters for stat tiles: 21393 → "21.4k", 2_100_000 →
+// "2.1m". Below 1000 the raw number reads fine and stays exact. Values whose
+// one-decimal rounding reaches 1000 bump to the next unit (999_999 → "1m",
+// never "1000.0k").
+func Count(n int64) string {
+	if n < 1000 {
+		return strconv.FormatInt(n, 10)
+	}
+	v := float64(n)
+	for _, unit := range []string{"k", "m", "b"} {
+		v /= 1000
+		if v < 999.95 || unit == "b" {
+			return trimZero(fmt.Sprintf("%.1f", v)) + unit
+		}
+	}
+	return "" // unreachable
+}
+
+// trimZero drops a trailing ".0" so round values read clean ("12k" not "12.0k").
+func trimZero(s string) string { return strings.TrimSuffix(s, ".0") }

@@ -49,7 +49,11 @@ templ Dashboard(d DashboardData) {
 								}
 								· { strconv.FormatInt(u.Paths, 10) } { T("cache.paths") }
 							</span>
-							<progress class={ fillClass(u.Bytes, u.Cache.MaxBytes) } value={ strconv.FormatInt(u.Bytes, 10) } max={ strconv.FormatInt(barMax(u, d.Global.StoredBytes), 10) }></progress>
+							if u.Cache.MaxBytes > 0 {
+								<progress class={ fillClass(u.Bytes, u.Cache.MaxBytes) } value={ strconv.FormatInt(u.Bytes, 10) } max={ strconv.FormatInt(u.Cache.MaxBytes, 10) }></progress>
+							} else {
+								<progress class={ unlimitedClass(d.Global.StoredBytes, d.ServerCap) } value="1" max="1"></progress>
+							}
 						</div>
 					}
 				</div>

@@ -391,6 +391,19 @@ dialog.modal .switch-group .ttl-wrap { margin-top: var(--x-3); }
 progress { display: block; height: 6px; border-radius: 3px; --pico-progress-color: var(--x-ok); }
 progress.warn { --pico-progress-color: var(--pico-primary); }
 progress.over { --pico-progress-color: var(--x-danger); }
+/* Uncapped caches: nothing bounds the bar, so a partial fill would just be
+   raw MiB masquerading as a percentage. Full striped bar instead — green
+   while healthy, warn-striped when the server-wide cap is under pressure. */
+progress.unlimited::-webkit-progress-value {
+  background: repeating-linear-gradient(-45deg,
+    var(--pico-progress-color) 0 6px,
+    color-mix(in srgb, var(--pico-progress-color) 35%, transparent) 6px 12px);
+}
+progress.unlimited::-moz-progress-bar {
+  background: repeating-linear-gradient(-45deg,
+    var(--pico-progress-color) 0 6px,
+    color-mix(in srgb, var(--pico-progress-color) 35%, transparent) 6px 12px);
+}
 .fig .pct { margin-left: var(--x-2); font-weight: 600; color: var(--x-ok); }
 .fig .pct.warn { color: var(--pico-primary); }
 .fig .pct.over { color: var(--x-danger); }
