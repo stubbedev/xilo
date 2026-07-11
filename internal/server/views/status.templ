@@ -10,6 +10,7 @@ import (
 // StatusData is the status page's initial view model; after first paint the
 // page script keeps everything fresh from the /admin/status/data JSON.
 type StatusData struct {
+	Nav Nav
 	Healthy   bool
 	Uptime    string
 	HitPct    string
@@ -123,7 +124,7 @@ func statusScript(d StatusData) string {
 }
 
 templ StatusPage(d StatusData) {
-	@Layout(T("status.title"), true, Flash{}) {
+	@Layout(T("status.title"), d.Nav, Flash{}) {
 		<div class="status-head">
 			<hgroup>
 				<h1>{ T("status.title") }</h1>

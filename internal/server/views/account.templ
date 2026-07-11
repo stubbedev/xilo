@@ -1,0 +1,134 @@
+package views
+
+import (
+	"strconv"
+
+	"github.com/stubbedev/xilo/internal/store"
+)
+
+// AccountData is everything the personal account page renders.
+type AccountData struct {
+	Nav         Nav
+	User        *store.User
+	TOTPEnabled bool
+	Passkeys    []store.Passkey
+	Flash       Flash
+}
+
+// Account is the personal page: sign-in identity and credentials. Instance
+// and tenancy management live on their own pages.
+templ Account(d AccountData) {
+	@Layout(T("acct.title"), d.Nav, d.Flash) {
+		<hgroup>
+			<h1>{ T("acct.title") }</h1>
+			<p>{ T("acct.subtitle") } <small>· { d.User.Name }</small></p>
+		</hgroup>
+		<h2>{ T("acct.email") }</h2>
+		<article>
+			<form method="post" action="/admin/account/email" class="member-add">
+				<fieldset role="group">
+					<input type="email" name="email" value={ d.User.Email } placeholder="you@example.com" autocomplete="email"/>
+					<button type="submit">@Icon("check") <span>{ T("cd.save") }</span></button>
+				</fieldset>
+			</form>
+			<p><small>{ T("acct.emailhint") }</small></p>
+		</article>
+		<h2>{ T("set.passkeys") }</h2>
+		<article>
+			for _, pk := range d.Passkeys {
+				<div class="row-split">
+					<p>
+						@Icon("fingerprint")
+						{ pk.Name }
+						<small>· { Ago(pk.Created) }</small>
+					</p>
+					<form method="post" action={ templ.SafeURL("/admin/passkeys/" + strconv.FormatInt(pk.ID, 10) + "/delete") } data-confirm={ T("confirm.passkey") }>
+						<button class="iconbtn danger" aria-label={ T("set.passkeys.remove") } data-tooltip={ T("set.passkeys.remove") }>@IconClass("trash-2", 16, "")</button>
+					</form>
+				</div>
+			}
+			<div class={ "row-split" , templ.KV("rule-above", len(d.Passkeys) > 0) }>
+				<p>{ T("set.passkeys.hint") }</p>
+				<button type="button" onclick="xiloPasskeyRegister()">@Icon("fingerprint") <span>{ T("set.passkeys.add") }</span></button>
+			</div>
+		</article>
+		<h2>{ T("set.2fa") }</h2>
+		<article>
+			if d.TOTPEnabled {
+				<div class="row-split">
+					<p>@Icon("shield-check") <span class="badge pub">{ T("set.2fa.on") }</span> { T("set.2fa.enabled") }</p>
+					<form method="post" action="/admin/account/totp/disable" data-confirm={ T("confirm.2fa") }>
+						<button class="danger" type="submit">@Icon("shield-off") <span>{ T("set.2fa.disable") }</span></button>
+					</form>
+				</div>
+			} else {
+				@ActionRow(T("set.2fa.hint"), "/admin/account/totp/enroll", "", "", "shield", T("set.2fa.enable"), "")
+			}
+		</article>
+		<h2>{ T("set.password") }</h2>
+		<article>
+			<form method="post" action="/admin/account/password" class="fields pw-fields">
+				<label>{ T("set.current") } <input type="password" name="current" autocomplete="current-password" required/></label>
+				<label>{ T("set.new") } <input type="password" name="new" autocomplete="new-password" required { pwCheckAttrs()... }/></label>
+				<label>{ T("set.new2") } <input type="password" name="confirm" autocomplete="new-password" required { pwCheckAttrs()... }/></label>
+				<div class="fields-foot">
+					<span id="pw-hint"></span>
+					<button type="submit">@Icon("check") <span>{ T("set.update") }</span></button>
+				</div>
+			</form>
+		</article>
+	}
+}
+
+// pwCheckAttrs wires a password input to the server-side strength check: the
+// browser only debounces and swaps in whatever hint the server renders.
+func pwCheckAttrs() templ.Attributes {
+	return templ.Attributes{
+		"hx-post":    "/admin/account/password/check",
+		"hx-trigger": "input changed delay:400ms",
+		"hx-include": "closest form",
+		"hx-params":  "new,confirm",
+		"hx-target":  "#pw-hint",
+		"hx-swap":    "innerHTML",
+	}
+}
+
+// PwHint renders the server's verdict on the new password pair. Empty state
+// renders nothing (clears the hint).
+templ PwHint(state string) {
+	switch state {
+		case "short":
+			<small class="pw-hint warn">{ T("set.pw.short") }</small>
+		case "mismatch":
+			<small class="pw-hint warn">{ T("set.pw.mismatch") }</small>
+		case "weak":
+			<small class="pw-hint warn">{ T("set.pw.weak") }</small>
+		case "strong":
+			<small class="pw-hint ok">{ T("set.pw.strong") }</small>
+	}
+}
+
+templ TOTPEnroll(nav Nav, qrDataURI, secret string) {
+	@totpEnrollPage(nav, qrDataURI, secret, "")
+}
+
+templ TOTPEnrollErr(nav Nav, qrDataURI, secret, errMsg string) {
+	@totpEnrollPage(nav, qrDataURI, secret, errMsg)
+}
+
+templ totpEnrollPage(nav Nav, qrDataURI, secret, errMsg string) {
+	@Layout(T("set.enroll"), nav, Flash{Msg: errMsg}) {
+		<hgroup>
+			<h1>{ T("set.enroll") }</h1>
+			<p>{ T("set.enrollhint") }</p>
+		</hgroup>
+		<article class="narrow">
+			<img class="qr" src={ qrDataURI } alt="TOTP QR"/>
+			<p><small>{ T("set.manual") }</small><br/><code>{ secret }</code></p>
+			<form method="post" action="/admin/account/totp/enable">
+				<input name="code" placeholder={ T("set.code") } inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" autofocus/>
+				<button type="submit">@Icon("check") <span>{ T("set.confirm") }</span></button>
+			</form>
+		</article>
+	}
+}

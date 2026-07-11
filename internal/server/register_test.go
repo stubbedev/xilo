@@ -3,10 +3,13 @@ package server
 import (
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/stubbedev/xilo/internal/config"
 	"github.com/stubbedev/xilo/internal/store"
@@ -86,14 +89,21 @@ func TestRegistrationFlow(t *testing.T) {
 		t.Fatalf("quota: %d %.120q", resp.StatusCode, b)
 	}
 
-	// Member quota: plan allows 2 members (carol + one more).
-	resp, _ = ac.PostForm(ts.URL+"/admin/users", url.Values{"username": {"dave"}, "password": {"davepass123"}})
+	// Member quota: plan allows 2 members (carol + one more). Members are
+	// added by user id (picker), not free text.
+	dave, err := db.CreateUser("dave", "", "h", "member")
+	if err != nil {
+		t.Fatal(err)
+	}
+	erin, err := db.CreateUser("erin", "", "h", "member")
+	if err != nil {
+		t.Fatal(err)
+	}
+	daveID := strconv.FormatInt(dave.ID, 10)
+	erinID := strconv.FormatInt(erin.ID, 10)
+	resp, _ = ac.PostForm(ts.URL+"/admin/org/carols-org/members", url.Values{"user_id": {daveID}, "role": {"member"}})
 	resp.Body.Close()
-	resp, _ = ac.PostForm(ts.URL+"/admin/orgs/carols-org/members", url.Values{"username": {"dave"}, "role": {"member"}})
-	resp.Body.Close()
-	resp, _ = ac.PostForm(ts.URL+"/admin/users", url.Values{"username": {"erin"}, "password": {"erinpass123"}})
-	resp.Body.Close()
-	resp, _ = ac.PostForm(ts.URL+"/admin/orgs/carols-org/members", url.Values{"username": {"erin"}, "role": {"member"}})
+	resp, _ = ac.PostForm(ts.URL+"/admin/org/carols-org/members", url.Values{"user_id": {erinID}, "role": {"member"}})
 	if b := body(t, resp); !contains(b, "at most 2 members") {
 		t.Fatalf("member quota: %.200q", b)
 	}
@@ -108,3 +118,92 @@ func TestRegistrationFlow(t *testing.T) {
 }
 
 func contains(s, sub string) bool { return strings.Contains(s, sub) }
+
+// TestOrgManagementAuthz pins the corrected member flows: personal accounts
+// reject members, org admins manage their own org without instance rights,
+// and outsiders get 404.
+func TestOrgManagementAuthz(t *testing.T) {
+	s, db, ts := newTestServerCfg(t, nil)
+	bootstrapAdmin(t, db)
+	_ = s
+
+	// alice: org admin of "acme"; bob: unrelated user; carol: to be added.
+	alice, _ := db.CreateUser("alice", "", passHash(t, "alicepass1"), "member")
+	db.CreateUser("bob", "", passHash(t, "bobpass1234"), "member")
+	carol, _ := db.CreateUser("carol", "", passHash(t, "carolpass1"), "member")
+	acme, _ := db.EnsureAccount("acme", "org")
+	db.SetMember(acme.ID, alice.ID, "admin")
+
+	al := loginAs(t, ts, "alice", "alicepass1")
+
+	// Org admin adds carol by id — no instance-admin rights needed.
+	resp, _ := al.PostForm(ts.URL+"/admin/org/acme/members",
+		url.Values{"user_id": {itoa(carol.ID)}, "role": {"member"}})
+	resp.Body.Close()
+	if db.MemberRole(acme.ID, carol.ID) != "member" {
+		t.Fatal("org admin could not add a member")
+	}
+
+	// bob (not a member) cannot even see the org page → 404.
+	bob, _ := db.GetUserByName("bob")
+	bo := loginAs(t, ts, "bob", "bobpass1234")
+	bo.userID = bob.ID
+	resp, _ = bo.Get(ts.URL + "/admin/org/acme")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("outsider org page → %d want 404", resp.StatusCode)
+	}
+	resp.Body.Close()
+	// …and cannot add themselves.
+	resp, _ = bo.PostForm(ts.URL+"/admin/org/acme/members",
+		url.Values{"user_id": {itoa(bo.userID)}, "role": {"admin"}})
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("outsider member add → %d want 404", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Personal accounts refuse members at the store layer.
+	if err := db.SetMember(mustAccount(t, db, "alice").ID, carol.ID, "member"); err == nil {
+		t.Fatal("personal account accepted an extra member")
+	}
+}
+
+// userClient is a logged-in cookie-jar client that remembers its user id.
+type userClient struct {
+	*http.Client
+	userID int64
+}
+
+func loginAs(t *testing.T, ts *httptest.Server, user, pass string) *userClient {
+	t.Helper()
+	jar, _ := cookiejar.New(nil)
+	c := &http.Client{Jar: jar}
+	resp, err := c.PostForm(ts.URL+"/admin/login", url.Values{"username": {user}, "password": {pass}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.Request.URL.Path != "/admin" {
+		t.Fatalf("login %s landed at %s", user, resp.Request.URL.Path)
+	}
+	return &userClient{Client: c}
+}
+
+func passHash(t *testing.T, pw string) string {
+	t.Helper()
+	h, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(h)
+}
+
+func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+func mustAccount(t *testing.T, db *store.DB, slug string) *store.Account {
+	t.Helper()
+	a, err := db.GetAccount(slug)
+	if err != nil {
+		t.Fatalf("account %s: %v", slug, err)
+	}
+	return a
+}

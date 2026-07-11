@@ -461,6 +461,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	d := s.statusData(statusRange(r))
 	d.Rate = statusRate(r)
+	d.Nav = s.nav(r, s.currentUser(r))
 	views.StatusPage(d).Render(r.Context(), w)
 }
 

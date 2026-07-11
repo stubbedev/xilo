@@ -20,6 +20,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/stubbedev/xilo/internal/mail"
 	"github.com/stubbedev/xilo/internal/server/views"
 	"github.com/stubbedev/xilo/internal/store"
 )
@@ -130,6 +131,64 @@ func (s *Server) currentUser(r *http.Request) *store.User {
 
 func (s *Server) loggedIn(r *http.Request) bool { return s.currentUser(r) != nil }
 
+const ctxCookie = "xilo_ctx"
+
+// activeContext resolves the account-context cookie for u: the slug of a
+// context they belong to (or any account for instance admins); "" = all.
+func (s *Server) activeContext(r *http.Request, u *store.User) string {
+	c, err := r.Cookie(ctxCookie)
+	if err != nil || c.Value == "" || u == nil {
+		return ""
+	}
+	acc, err := s.db.GetAccount(c.Value)
+	if err != nil {
+		return ""
+	}
+	if u.Role == "admin" || s.db.MemberRole(acc.ID, u.ID) != "" {
+		return acc.Slug
+	}
+	return ""
+}
+
+// nav builds the header state for a signed-in user (zero Nav when signed out).
+func (s *Server) nav(r *http.Request, u *store.User) views.Nav {
+	if u == nil {
+		return views.Nav{}
+	}
+	n := views.Nav{LoggedIn: true, UserName: u.Name, IsAdmin: u.Role == "admin", Active: s.activeContext(r, u)}
+	var err error
+	if u.Role == "admin" {
+		n.Contexts, err = s.db.ListAccounts()
+	} else {
+		n.Contexts, err = s.db.UserAccounts(u.ID)
+	}
+	if err != nil {
+		n.Contexts = nil
+	}
+	return n
+}
+
+// handleContext persists the account-context choice.
+func (s *Server) handleContext(w http.ResponseWriter, r *http.Request) {
+	u := s.requireUser(w, r)
+	if u == nil {
+		return
+	}
+	val := strings.TrimSpace(r.FormValue("ctx"))
+	if val != "" {
+		acc, err := s.db.GetAccount(val)
+		if err != nil || (u.Role != "admin" && s.db.MemberRole(acc.ID, u.ID) == "") {
+			val = ""
+		}
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: ctxCookie, Value: val, Path: "/",
+		MaxAge:   int((30 * 24 * time.Hour).Seconds()),
+		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.secureCookies(),
+	})
+	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
 // requireUser gates per-account endpoints: any signed-in user, plus a
 // same-origin check on POSTs (CSRF defense-in-depth beyond SameSite=Lax).
 func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) *store.User {
@@ -183,21 +242,25 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/cache/{account}/{name}/rotate", s.handleRotateKey)
 	mux.HandleFunc("POST /admin/cache/{account}/{name}/delete", s.handleDeleteCache)
 	mux.HandleFunc("POST /admin/orgs", s.handleCreateOrg)
-	mux.HandleFunc("POST /admin/orgs/{account}/delete", s.handleDeleteOrg)
-	mux.HandleFunc("POST /admin/orgs/{account}/members", s.handleSetMember)
-	mux.HandleFunc("POST /admin/orgs/{account}/members/{uid}/remove", s.handleRemoveMember)
+	mux.HandleFunc("POST /admin/org/{slug}/delete", s.handleDeleteOrg)
+	mux.HandleFunc("POST /admin/org/{slug}/members", s.handleSetMember)
+	mux.HandleFunc("POST /admin/org/{slug}/members/{uid}/remove", s.handleRemoveMember)
 	mux.HandleFunc("POST /admin/tokens", s.handleCreateToken)
 	mux.HandleFunc("POST /admin/tokens/{id}/edit", s.handleEditToken)
 	mux.HandleFunc("POST /admin/tokens/{id}/revoke", s.handleRevokeToken)
 	mux.HandleFunc("POST /admin/gc", s.handleGC)
-	mux.HandleFunc("GET /admin/settings", s.handleSettings)
+	mux.HandleFunc("GET /admin/settings", s.handleInstancePage)
+	mux.HandleFunc("GET /admin/account", s.handleAccountPage)
+	mux.HandleFunc("POST /admin/account/email", s.handleAccountEmail)
+	mux.HandleFunc("POST /admin/context", s.handleContext)
+	mux.HandleFunc("GET /admin/org/{slug}", s.handleOrgPage)
 	mux.HandleFunc("GET /admin/status", s.handleStatus)
 	mux.HandleFunc("GET /admin/status/data", s.handleStatusData)
-	mux.HandleFunc("POST /admin/settings/password", s.handleChangePassword)
-	mux.HandleFunc("POST /admin/settings/password/check", s.handlePasswordCheck)
-	mux.HandleFunc("POST /admin/settings/totp/enroll", s.handleTOTPEnroll)
-	mux.HandleFunc("POST /admin/settings/totp/enable", s.handleTOTPEnable)
-	mux.HandleFunc("POST /admin/settings/totp/disable", s.handleTOTPDisable)
+	mux.HandleFunc("POST /admin/account/password", s.handleChangePassword)
+	mux.HandleFunc("POST /admin/account/password/check", s.handlePasswordCheck)
+	mux.HandleFunc("POST /admin/account/totp/enroll", s.handleTOTPEnroll)
+	mux.HandleFunc("POST /admin/account/totp/enable", s.handleTOTPEnable)
+	mux.HandleFunc("POST /admin/account/totp/disable", s.handleTOTPDisable)
 	mux.HandleFunc("POST /admin/users", s.handleCreateUser)
 	mux.HandleFunc("POST /admin/users/{id}/role", s.handleUserRole)
 	mux.HandleFunc("POST /admin/users/{id}/reset", s.handleUserReset)
@@ -298,6 +361,16 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Context switcher: scope to the chosen account.
+	if ctx := s.activeContext(r, u); ctx != "" {
+		kept := caches[:0]
+		for _, c := range caches {
+			if c.Account == ctx {
+				kept = append(kept, c)
+			}
+		}
+		caches = kept
+	}
 	usages := make([]views.CacheUsage, 0, len(caches))
 	for _, c := range caches {
 		st, err := s.db.CacheStats(c.ID)
@@ -312,8 +385,9 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if u.Role != "admin" {
-		// Tenants see their own footprint, not the instance's.
+	if u.Role != "admin" || s.activeContext(r, u) != "" {
+		// Tenants — and any scoped context — see that footprint, not the
+		// instance's.
 		global = store.Global{Caches: int64(len(usages))}
 		for _, us := range usages {
 			global.Paths += us.Paths
@@ -359,6 +433,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 	pagedTokens, tpage, tpages := views.PageOf(tokens, tnum, tsize)
 	q := r.URL.Query()
 	views.Dashboard(views.DashboardData{
+		Nav:        s.nav(r, u),
 		Global:     global,
 		Caches:     pagedCaches,
 		Tokens:     pagedTokens,
@@ -474,65 +549,171 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, id string) {
 	})
 }
 
-func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAccountPage(w http.ResponseWriter, r *http.Request) {
 	if u := s.requireUser(w, r); u != nil {
-		s.renderSettings(w, r, u, views.Flash{})
+		s.renderAccount(w, r, u, views.Flash{})
 	}
 }
 
-// renderSettings gathers the settings page inputs (2FA state, the user's
-// passkeys, tenancy sections, and — for admins — user/plan/instance
-// management).
-func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, u *store.User, flash views.Flash) {
+// renderAccount is the personal page: identity + credentials.
+func (s *Server) renderAccount(w http.ResponseWriter, r *http.Request, u *store.User, flash views.Flash) {
 	pks, err := s.db.ListUserPasskeys(u.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	d := views.SettingsData{
-		User: u, TOTPEnabled: u.TOTPEnabled, Passkeys: pks, Flash: flash,
-		MultiTenant: s.cfg.MultiTenant,
-		CanMakeOrg:  s.userCanCreateOrg(u),
+	views.Account(views.AccountData{
+		Nav: s.nav(r, u), User: u, TOTPEnabled: u.TOTPEnabled, Passkeys: pks, Flash: flash,
+	}).Render(r.Context(), w)
+}
+
+// handleAccountEmail updates the sign-in alias.
+func (s *Server) handleAccountEmail(w http.ResponseWriter, r *http.Request) {
+	u := s.requireUser(w, r)
+	if u == nil {
+		return
 	}
-	var accountList []store.Account
-	if u.Role == "admin" {
-		if d.Users, err = s.db.ListUsers(); err != nil {
+	email := strings.TrimSpace(r.FormValue("email"))
+	if err := s.db.SetUserEmail(u.ID, email); err != nil {
+		s.renderAccount(w, r, u, views.Flash{Msg: "Could not save email: " + err.Error()})
+		return
+	}
+	u.Email = email
+	msg := "Email saved."
+	if email == "" {
+		msg = "Email cleared."
+	}
+	s.renderAccount(w, r, u, views.Flash{Msg: msg})
+}
+
+func (s *Server) handleInstancePage(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	s.renderInstance(w, r, views.Flash{})
+}
+
+// orgInfo assembles one account's membership + usage.
+func (s *Server) orgInfo(acct store.Account, month string) (views.OrgInfo, error) {
+	members, err := s.db.ListMembers(acct.ID)
+	if err != nil {
+		return views.OrgInfo{}, err
+	}
+	info := views.OrgInfo{Account: acct, Members: members}
+	info.Plan, _ = s.db.AccountPlan(&acct)
+	info.Used, _ = s.db.AccountLogicalBytes(acct.ID)
+	info.Egress = s.db.AccountEgress(acct.ID, month)
+	return info, nil
+}
+
+// renderInstance is the admin-only general settings page.
+func (s *Server) renderInstance(w http.ResponseWriter, r *http.Request, flash views.Flash) {
+	u := s.currentUser(r)
+	if u == nil {
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		return
+	}
+	d := views.InstanceData{
+		Nav: s.nav(r, u), Flash: flash,
+		MultiTenant: s.cfg.MultiTenant,
+	}
+	var err error
+	if d.Users, err = s.db.ListUsers(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if s.cfg.MultiTenant {
+		if d.Plans, err = s.db.ListPlans(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if accountList, err = s.db.ListAccounts(); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if s.cfg.MultiTenant {
-			if d.Plans, err = s.db.ListPlans(); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			d.AllowRegs = s.db.SettingBool("allow_registrations", false)
-			d.RequireOK = s.db.SettingBool("require_approval", true)
-		}
-	} else {
-		// Members see the organizations they belong to.
-		if accountList, err = s.db.UserAccounts(u.ID); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		d.AllowRegs = s.db.SettingBool("allow_registrations", false)
+		d.RequireOK = s.db.SettingBool("require_approval", true)
+	}
+	accounts, err := s.db.ListAccounts()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	month := time.Now().UTC().Format("2006-01")
-	for _, acct := range accountList {
-		members, err := s.db.ListMembers(acct.ID)
+	for _, acct := range accounts {
+		if acct.Kind != "org" {
+			continue // personal accounts are not organizations
+		}
+		info, err := s.orgInfo(acct, month)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		info := views.OrgInfo{Account: acct, Members: members}
-		info.Plan, _ = s.db.AccountPlan(&acct)
-		info.Used, _ = s.db.AccountLogicalBytes(acct.ID)
-		info.Egress = s.db.AccountEgress(acct.ID, month)
 		d.Orgs = append(d.Orgs, info)
 	}
-	views.Settings(d).Render(r.Context(), w)
+	views.Instance(d).Render(r.Context(), w)
+}
+
+// handleOrgPage renders one organization: members, caches, usage. Org members
+// see it; org admins and instance admins manage it.
+func (s *Server) handleOrgPage(w http.ResponseWriter, r *http.Request) {
+	u := s.requireUser(w, r)
+	if u == nil {
+		return
+	}
+	s.renderOrg(w, r, u, r.PathValue("slug"), views.Flash{})
+}
+
+func (s *Server) renderOrg(w http.ResponseWriter, r *http.Request, u *store.User, slug string, flash views.Flash) {
+	acct, err := s.db.GetAccount(slug)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && acct.Kind != "org") {
+		s.notFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if u.Role != "admin" && s.db.MemberRole(acct.ID, u.ID) == "" {
+		s.notFound(w, r) // no existence oracle
+		return
+	}
+	info, err := s.orgInfo(*acct, time.Now().UTC().Format("2006-01"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	caches, err := s.db.ListAccountCaches(acct.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	d := views.OrgPageData{
+		Nav: s.nav(r, u), Info: info, CanManage: s.canManage(u, acct.ID),
+		Bytes: humanBytes, Flash: flash,
+	}
+	for _, c := range caches {
+		st, err := s.db.CacheStats(c.ID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		d.Caches = append(d.Caches, views.CacheUsage{Cache: c, Bytes: st.PhysicalBytes, Paths: st.Paths})
+	}
+	// Picker candidates: users not yet members.
+	if d.CanManage {
+		users, err := s.db.ListUsers()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		member := map[int64]bool{}
+		for _, m := range info.Members {
+			member[m.UserID] = true
+		}
+		for _, cand := range users {
+			if !member[cand.ID] && cand.Status == "active" {
+				d.AllUsers = append(d.AllUsers, cand)
+			}
+		}
+	}
+	views.Org(d).Render(r.Context(), w)
 }
 
 func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
@@ -541,16 +722,16 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(u.PassHash), []byte(r.FormValue("current"))) != nil {
-		s.renderSettings(w, r, u, views.Flash{Msg: "Current password is incorrect"})
+		s.renderAccount(w, r, u, views.Flash{Msg: "Current password is incorrect"})
 		return
 	}
 	next := r.FormValue("new")
 	switch pwState(next, r.FormValue("confirm")) {
 	case "short", "":
-		s.renderSettings(w, r, u, views.Flash{Msg: "New password must be at least 8 characters"})
+		s.renderAccount(w, r, u, views.Flash{Msg: "New password must be at least 8 characters"})
 		return
 	case "mismatch":
-		s.renderSettings(w, r, u, views.Flash{Msg: "Passwords do not match"})
+		s.renderAccount(w, r, u, views.Flash{Msg: "Passwords do not match"})
 		return
 	}
 	nh, err := bcrypt.GenerateFromPassword([]byte(next), bcrypt.DefaultCost)
@@ -562,7 +743,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.renderSettings(w, r, u, views.Flash{Msg: "Password changed."})
+	s.renderAccount(w, r, u, views.Flash{Msg: "Password changed."})
 }
 
 // pwState is the single source of truth for new-password validation: the
@@ -635,7 +816,7 @@ func (s *Server) handleTOTPEnroll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	views.TOTPEnroll(qr, secretB32(secret)).Render(r.Context(), w)
+	views.TOTPEnroll(s.nav(r, u), qr, secretB32(secret)).Render(r.Context(), w)
 }
 
 func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
@@ -647,7 +828,7 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 	if len(secret) == 0 || !totpVerify(secret, r.FormValue("code"), time.Now()) {
 		uri := totpURI(secret, "xilo", u.Name+"@"+hostOf(s.cfg.BaseURL))
 		qr, _ := totpQRDataURI(uri)
-		views.TOTPEnrollErr(qr, secretB32(secret), "That code didn't match — try again.").Render(r.Context(), w)
+		views.TOTPEnrollErr(s.nav(r, u), qr, secretB32(secret), "That code didn't match — try again.").Render(r.Context(), w)
 		return
 	}
 	if err := s.db.SetUserTOTPEnabled(u.ID, true); err != nil {
@@ -655,7 +836,7 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.TOTPEnabled = true
-	s.renderSettings(w, r, u, views.Flash{Msg: "Two-factor authentication enabled."})
+	s.renderAccount(w, r, u, views.Flash{Msg: "Two-factor authentication enabled."})
 }
 
 func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
@@ -668,7 +849,7 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.TOTPEnabled = false
-	s.renderSettings(w, r, u, views.Flash{Msg: "Two-factor authentication disabled."})
+	s.renderAccount(w, r, u, views.Flash{Msg: "Two-factor authentication disabled."})
 }
 
 // secureCookies marks session cookies Secure when the public base URL is HTTPS
@@ -913,7 +1094,7 @@ func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
 // notFound renders the styled 404 page (browser routes only).
 func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotFound)
-	views.NotFound(s.loggedIn(r)).Render(r.Context(), w)
+	views.NotFound(s.nav(r, s.currentUser(r))).Render(r.Context(), w)
 }
 
 func (s *Server) handleCacheDetail(w http.ResponseWriter, r *http.Request) {
@@ -967,6 +1148,7 @@ func (s *Server) handleCacheDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	views.CacheView(views.CacheData{
+		Nav:       s.nav(r, u),
 		Cache:     *c,
 		Stats:     st,
 		Dedup:     dedup,
@@ -1224,14 +1406,9 @@ func (s *Server) handleGC(w http.ResponseWriter, r *http.Request) {
 
 // ---- user management (admin role only) ----
 
-// settingsFlash re-renders settings for the acting admin with a message.
-func (s *Server) settingsFlash(w http.ResponseWriter, r *http.Request, msg string) {
-	u := s.currentUser(r)
-	if u == nil {
-		http.Redirect(w, r, "/admin", http.StatusSeeOther)
-		return
-	}
-	s.renderSettings(w, r, u, views.Flash{Msg: msg})
+// instanceFlash re-renders the general settings page with a message.
+func (s *Server) instanceFlash(w http.ResponseWriter, r *http.Request, msg string) {
+	s.renderInstance(w, r, views.Flash{Msg: msg})
 }
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -1242,11 +1419,11 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	pw := r.FormValue("password")
 	role := formRole(r)
 	if name == "" {
-		s.settingsFlash(w, r, "Username is required")
+		s.instanceFlash(w, r, "Username is required")
 		return
 	}
 	if len(pw) < 8 {
-		s.settingsFlash(w, r, "Password must be at least 8 characters")
+		s.instanceFlash(w, r, "Password must be at least 8 characters")
 		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
@@ -1255,10 +1432,10 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.db.CreateUser(name, strings.TrimSpace(r.FormValue("email")), string(hash), role); err != nil {
-		s.settingsFlash(w, r, "Could not create user: "+err.Error())
+		s.instanceFlash(w, r, "Could not create user: "+err.Error())
 		return
 	}
-	s.settingsFlash(w, r, fmt.Sprintf("User %q created.", name))
+	s.instanceFlash(w, r, fmt.Sprintf("User %q created.", name))
 }
 
 // formRole whitelists the role field.
@@ -1304,14 +1481,14 @@ func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 	}
 	role := formRole(r)
 	if role != "admin" && s.lastAdmin(u) {
-		s.settingsFlash(w, r, "Cannot demote the last admin.")
+		s.instanceFlash(w, r, "Cannot demote the last admin.")
 		return
 	}
 	if err := s.db.SetUserRole(u.ID, role); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.settingsFlash(w, r, fmt.Sprintf("%s is now a %s.", u.Name, role))
+	s.instanceFlash(w, r, fmt.Sprintf("%s is now a %s.", u.Name, role))
 }
 
 func (s *Server) handleUserReset(w http.ResponseWriter, r *http.Request) {
@@ -1324,7 +1501,7 @@ func (s *Server) handleUserReset(w http.ResponseWriter, r *http.Request) {
 	}
 	pw := r.FormValue("password")
 	if len(pw) < 8 {
-		s.settingsFlash(w, r, "Password must be at least 8 characters")
+		s.instanceFlash(w, r, "Password must be at least 8 characters")
 		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
@@ -1336,7 +1513,7 @@ func (s *Server) handleUserReset(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.settingsFlash(w, r, fmt.Sprintf("Password reset for %s.", u.Name))
+	s.instanceFlash(w, r, fmt.Sprintf("Password reset for %s.", u.Name))
 }
 
 func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
@@ -1348,18 +1525,18 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if acting := s.currentUser(r); acting != nil && acting.ID == u.ID {
-		s.settingsFlash(w, r, "You cannot delete your own account.")
+		s.instanceFlash(w, r, "You cannot delete your own account.")
 		return
 	}
 	if s.lastAdmin(u) {
-		s.settingsFlash(w, r, "Cannot delete the last admin.")
+		s.instanceFlash(w, r, "Cannot delete the last admin.")
 		return
 	}
 	if err := s.db.DeleteUser(u.ID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.settingsFlash(w, r, fmt.Sprintf("User %s deleted.", u.Name))
+	s.instanceFlash(w, r, fmt.Sprintf("User %s deleted.", u.Name))
 }
 
 // ---- namespace management ----
@@ -1370,56 +1547,65 @@ func (s *Server) handleCreateOrg(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" || strings.ContainsAny(name, "/ ") {
-		s.settingsFlash(w, r, "Namespace names cannot be empty or contain '/' or spaces.")
+		s.instanceFlash(w, r, "Namespace names cannot be empty or contain '/' or spaces.")
 		return
 	}
 	if _, err := s.db.EnsureAccount(name, "org"); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.settingsFlash(w, r, fmt.Sprintf("Namespace %q ready.", name))
+	s.instanceFlash(w, r, fmt.Sprintf("Namespace %q ready.", name))
 }
 
-// namespaceByPath resolves the {ns} path value for the management handlers.
-func (s *Server) namespaceByPath(w http.ResponseWriter, r *http.Request) (*store.Account, bool) {
-	ns, err := s.db.GetAccount(r.PathValue("account"))
-	if errors.Is(err, store.ErrNotFound) {
+// orgByPath resolves the {slug} path value to an ORG the acting user may
+// manage (org admin or instance admin). 404s hide existence.
+func (s *Server) orgByPath(w http.ResponseWriter, r *http.Request) (*store.Account, *store.User, bool) {
+	u := s.requireUser(w, r)
+	if u == nil {
+		return nil, nil, false
+	}
+	ns, err := s.db.GetAccount(r.PathValue("slug"))
+	if errors.Is(err, store.ErrNotFound) || (err == nil && ns.Kind != "org") {
 		s.notFound(w, r)
-		return nil, false
+		return nil, nil, false
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return nil, false
+		return nil, nil, false
 	}
-	return ns, true
+	if !s.canManage(u, ns.ID) {
+		s.notFound(w, r)
+		return nil, nil, false
+	}
+	return ns, u, true
 }
 
 func (s *Server) handleDeleteOrg(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return
 	}
-	ns, ok := s.namespaceByPath(w, r)
+	ns, _, ok := s.orgByPath(w, r)
 	if !ok {
 		return
 	}
 	if err := s.db.DeleteAccount(ns.ID); err != nil {
-		s.settingsFlash(w, r, "Could not delete: "+err.Error())
+		s.instanceFlash(w, r, "Could not delete: "+err.Error())
 		return
 	}
-	s.settingsFlash(w, r, fmt.Sprintf("Organization %s deleted.", ns.Slug))
+	s.instanceFlash(w, r, fmt.Sprintf("Organization %s deleted.", ns.Slug))
 }
 
+// handleSetMember adds a user (picked by id) to an org or changes their role.
+// Org admins and instance admins may do this.
 func (s *Server) handleSetMember(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
-		return
-	}
-	ns, ok := s.namespaceByPath(w, r)
+	ns, actor, ok := s.orgByPath(w, r)
 	if !ok {
 		return
 	}
-	u, err := s.db.GetUserByName(strings.TrimSpace(r.FormValue("username")))
+	uid, _ := strconv.ParseInt(r.FormValue("user_id"), 10, 64)
+	target, err := s.db.GetUser(uid)
 	if errors.Is(err, store.ErrNotFound) {
-		s.settingsFlash(w, r, "No such user.")
+		s.renderOrg(w, r, actor, ns.Slug, views.Flash{Msg: "No such user."})
 		return
 	}
 	if err != nil {
@@ -1427,27 +1613,25 @@ func (s *Server) handleSetMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	role := "member"
-	if r.FormValue("role") == "admin" || r.FormValue("role") == "owner" {
+	if r.FormValue("role") == "admin" {
 		role = "admin"
 	}
-	if s.db.MemberRole(ns.ID, u.ID) == "" { // adding, not editing
+	if s.db.MemberRole(ns.ID, target.ID) == "" { // adding, not editing
 		if err := s.checkMemberQuota(ns); err != nil {
-			s.settingsFlash(w, r, err.Error())
+			s.renderOrg(w, r, actor, ns.Slug, views.Flash{Msg: err.Error()})
 			return
 		}
 	}
-	if err := s.db.SetMember(ns.ID, u.ID, role); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if err := s.db.SetMember(ns.ID, target.ID, role); err != nil {
+		s.renderOrg(w, r, actor, ns.Slug, views.Flash{Msg: err.Error()})
 		return
 	}
-	s.settingsFlash(w, r, fmt.Sprintf("%s is now a %s of %s.", u.Name, role, ns.Slug))
+	s.notifyOrgMembership(target, ns.Slug, role)
+	s.renderOrg(w, r, actor, ns.Slug, views.Flash{Msg: fmt.Sprintf("%s is now a %s of %s.", target.Name, role, ns.Slug)})
 }
 
 func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
-		return
-	}
-	ns, ok := s.namespaceByPath(w, r)
+	ns, actor, ok := s.orgByPath(w, r)
 	if !ok {
 		return
 	}
@@ -1456,7 +1640,34 @@ func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.settingsFlash(w, r, "Member removed.")
+	s.renderOrg(w, r, actor, ns.Slug, views.Flash{Msg: "Member removed."})
+}
+
+// mailUser sends a transactional notice to one user (no-op without email or
+// SMTP config).
+func (s *Server) mailUser(u *store.User, subject, body string) {
+	if u != nil {
+		mail.Go(s.cfg.SMTP.Mail(), u.Email, subject, body)
+	}
+}
+
+// mailAdmins notifies every instance admin that has an email address.
+func (s *Server) mailAdmins(subject, body string) {
+	users, err := s.db.ListUsers()
+	if err != nil {
+		return
+	}
+	for _, u := range users {
+		if u.Role == "admin" && u.Email != "" {
+			mail.Go(s.cfg.SMTP.Mail(), u.Email, subject, body)
+		}
+	}
+}
+
+// notifyOrgMembership emails a user about being added to an organization.
+func (s *Server) notifyOrgMembership(u *store.User, org, role string) {
+	s.mailUser(u, "You were added to "+org,
+		"You are now a "+role+" of the organization "+org+" on "+s.cfg.BaseURL+".")
 }
 
 // formPerms reads the token permission checkboxes shared by the create and

@@ -28,6 +28,40 @@
       ],
       "description": "Metadata database settings. Defaults to a zero-config SQLite file in\ndata_dir; point at PostgreSQL for large multi-writer deployments."
     },
+    "smtp": {
+      "properties": {
+        "host": {
+          "type": "string",
+          "description": "Relay host, e.g. \"smtp-relay.brevo.com\". Empty = mail disabled."
+        },
+        "port": {
+          "type": "integer",
+          "description": "Submission port; 587 (STARTTLS) is standard."
+        },
+        "username": {
+          "type": "string",
+          "description": "SMTP username (Brevo: your account login)."
+        },
+        "password": {
+          "type": "string",
+          "description": "SMTP password / API key. Overridable with XILO_SMTP_PASSWORD."
+        },
+        "from": {
+          "type": "string",
+          "description": "From address, e.g. \"Xilo \u003ccache@example.com\u003e\" — a sender your relay allows."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "host",
+        "port",
+        "username",
+        "password",
+        "from"
+      ],
+      "description": "Outbound transactional email (registration/approval/membership\nnotices). Empty host = mail disabled; everything keeps working, users\njust get no emails."
+    },
     "multi_tenant": {
       "type": "boolean",
       "description": "Multi-tenant mode: enables self-registration (governed by the instance\nsettings in the dashboard), plans, and organization creation by users.\nOff (default) = single-tenant: no signup surface at all, everything is\nmanaged by the bootstrap admin."
@@ -341,6 +375,7 @@
     "base_url",
     "data_dir",
     "database",
+    "smtp",
     "multi_tenant",
     "admin",
     "storage",

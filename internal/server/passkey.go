@@ -225,7 +225,7 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/account", http.StatusSeeOther)
 }
 
 func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request) {

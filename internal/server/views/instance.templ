@@ -1,0 +1,228 @@
+package views
+
+import (
+	"strconv"
+
+	"github.com/stubbedev/xilo/internal/store"
+)
+
+// InstanceData is the admin-only settings page: policy, plans, users, orgs.
+type InstanceData struct {
+	Nav         Nav
+	MultiTenant bool
+	AllowRegs   bool
+	RequireOK   bool
+	Plans       []store.Plan
+	Users       []store.User
+	Orgs        []OrgInfo // organizations only, never personal accounts
+	Flash       Flash
+}
+
+// Instance is the general settings page (instance admins).
+templ Instance(d InstanceData) {
+	@Layout(T("set.title"), d.Nav, d.Flash) {
+		<hgroup>
+			<h1>{ T("set.title") }</h1>
+			<p>{ T("inst.subtitle") }</p>
+		</hgroup>
+		if d.MultiTenant {
+			@instanceSection(d)
+			@plansSection(d.Plans)
+		}
+		@usersSection(d.Nav.UserName, d.Users)
+		@orgIndexSection(d.Orgs)
+	}
+}
+
+// instanceSection is the policy panel (multi-tenant only).
+templ instanceSection(d InstanceData) {
+	<h2>{ T("set.instance") }</h2>
+	<article>
+		<form method="post" action="/admin/settings/instance">
+			<fieldset class="switch-group">
+				<div class="switch-row">
+					<label><input type="checkbox" role="switch" name="allow_registrations" checked?={ d.AllowRegs }/> { T("inst.regs") }</label>
+					<label><input type="checkbox" role="switch" name="require_approval" checked?={ d.RequireOK }/> { T("inst.approve") }</label>
+				</div>
+			</fieldset>
+			<div class="fields-foot"><span></span><button type="submit">@Icon("check") <span>{ T("cd.save") }</span></button></div>
+		</form>
+	</article>
+}
+
+// plansSection is the plan CRUD (multi-tenant only).
+templ plansSection(plans []store.Plan) {
+	<h2>{ T("set.plans") }</h2>
+	<article>
+		for _, p := range plans {
+			<div class="row-split">
+				<p>
+					{ p.Name }
+					if p.Public {
+						<span class="badge pub">{ T("plan.public") }</span>
+					}
+					if p.OrgsAllowed {
+						<span class="badge priv">{ T("plan.orgs") }</span>
+					}
+					<small>· { planLimits(p) }</small>
+				</p>
+				<div class="row-actions">
+					<form method="post" action={ templ.SafeURL("/admin/plans/" + strconv.FormatInt(p.ID, 10) + "/delete") } data-confirm={ T("confirm.plan") }>
+						<button class="iconbtn danger" aria-label={ T("plan.delete") } data-tooltip={ T("plan.delete") }>@IconClass("trash-2", 16, "")</button>
+					</form>
+				</div>
+			</div>
+		}
+		<div class={ "row-split", templ.KV("rule-above", len(plans) > 0) }>
+			<p>{ T("plan.hint") }</p>
+			<button type="button" data-dlg="dlg-plan-new" onclick="document.getElementById(this.dataset.dlg).showModal()">@Icon("plus") <span>{ T("plan.new") }</span></button>
+			@Modal("dlg-plan-new", T("plan.new")) {
+				<form method="post" action="/admin/plans">
+					<label>{ T("plan.name") } <input name="name" placeholder="free" required/></label>
+					<label>{ T("plan.maxcaches") } <input type="number" name="max_caches" min="0" placeholder="0 = unlimited"/></label>
+					<label>{ T("plan.maxmembers") } <input type="number" name="max_members" min="0" placeholder="0 = unlimited"/></label>
+					<label>
+						{ T("plan.maxstorage") }
+						<fieldset role="group">
+							<input type="number" name="plan_storage_value" min="0" placeholder="unlimited"/>
+							<select name="plan_storage_unit">
+								<option value="GiB" selected>GiB</option>
+								<option value="MiB">MiB</option>
+								<option value="TiB">TiB</option>
+							</select>
+						</fieldset>
+					</label>
+					<label>
+						{ T("plan.maxretention") }
+						<fieldset role="group">
+							<input type="number" name="plan_retention_value" min="0" placeholder="unlimited"/>
+							<select name="plan_retention_unit">
+								<option value="d" selected>{ T("unit.days") }</option>
+								<option value="mo">{ T("unit.months") }</option>
+								<option value="y">{ T("unit.years") }</option>
+							</select>
+						</fieldset>
+					</label>
+					<fieldset class="switch-group">
+						<div class="switch-row">
+							<label><input type="checkbox" role="switch" name="orgs_allowed"/> { T("plan.orgs") }</label>
+							<label><input type="checkbox" role="switch" name="public" checked/> { T("plan.public") }</label>
+						</div>
+					</fieldset>
+					@ModalFoot("plus", T("plan.create"))
+				</form>
+			}
+		</div>
+	</article>
+}
+
+// usersSection is the account administration block.
+templ usersSection(actingName string, users []store.User) {
+	<h2>{ T("set.users") }</h2>
+	<article>
+		for _, u := range users {
+			<div class="row-split">
+				<p>
+					@Icon("user")
+					{ u.Name }
+					if u.Role == "admin" {
+						<span class="badge priv">{ T("users.admin") }</span>
+					} else {
+						<span class="badge pub">{ T("users.member") }</span>
+					}
+					if u.Status == "pending" {
+						<span class="badge rev">{ T("users.pending") }</span>
+					}
+					if u.Email != "" {
+						<small>· { u.Email }</small>
+					}
+					<small>· { Ago(u.Created) }</small>
+				</p>
+				<div class="row-actions">
+					if u.Status == "pending" {
+						<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/approve") }>
+							<button class="iconbtn" aria-label={ T("users.approve") } data-tooltip={ T("users.approve") }>@IconClass("user-check", 16, "")</button>
+						</form>
+					}
+					@Modal("dlg-user-reset-"+strconv.FormatInt(u.ID, 10), T("users.reset")) {
+						<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/reset") }>
+							<label>{ T("users.newpw") } <input type="password" name="password" autocomplete="new-password" required minlength="8"/></label>
+							@ModalFoot("key-round", T("users.reset"))
+						</form>
+					}
+					<button
+						class="iconbtn"
+						type="button"
+						aria-label={ T("users.reset") }
+						data-tooltip={ T("users.reset") }
+						data-dlg={ "dlg-user-reset-" + strconv.FormatInt(u.ID, 10) }
+						onclick="document.getElementById(this.dataset.dlg).showModal()">
+						@IconClass("key-round", 16, "")
+					</button>
+					if u.Name != actingName {
+						<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/role") }>
+							if u.Role == "admin" {
+								<input type="hidden" name="role" value="member"/>
+								<button class="iconbtn" aria-label={ T("users.demote") } data-tooltip={ T("users.demote") }>@IconClass("user-minus", 16, "")</button>
+							} else {
+								<input type="hidden" name="role" value="admin"/>
+								<button class="iconbtn" aria-label={ T("users.promote") } data-tooltip={ T("users.promote") }>@IconClass("user-plus", 16, "")</button>
+							}
+						</form>
+						<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/delete") } data-confirm={ T("confirm.user") }>
+							<button class="iconbtn danger" aria-label={ T("users.delete") } data-tooltip={ T("users.delete") }>@IconClass("trash-2", 16, "")</button>
+						</form>
+					}
+				</div>
+			</div>
+		}
+		<div class={ "row-split", templ.KV("rule-above", len(users) > 0) }>
+			<p>{ T("users.hint") }</p>
+			<button type="button" data-dlg="dlg-user-new" onclick="document.getElementById(this.dataset.dlg).showModal()">@Icon("user-plus") <span>{ T("users.new") }</span></button>
+			@Modal("dlg-user-new", T("users.new")) {
+				<form method="post" action="/admin/users">
+					<label>{ T("users.name") } <input name="username" placeholder="alice" required autofocus/></label>
+					<label>{ T("users.email") } <input type="email" name="email" placeholder="alice@example.com"/></label>
+					<label>{ T("users.newpw") } <input type="password" name="password" autocomplete="new-password" required minlength="8"/></label>
+					<fieldset class="switch-group">
+						<legend>{ T("users.role") }</legend>
+						<div class="switch-row">
+							<label><input type="checkbox" role="switch" name="role" value="admin"/> { T("users.admin") }</label>
+						</div>
+					</fieldset>
+					@ModalFoot("user-plus", T("users.create"))
+				</form>
+			}
+		</div>
+	</article>
+}
+
+// orgIndexSection lists organizations with usage, linking to their pages.
+templ orgIndexSection(orgs []OrgInfo) {
+	<h2>{ T("set.orgs") }</h2>
+	<article>
+		for _, info := range orgs {
+			<div class="row-split">
+				<p>
+					@Icon("building-2")
+					<a href={ templ.SafeURL("/admin/org/" + info.Account.Slug) }>{ info.Account.Slug }</a>
+					<small>· { UsagePhrase(info) }</small>
+				</p>
+				<div class="row-actions">
+					<form method="post" action={ templ.SafeURL("/admin/org/" + info.Account.Slug + "/delete") } data-confirm={ T("confirm.namespace") }>
+						<button class="iconbtn danger" aria-label={ T("ns.delete") } data-tooltip={ T("ns.delete") }>@IconClass("trash-2", 16, "")</button>
+					</form>
+				</div>
+			</div>
+		}
+		<div class={ "row-split", templ.KV("rule-above", len(orgs) > 0) }>
+			<p>{ T("ns.hint") }</p>
+			<form method="post" action="/admin/orgs" class="member-add">
+				<fieldset role="group">
+					<input name="name" placeholder="my-org" required pattern="[-a-zA-Z0-9_]+"/>
+					<button type="submit">@Icon("folder-plus") <span>{ T("ns.new") }</span></button>
+				</fieldset>
+			</form>
+		</div>
+	</article>
+}

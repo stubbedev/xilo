@@ -1,7 +1,7 @@
 package views
 
 templ Login(noPassword, hasPasskeys, canRegister bool, flash Flash) {
-	@Layout(T("login.title"), false, flash) {
+	@Layout(T("login.title"), Nav{}, flash) {
 		<article class="auth">
 			<div class="ic-lg">@Icon("lock")</div>
 			<hgroup>
@@ -28,7 +28,7 @@ templ Login(noPassword, hasPasskeys, canRegister bool, flash Flash) {
 
 // LoginCode is the second sign-in step when 2FA is enabled.
 templ LoginCode(pending string, flash Flash) {
-	@Layout(T("login.codetitle"), false, flash) {
+	@Layout(T("login.codetitle"), Nav{}, flash) {
 		<article class="auth">
 			<div class="ic-lg">@Icon("shield")</div>
 			<hgroup>

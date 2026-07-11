@@ -167,6 +167,7 @@ func PageOf[T any](items []T, page, n int) ([]T, int, int) {
 
 // DashboardData is everything the caches dashboard renders.
 type DashboardData struct {
+	Nav        Nav
 	Global     store.Global
 	Caches     []CacheUsage
 	Tokens     []store.Token
@@ -181,21 +182,6 @@ type DashboardData struct {
 	TokenSort  SortCtx
 	CacheQuery string
 	TokenQuery string
-}
-
-// SettingsData is everything the settings page renders.
-type SettingsData struct {
-	User        *store.User
-	TOTPEnabled bool
-	Passkeys    []store.Passkey
-	Users       []store.User // admin only
-	Orgs        []OrgInfo    // admin: all; member: their orgs
-	Plans       []store.Plan // admin + multi-tenant only
-	MultiTenant bool
-	AllowRegs   bool
-	RequireOK   bool // require approval for signups
-	CanMakeOrg  bool // viewer may create an organization
-	Flash       Flash
 }
 
 // OrgInfo is one account with its membership and usage, for the settings page.

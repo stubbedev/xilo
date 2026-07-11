@@ -27,6 +27,16 @@ database:
 # single-admin instance with no signup surface at all.
 multi_tenant: false
 
+# Outbound transactional email (registration, approval, org-membership
+# notices). Empty host = mail disabled; everything still works, users just
+# get no emails. Any SMTP relay works — Brevo shown:
+# smtp:
+#   host: "smtp-relay.brevo.com"
+#   port: 587
+#   username: "your-brevo-login"
+#   password: "" # or XILO_SMTP_PASSWORD
+#   from: "Xilo <cache@example.com>" # a verified sender on your relay
+
 storage:
   backend: local # local | s3
   local:

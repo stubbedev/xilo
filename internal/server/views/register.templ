@@ -10,7 +10,7 @@ import (
 // registrations enabled). Plans render as radio cards; picking one with
 // organizations reveals the org-name field.
 templ Register(plans []store.Plan, flash Flash) {
-	@Layout(T("reg.title"), false, flash) {
+	@Layout(T("reg.title"), Nav{}, flash) {
 		<article class="auth">
 			<div class="ic-lg">@Icon("user-plus")</div>
 			<hgroup>

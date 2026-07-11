@@ -145,9 +145,20 @@ func (db *DB) DeleteAccount(id int64) error {
 	})
 }
 
-// SetMember adds a user to an account or updates their role.
+// SetMember adds a user to an ORG account or updates their role. Personal
+// accounts have exactly their owner — extra members are refused here, not
+// just hidden in the UI.
 func (db *DB) SetMember(accountID, userID int64, role string) error {
 	return db.write(func(tx *sql.Tx) error {
+		var kind string
+		if err := tx.QueryRow(`SELECT kind FROM accounts WHERE id=?`, accountID).Scan(&kind); err != nil {
+			return err
+		}
+		var owner int
+		isOwner := tx.QueryRow(`SELECT 1 FROM account_members WHERE account_id=? AND user_id=?`, accountID, userID).Scan(&owner) == nil
+		if kind != "org" && !isOwner {
+			return errors.New("personal accounts cannot have additional members")
+		}
 		_, err := tx.Exec(`INSERT INTO account_members (account_id, user_id, role) VALUES (?,?,?)
 			 ON CONFLICT (account_id, user_id) DO UPDATE SET role=excluded.role`, accountID, userID, role)
 		return err

@@ -1,0 +1,109 @@
+package views
+
+import (
+	"strconv"
+
+	"github.com/stubbedev/xilo/internal/store"
+)
+
+// OrgPageData is one organization's page: members, caches, usage.
+type OrgPageData struct {
+	Nav       Nav
+	Info      OrgInfo
+	Caches    []CacheUsage
+	AllUsers  []store.User // picker candidates (not yet members)
+	CanManage bool         // org admin or instance admin
+	Bytes     func(int64) string
+	Flash     Flash
+}
+
+// Org renders one organization.
+templ Org(d OrgPageData) {
+	@Layout(d.Info.Account.Slug, d.Nav, d.Flash) {
+		<hgroup>
+			<h1>{ d.Info.Account.Slug }</h1>
+			<p>{ UsagePhrase(d.Info) }</p>
+		</hgroup>
+		<h2>{ T("org.members") }</h2>
+		<article>
+			for _, m := range d.Info.Members {
+				<div class="row-split">
+					<p>
+						@Icon("user")
+						{ m.UserName }
+						if m.Role == "admin" {
+							<span class="badge priv">{ T("org.admin") }</span>
+						} else {
+							<span class="badge pub">{ T("org.member") }</span>
+						}
+					</p>
+					if d.CanManage {
+						<div class="row-actions">
+							<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") }>
+								<input type="hidden" name="user_id" value={ strconv.FormatInt(m.UserID, 10) }/>
+								if m.Role == "admin" {
+									<input type="hidden" name="role" value="member"/>
+									<button class="iconbtn" aria-label={ T("users.demote") } data-tooltip={ T("users.demote") }>@IconClass("user-minus", 16, "")</button>
+								} else {
+									<input type="hidden" name="role" value="admin"/>
+									<button class="iconbtn" aria-label={ T("users.promote") } data-tooltip={ T("users.promote") }>@IconClass("user-plus", 16, "")</button>
+								}
+							</form>
+							<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members/" + strconv.FormatInt(m.UserID, 10) + "/remove") } data-confirm={ T("org.removeconfirm") }>
+								<button class="iconbtn danger" aria-label={ T("ns.removemember") } data-tooltip={ T("ns.removemember") }>@IconClass("trash-2", 16, "")</button>
+							</form>
+						</div>
+					}
+				</div>
+			}
+			if d.CanManage {
+				<div class={ "row-split", templ.KV("rule-above", len(d.Info.Members) > 0) }>
+					<p>{ T("org.addhint") }</p>
+					if len(d.AllUsers) > 0 {
+						<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") } class="member-add">
+							<fieldset role="group">
+								<select name="user_id" aria-label={ T("ns.username") }>
+									for _, u := range d.AllUsers {
+										<option value={ strconv.FormatInt(u.ID, 10) }>{ u.Name }</option>
+									}
+								</select>
+								<select name="role" aria-label={ T("users.role") }>
+									<option value="member">{ T("org.member") }</option>
+									<option value="admin">{ T("org.admin") }</option>
+								</select>
+								<button type="submit">@Icon("user-plus") <span>{ T("ns.addmember") }</span></button>
+							</fieldset>
+						</form>
+					} else {
+						<p><small>{ T("org.nocandidates") }</small></p>
+					}
+				</div>
+			}
+		</article>
+		<h2>{ T("org.caches") }</h2>
+		<article>
+			if len(d.Caches) == 0 {
+				@Empty("database", T("caches.empty"))
+			} else {
+				<div class="usage">
+					for _, u := range d.Caches {
+						<div class="row">
+							<span class="name"><a href={ templ.SafeURL("/admin/cache/" + u.Cache.Ref()) }>{ u.Cache.Name }</a> @visBadge(u.Cache.Public)</span>
+							<span class="fig">{ d.Bytes(u.Bytes) } · { Count(u.Paths) } { T("cache.paths") }</span>
+						</div>
+					}
+				</div>
+			}
+		</article>
+	}
+}
+
+// UsagePhrase renders "12 GiB stored (of 50 GiB) · 3 GiB served this month ·
+// plan team · N members".
+func UsagePhrase(o OrgInfo) string {
+	out := o.UsageLine()
+	if n := len(o.Members); n > 0 {
+		out += " · " + strconv.Itoa(n) + " " + T("org.membersword")
+	}
+	return out
+}

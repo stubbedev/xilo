@@ -13,7 +13,29 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/stubbedev/xilo/internal/mail"
 )
+
+// SMTP configures the transactional-email relay (any provider — Brevo,
+// Mailgun, SES-SMTP, Postmark…). Empty host disables mail. Mirrors
+// mail.Config so it lives in this package (the schema generator flattens
+// same-package structs).
+type SMTP struct {
+	// Relay host, e.g. "smtp-relay.brevo.com". Empty = mail disabled.
+	Host string `yaml:"host" json:"host"`
+	// Submission port; 587 (STARTTLS) is standard.
+	Port int `yaml:"port" json:"port"`
+	// SMTP username (Brevo: your account login).
+	Username string `yaml:"username" json:"username"`
+	// SMTP password / API key. Overridable with XILO_SMTP_PASSWORD.
+	Password string `yaml:"password" json:"password"`
+	// From address, e.g. "Xilo <cache@example.com>" — a sender your relay allows.
+	From string `yaml:"from" json:"from"`
+}
+
+// Mail converts to the mailer's config (identical field layout).
+func (c SMTP) Mail() mail.Config { return mail.Config(c) }
 
 // Config is the root of xilo.yaml.
 type Config struct {
@@ -29,6 +51,10 @@ type Config struct {
 	// Metadata database settings. Defaults to a zero-config SQLite file in
 	// data_dir; point at PostgreSQL for large multi-writer deployments.
 	Database Database `yaml:"database" json:"database"`
+	// Outbound transactional email (registration/approval/membership
+	// notices). Empty host = mail disabled; everything keeps working, users
+	// just get no emails.
+	SMTP SMTP `yaml:"smtp" json:"smtp"`
 	// Multi-tenant mode: enables self-registration (governed by the instance
 	// settings in the dashboard), plans, and organization creation by users.
 	// Off (default) = single-tenant: no signup surface at all, everything is
@@ -354,6 +380,9 @@ func (c *Config) applyEnv() {
 	}
 	if v := os.Getenv("XILO_DATABASE_URL"); v != "" {
 		c.Database.URL = v
+	}
+	if v := os.Getenv("XILO_SMTP_PASSWORD"); v != "" {
+		c.SMTP.Password = v
 	}
 }
 

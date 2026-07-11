@@ -8,7 +8,7 @@ import (
 )
 
 templ Dashboard(d DashboardData) {
-	@Layout(T("dash.title"), true, d.Flash) {
+	@Layout(T("dash.title"), d.Nav, d.Flash) {
 		<hgroup>
 			<h1>{ T("dash.title") }</h1>
 			<p>{ T("dash.subtitle") }</p>

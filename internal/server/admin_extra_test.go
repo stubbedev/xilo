@@ -309,7 +309,7 @@ func TestChangePassword(t *testing.T) {
 	c := adminClient(t, ts)
 
 	post := func(cur, next, confirm string) string {
-		resp, _ := c.PostForm(ts.URL+"/admin/settings/password", url.Values{
+		resp, _ := c.PostForm(ts.URL+"/admin/account/password", url.Values{
 			"current": {cur}, "new": {next}, "confirm": {confirm},
 		})
 		return body(t, resp)
@@ -336,12 +336,12 @@ func TestChangePassword(t *testing.T) {
 	resp.Body.Close()
 
 	// live hint endpoint: anon 401, logged-in 200
-	resp, _ = http.PostForm(ts.URL+"/admin/settings/password/check", url.Values{"new": {"x"}})
+	resp, _ = http.PostForm(ts.URL+"/admin/account/password/check", url.Values{"new": {"x"}})
 	if resp.StatusCode != 401 {
 		t.Errorf("anon password check → %d want 401", resp.StatusCode)
 	}
 	resp.Body.Close()
-	resp, _ = c2.PostForm(ts.URL+"/admin/settings/password/check", url.Values{"new": {"NewPass123456"}, "confirm": {""}})
+	resp, _ = c2.PostForm(ts.URL+"/admin/account/password/check", url.Values{"new": {"NewPass123456"}, "confirm": {""}})
 	if resp.StatusCode != 200 {
 		t.Errorf("password check → %d", resp.StatusCode)
 	}
@@ -370,7 +370,7 @@ func TestTOTPEnrollAndTwoStepLogin(t *testing.T) {
 	c := adminClient(t, ts)
 
 	// enroll: stores a secret and renders the QR
-	resp, _ := c.PostForm(ts.URL+"/admin/settings/totp/enroll", nil)
+	resp, _ := c.PostForm(ts.URL+"/admin/account/totp/enroll", nil)
 	if b := body(t, resp); !strings.Contains(b, "data:image/png") {
 		t.Fatalf("enroll page missing QR: %.100q", b)
 	}
@@ -380,12 +380,12 @@ func TestTOTPEnrollAndTwoStepLogin(t *testing.T) {
 	}
 
 	// enable with a wrong code re-renders the enroll form
-	resp, _ = c.PostForm(ts.URL+"/admin/settings/totp/enable", url.Values{"code": {wrongCode(secret)}})
+	resp, _ = c.PostForm(ts.URL+"/admin/account/totp/enable", url.Values{"code": {wrongCode(secret)}})
 	if b := body(t, resp); !strings.Contains(b, "t match") { // "didn't" arrives HTML-escaped
 		t.Fatalf("wrong enable code: %.200q", b)
 	}
 	// correct code enables
-	resp, _ = c.PostForm(ts.URL+"/admin/settings/totp/enable", url.Values{"code": {totpCode(secret, time.Now())}})
+	resp, _ = c.PostForm(ts.URL+"/admin/account/totp/enable", url.Values{"code": {totpCode(secret, time.Now())}})
 	if b := body(t, resp); !strings.Contains(b, "enabled") {
 		t.Fatalf("enable: %.200q", b)
 	}
@@ -424,7 +424,7 @@ func TestTOTPEnrollAndTwoStepLogin(t *testing.T) {
 	resp.Body.Close()
 
 	// disable
-	resp, _ = c2.PostForm(ts.URL+"/admin/settings/totp/disable", nil)
+	resp, _ = c2.PostForm(ts.URL+"/admin/account/totp/disable", nil)
 	if b := body(t, resp); !strings.Contains(b, "disabled") {
 		t.Fatalf("disable: %.200q", b)
 	}
@@ -437,10 +437,10 @@ func TestLoginCodeAfterTOTPDisabledMidFlight(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, nil)
 	bootstrapAdmin(t, db)
 	c := adminClient(t, ts)
-	resp, _ := c.PostForm(ts.URL+"/admin/settings/totp/enroll", nil)
+	resp, _ := c.PostForm(ts.URL+"/admin/account/totp/enroll", nil)
 	resp.Body.Close()
 	secret, _, _ := db.UserTOTP(adminID(t, db))
-	resp, _ = c.PostForm(ts.URL+"/admin/settings/totp/enable", url.Values{"code": {totpCode(secret, time.Now())}})
+	resp, _ = c.PostForm(ts.URL+"/admin/account/totp/enable", url.Values{"code": {totpCode(secret, time.Now())}})
 	resp.Body.Close()
 
 	jar, _ := cookiejar.New(nil)

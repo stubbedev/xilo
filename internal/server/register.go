@@ -142,10 +142,16 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if u.Status == "pending" {
+		s.mailUser(u, "Registration received",
+			"Your account "+u.Name+" on "+s.cfg.BaseURL+" was created and is awaiting administrator approval. You will get another email once it is approved.")
+		s.mailAdmins("New registration awaiting approval",
+			"User "+u.Name+" registered on "+s.cfg.BaseURL+" and awaits approval in Settings.")
 		views.Login(false, s.hasPasskeys(), s.registrationOpen(),
 			views.Flash{Msg: "Registered — an administrator has to approve your account before you can sign in."}).Render(r.Context(), w)
 		return
 	}
+	s.mailUser(u, "Welcome to "+s.cfg.BaseURL,
+		"Your account "+u.Name+" is active. Sign in at "+s.cfg.BaseURL+"/admin.")
 	s.grantSession(w, r, u.ID)
 }
 
@@ -164,7 +170,7 @@ func (s *Server) handleInstanceSettings(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	s.settingsFlash(w, r, "Instance settings saved.")
+	s.instanceFlash(w, r, "Instance settings saved.")
 }
 
 // planFromForm reads the shared plan form fields.
@@ -195,14 +201,14 @@ func (s *Server) handleCreatePlan(w http.ResponseWriter, r *http.Request) {
 	}
 	p := planFromForm(r)
 	if p.Name == "" {
-		s.settingsFlash(w, r, "Plan name is required.")
+		s.instanceFlash(w, r, "Plan name is required.")
 		return
 	}
 	if _, err := s.db.CreatePlan(&p); err != nil {
-		s.settingsFlash(w, r, "Could not create plan: "+err.Error())
+		s.instanceFlash(w, r, "Could not create plan: "+err.Error())
 		return
 	}
-	s.settingsFlash(w, r, fmt.Sprintf("Plan %q created.", p.Name))
+	s.instanceFlash(w, r, fmt.Sprintf("Plan %q created.", p.Name))
 }
 
 func (s *Server) handleEditPlan(w http.ResponseWriter, r *http.Request) {
@@ -228,7 +234,7 @@ func (s *Server) handleEditPlan(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.settingsFlash(w, r, fmt.Sprintf("Plan %q updated.", p.Name))
+	s.instanceFlash(w, r, fmt.Sprintf("Plan %q updated.", p.Name))
 }
 
 func (s *Server) handleDeletePlan(w http.ResponseWriter, r *http.Request) {
@@ -237,10 +243,10 @@ func (s *Server) handleDeletePlan(w http.ResponseWriter, r *http.Request) {
 	}
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err := s.db.DeletePlan(id); err != nil {
-		s.settingsFlash(w, r, "Could not delete plan: "+err.Error())
+		s.instanceFlash(w, r, "Could not delete plan: "+err.Error())
 		return
 	}
-	s.settingsFlash(w, r, "Plan deleted.")
+	s.instanceFlash(w, r, "Plan deleted.")
 }
 
 func (s *Server) handleApproveUser(w http.ResponseWriter, r *http.Request) {
@@ -255,7 +261,9 @@ func (s *Server) handleApproveUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.settingsFlash(w, r, fmt.Sprintf("%s approved.", u.Name))
+	s.mailUser(u, "Your account was approved",
+		"Your account "+u.Name+" on "+s.cfg.BaseURL+" is approved — sign in at "+s.cfg.BaseURL+"/admin.")
+	s.instanceFlash(w, r, fmt.Sprintf("%s approved.", u.Name))
 }
 
 // userCanCreateOrg: instance admins always; otherwise the personal account's
@@ -295,11 +303,11 @@ func (s *Server) handleUserCreateOrg(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	if !store.ValidSlug(name) {
-		s.settingsFlash(w, r, "Invalid organization name.")
+		s.instanceFlash(w, r, "Invalid organization name.")
 		return
 	}
 	if _, err := s.db.GetAccount(name); err == nil {
-		s.settingsFlash(w, r, "That name is taken.")
+		s.instanceFlash(w, r, "That name is taken.")
 		return
 	}
 	org, err := s.db.EnsureAccount(name, "org")
@@ -316,7 +324,7 @@ func (s *Server) handleUserCreateOrg(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.settingsFlash(w, r, fmt.Sprintf("Organization %q created.", name))
+	s.instanceFlash(w, r, fmt.Sprintf("Organization %q created.", name))
 }
 
 // ---- plan limit enforcement (create-time checks) ----

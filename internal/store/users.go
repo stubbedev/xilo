@@ -155,6 +155,18 @@ func (db *DB) SetUserStatus(id int64, status string) error {
 	})
 }
 
+// SetUserEmail updates the sign-in alias ("" clears it).
+func (db *DB) SetUserEmail(id int64, email string) error {
+	return db.write(func(tx *sql.Tx) error {
+		var v any
+		if email != "" {
+			v = email
+		}
+		_, err := tx.Exec(`UPDATE users SET email=? WHERE id=?`, v, id)
+		return err
+	})
+}
+
 func (db *DB) SetUserRole(id int64, role string) error {
 	return db.write(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`UPDATE users SET role=? WHERE id=?`, role, id)
