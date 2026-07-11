@@ -23,7 +23,7 @@ func Root() *cobra.Command {
 	root.AddCommand(
 		serveCmd(), pushCmd(), watchCmd(),
 		loginCmd(), useCmd(),
-		cacheCmd(), tokenCmd(), gcCmd(), schemaCmd(),
+		cacheCmd(), tokenCmd(), gcCmd(), fsckCmd(), schemaCmd(),
 	)
 	return root
 }
