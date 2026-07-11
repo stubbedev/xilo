@@ -174,8 +174,25 @@ xilo speaks plain HTTP; terminate TLS with Caddy/nginx and set
 ## Observability
 
 - `GET /healthz` — readiness probe (does a DB read).
-- `GET /metrics` — Prometheus counters (narinfo hit/miss, NAR bytes, chunk dedup, pushes, auth failures).
-- Request logging + graceful shutdown (drains in-flight transfers on SIGTERM) are built in.
+- `GET /metrics` — Prometheus counters (narinfo hit/miss, NAR bytes, chunk dedup, pushes, auth failures) plus Go runtime gauges (goroutines, heap). A ready-made Grafana dashboard is in [`examples/grafana-dashboard.json`](./examples/grafana-dashboard.json).
+- Request logging + graceful shutdown (drains in-flight transfers on SIGTERM) are built in. Set `logging: quiet` to log only errors and slow requests on busy instances.
+
+## Backups
+
+All state is one SQLite file plus the chunk directory under `data_dir`
+(local backend). Back up **the database first, then the chunks** — the server
+writes a chunk's blob before its DB row, so a snapshot ordered DB→chunks can
+only contain extra unreferenced blobs (harmless; the next GC sweeps them),
+never a row pointing at a missing blob:
+
+```sh
+sqlite3 /data/xilo.db ".backup /backup/xilo.db"   # consistent WAL-aware copy
+rsync -a /data/storage/ /backup/storage/
+```
+
+For continuous replication, [Litestream](https://litestream.io/) on
+`xilo.db` plus any object-storage sync for `storage/` works well. With the
+S3 backend only the DB needs backing up.
 
 ## Tokens & private caches
 
@@ -216,6 +233,18 @@ Chunks are content-addressed and shared; GC is a mark-sweep over unreferenced ch
 ```sh
 xilo gc                     # sweep unreferenced chunks
 xilo gc --older-than 720h   # also evict paths not pulled in 30 days, then sweep
+```
+
+## Integrity checking
+
+`xilo fsck` verifies every chunk row against its stored blob and every path
+against its chunk list — the states a crash or disk damage could leave that
+normal operation can't heal (dedup trusts a chunk row forever):
+
+```sh
+xilo fsck             # existence check (fast)
+xilo fsck --content   # re-hash every blob (reads all data)
+xilo fsck --repair    # drop bad rows + broken paths; the next push re-uploads them
 ```
 
 ## Configuration

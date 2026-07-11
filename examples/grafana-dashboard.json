@@ -1,0 +1,85 @@
+{
+  "__comment": "Grafana dashboard for xilo's /metrics (Prometheus scrape). Import via Dashboards → New → Import. Assumes a Prometheus datasource scraping the xilo instance.",
+  "title": "xilo",
+  "uid": "xilo-cache",
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "title": "narinfo requests/s",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "rate(xilo_narinfo_hits_total[5m])", "legendFormat": "hits" },
+        { "expr": "rate(xilo_narinfo_misses_total[5m])", "legendFormat": "misses" }
+      ]
+    },
+    {
+      "title": "NAR throughput",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "Bps" } },
+      "targets": [
+        { "expr": "rate(xilo_nar_bytes_total[5m])", "legendFormat": "bytes served" }
+      ]
+    },
+    {
+      "title": "NARs served/s",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "targets": [
+        { "expr": "rate(xilo_nar_served_total[5m])", "legendFormat": "nar downloads" }
+      ]
+    },
+    {
+      "title": "push activity",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "rate(xilo_chunks_received_total[5m])", "legendFormat": "chunks uploaded" },
+        { "expr": "rate(xilo_chunks_deduped_total[5m])", "legendFormat": "chunks deduped" },
+        { "expr": "rate(xilo_paths_pushed_total[5m])", "legendFormat": "paths registered" }
+      ]
+    },
+    {
+      "title": "mean request latency",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "ns" } },
+      "targets": [
+        {
+          "expr": "rate(xilo_http_request_duration_ns_total[5m]) / rate(xilo_http_requests_total[5m])",
+          "legendFormat": "avg latency"
+        }
+      ]
+    },
+    {
+      "title": "auth failures/s",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "targets": [
+        { "expr": "rate(xilo_auth_failures_total[5m])", "legendFormat": "auth failures" }
+      ]
+    },
+    {
+      "title": "goroutines",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        { "expr": "go_goroutines", "legendFormat": "goroutines" }
+      ]
+    },
+    {
+      "title": "memory",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [
+        { "expr": "go_heap_inuse_bytes", "legendFormat": "heap in use" },
+        { "expr": "go_sys_bytes", "legendFormat": "from OS" }
+      ]
+    }
+  ],
+  "schemaVersion": 39
+}
