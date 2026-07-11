@@ -34,11 +34,13 @@ func TestMigrateUpgradesOldSchema(t *testing.T) {
 	if err := migrate(raw, false); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	// New columns must now be queryable, and the old row preserved.
+	// New columns must now be queryable, and the old row preserved. caches.storage
+	// pins the single-jump upgrade: an ordering bug once added it and then lost it
+	// in the namespace table rebuild.
 	for _, q := range []string{
-		`SELECT retention, max_bytes FROM caches`,
-		`SELECT csize, created FROM chunks`,
-		`SELECT expires FROM tokens`,
+		`SELECT retention, max_bytes, storage, namespace_id FROM caches`,
+		`SELECT csize, created, storage FROM chunks`,
+		`SELECT expires, namespace_id FROM tokens`,
 		`SELECT password_hash, role FROM users`, // table created
 	} {
 		if _, err := raw.Query(q); err != nil {

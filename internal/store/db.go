@@ -305,6 +305,12 @@ func migrate(w *sql.DB, pg bool) error {
 	if err := migrateChunkStorage(w, pg); err != nil {
 		return fmt.Errorf("migrate chunk storage: %w", err)
 	}
+	// Heal databases hurt by an earlier ordering bug: the namespace rebuild
+	// used to recreate caches without the storage column added moments before.
+	// No-op everywhere else.
+	if err := addColumnIfMissing(w, pg, "caches", "storage", "TEXT NOT NULL DEFAULT 'default'"); err != nil {
+		return fmt.Errorf("migrate caches.storage: %w", err)
+	}
 
 	// Indexes last — they may reference columns the ALTERs just added.
 	for _, s := range []string{
