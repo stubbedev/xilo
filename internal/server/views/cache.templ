@@ -29,7 +29,7 @@ templ CacheView(d CacheData) {
 		<h2>{ T("cd.stats") }</h2>
 		<article>
 			<div class="kpi">
-				@KPITile("package", strconv.FormatInt(d.Stats.Paths, 10), T("kpi.paths"), "")
+				@KPITile("package", Count(d.Stats.Paths), T("kpi.paths"), "")
 				@KPITile("database", d.Bytes(d.Stats.LogicalBytes), T("kpi.logical"), "")
 				@KPITile("hard-drive", d.Bytes(d.Stats.PhysicalBytes), T("kpi.physical")+capLabel(d.Cache.MaxBytes, d.Bytes), "")
 				@KPITile("layers", d.Dedup+"×", T("kpi.dedup"), "")

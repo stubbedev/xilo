@@ -15,8 +15,8 @@ templ Dashboard(d DashboardData) {
 		</hgroup>
 		<article class="overview">
 			<div class="kpi">
-				@KPITile("database", strconv.FormatInt(d.Global.Caches, 10), T("kpi.caches"), "")
-				@KPITile("package", strconv.FormatInt(d.Global.Paths, 10), T("kpi.paths"), "")
+				@KPITile("database", Count(d.Global.Caches), T("kpi.caches"), "")
+				@KPITile("package", Count(d.Global.Paths), T("kpi.paths"), "")
 				@KPITile("hard-drive", d.Bytes(d.Global.StoredBytes), T("kpi.disk")+capSuffix(d.ServerCap, d.Bytes), "")
 				@KPITile("layers", dedupRatio(d.Global.LogicalBytes, d.Global.StoredBytes)+"×", T("kpi.dedup"), "")
 			</div>
@@ -47,7 +47,7 @@ templ Dashboard(d DashboardData) {
 									{ " / " + d.Bytes(u.Cache.MaxBytes) }
 									<span class={ "pct " + fillClass(u.Bytes, u.Cache.MaxBytes) }>{ strconv.Itoa(u.Pct()) }%</span>
 								}
-								· { strconv.FormatInt(u.Paths, 10) } { T("cache.paths") }
+								· { Count(u.Paths) } { T("cache.paths") }
 							</span>
 							if u.Cache.MaxBytes > 0 {
 								<progress class={ fillClass(u.Bytes, u.Cache.MaxBytes) } value={ strconv.FormatInt(u.Bytes, 10) } max={ strconv.FormatInt(u.Cache.MaxBytes, 10) }></progress>
