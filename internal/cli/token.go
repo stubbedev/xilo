@@ -44,6 +44,12 @@ func tokenCreateCmd() *cobra.Command {
 			if ttl > 0 {
 				expires = time.Now().Add(ttl).Unix()
 			}
+			// Instance tokens use ns/cache patterns; bare names mean default/.
+			for i, c := range caches {
+				if c != "*" {
+					caches[i] = normRef(c)
+				}
+			}
 			apic, _, db, err := adminTarget(adminServer, adminToken)
 			if err != nil {
 				return err
@@ -59,7 +65,7 @@ func tokenCreateCmd() *cobra.Command {
 				secret, t = resp.Secret, resp.Token
 			} else {
 				defer db.Close()
-				sec, st, err := db.CreateToken(args[0], caches, perms, expires)
+				sec, st, err := db.CreateToken(0, args[0], caches, perms, expires)
 				if err != nil {
 					return err
 				}

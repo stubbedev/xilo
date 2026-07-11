@@ -21,23 +21,23 @@ func TestCacheCRUD(t *testing.T) {
 	db := openTest(t)
 
 	// private cache exercises b2i(false)
-	c, err := db.CreateCache("priv", false, 30)
+	c, err := db.CreateCache("default", "priv", false, 30)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.CreateCache("priv", true, 40); err == nil {
+	if _, err := db.CreateCache("default", "priv", true, 40); err == nil {
 		t.Fatal("duplicate cache name should error")
 	}
-	db.CreateCache("pub", true, 40)
+	db.CreateCache("default", "pub", true, 40)
 
-	got, err := db.GetCache("priv")
+	got, err := db.GetCache("default", "priv")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.ID != c.ID || got.Public || got.Priority != 30 || got.PubKey != c.PubKey {
 		t.Fatalf("GetCache = %+v", got)
 	}
-	if _, err := db.GetCache("nope"); !errors.Is(err, ErrNotFound) {
+	if _, err := db.GetCache("default", "nope"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("GetCache(missing) = %v, want ErrNotFound", err)
 	}
 
@@ -49,7 +49,7 @@ func TestCacheCRUD(t *testing.T) {
 	if err := db.UpdateCache(c.ID, true, 50, 3600, 1<<20); err != nil {
 		t.Fatal(err)
 	}
-	got, _ = db.GetCache("priv")
+	got, _ = db.GetCache("default", "priv")
 	if !got.Public || got.Priority != 50 || got.Retention != 3600 || got.MaxBytes != 1<<20 {
 		t.Fatalf("after UpdateCache: %+v", got)
 	}
@@ -67,7 +67,7 @@ func TestCacheCRUD(t *testing.T) {
 	if err := db.DeleteCache(c.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.GetCache("priv"); !errors.Is(err, ErrNotFound) {
+	if _, err := db.GetCache("default", "priv"); !errors.Is(err, ErrNotFound) {
 		t.Fatal("cache still present after delete")
 	}
 	if _, err := db.GetPath(c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); !errors.Is(err, ErrNotFound) {
@@ -81,14 +81,14 @@ func TestTokenCRUD(t *testing.T) {
 	db := openTest(t)
 
 	// nil caches/perms default to */pull
-	secret, tok, err := db.CreateToken("t1", nil, nil, 0)
+	secret, tok, err := db.CreateToken(0, "t1", nil, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(tok.Caches) != 1 || tok.Caches[0] != "*" || len(tok.Perms) != 1 || tok.Perms[0] != "pull" {
 		t.Fatalf("defaults not applied: %+v", tok)
 	}
-	if !db.Authorize(secret, "any", "pull", 100) {
+	if !db.Authorize(secret, "default", "any", "pull", 100) {
 		t.Fatal("default token should pull anywhere")
 	}
 
@@ -100,14 +100,14 @@ func TestTokenCRUD(t *testing.T) {
 		t.Fatalf("GetToken(missing) = %v, want ErrNotFound", err)
 	}
 
-	db.CreateToken("t2", []string{"a"}, []string{"push"}, 500)
+	db.CreateToken(0, "t2", []string{"default/a"}, []string{"push"}, 500)
 	list, err := db.ListTokens()
 	if err != nil || len(list) != 2 || list[0].Name != "t1" || list[1].Name != "t2" {
 		t.Fatalf("ListTokens = %v err=%v", list, err)
 	}
 
 	// UpdateToken with explicit values, then with empty slices (defaults again)
-	if err := db.UpdateToken(tok.ID, "renamed", []string{"a", "b"}, []string{"push"}, 777); err != nil {
+	if err := db.UpdateToken(tok.ID, "renamed", []string{"default/a", "default/b"}, []string{"push"}, 777); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = db.GetToken(tok.ID)
@@ -254,7 +254,7 @@ func TestGlobalStats(t *testing.T) {
 	if err != nil || g.Caches != 0 || g.Paths != 0 || g.Chunks != 0 {
 		t.Fatalf("empty stats: %+v err=%v", g, err)
 	}
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 	db.PutChunk("g1", 100, 60, "k1", 1)
 	db.PutChunk("g2", 100, 40, "k2", 1)
 	db.PutPath(c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -270,7 +270,7 @@ func TestGlobalStats(t *testing.T) {
 
 func TestCacheStatsEmpty(t *testing.T) {
 	db := openTest(t)
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 	st, err := db.CacheStats(c.ID)
 	if err != nil || st.Paths != 0 || st.Chunks != 0 || st.LogicalBytes != 0 || st.PhysicalBytes != 0 {
 		t.Fatalf("empty cache stats = %+v err=%v", st, err)
@@ -293,7 +293,7 @@ func TestAdminNotFound(t *testing.T) {
 
 func TestGetPathNotFound(t *testing.T) {
 	db := openTest(t)
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 	if _, err := db.GetPath(c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("GetPath(missing) = %v, want ErrNotFound", err)
 	}
@@ -354,7 +354,7 @@ func TestBatchingOverBatchVars(t *testing.T) {
 		t.Fatalf("ChunkKeys over batch: %d err=%v", len(refs), err)
 	}
 	// MissingPaths batches too (with the extra cache_id arg per batch)
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 	miss, err = db.MissingPaths(c.ID, hashes)
 	if err != nil || len(miss) != n {
 		t.Fatalf("MissingPaths over batch: %d err=%v", len(miss), err)
@@ -390,7 +390,7 @@ func TestHelpers(t *testing.T) {
 
 func TestSearchPathsSortAndPaging(t *testing.T) {
 	db := openTest(t)
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 	put := func(hash32, name string, size uint64, accessed int64) {
 		p := &Path{StorePath: "/nix/store/" + hash32 + "-" + name, NarHash: "sha256:h", NarSize: size}
 		if err := db.PutPath(c.ID, hash32, p); err != nil {
@@ -459,8 +459,8 @@ func TestDeleteChunkRowIfBoundary(t *testing.T) {
 
 func TestEvictPathsOlderThan(t *testing.T) {
 	db := openTest(t)
-	a, _ := db.CreateCache("a", true, 40)
-	b, _ := db.CreateCache("b", true, 40)
+	a, _ := db.CreateCache("default", "a", true, 40)
+	b, _ := db.CreateCache("default", "b", true, 40)
 	putPathAt(t, db, a.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", nil, 10)
 	putPathAt(t, db, a.ID, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", nil, 100)
 	putPathAt(t, db, b.ID, "cccccccccccccccccccccccccccccccc", nil, 10)
@@ -486,7 +486,7 @@ func TestEvictPathsOlderThan(t *testing.T) {
 
 func TestEnforceCapNoops(t *testing.T) {
 	db := openTest(t)
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 	db.PutChunk("x", 100, 100, "k", 1)
 	putPathAt(t, db, c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"x"}, 10)
 
@@ -589,7 +589,7 @@ func TestGCBatchSweep(t *testing.T) {
 	db.PutChunk("fresh", 10, 5, storage.ChunkKey("fresh"), 9_000)
 	m.Put(ctx, storage.ChunkKey("live"), nil)
 	m.Put(ctx, storage.ChunkKey("fresh"), nil)
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 	putPath(t, db, c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"live"})
 
 	deleted, freed, err := db.GC(ctx, m, 5_000)
@@ -730,7 +730,7 @@ func TestUseAfterClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -739,10 +739,10 @@ func TestUseAfterClose(t *testing.T) {
 	if err := db.PutChunk("h", 1, 1, "k", 1); err == nil || err.Error() != "store: closed" {
 		t.Fatalf("write after close = %v, want store: closed", err)
 	}
-	if _, err := db.CreateCache("x", true, 40); err == nil {
+	if _, err := db.CreateCache("default", "x", true, 40); err == nil {
 		t.Fatal("CreateCache after close should error")
 	}
-	if _, _, err := db.CreateToken("x", nil, nil, 0); err == nil {
+	if _, _, err := db.CreateToken(0, "x", nil, nil, 0); err == nil {
 		t.Fatal("CreateToken after close should error")
 	}
 	if _, err := db.EvictPathsOlderThan(1); err == nil {
@@ -753,7 +753,7 @@ func TestUseAfterClose(t *testing.T) {
 	}
 
 	// reads: closed pool returns errors, not panics
-	if _, err := db.GetCache("c"); err == nil {
+	if _, err := db.GetCache("default", "c"); err == nil {
 		t.Fatal("GetCache after close should error")
 	}
 	if _, err := db.ListCaches(); err == nil {

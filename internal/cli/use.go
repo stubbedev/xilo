@@ -24,16 +24,18 @@ func useCmd() *cobra.Command {
 	var url, token string
 	var remove bool
 	c := &cobra.Command{
-		Use:   "use <cache>",
+		Use:   "use <ns/cache>",
 		Short: "Configure local Nix to use a cache (nix.conf + netrc)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			url, token = resolveServer(url, token)
-			cache := args[0]
+			cache := normRef(args[0])
 
 			if remove {
 				sub := strings.TrimRight(url, "/") + "/" + cache
-				if err := removeFromNixConf(sub, cache); err != nil {
+				// The trusted-key label is the bare cache name.
+				_, bare := splitRef(cache)
+				if err := removeFromNixConf(sub, bare); err != nil {
 					return err
 				}
 				fmt.Printf("removed %s from nix.conf\n", sub)

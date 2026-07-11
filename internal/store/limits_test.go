@@ -7,7 +7,7 @@ import (
 
 func TestEnforceCacheCapLRU(t *testing.T) {
 	db := openTest(t)
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 
 	// three chunks, 100 bytes compressed each; three paths each referencing one.
 	db.PutChunk("c1", 100, 100, "k1", 1)
@@ -41,7 +41,7 @@ func TestEnforceCacheCapLRU(t *testing.T) {
 // A chunk shared by two paths keeps its size until the LAST path is evicted.
 func TestEnforceCapSharedChunk(t *testing.T) {
 	db := openTest(t)
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 	db.PutChunk("shared", 100, 100, "k", 1)
 	db.PutChunk("solo", 100, 100, "k2", 1)
 	putPathAt(t, db, c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"shared"}, 10)
@@ -60,8 +60,8 @@ func TestEnforceCapSharedChunk(t *testing.T) {
 
 func TestEnforceGlobalCap(t *testing.T) {
 	db := openTest(t)
-	a, _ := db.CreateCache("a", true, 40)
-	b, _ := db.CreateCache("b", true, 40)
+	a, _ := db.CreateCache("default", "a", true, 40)
+	b, _ := db.CreateCache("default", "b", true, 40)
 	db.PutChunk("x", 100, 100, "kx", 1)
 	db.PutChunk("y", 100, 100, "ky", 1)
 	putPathAt(t, db, a.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"x"}, 10)

@@ -41,9 +41,9 @@ func fsckWorld(t *testing.T) (*store.DB, storage.Storage, string, func(hash stri
 		if err := db.PutChunk(hash, int64(len(data)), 0, key, 100); err != nil {
 			t.Fatal(err)
 		}
-		c, err := db.GetCache("c")
+		c, err := db.GetCache("default", "c")
 		if err != nil {
-			if c, err = db.CreateCache("c", true, 40); err != nil {
+			if c, err = db.CreateCache("default", "c", true, 40); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -146,7 +146,7 @@ func TestFsckRepairHeals(t *testing.T) {
 
 func mustCache(t *testing.T, db *store.DB) int64 {
 	t.Helper()
-	c, err := db.GetCache("c")
+	c, err := db.GetCache("default", "c")
 	if err != nil {
 		t.Fatal(err)
 	}

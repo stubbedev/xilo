@@ -29,6 +29,7 @@ type MissingResp struct {
 
 // Cache is a cache's settings as returned by the admin API.
 type Cache struct {
+	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
 	Public    bool   `json:"public"`
 	Priority  int    `json:"priority"`
@@ -49,9 +50,21 @@ type CacheDetail struct {
 
 // CreateCacheReq creates a cache (POST /api/v1/caches).
 type CreateCacheReq struct {
-	Name     string `json:"name"`
-	Public   bool   `json:"public"`
-	Priority int    `json:"priority"` // 0 = default 40
+	Namespace string `json:"namespace"` // "" = default
+	Name      string `json:"name"`
+	Public    bool   `json:"public"`
+	Priority  int    `json:"priority"` // 0 = default 40
+}
+
+// NamespaceResp is one namespace (GET /api/v1/namespaces).
+type NamespaceResp struct {
+	Name    string `json:"name"`
+	Created int64  `json:"created"`
+}
+
+// CreateNamespaceReq creates a namespace (POST /api/v1/namespaces).
+type CreateNamespaceReq struct {
+	Name string `json:"name"`
 }
 
 // ConfigureCacheReq updates cache settings; nil fields keep current values.
@@ -64,21 +77,23 @@ type ConfigureCacheReq struct {
 
 // Token is token metadata (never the secret).
 type Token struct {
-	ID      int64    `json:"id"`
-	Name    string   `json:"name"`
-	Caches  []string `json:"caches"`
-	Perms   []string `json:"perms"`
-	Revoked bool     `json:"revoked"`
-	Expires int64    `json:"expires"` // unix; 0 = never
-	Created int64    `json:"created"`
+	ID        int64    `json:"id"`
+	Namespace string   `json:"namespace,omitempty"` // "" = instance-wide
+	Name      string   `json:"name"`
+	Caches    []string `json:"caches"`
+	Perms     []string `json:"perms"`
+	Revoked   bool     `json:"revoked"`
+	Expires   int64    `json:"expires"` // unix; 0 = never
+	Created   int64    `json:"created"`
 }
 
 // CreateTokenReq mints a token (POST /api/v1/tokens).
 type CreateTokenReq struct {
-	Name    string   `json:"name"`
-	Caches  []string `json:"caches"` // empty = all
-	Perms   []string `json:"perms"`
-	Expires int64    `json:"expires"` // unix; 0 = never
+	Namespace string   `json:"namespace"` // "" = instance-wide token
+	Name      string   `json:"name"`
+	Caches    []string `json:"caches"` // empty = all; ns/cache patterns for instance tokens
+	Perms     []string `json:"perms"`
+	Expires   int64    `json:"expires"` // unix; 0 = never
 }
 
 // CreateTokenResp returns the one-time secret plus the stored metadata.

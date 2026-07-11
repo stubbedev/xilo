@@ -25,10 +25,10 @@ func exec(t *testing.T, db *DB, q string, args ...any) {
 // error branches of every list/iterate reader.
 func TestScanErrorBranches(t *testing.T) {
 	db := openTest(t)
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 
-	exec(t, db, `INSERT INTO caches (name,public,priority,retention,max_bytes,pubkey,privkey,created)
-		VALUES ('bad',1,40,0,0,'k',x'00','notanint')`)
+	exec(t, db, `INSERT INTO caches (namespace_id,name,public,priority,retention,max_bytes,pubkey,privkey,created)
+		VALUES (?,'bad',1,40,0,0,'k',x'00','notanint')`, c.NSID)
 	exec(t, db, `INSERT INTO tokens (name,hash,caches,perms,revoked,expires,created)
 		VALUES ('bad','h','*','pull',0,0,'notanint')`)
 	exec(t, db, `INSERT INTO passkeys (user_id,name,credential,created) VALUES (1,'bad',x'00','notanint')`)
@@ -40,7 +40,7 @@ func TestScanErrorBranches(t *testing.T) {
 	if _, err := db.ListCaches(); err == nil {
 		t.Error("ListCaches should fail on poison row")
 	}
-	if _, err := db.GetCache("bad"); err == nil {
+	if _, err := db.GetCache("default", "bad"); err == nil {
 		t.Error("GetCache should fail on poison row")
 	}
 	if _, err := db.ListTokens(); err == nil {
@@ -80,7 +80,7 @@ func TestScanErrorBranches(t *testing.T) {
 func TestDroppedTableErrorBranches(t *testing.T) {
 	t.Run("no chunks table", func(t *testing.T) {
 		db := openTest(t)
-		c, _ := db.CreateCache("c", true, 40)
+		c, _ := db.CreateCache("default", "c", true, 40)
 		putPath(t, db, c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"x"})
 		exec(t, db, `DROP TABLE chunks`)
 
@@ -110,7 +110,7 @@ func TestDroppedTableErrorBranches(t *testing.T) {
 
 	t.Run("no paths table", func(t *testing.T) {
 		db := openTest(t)
-		db.CreateCache("c", true, 40)
+		db.CreateCache("default", "c", true, 40)
 		exec(t, db, `DROP TABLE paths`)
 		if _, err := db.GlobalStats(); err == nil {
 			t.Error("GlobalStats should fail without paths table")
@@ -125,7 +125,7 @@ func TestDroppedTableErrorBranches(t *testing.T) {
 		exec(t, db, `DROP TABLE sessions`)
 		exec(t, db, `DROP TABLE metrics_minutes`)
 		exec(t, db, `DROP TABLE tokens`)
-		if _, _, err := db.CreateToken("x", nil, nil, 0); err == nil {
+		if _, _, err := db.CreateToken(0, "x", nil, nil, 0); err == nil {
 			t.Error("CreateToken should fail without tokens table")
 		}
 		if err := db.CreateSession("s", 1, time.Now().Add(time.Hour)); err == nil {

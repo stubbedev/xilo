@@ -136,7 +136,7 @@ func TestAdminCSRF(t *testing.T) {
 	req.Header.Set("Origin", ts.URL)
 	resp, _ = c.Do(req)
 	resp.Body.Close()
-	if _, err := db.GetCache("csrf-ok"); err != nil {
+	if _, err := db.GetCache("default", "csrf-ok"); err != nil {
 		t.Fatalf("same-origin create failed: %v", err)
 	}
 }
@@ -149,7 +149,7 @@ func TestAdminCacheCRUD(t *testing.T) {
 	// create via form (private, clamped priority)
 	resp, _ := c.PostForm(ts.URL+"/admin/caches", url.Values{"name": {"web"}, "priority": {"500"}, "private": {"on"}})
 	resp.Body.Close()
-	cc, err := db.GetCache("web")
+	cc, err := db.GetCache("default", "web")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,30 +167,30 @@ func TestAdminCacheCRUD(t *testing.T) {
 	// detail page renders (with paths, search, sort, past-the-end page)
 	pushFake(t, ts, "web", h32, []byte("some path data"), "")
 	for _, q := range []string{"", "?q=pkg&sort=size&dir=asc", "?page[number]=99&page[size]=5", "?q=zzznomatch"} {
-		resp, _ := c.Get(ts.URL + "/admin/cache/web" + q)
+		resp, _ := c.Get(ts.URL + "/admin/cache/default/web" + q)
 		if resp.StatusCode != 200 {
 			t.Errorf("cache detail %q → %d", q, resp.StatusCode)
 		}
 		resp.Body.Close()
 	}
-	resp, _ = c.Get(ts.URL + "/admin/cache/ghost")
+	resp, _ = c.Get(ts.URL + "/admin/cache/default/ghost")
 	if resp.StatusCode != 404 {
 		t.Errorf("unknown cache detail → %d want 404", resp.StatusCode)
 	}
 	resp.Body.Close()
 
 	// configure: retention 1 day, cap 1 MiB, public again, priority 7
-	resp, _ = c.PostForm(ts.URL+"/admin/cache/web/configure", url.Values{
+	resp, _ = c.PostForm(ts.URL+"/admin/cache/default/web/configure", url.Values{
 		"priority":        {"7"},
 		"retention_value": {"1"}, "retention_unit": {"d"},
 		"max_value": {"1"}, "max_unit": {"MiB"},
 	})
 	resp.Body.Close()
-	cc, _ = db.GetCache("web")
+	cc, _ = db.GetCache("default", "web")
 	if !cc.Public || cc.Priority != 7 || cc.Retention != 86400 || cc.MaxBytes != 1<<20 {
 		t.Fatalf("configured cache: %+v", cc)
 	}
-	resp, _ = c.PostForm(ts.URL+"/admin/cache/ghost/configure", nil)
+	resp, _ = c.PostForm(ts.URL+"/admin/cache/default/ghost/configure", nil)
 	if resp.StatusCode != 404 {
 		t.Errorf("configure unknown cache → %d want 404", resp.StatusCode)
 	}
@@ -198,19 +198,19 @@ func TestAdminCacheCRUD(t *testing.T) {
 
 	// rotate key
 	oldKey := cc.PubKey
-	resp, _ = c.PostForm(ts.URL+"/admin/cache/web/rotate", nil)
+	resp, _ = c.PostForm(ts.URL+"/admin/cache/default/web/rotate", nil)
 	if b := body(t, resp); !strings.Contains(b, "rotated") {
 		t.Fatalf("rotate response: %q", b)
 	}
-	cc, _ = db.GetCache("web")
+	cc, _ = db.GetCache("default", "web")
 	if cc.PubKey == oldKey {
 		t.Fatal("pubkey did not rotate")
 	}
 
 	// delete
-	resp, _ = c.PostForm(ts.URL+"/admin/cache/web/delete", nil)
+	resp, _ = c.PostForm(ts.URL+"/admin/cache/default/web/delete", nil)
 	resp.Body.Close()
-	if _, err := db.GetCache("web"); err == nil {
+	if _, err := db.GetCache("default", "web"); err == nil {
 		t.Fatal("cache still exists after delete")
 	}
 
@@ -226,11 +226,11 @@ func TestAdminCacheCRUD(t *testing.T) {
 func TestAdminTokenCRUD(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, nil)
 	bootstrapAdmin(t, db)
-	db.CreateCache("c", true, 40)
+	db.CreateCache("default", "c", true, 40)
 	c := adminClient(t, ts)
 
 	resp, _ := c.PostForm(ts.URL+"/admin/tokens", url.Values{
-		"name": {"ci"}, "cache": {"c"}, "push": {"on"}, "pull": {"on"},
+		"name": {"ci"}, "cache": {"default/c"}, "push": {"on"}, "pull": {"on"},
 		"ttl_value": {"1"}, "ttl_unit": {"d"},
 	})
 	if b := body(t, resp); !strings.Contains(b, "created") {
@@ -282,7 +282,7 @@ func TestAdminGC(t *testing.T) {
 		cfg.Limits.Total = "10GB"
 	})
 	bootstrapAdmin(t, db)
-	cache, _ := db.CreateCache("c", true, 40)
+	cache, _ := db.CreateCache("default", "c", true, 40)
 	pushFake(t, ts, "c", h32, []byte("cap-evicted path data"), "")
 	// 1-byte cap: the pushed path is over it and gets evicted, its chunk swept.
 	// The 2h per-cache retention overrides the 1h global (nothing is that old).
@@ -294,7 +294,7 @@ func TestAdminGC(t *testing.T) {
 	if b := body(t, resp); !strings.Contains(b, "GC done") {
 		t.Fatalf("gc response: %q", b)
 	}
-	if resp, _ := http.Get(ts.URL + "/c/" + h32 + ".narinfo"); resp.StatusCode != 404 {
+	if resp, _ := http.Get(ts.URL + "/default/c/" + h32 + ".narinfo"); resp.StatusCode != 404 {
 		t.Fatalf("path survived GC: %d", resp.StatusCode)
 	}
 	g, _ := db.GlobalStats()
@@ -531,9 +531,9 @@ func TestPasskeyEndpoints(t *testing.T) {
 func TestStatusPagesAndData(t *testing.T) {
 	s, db, ts := newTestServerCfg(t, nil)
 	bootstrapAdmin(t, db)
-	db.CreateCache("c", true, 40)
+	db.CreateCache("default", "c", true, 40)
 	pushFake(t, ts, "c", h32, []byte("status traffic"), "")
-	getNar(t, ts, "/c/nar/"+h32+".nar", "")
+	getNar(t, ts, "/default/c/nar/"+h32+".nar", "")
 	s.sampleStatus()
 	s.sampleStatus()
 

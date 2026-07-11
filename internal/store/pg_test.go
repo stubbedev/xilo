@@ -28,7 +28,7 @@ func TestPostgres(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	// Fresh slate: earlier runs against the same server leave rows behind.
-	for _, tbl := range []string{"paths", "chunks", "tokens", "caches", "passkeys", "sessions", "metrics_minutes", "users"} {
+	for _, tbl := range []string{"paths", "chunks", "tokens", "caches", "passkeys", "sessions", "metrics_minutes", "users", "namespace_members", "namespaces"} {
 		if err := db.write(func(tx *sql.Tx) error { _, err := tx.Exec(`DELETE FROM ` + tbl); return err }); err != nil {
 			t.Fatalf("clean %s: %v", tbl, err)
 		}
@@ -44,14 +44,14 @@ func TestPostgres(t *testing.T) {
 	now := time.Now().Unix()
 
 	// --- caches ---
-	c, err := db.CreateCache("pg-cache", false, 41)
+	c, err := db.CreateCache("default", "pg-cache", false, 41)
 	if err != nil {
 		t.Fatalf("CreateCache: %v", err)
 	}
 	if c.ID == 0 || c.PubKey == "" {
 		t.Fatalf("cache = %+v", c)
 	}
-	got, err := db.GetCache("pg-cache")
+	got, err := db.GetCache("default", "pg-cache")
 	if err != nil || got.Public || got.Priority != 41 {
 		t.Fatalf("GetCache: %+v %v", got, err)
 	}
@@ -66,37 +66,66 @@ func TestPostgres(t *testing.T) {
 	}
 
 	// --- tokens ---
-	secret, tok, err := db.CreateToken("pg-tok", []string{"pg-cache"}, []string{"push", "pull"}, 0)
+	secret, tok, err := db.CreateToken(0, "pg-tok", []string{"default/pg-cache"}, []string{"push", "pull"}, 0)
 	if err != nil || tok.ID == 0 {
 		t.Fatalf("CreateToken: %+v %v", tok, err)
 	}
-	if !db.Authorize(secret, "pg-cache", "push", now) {
+	if !db.Authorize(secret, "default", "pg-cache", "push", now) {
 		t.Fatal("Authorize should pass")
 	}
-	if db.Authorize(secret, "other", "push", now) {
+	if db.Authorize(secret, "default", "other", "push", now) {
 		t.Fatal("Authorize wrong cache should fail")
 	}
 	if db.AuthorizeAdmin(secret, now) {
 		t.Fatal("non-admin token must not pass AuthorizeAdmin")
 	}
-	adminSec, _, err := db.CreateToken("pg-admin", nil, []string{"admin"}, 0)
+	adminSec, _, err := db.CreateToken(0, "pg-admin", nil, []string{"admin"}, 0)
 	if err != nil || !db.AuthorizeAdmin(adminSec, now) {
 		t.Fatalf("admin token: %v", err)
 	}
 	if err := db.UpdateToken(tok.ID, "renamed", nil, []string{"pull"}, 0); err != nil {
 		t.Fatalf("UpdateToken: %v", err)
 	}
-	if db.Authorize(secret, "pg-cache", "push", now) {
+	if db.Authorize(secret, "default", "pg-cache", "push", now) {
 		t.Fatal("push should be gone after update")
 	}
 	if err := db.RevokeToken(tok.ID); err != nil {
 		t.Fatalf("RevokeToken: %v", err)
 	}
-	if db.Authorize(secret, "pg-cache", "pull", now) {
+	if db.Authorize(secret, "default", "pg-cache", "pull", now) {
 		t.Fatal("revoked token still authorizes")
 	}
 	if toks, err := db.ListTokens(); err != nil || len(toks) != 2 {
 		t.Fatalf("ListTokens: %v %v", toks, err)
+	}
+
+	// --- namespaces ---
+	ns2, err := db.EnsureNamespace("team")
+	if err != nil || ns2.ID == 0 {
+		t.Fatalf("EnsureNamespace: %+v %v", ns2, err)
+	}
+	if again, err := db.EnsureNamespace("team"); err != nil || again.ID != ns2.ID {
+		t.Fatalf("EnsureNamespace idempotence: %+v %v", again, err)
+	}
+	tc, err := db.CreateCache("team", "pg-cache", true, 40)
+	if err != nil {
+		t.Fatalf("same cache name in second namespace: %v", err)
+	}
+	nsSec, _, err := db.CreateToken(ns2.ID, "team-tok", nil, []string{"pull"}, 0)
+	if err != nil {
+		t.Fatalf("ns token: %v", err)
+	}
+	if !db.Authorize(nsSec, "team", "pg-cache", "pull", now) {
+		t.Fatal("ns token should pull in its namespace")
+	}
+	if db.Authorize(nsSec, "default", "pg-cache", "pull", now) {
+		t.Fatal("ns token must not cross namespaces")
+	}
+	if err := db.DeleteCache(tc.ID); err != nil {
+		t.Fatalf("delete team cache: %v", err)
+	}
+	if err := db.DeleteNamespace(ns2.ID); err != nil {
+		t.Fatalf("DeleteNamespace: %v", err)
 	}
 
 	// --- chunks + paths ---
@@ -266,7 +295,7 @@ func TestPostgres(t *testing.T) {
 	if err := db.DeleteCache(c.ID); err != nil {
 		t.Fatalf("DeleteCache: %v", err)
 	}
-	if _, err := db.GetCache("pg-cache"); err != ErrNotFound {
+	if _, err := db.GetCache("default", "pg-cache"); err != ErrNotFound {
 		t.Fatalf("cache should be gone: %v", err)
 	}
 

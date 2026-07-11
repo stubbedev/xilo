@@ -12,14 +12,21 @@ import (
 	"time"
 )
 
+// Perms carried by tokens. pull/push gate the cache protocol; the rest gate
+// the management API (attic parity: create/configure/destroy per scope,
+// admin = full instance control).
+var ValidPerms = []string{"pull", "push", "create-cache", "configure-cache", "destroy-cache", "admin"}
+
 type Token struct {
-	ID      int64
-	Name    string
-	Caches  []string // cache names, or ["*"] for all
-	Perms   []string // "push", "pull"
-	Revoked bool
-	Expires int64 // unix; 0 = never
-	Created int64
+	ID          int64
+	NamespaceID int64  // 0 = instance-wide token
+	Namespace   string // resolved name, "" for instance-wide
+	Name        string
+	Caches      []string // scope patterns; see scopeAllows
+	Perms       []string
+	Revoked     bool
+	Expires     int64 // unix; 0 = never
+	Created     int64
 }
 
 // HashToken is the stored form of a secret token.
@@ -29,8 +36,10 @@ func HashToken(secret string) string {
 }
 
 // CreateToken generates a new secret (returned ONCE, only its hash is stored)
-// scoped to the given caches and perms. caches nil/empty means all ("*").
-func (db *DB) CreateToken(name string, caches, perms []string, expires int64) (secret string, t *Token, err error) {
+// scoped to the given cache patterns and perms. nsID 0 = instance-wide token
+// whose patterns are "*", "ns/*" or "ns/cache"; a namespace token's patterns
+// are "*" or bare cache names within its namespace. caches nil/empty = all.
+func (db *DB) CreateToken(nsID int64, name string, caches, perms []string, expires int64) (secret string, t *Token, err error) {
 	raw := make([]byte, 32)
 	if _, err = rand.Read(raw); err != nil {
 		return "", nil, err
@@ -42,11 +51,18 @@ func (db *DB) CreateToken(name string, caches, perms []string, expires int64) (s
 	if len(perms) == 0 {
 		perms = []string{"pull"}
 	}
-	t = &Token{Name: name, Caches: caches, Perms: perms, Expires: expires, Created: time.Now().Unix()}
+	if nsID == 0 {
+		for _, c := range caches {
+			if c != "*" && !strings.Contains(c, "/") {
+				return "", nil, errors.New("instance token scope must be *, ns/* or ns/cache: " + c)
+			}
+		}
+	}
+	t = &Token{NamespaceID: nsID, Name: name, Caches: caches, Perms: perms, Expires: expires, Created: time.Now().Unix()}
 	err = db.write(func(tx *sql.Tx) error {
 		return tx.QueryRow(
-			`INSERT INTO tokens (name,hash,caches,perms,revoked,expires,created) VALUES (?,?,?,?,0,?,?) RETURNING id`,
-			t.Name, HashToken(secret), strings.Join(caches, ","), strings.Join(perms, ","), t.Expires, t.Created).Scan(&t.ID)
+			`INSERT INTO tokens (namespace_id,name,hash,caches,perms,revoked,expires,created) VALUES (?,?,?,?,?,0,?,?) RETURNING id`,
+			t.NamespaceID, t.Name, HashToken(secret), strings.Join(caches, ","), strings.Join(perms, ","), t.Expires, t.Created).Scan(&t.ID)
 	})
 	if err != nil {
 		return "", nil, err
@@ -54,8 +70,20 @@ func (db *DB) CreateToken(name string, caches, perms []string, expires int64) (s
 	return secret, t, nil
 }
 
+const tokenCols = `t.id,t.namespace_id,COALESCE(n.name,''),t.name,t.caches,t.perms,t.revoked,t.expires,t.created`
+const tokenFrom = ` FROM tokens t LEFT JOIN namespaces n ON n.id = t.namespace_id `
+
 func (db *DB) ListTokens() ([]Token, error) {
-	rows, err := db.r.Query(`SELECT id,name,caches,perms,revoked,expires,created FROM tokens ORDER BY id`)
+	return db.listTokens(`SELECT ` + tokenCols + tokenFrom + `ORDER BY t.id`)
+}
+
+// ListNamespaceTokens lists tokens owned by one namespace.
+func (db *DB) ListNamespaceTokens(nsID int64) ([]Token, error) {
+	return db.listTokens(`SELECT `+tokenCols+tokenFrom+`WHERE t.namespace_id=? ORDER BY t.id`, nsID)
+}
+
+func (db *DB) listTokens(q string, args ...any) ([]Token, error) {
+	rows, err := db.r.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +103,7 @@ func scanToken(row interface{ Scan(...any) error }) (*Token, error) {
 	var t Token
 	var caches, perms string
 	var revoked int
-	if err := row.Scan(&t.ID, &t.Name, &caches, &perms, &revoked, &t.Expires, &t.Created); err != nil {
+	if err := row.Scan(&t.ID, &t.NamespaceID, &t.Namespace, &t.Name, &caches, &perms, &revoked, &t.Expires, &t.Created); err != nil {
 		return nil, err
 	}
 	t.Caches = strings.Split(caches, ",")
@@ -89,7 +117,7 @@ func (t *Token) Expired(now int64) bool { return t.Expires != 0 && now >= t.Expi
 
 // GetToken fetches one token's metadata by id.
 func (db *DB) GetToken(id int64) (*Token, error) {
-	row := db.r.QueryRow(`SELECT id,name,caches,perms,revoked,expires,created FROM tokens WHERE id=?`, id)
+	row := db.r.QueryRow(`SELECT `+tokenCols+tokenFrom+`WHERE t.id=?`, id)
 	t, err := scanToken(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -122,21 +150,39 @@ func (db *DB) RevokeToken(id int64) error {
 	})
 }
 
-// Authorize reports whether the secret grants perm on cache. A single indexed
-// read on the WAL pool — cheap enough to run per request, and revocation is
-// always seen because there is no cache to invalidate.
-func (db *DB) Authorize(secret, cache, perm string, now int64) bool {
-	row := db.r.QueryRow(`SELECT caches,perms,revoked,expires FROM tokens WHERE hash=?`, HashToken(secret))
-	var caches, perms string
-	var revoked, expires int64
-	if err := row.Scan(&caches, &perms, &revoked, &expires); err != nil {
+// lookupLive fetches a live (not revoked/expired) token by secret.
+func (db *DB) lookupLive(secret string, now int64) (*Token, bool) {
+	t, err := scanToken(db.r.QueryRow(`SELECT `+tokenCols+tokenFrom+`WHERE t.hash=?`, HashToken(secret)))
+	if err != nil || t.Revoked || t.Expired(now) {
+		return nil, false
+	}
+	return t, true
+}
+
+// Authorize reports whether the secret grants perm on ns/cache. A single
+// indexed read on the pool — cheap enough to run per request, and revocation
+// is always seen because there is no cache to invalidate.
+func (db *DB) Authorize(secret, ns, cache, perm string, now int64) bool {
+	t, ok := db.lookupLive(secret, now)
+	if !ok {
 		return false
 	}
-	if revoked != 0 || (expires != 0 && now >= expires) {
-		return false
+	return slices.Contains(t.Perms, perm) && t.allowsCache(ns, cache)
+}
+
+// allowsCache reports whether the token's scope covers ns/cache.
+func (t *Token) allowsCache(ns, cache string) bool {
+	if t.NamespaceID != 0 {
+		// Namespace token: only its own namespace, bare-name patterns.
+		return t.Namespace == ns && scopeAllows(t.Caches, cache)
 	}
-	return scopeAllows(strings.Split(caches, ","), cache) &&
-		slices.Contains(strings.Split(perms, ","), perm)
+	// Instance token: "*", "ns/*" or "ns/cache" patterns.
+	for _, p := range t.Caches {
+		if p == "*" || p == ns+"/*" || p == ns+"/"+cache {
+			return true
+		}
+	}
+	return false
 }
 
 func scopeAllows(scoped []string, cache string) bool {
@@ -144,16 +190,22 @@ func scopeAllows(scoped []string, cache string) bool {
 }
 
 // AuthorizeAdmin reports whether the secret is a live token carrying the
-// "admin" perm — the gate for the management API, independent of cache scope.
+// "admin" perm — the gate for instance-wide management API calls.
 func (db *DB) AuthorizeAdmin(secret string, now int64) bool {
-	row := db.r.QueryRow(`SELECT perms,revoked,expires FROM tokens WHERE hash=?`, HashToken(secret))
-	var perms string
-	var revoked, expires int64
-	if err := row.Scan(&perms, &revoked, &expires); err != nil {
+	t, ok := db.lookupLive(secret, now)
+	return ok && slices.Contains(t.Perms, "admin")
+}
+
+// AuthorizeNS reports whether the secret grants a management perm
+// (create-cache / configure-cache / destroy-cache) for ns/cache. A full
+// "admin" token always passes.
+func (db *DB) AuthorizeNS(secret, ns, cache, perm string, now int64) bool {
+	t, ok := db.lookupLive(secret, now)
+	if !ok {
 		return false
 	}
-	if revoked != 0 || (expires != 0 && now >= expires) {
-		return false
+	if slices.Contains(t.Perms, "admin") {
+		return true
 	}
-	return slices.Contains(strings.Split(perms, ","), "admin")
+	return slices.Contains(t.Perms, perm) && t.allowsCache(ns, cache)
 }

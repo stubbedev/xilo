@@ -37,7 +37,7 @@ func sortCtx() views.SortCtx {
 }
 
 func demoCache() store.Cache {
-	return store.Cache{ID: 1, Name: "demo", Public: true, Priority: 40,
+	return store.Cache{ID: 1, NSID: 1, NS: "default", Name: "demo", Public: true, Priority: 40,
 		PubKey: "demo:AAAA", MaxBytes: 100, Retention: 7 * 86400, Created: 1}
 }
 
@@ -63,8 +63,8 @@ func TestSmokeAllComponents(t *testing.T) {
 		{"Login", views.Login(false, false, views.Flash{}), "assword"},
 		{"Login-nopw-passkeys", views.Login(true, true, views.Flash{Msg: "bad login"}), "passkey"},
 		{"LoginCode", views.LoginCode("pending-id", views.Flash{Msg: "wrong code"}), "code"},
-		{"Settings", views.Settings(&store.User{Name: "admin", Role: "admin"}, false, nil, nil, views.Flash{}), "Settings"},
-		{"Settings-totp-passkeys", views.Settings(&store.User{Name: "admin", Role: "admin"}, true, []store.Passkey{{ID: 1, Name: "yubikey", Created: 1}}, []store.User{{ID: 1, Name: "admin", Role: "admin"}}, views.Flash{Msg: "saved"}), "yubikey"},
+		{"Settings", views.Settings(&store.User{Name: "admin", Role: "admin"}, false, nil, nil, nil, views.Flash{}), "Settings"},
+		{"Settings-totp-passkeys", views.Settings(&store.User{Name: "admin", Role: "admin"}, true, []store.Passkey{{ID: 1, Name: "yubikey", Created: 1}}, []store.User{{ID: 1, Name: "admin", Role: "admin"}}, []views.NamespaceInfo{{Namespace: store.Namespace{ID: 1, Name: "default"}, Members: []store.NamespaceMember{{UserID: 1, UserName: "admin", Role: "owner"}}}}, views.Flash{Msg: "saved"}), "yubikey"},
 		{"PwHint-empty", views.PwHint(""), ""},
 		{"PwHint-short", views.PwHint("short"), "pw-hint"},
 		{"PwHint-weak", views.PwHint("weak"), "pw-hint"},
@@ -160,7 +160,7 @@ func TestSmokeCacheView(t *testing.T) {
 		PathSort:  sortCtx(),
 	}
 	out := render(t, "CacheView", views.CacheView(d))
-	for _, want := range []string{"demo", "glibc-2.42", "demo:AAAA", "http://localhost:8080/demo"} {
+	for _, want := range []string{"demo", "glibc-2.42", "demo:AAAA", "http://localhost:8080/default/demo"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("CacheView missing %q", want)
 		}

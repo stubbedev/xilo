@@ -15,7 +15,7 @@ func pushCmd() *cobra.Command {
 	var jobs int
 	var dryRun, quiet bool
 	c := &cobra.Command{
-		Use:   "push <cache> <path>...",
+		Use:   "push <ns/cache> <path>...",
 		Short: "Push store paths (and their closure) to a cache",
 		Long: "Push store paths and their full closure to a cache.\n\n" +
 			"Parallelism is automatic (the server advertises its capacity); override with --jobs.\n" +
@@ -31,7 +31,7 @@ func pushCmd() *cobra.Command {
 			if len(paths) == 0 {
 				return nil
 			}
-			cl := push.NewClient(url, args[0], token, jobs)
+			cl := push.NewClient(url, normRef(args[0]), token, jobs)
 			cl.DryRun = dryRun
 			cl.Quiet = quiet
 			return cl.Push(cmd.Context(), paths)

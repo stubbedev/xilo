@@ -40,7 +40,7 @@ templ Dashboard(d DashboardData) {
 				<div class="usage">
 					for _, u := range d.Caches {
 						<div class="row">
-							<span class="name"><a href={ templ.SafeURL("/admin/cache/" + u.Cache.Name) }>{ u.Cache.Name }</a> @visBadge(u.Cache.Public)</span>
+							<span class="name"><a href={ templ.SafeURL("/admin/cache/" + u.Cache.Ref()) }><small class="muted-row">{ u.Cache.NS }/</small>{ u.Cache.Name }</a> @visBadge(u.Cache.Public)</span>
 							<span class="fig">
 								{ d.Bytes(u.Bytes) }
 								if u.Cache.MaxBytes > 0 {
@@ -80,6 +80,9 @@ templ Dashboard(d DashboardData) {
 							<td>{ t.Name }</td>
 							<td class="permcell">@permBadges(t.Perms)</td>
 							<td>
+								if t.NamespaceID != 0 {
+									<small class="muted-row">{ t.Namespace }:</small>
+								}
 								if scopeAll(t.Caches) {
 									<span class="muted-row">{ T("tokens.all") }</span>
 								} else {
@@ -95,7 +98,7 @@ templ Dashboard(d DashboardData) {
 										onclick="document.getElementById(this.dataset.dlg).showModal()">
 										@IconClass("square-pen", 16, "")
 									</button>
-									@tokenEditModal(t, d.Caches)
+									@tokenEditModal(t, d.Caches, d.Namespaces, d.IsAdmin)
 								}
 								if TokenActive(t) {
 									<form method="post" action={ templ.SafeURL("/admin/tokens/" + strconv.FormatInt(t.ID, 10) + "/revoke") } data-confirm={ T("confirm.revoke") }>
@@ -120,6 +123,23 @@ templ Dashboard(d DashboardData) {
 		@Modal("dlg-cache", T("caches.new")) {
 			<form method="post" action="/admin/caches">
 				<label>
+					{ T("caches.namespace") }
+					if d.IsAdmin {
+						<input name="namespace" list="ns-list" value="default" required pattern="[a-zA-Z0-9_-]+"/>
+						<datalist id="ns-list">
+							for _, ns := range d.Namespaces {
+								<option value={ ns.Name }></option>
+							}
+						</datalist>
+					} else {
+						<select name="namespace">
+							for _, ns := range d.Namespaces {
+								<option value={ ns.Name }>{ ns.Name }</option>
+							}
+						</select>
+					}
+				</label>
+				<label>
 					{ T("caches.name") }
 					<input name="name" placeholder="nixpkgs" required pattern="[a-zA-Z0-9_-]+" autofocus/>
 				</label>
@@ -132,20 +152,32 @@ templ Dashboard(d DashboardData) {
 			</form>
 		}
 		@Modal("dlg-token", T("tokens.new")) {
-			@tokenForm("/admin/tokens", nil, d.Caches, "plus", T("tokens.create"))
+			@tokenForm("/admin/tokens", nil, d.Caches, d.Namespaces, d.IsAdmin, "plus", T("tokens.create"))
 		}
 	}
 }
 
 // tokenEditModal is a per-row dialog for rewriting a token's metadata.
-templ tokenEditModal(t store.Token, caches []CacheUsage) {
+templ tokenEditModal(t store.Token, caches []CacheUsage, namespaces []store.Namespace, isAdmin bool) {
 	@Modal("dlg-token-edit-"+strconv.FormatInt(t.ID, 10), T("tokens.edit")) {
-		@tokenForm("/admin/tokens/"+strconv.FormatInt(t.ID, 10)+"/edit", &t, caches, "save", T("cd.save"))
+		@tokenForm("/admin/tokens/"+strconv.FormatInt(t.ID, 10)+"/edit", &t, caches, namespaces, isAdmin, "save", T("cd.save"))
 	}
 }
 
+// tokenScopeSelected reports whether a cache ref is the token's single scope.
+func tokenScopeSelected(t *store.Token, c store.Cache) bool {
+	if t == nil || len(t.Caches) != 1 {
+		return false
+	}
+	if t.NamespaceID != 0 {
+		return t.Namespace == c.NS && t.Caches[0] == c.Name
+	}
+	return t.Caches[0] == c.Ref()
+}
+
 // tokenForm is the shared create/edit token dialog body; t is nil on create.
-templ tokenForm(action string, t *store.Token, caches []CacheUsage, submitIcon, submitLabel string) {
+// The owning namespace is chosen at creation and immutable afterwards.
+templ tokenForm(action string, t *store.Token, caches []CacheUsage, namespaces []store.Namespace, isAdmin bool, submitIcon, submitLabel string) {
 	<form method="post" action={ templ.SafeURL(action) } x-data={ "{permanent: " + strconv.FormatBool(t != nil && t.Expires == 0) + "}" }>
 		<label>
 			{ T("tokens.name") }
@@ -156,11 +188,32 @@ templ tokenForm(action string, t *store.Token, caches []CacheUsage, submitIcon, 
 			}
 		</label>
 		<label>
+			{ T("tokens.namespace") }
+			if t != nil {
+				<select disabled>
+					if t.NamespaceID == 0 {
+						<option selected>{ T("tokens.instance") }</option>
+					} else {
+						<option selected>{ t.Namespace }</option>
+					}
+				</select>
+			} else {
+				<select name="namespace">
+					if isAdmin {
+						<option value="">{ T("tokens.instance") }</option>
+					}
+					for _, ns := range namespaces {
+						<option value={ ns.Name }>{ ns.Name }</option>
+					}
+				</select>
+			}
+		</label>
+		<label>
 			{ T("tokens.scope") }
 			<select name="cache">
 				<option value="*">{ T("tokens.all") }</option>
 				for _, u := range caches {
-					<option value={ u.Cache.Name } selected?={ t != nil && len(t.Caches) == 1 && t.Caches[0] == u.Cache.Name }>{ u.Cache.Name }</option>
+					<option value={ u.Cache.Ref() } selected?={ tokenScopeSelected(t, u.Cache) }>{ u.Cache.Ref() }</option>
 				}
 			</select>
 		</label>
@@ -169,7 +222,9 @@ templ tokenForm(action string, t *store.Token, caches []CacheUsage, submitIcon, 
 			<div class="switch-row">
 				<label><input type="checkbox" role="switch" name="push" checked?={ t != nil && hasPerm(*t, "push") }/> { T("tokens.push") }</label>
 				<label><input type="checkbox" role="switch" name="pull" checked?={ t == nil || hasPerm(*t, "pull") }/> { T("tokens.pull") }</label>
-				<label><input type="checkbox" role="switch" name="admin" checked?={ t != nil && hasPerm(*t, "admin") }/> { T("tokens.admin") }</label>
+				if isAdmin {
+					<label><input type="checkbox" role="switch" name="admin" checked?={ t != nil && hasPerm(*t, "admin") }/> { T("tokens.admin") }</label>
+				}
 			</div>
 		</fieldset>
 		<fieldset class="switch-group">

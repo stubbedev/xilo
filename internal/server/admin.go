@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -177,10 +178,14 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/login/code", s.handleLoginCode)
 	mux.HandleFunc("POST /admin/logout", s.handleLogout)
 	mux.HandleFunc("POST /admin/caches", s.handleCreateCache)
-	mux.HandleFunc("GET /admin/cache/{name}", s.handleCacheDetail)
-	mux.HandleFunc("POST /admin/cache/{name}/configure", s.handleConfigureCache)
-	mux.HandleFunc("POST /admin/cache/{name}/rotate", s.handleRotateKey)
-	mux.HandleFunc("POST /admin/cache/{name}/delete", s.handleDeleteCache)
+	mux.HandleFunc("GET /admin/cache/{ns}/{name}", s.handleCacheDetail)
+	mux.HandleFunc("POST /admin/cache/{ns}/{name}/configure", s.handleConfigureCache)
+	mux.HandleFunc("POST /admin/cache/{ns}/{name}/rotate", s.handleRotateKey)
+	mux.HandleFunc("POST /admin/cache/{ns}/{name}/delete", s.handleDeleteCache)
+	mux.HandleFunc("POST /admin/namespaces", s.handleCreateNamespace)
+	mux.HandleFunc("POST /admin/namespaces/{ns}/delete", s.handleDeleteNamespace)
+	mux.HandleFunc("POST /admin/namespaces/{ns}/members", s.handleSetMember)
+	mux.HandleFunc("POST /admin/namespaces/{ns}/members/{uid}/remove", s.handleRemoveMember)
 	mux.HandleFunc("POST /admin/tokens", s.handleCreateToken)
 	mux.HandleFunc("POST /admin/tokens/{id}/edit", s.handleEditToken)
 	mux.HandleFunc("POST /admin/tokens/{id}/revoke", s.handleRevokeToken)
@@ -213,8 +218,82 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	s.renderDashboard(w, r, views.Flash{})
 }
 
+// canManage reports whether u may mutate resources in a namespace: instance
+// admins always, otherwise namespace owners.
+func (s *Server) canManage(u *store.User, nsID int64) bool {
+	return u != nil && (u.Role == "admin" || s.db.MemberRole(nsID, u.ID) == "owner")
+}
+
+// visibleCaches lists the caches u may see: all for admins, their namespaces'
+// for everyone else.
+func (s *Server) visibleCaches(u *store.User) ([]store.Cache, error) {
+	if u.Role == "admin" {
+		return s.db.ListCaches()
+	}
+	nss, err := s.db.UserNamespaces(u.ID)
+	if err != nil {
+		return nil, err
+	}
+	var out []store.Cache
+	for _, ns := range nss {
+		cs, err := s.db.ListNamespaceCaches(ns.ID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, cs...)
+	}
+	return out, nil
+}
+
+// visibleTokens lists tokens u may see: all for admins, else the tokens of
+// namespaces they own.
+func (s *Server) visibleTokens(u *store.User) ([]store.Token, error) {
+	if u.Role == "admin" {
+		return s.db.ListTokens()
+	}
+	nss, err := s.db.UserNamespaces(u.ID)
+	if err != nil {
+		return nil, err
+	}
+	var out []store.Token
+	for _, ns := range nss {
+		if s.db.MemberRole(ns.ID, u.ID) != "owner" {
+			continue
+		}
+		ts, err := s.db.ListNamespaceTokens(ns.ID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ts...)
+	}
+	return out, nil
+}
+
+// ownedNamespaces returns the namespaces u may create caches/tokens in.
+func (s *Server) ownedNamespaces(u *store.User) ([]store.Namespace, error) {
+	if u.Role == "admin" {
+		return s.db.ListNamespaces()
+	}
+	nss, err := s.db.UserNamespaces(u.ID)
+	if err != nil {
+		return nil, err
+	}
+	var out []store.Namespace
+	for _, ns := range nss {
+		if s.db.MemberRole(ns.ID, u.ID) == "owner" {
+			out = append(out, ns)
+		}
+	}
+	return out, nil
+}
+
 func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash views.Flash) {
-	caches, err := s.db.ListCaches()
+	u := s.currentUser(r)
+	if u == nil {
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		return
+	}
+	caches, err := s.visibleCaches(u)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -226,14 +305,28 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		usages = append(usages, views.CacheUsage{Cache: c, Bytes: st.PhysicalBytes, Paths: st.Paths})
+		usages = append(usages, views.CacheUsage{Cache: c, Bytes: st.PhysicalBytes, Logical: st.LogicalBytes, Paths: st.Paths})
 	}
 	global, err := s.db.GlobalStats()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	tokens, err := s.db.ListTokens()
+	if u.Role != "admin" {
+		// Tenants see their own footprint, not the instance's.
+		global = store.Global{Caches: int64(len(usages))}
+		for _, us := range usages {
+			global.Paths += us.Paths
+			global.StoredBytes += us.Bytes
+			global.LogicalBytes += us.Logical
+		}
+	}
+	tokens, err := s.visibleTokens(u)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	owned, err := s.ownedNamespaces(u)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -242,7 +335,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 	if cq != "" {
 		kept := usages[:0]
 		for _, u := range usages {
-			if fuzzyMatch(u.Cache.Name, cq) {
+			if fuzzyMatch(u.Cache.Ref(), cq) {
 				kept = append(kept, u)
 			}
 		}
@@ -269,6 +362,8 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 		Global:     global,
 		Caches:     pagedCaches,
 		Tokens:     pagedTokens,
+		Namespaces: owned,
+		IsAdmin:    u.Role == "admin",
 		Flash:      flash,
 		ServerCap:  s.cfg.Limits.TotalBytes(),
 		Bytes:      humanBytes,
@@ -389,13 +484,27 @@ func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, u *store
 		return
 	}
 	var users []store.User
+	var nss []views.NamespaceInfo
 	if u.Role == "admin" {
 		if users, err = s.db.ListUsers(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		list, err := s.db.ListNamespaces()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		for _, ns := range list {
+			members, err := s.db.ListMembers(ns.ID)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			nss = append(nss, views.NamespaceInfo{Namespace: ns, Members: members})
+		}
 	}
-	views.Settings(u, u.TOTPEnabled, pks, users, flash).Render(r.Context(), w)
+	views.Settings(u, u.TOTPEnabled, pks, users, nss, flash).Render(r.Context(), w)
 }
 
 func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
@@ -727,13 +836,31 @@ func clampPriority(v string, fallback int) int {
 }
 
 func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
+	u := s.requireUser(w, r)
+	if u == nil {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
+	ns := strings.TrimSpace(r.FormValue("namespace"))
+	if ns == "" {
+		ns = "default"
+	}
+	if strings.Contains(name, "/") || strings.Contains(ns, "/") {
+		http.Error(w, "names cannot contain '/'", http.StatusBadRequest)
+		return
+	}
+	// Admins may create caches anywhere (minting the namespace on the fly);
+	// owners only inside namespaces they already own.
+	if u.Role != "admin" {
+		nsRow, err := s.db.GetNamespace(ns)
+		if err != nil || s.db.MemberRole(nsRow.ID, u.ID) != "owner" {
+			http.Error(w, "you do not own this namespace", http.StatusForbidden)
+			return
+		}
+	}
 	priority := clampPriority(r.FormValue("priority"), 40)
 	public := r.FormValue("private") == ""
-	if _, err := s.db.CreateCache(name, public, priority); err != nil {
+	if _, err := s.db.CreateCache(ns, name, public, priority); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -747,16 +874,23 @@ func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCacheDetail(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
+	u := s.requireUser(w, r)
+	if u == nil {
 		return
 	}
-	c, err := s.db.GetCache(r.PathValue("name"))
+	c, err := s.db.GetCache(r.PathValue("ns"), r.PathValue("name"))
 	if errors.Is(err, store.ErrNotFound) {
 		s.notFound(w, r)
 		return
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Members see their namespaces' caches; outsiders get the same 404 as a
+	// nonexistent cache (no existence oracle).
+	if u.Role != "admin" && s.db.MemberRole(c.NSID, u.ID) == "" {
+		s.notFound(w, r)
 		return
 	}
 	st, err := s.db.CacheStats(c.ID)
@@ -799,18 +933,23 @@ func (s *Server) handleCacheDetail(w http.ResponseWriter, r *http.Request) {
 		Paths:     paths,
 		PathQuery: q,
 		PathTotal: total,
-		PathPager: makePager("/admin/cache/"+c.Name, r.URL.Query(), "page", page, pages),
+		PathPager: makePager("/admin/cache/"+c.Ref(), r.URL.Query(), "page", page, pages),
 		PathSort: views.SortCtx{
-			Path: "/admin/cache/" + c.Name, Query: r.URL.Query(),
+			Path: "/admin/cache/" + c.Ref(), Query: r.URL.Query(),
 			SortParam: "sort", DirParam: "dir", PageParam: "page[number]",
 			Key: skey, Dir: sdir,
 		},
 	}).Render(r.Context(), w)
 }
 
-// cacheByName resolves the {name} path value or writes 404/500.
-func (s *Server) cacheByName(w http.ResponseWriter, r *http.Request) (*store.Cache, bool) {
-	c, err := s.db.GetCache(r.PathValue("name"))
+// manageCache resolves {ns}/{name} and enforces mutate rights (instance admin
+// or namespace owner). Outsiders get 404, not 403 — no existence oracle.
+func (s *Server) manageCache(w http.ResponseWriter, r *http.Request) (*store.Cache, bool) {
+	u := s.requireUser(w, r)
+	if u == nil {
+		return nil, false
+	}
+	c, err := s.db.GetCache(r.PathValue("ns"), r.PathValue("name"))
 	if errors.Is(err, store.ErrNotFound) {
 		http.NotFound(w, r)
 		return nil, false
@@ -819,14 +958,15 @@ func (s *Server) cacheByName(w http.ResponseWriter, r *http.Request) (*store.Cac
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil, false
 	}
+	if !s.canManage(u, c.NSID) {
+		http.NotFound(w, r)
+		return nil, false
+	}
 	return c, true
 }
 
 func (s *Server) handleConfigureCache(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
-		return
-	}
-	c, ok := s.cacheByName(w, r)
+	c, ok := s.manageCache(w, r)
 	if !ok {
 		return
 	}
@@ -845,14 +985,11 @@ func (s *Server) handleConfigureCache(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/admin/cache/"+c.Name, http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/cache/"+c.Ref(), http.StatusSeeOther)
 }
 
 func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
-		return
-	}
-	c, ok := s.cacheByName(w, r)
+	c, ok := s.manageCache(w, r)
 	if !ok {
 		return
 	}
@@ -868,10 +1005,7 @@ func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteCache(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
-		return
-	}
-	c, ok := s.cacheByName(w, r)
+	c, ok := s.manageCache(w, r)
 	if !ok {
 		return
 	}
@@ -882,24 +1016,64 @@ func (s *Server) handleDeleteCache(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
+// tokenScope validates the form's namespace + cache-scope pair for the acting
+// user. Returns the owning namespace id (0 = instance token) and the scope
+// patterns to store.
+func (s *Server) tokenScope(u *store.User, r *http.Request) (nsID int64, nsName string, caches []string, err error) {
+	nsName = strings.TrimSpace(r.FormValue("namespace"))
+	if nsName == "" {
+		if u.Role != "admin" {
+			return 0, "", nil, errors.New("only admins can mint instance-wide tokens")
+		}
+	} else {
+		ns, gerr := s.db.GetNamespace(nsName)
+		if gerr != nil {
+			return 0, "", nil, errors.New("no such namespace")
+		}
+		if !s.canManage(u, ns.ID) {
+			return 0, "", nil, errors.New("you do not own this namespace")
+		}
+		nsID = ns.ID
+	}
+	if c := r.FormValue("cache"); c != "" && c != "*" {
+		if nsID != 0 {
+			// Namespace tokens store bare cache names within their namespace.
+			bare, ok := strings.CutPrefix(c, nsName+"/")
+			if !ok {
+				return 0, "", nil, errors.New("scope must be a cache in " + nsName)
+			}
+			caches = []string{bare}
+		} else {
+			caches = []string{c}
+		}
+	}
+	return nsID, nsName, caches, nil
+}
+
 func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
+	u := s.requireUser(w, r)
+	if u == nil {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
-	var caches []string
-	if c := r.FormValue("cache"); c != "" && c != "*" {
-		caches = []string{c}
+	nsID, _, caches, err := s.tokenScope(u, r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
 	}
 	perms := formPerms(r)
 	if len(perms) == 0 {
 		perms = []string{"pull"}
 	}
+	if slices.Contains(perms, "admin") && (nsID != 0 || u.Role != "admin") {
+		http.Error(w, "admin tokens are instance-wide and admin-only", http.StatusForbidden)
+		return
+	}
 	var expires int64
 	if secs, ok := formSeconds(r, "ttl"); ok && secs > 0 {
 		expires = time.Now().Unix() + secs
 	}
-	secret, t, err := s.db.CreateToken(name, caches, perms, expires)
+	secret, t, err := s.db.CreateToken(nsID, name, caches, perms, expires)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -910,21 +1084,40 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleEditToken rewrites a token's metadata. Expiry: the permanent switch
-// clears it, a TTL value re-sets it counting from now, and leaving the TTL
-// empty keeps the stored expiry.
-func (s *Server) handleEditToken(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
-		return
+// manageToken resolves {id} and enforces mutate rights: admins for any token,
+// owners for their namespace's tokens.
+func (s *Server) manageToken(w http.ResponseWriter, r *http.Request) (*store.Token, *store.User, bool) {
+	u := s.requireUser(w, r)
+	if u == nil {
+		return nil, nil, false
 	}
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	t, err := s.db.GetToken(id)
 	if errors.Is(err, store.ErrNotFound) {
 		s.notFound(w, r)
-		return
+		return nil, nil, false
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return nil, nil, false
+	}
+	if t.NamespaceID == 0 && u.Role != "admin" {
+		s.notFound(w, r)
+		return nil, nil, false
+	}
+	if t.NamespaceID != 0 && !s.canManage(u, t.NamespaceID) {
+		s.notFound(w, r)
+		return nil, nil, false
+	}
+	return t, u, true
+}
+
+// handleEditToken rewrites a token's metadata. Expiry: the permanent switch
+// clears it, a TTL value re-sets it counting from now, and leaving the TTL
+// empty keeps the stored expiry.
+func (s *Server) handleEditToken(w http.ResponseWriter, r *http.Request) {
+	t, u, ok := s.manageToken(w, r)
+	if !ok {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
@@ -933,16 +1126,29 @@ func (s *Server) handleEditToken(w http.ResponseWriter, r *http.Request) {
 	}
 	var caches []string
 	if c := r.FormValue("cache"); c != "" && c != "*" {
-		caches = []string{c}
+		if t.NamespaceID != 0 {
+			bare, cut := strings.CutPrefix(c, t.Namespace+"/")
+			if !cut {
+				http.Error(w, "scope must be a cache in "+t.Namespace, http.StatusBadRequest)
+				return
+			}
+			caches = []string{bare}
+		} else {
+			caches = []string{c}
+		}
 	}
 	perms := formPerms(r)
+	if slices.Contains(perms, "admin") && (t.NamespaceID != 0 || u.Role != "admin") {
+		http.Error(w, "admin tokens are instance-wide and admin-only", http.StatusForbidden)
+		return
+	}
 	expires := t.Expires
 	if r.FormValue("permanent") != "" {
 		expires = 0
 	} else if secs, ok := formSeconds(r, "ttl"); ok && secs > 0 {
 		expires = time.Now().Unix() + secs
 	}
-	if err := s.db.UpdateToken(id, name, caches, perms, expires); err != nil {
+	if err := s.db.UpdateToken(t.ID, name, caches, perms, expires); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -950,11 +1156,11 @@ func (s *Server) handleEditToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRevokeToken(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
+	t, _, ok := s.manageToken(w, r)
+	if !ok {
 		return
 	}
-	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err := s.db.RevokeToken(id); err != nil {
+	if err := s.db.RevokeToken(t.ID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1111,6 +1317,97 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.settingsFlash(w, r, fmt.Sprintf("User %s deleted.", u.Name))
+}
+
+// ---- namespace management ----
+
+func (s *Server) handleCreateNamespace(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" || strings.ContainsAny(name, "/ ") {
+		s.settingsFlash(w, r, "Namespace names cannot be empty or contain '/' or spaces.")
+		return
+	}
+	if _, err := s.db.EnsureNamespace(name); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.settingsFlash(w, r, fmt.Sprintf("Namespace %q ready.", name))
+}
+
+// namespaceByPath resolves the {ns} path value for the management handlers.
+func (s *Server) namespaceByPath(w http.ResponseWriter, r *http.Request) (*store.Namespace, bool) {
+	ns, err := s.db.GetNamespace(r.PathValue("ns"))
+	if errors.Is(err, store.ErrNotFound) {
+		s.notFound(w, r)
+		return nil, false
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return nil, false
+	}
+	return ns, true
+}
+
+func (s *Server) handleDeleteNamespace(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	ns, ok := s.namespaceByPath(w, r)
+	if !ok {
+		return
+	}
+	if err := s.db.DeleteNamespace(ns.ID); err != nil {
+		s.settingsFlash(w, r, "Could not delete namespace: "+err.Error())
+		return
+	}
+	s.settingsFlash(w, r, fmt.Sprintf("Namespace %s deleted.", ns.Name))
+}
+
+func (s *Server) handleSetMember(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	ns, ok := s.namespaceByPath(w, r)
+	if !ok {
+		return
+	}
+	u, err := s.db.GetUserByName(strings.TrimSpace(r.FormValue("username")))
+	if errors.Is(err, store.ErrNotFound) {
+		s.settingsFlash(w, r, "No such user.")
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	role := "member"
+	if r.FormValue("role") == "owner" {
+		role = "owner"
+	}
+	if err := s.db.SetMember(ns.ID, u.ID, role); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.settingsFlash(w, r, fmt.Sprintf("%s is now a %s of %s.", u.Name, role, ns.Name))
+}
+
+func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	ns, ok := s.namespaceByPath(w, r)
+	if !ok {
+		return
+	}
+	uid, _ := strconv.ParseInt(r.PathValue("uid"), 10, 64)
+	if err := s.db.RemoveMember(ns.ID, uid); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.settingsFlash(w, r, "Member removed.")
 }
 
 // formPerms reads the token permission checkboxes shared by the create and

@@ -1,5 +1,5 @@
 // Package server wires the HTTP surface: the standard Nix binary-cache protocol
-// (pull) and xilo's own push API. One cache lives under /{cache}/….
+// (pull) and xilo's own push API. One cache lives under /{ns}/{cache}/….
 package server
 
 import (
@@ -78,28 +78,31 @@ func zstdLevel(name string) zstd.EncoderLevel {
 }
 
 func (s *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
-
-	// Binary-cache protocol (pull).
-	mux.HandleFunc("GET /{cache}/nix-cache-info", s.handleCacheInfo)
-	mux.HandleFunc("GET /{cache}/nar/{id}", s.handleNar)
-	mux.HandleFunc("GET /{cache}/{file}", s.handleNarinfo) // *.narinfo
+	// The binary-cache protocol lives on its own mux: its /{ns}/{cache}/…
+	// wildcards would otherwise conflict with /admin/cache/{ns}/{name}. The
+	// root mux's literal prefixes (admin, api, static, …) win; everything
+	// else falls through to the cache mux.
+	cacheMux := http.NewServeMux()
+	cacheMux.HandleFunc("GET /{ns}/{cache}/nix-cache-info", s.handleCacheInfo)
+	cacheMux.HandleFunc("GET /{ns}/{cache}/nar/{id}", s.handleNar)
+	cacheMux.HandleFunc("GET /{ns}/{cache}/{file}", s.handleNarinfo) // *.narinfo
 
 	// Push API.
-	mux.HandleFunc("GET /{cache}/api/config", s.handleConfig)
-	mux.HandleFunc("POST /{cache}/api/get-missing-paths", s.handleMissingPaths)
-	mux.HandleFunc("POST /{cache}/api/get-missing-chunks", s.handleMissingChunks)
-	mux.HandleFunc("PUT /{cache}/api/chunk/{hash}", s.handlePutChunk)
-	mux.HandleFunc("PUT /{cache}/api/path", s.handlePutPath)
+	cacheMux.HandleFunc("GET /{ns}/{cache}/api/config", s.handleConfig)
+	cacheMux.HandleFunc("POST /{ns}/{cache}/api/get-missing-paths", s.handleMissingPaths)
+	cacheMux.HandleFunc("POST /{ns}/{cache}/api/get-missing-chunks", s.handleMissingChunks)
+	cacheMux.HandleFunc("PUT /{ns}/{cache}/api/chunk/{hash}", s.handlePutChunk)
+	cacheMux.HandleFunc("PUT /{ns}/{cache}/api/path", s.handlePutPath)
+	cacheMux.HandleFunc("GET /", s.handleIndex)
 
+	mux := http.NewServeMux()
 	s.registerAdmin(mux)
 	s.registerAdminAPI(mux)
 	s.registerPasskeyRoutes(mux)
 	s.registerStatic(mux)
-
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /metrics", s.handleMetrics)
-	mux.HandleFunc("GET /", s.handleIndex)
+	mux.Handle("/", cacheMux)
 	return mux
 }
 
@@ -295,10 +298,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("ok\n"))
 }
 
-// cache resolves the {cache} path segment, writing 404 if unknown.
+// cache resolves the {ns}/{cache} path segments, writing 404 if unknown.
 func (s *Server) cache(w http.ResponseWriter, r *http.Request) (*store.Cache, bool) {
-	name := r.PathValue("cache")
-	c, err := s.db.GetCache(name)
+	c, err := s.db.GetCache(r.PathValue("ns"), r.PathValue("cache"))
 	if errors.Is(err, store.ErrNotFound) {
 		http.Error(w, "no such cache", http.StatusNotFound)
 		return nil, false

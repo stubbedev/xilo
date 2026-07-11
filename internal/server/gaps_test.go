@@ -57,7 +57,7 @@ func TestClosedDBErrorPaths(t *testing.T) {
 		t.Errorf("healthz json on dead db → %d want 503", resp.StatusCode)
 	}
 	resp.Body.Close()
-	resp, _ = http.Get(ts.URL + "/c/nix-cache-info")
+	resp, _ = http.Get(ts.URL + "/default/c/nix-cache-info")
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("cache lookup on dead db → %d want 500", resp.StatusCode)
 	}
@@ -73,7 +73,7 @@ func TestClosedDBErrorPaths(t *testing.T) {
 // DB row exists but the blob is gone.
 func TestNarServeAfterStorageLoss(t *testing.T) {
 	s, db, ts := newTestServerCfg(t, nil)
-	db.CreateCache("c", true, 40)
+	db.CreateCache("default", "c", true, 40)
 	pushFake(t, ts, "c", h32, []byte("bytes that will vanish"), "")
 	if err := os.RemoveAll(s.cfg.Storage.Local.Root); err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestNarServeAfterStorageLoss(t *testing.T) {
 	// the server survives and the stream stops. Body/transport errors are fine.
 	for _, enc := range []string{"identity", "zstd", "gzip"} {
 		resp, err := http.DefaultClient.Do(func() *http.Request {
-			req, _ := http.NewRequest("GET", ts.URL+"/c/nar/"+h32+".nar", nil)
+			req, _ := http.NewRequest("GET", ts.URL+"/default/c/nar/"+h32+".nar", nil)
 			req.Header.Set("Accept-Encoding", enc)
 			return req
 		}())
@@ -98,7 +98,7 @@ func TestNarServeAfterStorageLoss(t *testing.T) {
 		"storePath": "/nix/store/" + h32b + "-again", "narHash": narHash,
 		"narSize": narSize, "chunks": []string{ch},
 	})
-	if r := put(t, ts, "/c/api/path", pr, ""); r.StatusCode != 400 {
+	if r := put(t, ts, "/default/c/api/path", pr, ""); r.StatusCode != 400 {
 		t.Errorf("put path over lost blob → %d want 400", r.StatusCode)
 	}
 
@@ -178,8 +178,8 @@ func TestAdminGatesAnonymousAndMissing(t *testing.T) {
 	// every mutating admin route bounces anonymous callers to the login page
 	nr := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	for _, p := range []string{
-		"/admin/gc", "/admin/cache/x/rotate", "/admin/cache/x/delete",
-		"/admin/cache/x/configure", "/admin/tokens", "/admin/tokens/1/edit",
+		"/admin/gc", "/admin/cache/default/x/rotate", "/admin/cache/default/x/delete",
+		"/admin/cache/default/x/configure", "/admin/tokens", "/admin/tokens/1/edit",
 		"/admin/tokens/1/revoke", "/admin/settings/password",
 		"/admin/settings/totp/enroll", "/admin/settings/totp/enable",
 		"/admin/settings/totp/disable", "/admin/passkeys/register/begin",
@@ -194,7 +194,7 @@ func TestAdminGatesAnonymousAndMissing(t *testing.T) {
 		}
 		resp.Body.Close()
 	}
-	for _, p := range []string{"/admin/status", "/admin/cache/x", "/admin/settings"} {
+	for _, p := range []string{"/admin/status", "/admin/cache/default/x", "/admin/settings"} {
 		resp, _ := nr.Get(ts.URL + p)
 		if resp.StatusCode != http.StatusSeeOther {
 			t.Errorf("anon GET %s → %d want 303", p, resp.StatusCode)
@@ -204,7 +204,7 @@ func TestAdminGatesAnonymousAndMissing(t *testing.T) {
 
 	// logged in, but the target cache doesn't exist
 	c := adminClient(t, ts)
-	for _, p := range []string{"/admin/cache/ghost/rotate", "/admin/cache/ghost/delete"} {
+	for _, p := range []string{"/admin/cache/default/ghost/rotate", "/admin/cache/default/ghost/delete"} {
 		resp, _ := c.PostForm(ts.URL+p, nil)
 		if resp.StatusCode != 404 {
 			t.Errorf("POST %s → %d want 404", p, resp.StatusCode)
@@ -285,11 +285,11 @@ func TestStartGCSweepsOnTick(t *testing.T) {
 		cfg.GC.Interval = "1ms"
 		cfg.GC.Grace = "-1s"
 	})
-	db.CreateCache("c", true, 40)
+	db.CreateCache("default", "c", true, 40)
 	// orphan chunk: uploaded, never referenced by a path
 	data := []byte("orphan chunk")
 	ch, _, _ := fakeNar(data)
-	if r := put(t, ts, "/c/api/chunk/"+ch, data, ""); r.StatusCode != 200 {
+	if r := put(t, ts, "/default/c/api/chunk/"+ch, data, ""); r.StatusCode != 200 {
 		t.Fatalf("put chunk: %d", r.StatusCode)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -310,20 +310,20 @@ func TestStartGCSweepsOnTick(t *testing.T) {
 
 func TestAPIUnknownCache404(t *testing.T) {
 	_, _, ts := newTestServerCfg(t, nil)
-	for _, p := range []string{"/nope/api/get-missing-paths", "/nope/api/get-missing-chunks"} {
+	for _, p := range []string{"/default/nope/api/get-missing-paths", "/default/nope/api/get-missing-chunks"} {
 		resp, _ := http.Post(ts.URL+p, "application/json", strings.NewReader(`{"hashes":[]}`))
 		if resp.StatusCode != 404 {
 			t.Errorf("POST %s → %d want 404", p, resp.StatusCode)
 		}
 		resp.Body.Close()
 	}
-	if r := put(t, ts, "/nope/api/chunk/"+strings.Repeat("0", 64), []byte("x"), ""); r.StatusCode != 404 {
+	if r := put(t, ts, "/default/nope/api/chunk/"+strings.Repeat("0", 64), []byte("x"), ""); r.StatusCode != 404 {
 		t.Errorf("put chunk unknown cache → %d want 404", r.StatusCode)
 	}
-	if r := put(t, ts, "/nope/api/path", []byte("{}"), ""); r.StatusCode != 404 {
+	if r := put(t, ts, "/default/nope/api/path", []byte("{}"), ""); r.StatusCode != 404 {
 		t.Errorf("put path unknown cache → %d want 404", r.StatusCode)
 	}
-	resp, _ := http.Get(ts.URL + "/nope/" + h32 + ".narinfo")
+	resp, _ := http.Get(ts.URL + "/default/nope/" + h32 + ".narinfo")
 	if resp.StatusCode != 404 {
 		t.Errorf("narinfo unknown cache → %d want 404", resp.StatusCode)
 	}
@@ -332,9 +332,9 @@ func TestAPIUnknownCache404(t *testing.T) {
 
 func TestPrivateCachePullGates(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, func(cfg *config.Config) { cfg.Security.AllowOpenBootstrap = false })
-	db.CreateCache("priv", false, 40)
-	db.CreateToken("t", nil, []string{"push"}, 0)
-	for _, p := range []string{"/priv/" + h32 + ".narinfo", "/priv/nar/" + h32 + ".nar"} {
+	db.CreateCache("default", "priv", false, 40)
+	db.CreateToken(0, "t", nil, []string{"push"}, 0)
+	for _, p := range []string{"/default/priv/" + h32 + ".narinfo", "/default/priv/nar/" + h32 + ".nar"} {
 		resp, _ := http.Get(ts.URL + p)
 		if resp.StatusCode != 401 {
 			t.Errorf("anon GET %s → %d want 401", p, resp.StatusCode)
@@ -370,16 +370,16 @@ func TestStatusRingTrimAndFutureRange(t *testing.T) {
 
 func TestPushAPIAnonWhenClosed(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, func(cfg *config.Config) { cfg.Security.AllowOpenBootstrap = false })
-	db.CreateCache("c", true, 40)
-	db.CreateToken("exists", nil, []string{"push"}, 0)
-	for _, p := range []string{"/c/api/get-missing-paths", "/c/api/get-missing-chunks"} {
+	db.CreateCache("default", "c", true, 40)
+	db.CreateToken(0, "exists", nil, []string{"push"}, 0)
+	for _, p := range []string{"/default/c/api/get-missing-paths", "/default/c/api/get-missing-chunks"} {
 		resp, _ := http.Post(ts.URL+p, "application/json", strings.NewReader(`{"hashes":[]}`))
 		if resp.StatusCode != 401 {
 			t.Errorf("anon %s → %d want 401", p, resp.StatusCode)
 		}
 		resp.Body.Close()
 	}
-	if r := put(t, ts, "/c/api/path", []byte(`{}`), ""); r.StatusCode != 401 {
+	if r := put(t, ts, "/default/c/api/path", []byte(`{}`), ""); r.StatusCode != 401 {
 		t.Errorf("anon put path → %d want 401", r.StatusCode)
 	}
 }

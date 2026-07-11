@@ -184,16 +184,29 @@ func pgDDL(s string) string {
 
 func migrate(w *sql.DB, pg bool) error {
 	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS namespaces (
+			id      INTEGER PRIMARY KEY,
+			name    TEXT UNIQUE NOT NULL,
+			created INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE TABLE IF NOT EXISTS namespace_members (
+			namespace_id INTEGER NOT NULL REFERENCES namespaces(id) ON DELETE CASCADE,
+			user_id      INTEGER NOT NULL,
+			role         TEXT NOT NULL DEFAULT 'member',
+			UNIQUE(namespace_id, user_id)
+		)`,
 		`CREATE TABLE IF NOT EXISTS caches (
-			id        INTEGER PRIMARY KEY,
-			name      TEXT UNIQUE NOT NULL,
-			public    INTEGER NOT NULL DEFAULT 1,
-			priority  INTEGER NOT NULL DEFAULT 40,
-			retention INTEGER NOT NULL DEFAULT 0,
-			max_bytes INTEGER NOT NULL DEFAULT 0,
-			pubkey    TEXT NOT NULL,
-			privkey   BLOB NOT NULL,
-			created   INTEGER NOT NULL
+			id           INTEGER PRIMARY KEY,
+			namespace_id INTEGER NOT NULL DEFAULT 0,
+			name         TEXT NOT NULL,
+			public       INTEGER NOT NULL DEFAULT 1,
+			priority     INTEGER NOT NULL DEFAULT 40,
+			retention    INTEGER NOT NULL DEFAULT 0,
+			max_bytes    INTEGER NOT NULL DEFAULT 0,
+			pubkey       TEXT NOT NULL,
+			privkey      BLOB NOT NULL,
+			created      INTEGER NOT NULL,
+			UNIQUE(namespace_id, name)
 		)`,
 		`CREATE TABLE IF NOT EXISTS users (
 			id            INTEGER PRIMARY KEY,
@@ -270,6 +283,7 @@ func migrate(w *sql.DB, pg bool) error {
 		{"chunks", "csize", "INTEGER NOT NULL DEFAULT 0"},
 		{"chunks", "created", "INTEGER NOT NULL DEFAULT 0"},
 		{"tokens", "expires", "INTEGER NOT NULL DEFAULT 0"},
+		{"tokens", "namespace_id", "INTEGER NOT NULL DEFAULT 0"},
 		{"passkeys", "user_id", "INTEGER NOT NULL DEFAULT 0"},
 		{"sessions", "user_id", "INTEGER NOT NULL DEFAULT 0"},
 	}
@@ -281,6 +295,9 @@ func migrate(w *sql.DB, pg bool) error {
 
 	if err := migrateAdminToUsers(w, pg); err != nil {
 		return fmt.Errorf("migrate admin→users: %w", err)
+	}
+	if err := migrateNamespaces(w, pg); err != nil {
+		return fmt.Errorf("migrate namespaces: %w", err)
 	}
 
 	// Indexes last — they may reference columns the ALTERs just added.
@@ -338,6 +355,122 @@ func migrateAdminToUsers(w *sql.DB, pg bool) error {
 	}
 	_, err = w.Exec(`DROP TABLE admin`)
 	return err
+}
+
+// migrateNamespaces makes 'default' exist, rehomes pre-namespace caches into
+// it, rebuilds a pre-namespace caches table (SQLite can't alter its UNIQUE
+// from name to (namespace_id, name)), and prefixes existing token cache
+// scopes with "default/" to match the new pattern grammar.
+func migrateNamespaces(w *sql.DB, pg bool) error {
+	if _, err := w.Exec(`INSERT INTO namespaces (name, created) VALUES ('default', ?) ON CONFLICT (name) DO NOTHING`,
+		time.Now().Unix()); err != nil {
+		return err
+	}
+	var defID int64
+	if err := w.QueryRow(`SELECT id FROM namespaces WHERE name='default'`).Scan(&defID); err != nil {
+		return err
+	}
+
+	// A pre-namespace SQLite table still carries UNIQUE(name); rebuild it.
+	// (Postgres never shipped without namespaces, so only SQLite needs this.)
+	if !pg {
+		var hasNS bool
+		rows, err := w.Query(`SELECT name FROM pragma_table_info('caches')`)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				rows.Close()
+				return err
+			}
+			if name == "namespace_id" {
+				hasNS = true
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		if !hasNS {
+			// FK enforcement would block dropping the old parent table mid-copy.
+			if _, err := w.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
+				return err
+			}
+			for _, s := range []string{
+				`CREATE TABLE caches_new (
+					id           INTEGER PRIMARY KEY,
+					namespace_id INTEGER NOT NULL DEFAULT 0,
+					name         TEXT NOT NULL,
+					public       INTEGER NOT NULL DEFAULT 1,
+					priority     INTEGER NOT NULL DEFAULT 40,
+					retention    INTEGER NOT NULL DEFAULT 0,
+					max_bytes    INTEGER NOT NULL DEFAULT 0,
+					pubkey       TEXT NOT NULL,
+					privkey      BLOB NOT NULL,
+					created      INTEGER NOT NULL,
+					UNIQUE(namespace_id, name)
+				)`,
+				`INSERT INTO caches_new (id, namespace_id, name, public, priority, retention, max_bytes, pubkey, privkey, created)
+					SELECT id, 0, name, public, priority, retention, max_bytes, pubkey, privkey, created FROM caches`,
+				`DROP TABLE caches`,
+				`ALTER TABLE caches_new RENAME TO caches`,
+				`PRAGMA foreign_keys=ON`,
+			} {
+				if _, err := w.Exec(s); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	// Rehome caches that predate namespaces.
+	if _, err := w.Exec(`UPDATE caches SET namespace_id=? WHERE namespace_id=0`, defID); err != nil {
+		return err
+	}
+
+	// Global-token scope grammar is *, ns/* or ns/cache — a bare "mycache"
+	// entry is pre-namespace and means default/mycache. Idempotent: rewritten
+	// entries contain '/'.
+	rows, err := w.Query(`SELECT id, caches FROM tokens WHERE namespace_id=0 AND caches <> '*'`)
+	if err != nil {
+		return err
+	}
+	type tok struct {
+		id     int64
+		caches string
+	}
+	var toks []tok
+	for rows.Next() {
+		var t tok
+		if err := rows.Scan(&t.id, &t.caches); err != nil {
+			rows.Close()
+			return err
+		}
+		toks = append(toks, t)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, t := range toks {
+		parts := strings.Split(t.caches, ",")
+		changed := false
+		for i, p := range parts {
+			if p != "*" && !strings.Contains(p, "/") {
+				parts[i] = "default/" + p
+				changed = true
+			}
+		}
+		if !changed {
+			continue
+		}
+		if _, err := w.Exec(`UPDATE tokens SET caches=? WHERE id=?`, strings.Join(parts, ","), t.id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // addColumnIfMissing runs ALTER TABLE ADD COLUMN only when the column is absent

@@ -284,6 +284,10 @@ article > form:not([class]) input:not([type=checkbox]):not([type=radio]), articl
 .row-split p { display: inline-flex; align-items: center; gap: var(--x-2); color: var(--pico-muted-color); font-size: var(--x-fs-sm); }
 .row-split + .row-split, .rule-above { border-top: 1px solid var(--pico-muted-border-color); margin-top: var(--x-4); padding-top: var(--x-4); }
 .row-split form button { white-space: nowrap; }
+.row-actions { display: inline-flex; align-items: center; gap: var(--x-2); }
+.row-actions form { margin: 0; }
+.ns-members { margin: 0 0 var(--x-4) var(--x-6); }
+.member-add fieldset[role="group"] { margin: 0; }
 
 /* ---------- badges ---------- */
 .badge {

@@ -74,7 +74,7 @@ func TestCacheLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, `created cache "foo"`) || !strings.Contains(out, "trusted-public-keys = foo:") {
+	if !strings.Contains(out, `created cache "default/foo"`) || !strings.Contains(out, "trusted-public-keys = foo:") {
 		t.Fatalf("create output: %q", out)
 	}
 	pubkey := ""
@@ -96,7 +96,7 @@ func TestCacheLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"name:        foo", "visibility:  public", "retention:   global default", "max size:    unlimited", "paths:       0"} {
+	for _, want := range []string{"name:        default/foo", "visibility:  public", "retention:   global default", "max size:    unlimited", "paths:       0"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("info output missing %q: %q", want, out)
 		}
@@ -115,7 +115,7 @@ func TestCacheLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "rotated key for foo") {
+	if !strings.Contains(out, "rotated key for default/foo") {
 		t.Fatalf("rotate output: %q", out)
 	}
 	if pubkey != "" && strings.Contains(out, pubkey) {
@@ -149,7 +149,7 @@ func TestTokenLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, `token "t1" (id=1) perms=push,pull scope=foo`) || !strings.Contains(out, "Store it now") {
+	if !strings.Contains(out, `token "t1" (id=1) perms=push,pull scope=default/foo`) || !strings.Contains(out, "Store it now") {
 		t.Fatalf("create output: %q", out)
 	}
 
@@ -157,7 +157,7 @@ func TestTokenLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "t1") || !strings.Contains(out, "active") || !strings.Contains(out, "scope=foo") {
+	if !strings.Contains(out, "t1") || !strings.Contains(out, "active") || !strings.Contains(out, "scope=default/foo") {
 		t.Fatalf("list output: %q", out)
 	}
 
@@ -275,12 +275,12 @@ func cacheConfigServer(t *testing.T, public bool) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-		if len(parts) != 3 || parts[1] != "api" || parts[2] != "config" {
+		if len(parts) != 4 || parts[2] != "api" || parts[3] != "config" {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 		json.NewEncoder(w).Encode(api.ConfigResp{
-			PublicKey: parts[0] + ":KEYDATA",
+			PublicKey: parts[1] + ":KEYDATA",
 			Public:    public,
 		})
 	}))
@@ -297,14 +297,14 @@ func TestUseAddAndRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "added "+srv.URL+"/c1 to nix.conf") {
+	if !strings.Contains(out, "added "+srv.URL+"/default/c1 to nix.conf") {
 		t.Fatalf("use output: %q", out)
 	}
 	body, err := os.ReadFile(nixConf)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "extra-substituters = "+srv.URL+"/c1") ||
+	if !strings.Contains(string(body), "extra-substituters = "+srv.URL+"/default/c1") ||
 		!strings.Contains(string(body), "extra-trusted-public-keys = c1:KEYDATA") {
 		t.Fatalf("nix.conf: %q", body)
 	}
@@ -314,7 +314,7 @@ func TestUseAddAndRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, _ = os.ReadFile(nixConf)
-	if !strings.Contains(string(body), srv.URL+"/c1 "+srv.URL+"/c2") ||
+	if !strings.Contains(string(body), srv.URL+"/default/c1 "+srv.URL+"/default/c2") ||
 		!strings.Contains(string(body), "c1:KEYDATA c2:KEYDATA") {
 		t.Fatalf("nix.conf after second use: %q", body)
 	}
@@ -324,15 +324,15 @@ func TestUseAddAndRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "removed "+srv.URL+"/c1 from nix.conf") {
+	if !strings.Contains(out, "removed "+srv.URL+"/default/c1 from nix.conf") {
 		t.Fatalf("remove output: %q", out)
 	}
 	body, _ = os.ReadFile(nixConf)
 	s := string(body)
-	if strings.Contains(s, srv.URL+"/c1") || strings.Contains(s, "c1:KEYDATA") {
+	if strings.Contains(s, srv.URL+"/default/c1") || strings.Contains(s, "c1:KEYDATA") {
 		t.Fatalf("c1 not removed: %q", s)
 	}
-	if !strings.Contains(s, srv.URL+"/c2") || !strings.Contains(s, "c2:KEYDATA") {
+	if !strings.Contains(s, srv.URL+"/default/c2") || !strings.Contains(s, "c2:KEYDATA") {
 		t.Fatalf("c2 lost during remove: %q", s)
 	}
 }

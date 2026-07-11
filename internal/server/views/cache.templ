@@ -21,10 +21,10 @@ type CacheData struct {
 }
 
 templ CacheView(d CacheData) {
-	@Layout(d.Cache.Name, true, Flash{}) {
+	@Layout(d.Cache.Ref(), true, Flash{}) {
 		<hgroup id="cache-head">
-			<h1>{ d.Cache.Name } @visBadge(d.Cache.Public)</h1>
-			<p>{ d.BaseURL }/{ d.Cache.Name }</p>
+			<h1><small class="muted-row">{ d.Cache.NS }/</small>{ d.Cache.Name } @visBadge(d.Cache.Public)</h1>
+			<p>{ d.BaseURL }/{ d.Cache.Ref() }</p>
 		</hgroup>
 		<h2>{ T("cd.stats") }</h2>
 		<article>
@@ -39,7 +39,7 @@ templ CacheView(d CacheData) {
 			}
 		</article>
 		@SectionHead(T("cd.paths")) {
-			@SearchBox("/admin/cache/"+d.Cache.Name, "q", d.PathQuery, T("cd.search"), "#path-results")
+			@SearchBox("/admin/cache/"+d.Cache.Ref(), "q", d.PathQuery, T("cd.search"), "#path-results")
 		}
 		<article>
 			@pathResults(d)
@@ -70,8 +70,8 @@ templ CacheView(d CacheData) {
 		</article>
 		<h2>{ T("cd.settings") }</h2>
 		<article>
-			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Name + "/configure") } class="fields" id="cache-settings"
-				hx-post={ "/admin/cache/" + d.Cache.Name + "/configure" }
+			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/configure") } class="fields" id="cache-settings"
+				hx-post={ "/admin/cache/" + d.Cache.Ref() + "/configure" }
 				hx-trigger="input delay:600ms"
 				hx-target="#cache-settings" hx-select="#cache-settings" hx-select-oob="#cache-head" hx-swap="outerHTML">
 				<div class="prio-row">
@@ -87,12 +87,12 @@ templ CacheView(d CacheData) {
 					@sizeInput("max", d.Cache.MaxBytes)
 				</label>
 			</form>
-			@ActionRow(T("cd.rotatehint"), "/admin/cache/"+d.Cache.Name+"/rotate", T("confirm.rotate"), "secondary", "key-round", T("cd.rotate"), "rule-above")
+			@ActionRow(T("cd.rotatehint"), "/admin/cache/"+d.Cache.Ref()+"/rotate", T("confirm.rotate"), "secondary", "key-round", T("cd.rotate"), "rule-above")
 		</article>
 		<h2>{ T("cd.maint") }</h2>
 		<article>
 			@ActionRow(T("cd.gchint"), "/admin/gc", T("confirm.gc"), "secondary", "refresh-cw", T("cd.gc"), "")
-			@ActionRow(T("cd.deletehint"), "/admin/cache/"+d.Cache.Name+"/delete", T("confirm.delete"), "danger", "trash-2", T("cd.delete"), "")
+			@ActionRow(T("cd.deletehint"), "/admin/cache/"+d.Cache.Ref()+"/delete", T("confirm.delete"), "danger", "trash-2", T("cd.delete"), "")
 		</article>
 	}
 }

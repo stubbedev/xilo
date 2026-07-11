@@ -64,7 +64,7 @@ func TestWriterSurvivesError(t *testing.T) {
 		t.Fatalf("want boom, got %v", err)
 	}
 	// The next write must still succeed.
-	if _, err := db.CreateCache("after", true, 40); err != nil {
+	if _, err := db.CreateCache("default", "after", true, 40); err != nil {
 		t.Fatalf("writer wedged: %v", err)
 	}
 }
@@ -76,16 +76,16 @@ func TestWriterSurvivesPanic(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from panicking write")
 	}
-	if _, err := db.CreateCache("after-panic", true, 40); err != nil {
+	if _, err := db.CreateCache("default", "after-panic", true, 40); err != nil {
 		t.Fatalf("writer wedged after panic: %v", err)
 	}
 }
 
 func TestAuthorizeMatrix(t *testing.T) {
 	db := openTest(t)
-	scoped, _, _ := mustToken(t, db, "scoped", []string{"a"}, []string{"pull"}, 0)
+	scoped, _, _ := mustToken(t, db, "scoped", []string{"default/a"}, []string{"pull"}, 0)
 	pushonly, _, _ := mustToken(t, db, "pushonly", nil, []string{"push"}, 0)
-	both, _, _ := mustToken(t, db, "both", []string{"a", "b"}, []string{"push", "pull"}, 0)
+	both, _, _ := mustToken(t, db, "both", []string{"default/a", "default/b"}, []string{"push", "pull"}, 0)
 	expired, _, _ := mustToken(t, db, "expired", nil, []string{"pull"}, 1) // expires at unix 1
 	revoked, rt, _ := mustToken(t, db, "revoked", nil, []string{"pull"}, 0)
 	if err := db.RevokeToken(rt.ID); err != nil {
@@ -110,7 +110,7 @@ func TestAuthorizeMatrix(t *testing.T) {
 		{"garbage-secret", "a", "pull", false},
 	}
 	for _, c := range cases {
-		if got := db.Authorize(c.secret, c.cache, c.perm, now); got != c.want {
+		if got := db.Authorize(c.secret, "default", c.cache, c.perm, now); got != c.want {
 			t.Errorf("Authorize(%s,%s,%s)=%v want %v", c.secret[:6], c.cache, c.perm, got, c.want)
 		}
 	}
@@ -118,7 +118,7 @@ func TestAuthorizeMatrix(t *testing.T) {
 
 func mustToken(t *testing.T, db *DB, name string, caches, perms []string, expires int64) (string, *Token, error) {
 	t.Helper()
-	s, tok, err := db.CreateToken(name, caches, perms, expires)
+	s, tok, err := db.CreateToken(0, name, caches, perms, expires)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,8 +127,8 @@ func mustToken(t *testing.T, db *DB, name string, caches, perms []string, expire
 
 func TestMissingPathsAndChunksDedup(t *testing.T) {
 	db := openTest(t)
-	c, _ := db.CreateCache("c", true, 40)
-	other, _ := db.CreateCache("o", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
+	other, _ := db.CreateCache("default", "o", true, 40)
 	putPath(t, db, c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", nil)
 	putPath(t, db, other.ID, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", nil)
 
@@ -157,7 +157,7 @@ func TestMissingPathsAndChunksDedup(t *testing.T) {
 
 func TestPutPathUpsertRoundTrip(t *testing.T) {
 	db := openTest(t)
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 	h := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	putPath(t, db, c.ID, h, []string{"x", "y"})
 	// upsert with new chunks
@@ -208,7 +208,7 @@ func TestGCGraceAndMarkSweep(t *testing.T) {
 	for _, h := range []string{"live", "oldorphan", "neworphan"} {
 		st.Put(ctx, storage.ChunkKey(h), strings.NewReader(h))
 	}
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 	putPath(t, db, c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"live"})
 
 	// graceCutoff = 5000: chunks created >= 5000 are protected (neworphan safe).
@@ -283,7 +283,7 @@ func TestPutChunkRestampsCreated(t *testing.T) {
 
 func TestCacheStatsScoped(t *testing.T) {
 	db := openTest(t)
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 	db.PutChunk("s1", 100, 30, "k1", 1)
 	db.PutChunk("s2", 100, 20, "k2", 1)
 	p := &Path{StorePath: "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-n", NarHash: "sha256:h", NarSize: 200, Chunks: []string{"s1", "s2"}}
@@ -300,7 +300,7 @@ func TestCacheStatsScoped(t *testing.T) {
 
 func TestTouchPath(t *testing.T) {
 	db := openTest(t)
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 	h := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	db.PutPath(c.ID, h, &Path{StorePath: "/nix/store/" + h + "-n", NarHash: "sha256:h", NarSize: 1})
 	// accessed was ~now; TouchPath with a huge minAge should NOT write.
@@ -316,7 +316,7 @@ func TestTouchPath(t *testing.T) {
 
 func TestSearchPathsFuzzy(t *testing.T) {
 	db := openTest(t)
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 	put := func(hash32, name string) {
 		p := &Path{StorePath: "/nix/store/" + hash32 + "-" + name, NarHash: "sha256:h", NarSize: 1}
 		if err := db.PutPath(c.ID, hash32, p); err != nil {

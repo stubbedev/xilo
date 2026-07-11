@@ -14,6 +14,8 @@ var ErrNotFound = errors.New("not found")
 
 type Cache struct {
 	ID        int64
+	NSID      int64
+	NS        string // namespace name; substituter URL is /<NS>/<Name>
 	Name      string
 	Public    bool
 	Priority  int
@@ -24,7 +26,12 @@ type Cache struct {
 	Created   int64
 }
 
-const cacheCols = `id,name,public,priority,retention,max_bytes,pubkey,privkey,created`
+// Ref is the cache's namespaced name, "ns/cache" — the shape used in URLs,
+// token scopes and the CLI.
+func (c *Cache) Ref() string { return c.NS + "/" + c.Name }
+
+const cacheCols = `c.id,c.namespace_id,n.name,c.name,c.public,c.priority,c.retention,c.max_bytes,c.pubkey,c.privkey,c.created`
+const cacheFrom = ` FROM caches c JOIN namespaces n ON n.id = c.namespace_id `
 
 type Path struct {
 	StorePath string
@@ -38,13 +45,20 @@ type Path struct {
 // ---- caches ----
 
 // CreateCache generates an ed25519 keypair (key name = cache name) and inserts
-// the cache. The signing key never leaves the server.
-func (db *DB) CreateCache(name string, public bool, priority int) (*Cache, error) {
+// the cache into the named namespace, creating the namespace if missing. The
+// signing key never leaves the server.
+func (db *DB) CreateCache(ns, name string, public bool, priority int) (*Cache, error) {
+	nsRow, err := db.EnsureNamespace(ns)
+	if err != nil {
+		return nil, err
+	}
 	pub, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		return nil, err
 	}
 	c := &Cache{
+		NSID:     nsRow.ID,
+		NS:       nsRow.Name,
 		Name:     name,
 		Public:   public,
 		Priority: priority,
@@ -56,8 +70,8 @@ func (db *DB) CreateCache(name string, public bool, priority int) (*Cache, error
 		// RETURNING instead of LastInsertId — works on both SQLite and
 		// Postgres (pgx does not implement LastInsertId).
 		return tx.QueryRow(
-			`INSERT INTO caches (name, public, priority, pubkey, privkey, created) VALUES (?,?,?,?,?,?) RETURNING id`,
-			c.Name, b2i(c.Public), c.Priority, c.PubKey, []byte(c.PrivKey), c.Created).Scan(&c.ID)
+			`INSERT INTO caches (namespace_id, name, public, priority, pubkey, privkey, created) VALUES (?,?,?,?,?,?,?) RETURNING id`,
+			c.NSID, c.Name, b2i(c.Public), c.Priority, c.PubKey, []byte(c.PrivKey), c.Created).Scan(&c.ID)
 	})
 	if err != nil {
 		return nil, err
@@ -69,7 +83,7 @@ func scanCache(row interface{ Scan(...any) error }) (*Cache, error) {
 	var c Cache
 	var pub int
 	var priv []byte
-	if err := row.Scan(&c.ID, &c.Name, &pub, &c.Priority, &c.Retention, &c.MaxBytes, &c.PubKey, &priv, &c.Created); err != nil {
+	if err := row.Scan(&c.ID, &c.NSID, &c.NS, &c.Name, &pub, &c.Priority, &c.Retention, &c.MaxBytes, &c.PubKey, &priv, &c.Created); err != nil {
 		return nil, err
 	}
 	c.Public = pub != 0
@@ -77,8 +91,9 @@ func scanCache(row interface{ Scan(...any) error }) (*Cache, error) {
 	return &c, nil
 }
 
-func (db *DB) GetCache(name string) (*Cache, error) {
-	row := db.r.QueryRow(`SELECT `+cacheCols+` FROM caches WHERE name=?`, name)
+// GetCache resolves ns/name.
+func (db *DB) GetCache(ns, name string) (*Cache, error) {
+	row := db.r.QueryRow(`SELECT `+cacheCols+cacheFrom+`WHERE n.name=? AND c.name=?`, ns, name)
 	c, err := scanCache(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -87,7 +102,16 @@ func (db *DB) GetCache(name string) (*Cache, error) {
 }
 
 func (db *DB) ListCaches() ([]Cache, error) {
-	rows, err := db.r.Query(`SELECT ` + cacheCols + ` FROM caches ORDER BY name`)
+	return db.listCaches(`SELECT ` + cacheCols + cacheFrom + `ORDER BY n.name, c.name`)
+}
+
+// ListNamespaceCaches lists one namespace's caches.
+func (db *DB) ListNamespaceCaches(nsID int64) ([]Cache, error) {
+	return db.listCaches(`SELECT `+cacheCols+cacheFrom+`WHERE c.namespace_id=? ORDER BY c.name`, nsID)
+}
+
+func (db *DB) listCaches(q string, args ...any) ([]Cache, error) {
+	rows, err := db.r.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +137,16 @@ func (db *DB) UpdateCache(id int64, public bool, priority int, retention, maxByt
 	})
 }
 
+// GetCacheByID fetches a cache by row id.
+func (db *DB) GetCacheByID(id int64) (*Cache, error) {
+	row := db.r.QueryRow(`SELECT `+cacheCols+cacheFrom+`WHERE c.id=?`, id)
+	c, err := scanCache(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return c, err
+}
+
 // RotateKey generates a fresh signing keypair for a cache. Invalidates the
 // previously-distributed trusted-public-key.
 func (db *DB) RotateKey(id int64, name string) (*Cache, error) {
@@ -128,7 +162,7 @@ func (db *DB) RotateKey(id int64, name string) (*Cache, error) {
 	if err != nil {
 		return nil, err
 	}
-	return db.GetCache(name)
+	return db.GetCacheByID(id)
 }
 
 // DeleteCache removes a cache and its path rows (ON DELETE CASCADE). Orphaned

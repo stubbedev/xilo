@@ -60,23 +60,23 @@ func TokenActive(t store.Token) bool {
 // text handling verbatim, and the <pre> and copy button always match.
 
 func snippetNixConf(d CacheData) string {
-	return "extra-substituters = " + d.BaseURL + "/" + d.Cache.Name +
+	return "extra-substituters = " + d.BaseURL + "/" + d.Cache.Ref() +
 		"\nextra-trusted-public-keys = " + d.Cache.PubKey
 }
 
 func snippetFlake(d CacheData) string {
 	return "nixConfig = {\n" +
-		"  extra-substituters = [ \"" + d.BaseURL + "/" + d.Cache.Name + "\" ];\n" +
+		"  extra-substituters = [ \"" + d.BaseURL + "/" + d.Cache.Ref() + "\" ];\n" +
 		"  extra-trusted-public-keys = [ \"" + d.Cache.PubKey + "\" ];\n" +
 		"};"
 }
 
 func snippetCLI(d CacheData) string {
-	return "xilo login " + d.BaseURL + " --token <token>\nxilo use " + d.Cache.Name
+	return "xilo login " + d.BaseURL + " --token <token>\nxilo use " + d.Cache.Ref()
 }
 
 func snippetPush(d CacheData) string {
-	return "XILO_URL=" + d.BaseURL + " XILO_TOKEN=<token> xilo push " + d.Cache.Name + " ./result"
+	return "XILO_URL=" + d.BaseURL + " XILO_TOKEN=<token> xilo push " + d.Cache.Ref() + " ./result"
 }
 
 // hxSwapAttrs makes a link (or its descendants) swap just one region via

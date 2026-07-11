@@ -17,23 +17,39 @@ import (
 // `xilo cache`/`xilo token` commands and the dashboard.
 func (s *Server) registerAdminAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/caches", s.apiAdmin(s.apiListCaches))
-	mux.HandleFunc("POST /api/v1/caches", s.apiAdmin(s.apiCreateCache))
-	mux.HandleFunc("GET /api/v1/caches/{name}", s.apiAdmin(s.apiGetCache))
-	mux.HandleFunc("PATCH /api/v1/caches/{name}", s.apiAdmin(s.apiConfigureCache))
-	mux.HandleFunc("POST /api/v1/caches/{name}/rotate", s.apiAdmin(s.apiRotateKey))
-	mux.HandleFunc("DELETE /api/v1/caches/{name}", s.apiAdmin(s.apiDeleteCache))
+	mux.HandleFunc("POST /api/v1/caches", s.apiCreateCache)
+	mux.HandleFunc("GET /api/v1/caches/{ns}/{name}", s.apiNS("configure-cache", s.apiGetCache))
+	mux.HandleFunc("PATCH /api/v1/caches/{ns}/{name}", s.apiNS("configure-cache", s.apiConfigureCache))
+	mux.HandleFunc("POST /api/v1/caches/{ns}/{name}/rotate", s.apiNS("configure-cache", s.apiRotateKey))
+	mux.HandleFunc("DELETE /api/v1/caches/{ns}/{name}", s.apiNS("destroy-cache", s.apiDeleteCache))
+	mux.HandleFunc("GET /api/v1/namespaces", s.apiAdmin(s.apiListNamespaces))
+	mux.HandleFunc("POST /api/v1/namespaces", s.apiAdmin(s.apiCreateNamespace))
+	mux.HandleFunc("DELETE /api/v1/namespaces/{ns}", s.apiAdmin(s.apiDeleteNamespace))
 	mux.HandleFunc("GET /api/v1/tokens", s.apiAdmin(s.apiListTokens))
 	mux.HandleFunc("POST /api/v1/tokens", s.apiAdmin(s.apiCreateToken))
 	mux.HandleFunc("POST /api/v1/tokens/{id}/revoke", s.apiAdmin(s.apiRevokeToken))
 	mux.HandleFunc("POST /api/v1/gc", s.apiAdmin(s.apiGC))
 }
 
-// apiAdmin gates a handler behind an admin-perm token.
+// apiAdmin gates a handler behind an instance-admin token.
 func (s *Server) apiAdmin(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.db.AuthorizeAdmin(extractToken(r), time.Now().Unix()) {
 			s.metrics.authFailures.Add(1)
 			apiError(w, http.StatusUnauthorized, "admin token required")
+			return
+		}
+		h(w, r)
+	}
+}
+
+// apiNS gates a per-cache handler behind the given management perm scoped to
+// the {ns}/{name} path (admin tokens always pass).
+func (s *Server) apiNS(perm string, h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.db.AuthorizeNS(extractToken(r), r.PathValue("ns"), r.PathValue("name"), perm, time.Now().Unix()) {
+			s.metrics.authFailures.Add(1)
+			apiError(w, http.StatusUnauthorized, perm+" token required")
 			return
 		}
 		h(w, r)
@@ -54,7 +70,7 @@ func jsonStatus(w http.ResponseWriter, code int, v any) {
 
 func apiCache(c *store.Cache) api.Cache {
 	return api.Cache{
-		Name: c.Name, Public: c.Public, Priority: c.Priority,
+		Namespace: c.NS, Name: c.Name, Public: c.Public, Priority: c.Priority,
 		Retention: c.Retention, MaxBytes: c.MaxBytes,
 		PubKey: c.PubKey, Created: c.Created,
 	}
@@ -62,14 +78,14 @@ func apiCache(c *store.Cache) api.Cache {
 
 func apiToken(t store.Token) api.Token {
 	return api.Token{
-		ID: t.ID, Name: t.Name, Caches: t.Caches, Perms: t.Perms,
+		ID: t.ID, Namespace: t.Namespace, Name: t.Name, Caches: t.Caches, Perms: t.Perms,
 		Revoked: t.Revoked, Expires: t.Expires, Created: t.Created,
 	}
 }
 
-// apiCacheByName resolves {name}, writing a JSON 404 when unknown.
+// apiCacheByName resolves {ns}/{name}, writing a JSON 404 when unknown.
 func (s *Server) apiCacheByName(w http.ResponseWriter, r *http.Request) (*store.Cache, bool) {
-	c, err := s.db.GetCache(r.PathValue("name"))
+	c, err := s.db.GetCache(r.PathValue("ns"), r.PathValue("name"))
 	if errors.Is(err, store.ErrNotFound) {
 		apiError(w, http.StatusNotFound, "no such cache")
 		return nil, false
@@ -100,15 +116,77 @@ func (s *Server) apiCreateCache(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
+	req.Namespace = strings.TrimSpace(req.Namespace)
+	if req.Namespace == "" {
+		req.Namespace = "default"
+	}
+	if strings.Contains(req.Name, "/") || strings.Contains(req.Namespace, "/") {
+		apiError(w, http.StatusBadRequest, "names cannot contain '/'")
+		return
+	}
+	// create-cache tokens work within their scope; admin tokens anywhere.
+	if !s.db.AuthorizeNS(extractToken(r), req.Namespace, req.Name, "create-cache", time.Now().Unix()) {
+		s.metrics.authFailures.Add(1)
+		apiError(w, http.StatusUnauthorized, "create-cache token required")
+		return
+	}
 	if req.Priority == 0 {
 		req.Priority = 40
 	}
-	c, err := s.db.CreateCache(req.Name, req.Public, req.Priority)
+	c, err := s.db.CreateCache(req.Namespace, req.Name, req.Public, req.Priority)
 	if err != nil {
 		apiError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	jsonStatus(w, http.StatusCreated, apiCache(c))
+}
+
+func (s *Server) apiListNamespaces(w http.ResponseWriter, r *http.Request) {
+	nss, err := s.db.ListNamespaces()
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]api.NamespaceResp, 0, len(nss))
+	for _, ns := range nss {
+		out = append(out, api.NamespaceResp{Name: ns.Name, Created: ns.Created})
+	}
+	jsonOut(w, out)
+}
+
+func (s *Server) apiCreateNamespace(w http.ResponseWriter, r *http.Request) {
+	var req api.CreateNamespaceReq
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" || strings.ContainsAny(req.Name, "/ ") {
+		apiError(w, http.StatusBadRequest, "invalid namespace name")
+		return
+	}
+	ns, err := s.db.EnsureNamespace(req.Name)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	jsonStatus(w, http.StatusCreated, api.NamespaceResp{Name: ns.Name, Created: ns.Created})
+}
+
+func (s *Server) apiDeleteNamespace(w http.ResponseWriter, r *http.Request) {
+	ns, err := s.db.GetNamespace(r.PathValue("ns"))
+	if errors.Is(err, store.ErrNotFound) {
+		apiError(w, http.StatusNotFound, "no such namespace")
+		return
+	}
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := s.db.DeleteNamespace(ns.ID); err != nil {
+		apiError(w, http.StatusConflict, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) apiGetCache(w http.ResponseWriter, r *http.Request) {
@@ -154,7 +232,7 @@ func (s *Server) apiConfigureCache(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	c, err := s.db.GetCache(c.Name)
+	c, err := s.db.GetCacheByID(c.ID)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -210,7 +288,20 @@ func (s *Server) apiCreateToken(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest, "perms required")
 		return
 	}
-	secret, t, err := s.db.CreateToken(req.Name, req.Caches, req.Perms, req.Expires)
+	var nsID int64
+	if req.Namespace != "" {
+		ns, err := s.db.GetNamespace(req.Namespace)
+		if errors.Is(err, store.ErrNotFound) {
+			apiError(w, http.StatusBadRequest, "no such namespace")
+			return
+		}
+		if err != nil {
+			apiError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		nsID = ns.ID
+	}
+	secret, t, err := s.db.CreateToken(nsID, req.Name, req.Caches, req.Perms, req.Expires)
 	if err != nil {
 		apiError(w, http.StatusBadRequest, err.Error())
 		return

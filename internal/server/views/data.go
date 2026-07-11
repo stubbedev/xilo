@@ -170,6 +170,8 @@ type DashboardData struct {
 	Global     store.Global
 	Caches     []CacheUsage
 	Tokens     []store.Token
+	Namespaces []store.Namespace // namespaces the viewer can create caches/tokens in
+	IsAdmin    bool
 	Flash      Flash
 	ServerCap  int64 // global storage cap bytes, 0 = unlimited
 	Bytes      func(int64) string
@@ -180,11 +182,18 @@ type DashboardData struct {
 	TokenQuery string
 }
 
+// NamespaceInfo is one namespace with its membership, for the settings page.
+type NamespaceInfo struct {
+	Namespace store.Namespace
+	Members   []store.NamespaceMember
+}
+
 // CacheUsage is one cache plus its measured storage footprint.
 type CacheUsage struct {
-	Cache store.Cache
-	Bytes int64 // compressed on-disk size of this cache's chunks
-	Paths int64
+	Cache   store.Cache
+	Bytes   int64 // compressed on-disk size of this cache's chunks
+	Logical int64 // sum of NarSize (for the tenant dedup tile)
+	Paths   int64
 }
 
 // Pct returns the fill percentage against a cap (0..100), 0 if uncapped.

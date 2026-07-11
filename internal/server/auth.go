@@ -38,7 +38,7 @@ func (s *Server) requirePush(w http.ResponseWriter, r *http.Request, c *store.Ca
 	if s.openMode() {
 		return true
 	}
-	if s.db.Authorize(extractToken(r), c.Name, "push", time.Now().Unix()) {
+	if s.db.Authorize(extractToken(r), c.NS, c.Name, "push", time.Now().Unix()) {
 		return true
 	}
 	s.metrics.authFailures.Add(1)
@@ -52,7 +52,7 @@ func (s *Server) requirePull(w http.ResponseWriter, r *http.Request, c *store.Ca
 	if c.Public {
 		return true
 	}
-	if s.db.Authorize(extractToken(r), c.Name, "pull", time.Now().Unix()) {
+	if s.db.Authorize(extractToken(r), c.NS, c.Name, "pull", time.Now().Unix()) {
 		return true
 	}
 	s.metrics.authFailures.Add(1)

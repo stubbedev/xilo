@@ -6,7 +6,7 @@ import (
 
 func TestPathsWithMissingChunks(t *testing.T) {
 	db := openTest(t)
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 	db.PutChunk("ok1", 10, 5, "k1", 100)
 	db.PutChunk("ok2", 10, 5, "k2", 100)
 	db.PutChunk("bad", 10, 5, "k3", 100)
@@ -36,7 +36,7 @@ func TestPathsWithMissingChunks(t *testing.T) {
 
 func TestDeletePathsAndChunkRows(t *testing.T) {
 	db := openTest(t)
-	c, _ := db.CreateCache("c", true, 40)
+	c, _ := db.CreateCache("default", "c", true, 40)
 	db.PutChunk("h1", 10, 5, "k1", 100)
 	putPath(t, db, c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"h1"})
 
@@ -71,7 +71,7 @@ func TestOpenDurable(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if _, err := db.CreateCache("c", true, 40); err != nil {
+	if _, err := db.CreateCache("default", "c", true, 40); err != nil {
 		t.Fatal(err)
 	}
 	var mode string

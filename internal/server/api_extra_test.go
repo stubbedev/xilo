@@ -68,7 +68,7 @@ func pushChunked(t *testing.T, ts *httptest.Server, cache, storeHash string, par
 		chunks = append(chunks, ch)
 		h.Write(p)
 		size += uint64(len(p))
-		if r := put(t, ts, "/"+cache+"/api/chunk/"+ch, p, ""); r.StatusCode != 200 {
+		if r := put(t, ts, "/default/"+cache+"/api/chunk/"+ch, p, ""); r.StatusCode != 200 {
 			b, _ := io.ReadAll(r.Body)
 			t.Fatalf("put chunk: %d %s", r.StatusCode, b)
 		}
@@ -82,7 +82,7 @@ func pushChunked(t *testing.T, ts *httptest.Server, cache, storeHash string, par
 		Chunks:     chunks,
 	}
 	body, _ := json.Marshal(pr)
-	if r := put(t, ts, "/"+cache+"/api/path", body, ""); r.StatusCode != 200 {
+	if r := put(t, ts, "/default/"+cache+"/api/path", body, ""); r.StatusCode != 200 {
 		b, _ := io.ReadAll(r.Body)
 		t.Fatalf("put path: %d %s", r.StatusCode, b)
 	}
@@ -108,7 +108,7 @@ func rawGet(t *testing.T, ts *httptest.Server, path, accept, token string) *http
 
 func TestMultiChunkNarEncodings(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, nil)
-	db.CreateCache("c", true, 40)
+	db.CreateCache("default", "c", true, 40)
 	parts := [][]byte{
 		bytes.Repeat([]byte("aaaa-part-one-"), 500),
 		bytes.Repeat([]byte("bbbb-part-two-"), 700),
@@ -122,7 +122,7 @@ func TestMultiChunkNarEncodings(t *testing.T) {
 	pushChunked(t, ts, "c", h32, parts, refs, "/nix/store/"+h32b+"-pkg.drv")
 
 	// identity: byte-exact with Content-Length.
-	resp := rawGet(t, ts, "/c/nar/"+h32+".nar", "identity", "")
+	resp := rawGet(t, ts, "/default/c/nar/"+h32+".nar", "identity", "")
 	body, _ := io.ReadAll(resp.Body)
 	if !bytes.Equal(body, want) {
 		t.Fatalf("identity mismatch: %d vs %d bytes", len(body), len(want))
@@ -136,7 +136,7 @@ func TestMultiChunkNarEncodings(t *testing.T) {
 
 	// zstd: stored frames concatenated form a valid multi-frame stream with
 	// exact Content-Length.
-	resp = rawGet(t, ts, "/c/nar/"+h32+".nar", "zstd", "")
+	resp = rawGet(t, ts, "/default/c/nar/"+h32+".nar", "zstd", "")
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.Header.Get("Content-Encoding") != "zstd" {
 		t.Fatalf("want zstd encoding, got %q", resp.Header.Get("Content-Encoding"))
@@ -144,12 +144,12 @@ func TestMultiChunkNarEncodings(t *testing.T) {
 	if cl := resp.Header.Get("Content-Length"); cl != strconv.Itoa(len(raw)) {
 		t.Errorf("zstd Content-Length %q want %d", cl, len(raw))
 	}
-	if got := getNar(t, ts, "/c/nar/"+h32+".nar", "zstd"); !bytes.Equal(got, want) {
+	if got := getNar(t, ts, "/default/c/nar/"+h32+".nar", "zstd"); !bytes.Equal(got, want) {
 		t.Fatalf("zstd decoded mismatch")
 	}
 
 	// gzip: decodes to the same bytes.
-	resp = rawGet(t, ts, "/c/nar/"+h32+".nar", "gzip", "")
+	resp = rawGet(t, ts, "/default/c/nar/"+h32+".nar", "gzip", "")
 	if resp.Header.Get("Content-Encoding") != "gzip" {
 		t.Fatalf("want gzip encoding, got %q", resp.Header.Get("Content-Encoding"))
 	}
@@ -163,7 +163,7 @@ func TestMultiChunkNarEncodings(t *testing.T) {
 	}
 
 	// narinfo carries References, Deriver, and a verifying signature.
-	resp, _ = http.Get(ts.URL + "/c/" + h32 + ".narinfo")
+	resp, _ = http.Get(ts.URL + "/default/c/" + h32 + ".narinfo")
 	ni, _ := io.ReadAll(resp.Body)
 	text := string(ni)
 	if !strings.Contains(text, "References: "+h32b+"-dep") {
@@ -180,13 +180,13 @@ func TestMultiChunkNarEncodings(t *testing.T) {
 
 func TestConfigEndpoint(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, func(c *config.Config) { c.Security.AllowOpenBootstrap = false })
-	db.CreateCache("pub", true, 40)
-	db.CreateCache("priv", false, 40)
-	pullTok, _, _ := db.CreateToken("rd", []string{"priv"}, []string{"pull"}, 0)
-	pushTok, _, _ := db.CreateToken("wr", []string{"priv"}, []string{"push"}, 0)
+	db.CreateCache("default", "pub", true, 40)
+	db.CreateCache("default", "priv", false, 40)
+	pullTok, _, _ := db.CreateToken(0, "rd", []string{"default/priv"}, []string{"pull"}, 0)
+	pushTok, _, _ := db.CreateToken(0, "wr", []string{"default/priv"}, []string{"push"}, 0)
 
 	// public cache: anonymous config is fine and carries the pubkey.
-	resp := rawGet(t, ts, "/pub/api/config", "", "")
+	resp := rawGet(t, ts, "/default/pub/api/config", "", "")
 	if resp.StatusCode != 200 {
 		t.Fatalf("public config: %d", resp.StatusCode)
 	}
@@ -206,11 +206,11 @@ func TestConfigEndpoint(t *testing.T) {
 		{"bogus", 401},
 	}
 	for _, c := range cases {
-		if resp := rawGet(t, ts, "/priv/api/config", "", c.token); resp.StatusCode != c.code {
+		if resp := rawGet(t, ts, "/default/priv/api/config", "", c.token); resp.StatusCode != c.code {
 			t.Errorf("priv config token=%q → %d want %d", c.token, resp.StatusCode, c.code)
 		}
 	}
-	if resp := rawGet(t, ts, "/nope/api/config", "", ""); resp.StatusCode != 404 {
+	if resp := rawGet(t, ts, "/default/nope/api/config", "", ""); resp.StatusCode != 404 {
 		t.Errorf("unknown cache config → %d want 404", resp.StatusCode)
 	}
 }
@@ -227,12 +227,12 @@ func postJSON(t *testing.T, ts *httptest.Server, path string, v any) *http.Respo
 
 func TestMissingPathsAndChunks(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, nil)
-	db.CreateCache("c", true, 40)
+	db.CreateCache("default", "c", true, 40)
 	data := []byte("chunky content")
 	pushFake(t, ts, "c", h32, data, "")
 	chunkHash, _, _ := fakeNar(data)
 
-	resp := postJSON(t, ts, "/c/api/get-missing-paths", api.MissingReq{Hashes: []string{h32, h32b}})
+	resp := postJSON(t, ts, "/default/c/api/get-missing-paths", api.MissingReq{Hashes: []string{h32, h32b}})
 	var mr api.MissingResp
 	json.NewDecoder(resp.Body).Decode(&mr)
 	if len(mr.Missing) != 1 || mr.Missing[0] != h32b {
@@ -240,7 +240,7 @@ func TestMissingPathsAndChunks(t *testing.T) {
 	}
 
 	absent := strings.Repeat("ab", 32)
-	resp = postJSON(t, ts, "/c/api/get-missing-chunks", api.MissingReq{Hashes: []string{chunkHash, absent}})
+	resp = postJSON(t, ts, "/default/c/api/get-missing-chunks", api.MissingReq{Hashes: []string{chunkHash, absent}})
 	mr = api.MissingResp{}
 	json.NewDecoder(resp.Body).Decode(&mr)
 	if len(mr.Missing) != 1 || mr.Missing[0] != absent {
@@ -248,7 +248,7 @@ func TestMissingPathsAndChunks(t *testing.T) {
 	}
 
 	// malformed JSON bodies → 400
-	for _, p := range []string{"/c/api/get-missing-paths", "/c/api/get-missing-chunks"} {
+	for _, p := range []string{"/default/c/api/get-missing-paths", "/default/c/api/get-missing-chunks"} {
 		resp, err := http.Post(ts.URL+p, "application/json", strings.NewReader("{nope"))
 		if err != nil {
 			t.Fatal(err)
@@ -261,11 +261,11 @@ func TestMissingPathsAndChunks(t *testing.T) {
 
 func TestPutChunkDedupAndMetrics(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, nil)
-	db.CreateCache("c", true, 40)
+	db.CreateCache("default", "c", true, 40)
 	data := []byte("dedup me")
 	ch, _, _ := fakeNar(data)
 	for i := 0; i < 2; i++ {
-		if r := put(t, ts, "/c/api/chunk/"+ch, data, ""); r.StatusCode != 200 {
+		if r := put(t, ts, "/default/c/api/chunk/"+ch, data, ""); r.StatusCode != 200 {
 			t.Fatalf("upload %d: %d", i, r.StatusCode)
 		}
 	}
@@ -291,14 +291,14 @@ func TestPutChunkDedupAndMetrics(t *testing.T) {
 
 func TestPutPathErrors(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, nil)
-	db.CreateCache("c", true, 40)
+	db.CreateCache("default", "c", true, 40)
 	data := []byte("actual bytes")
 	ch, narHash, narSize := fakeNar(data)
-	put(t, ts, "/c/api/chunk/"+ch, data, "")
+	put(t, ts, "/default/c/api/chunk/"+ch, data, "")
 
 	mk := func(pr api.PathReq) int {
 		body, _ := json.Marshal(pr)
-		return put(t, ts, "/c/api/path", body, "").StatusCode
+		return put(t, ts, "/default/c/api/path", body, "").StatusCode
 	}
 	sp := "/nix/store/" + h32 + "-x"
 
@@ -315,7 +315,7 @@ func TestPutPathErrors(t *testing.T) {
 		t.Errorf("size mismatch → %d want 400", c)
 	}
 	// bad json → 400
-	if r := put(t, ts, "/c/api/path", []byte("{nope"), ""); r.StatusCode != 400 {
+	if r := put(t, ts, "/default/c/api/path", []byte("{nope"), ""); r.StatusCode != 400 {
 		t.Errorf("bad json → %d want 400", r.StatusCode)
 	}
 	// happy path still works after all that
@@ -326,10 +326,10 @@ func TestPutPathErrors(t *testing.T) {
 
 func TestSkipUploadVerify(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, func(c *config.Config) { c.Security.SkipUploadVerify = true })
-	db.CreateCache("c", true, 40)
+	db.CreateCache("default", "c", true, 40)
 	data := []byte("whatever")
 	ch, _, _ := fakeNar(data)
-	put(t, ts, "/c/api/chunk/"+ch, data, "")
+	put(t, ts, "/default/c/api/chunk/"+ch, data, "")
 	// forged-but-well-formed narHash is accepted when verification is off.
 	pr := api.PathReq{
 		StorePath: "/nix/store/" + h32 + "-x",
@@ -337,35 +337,35 @@ func TestSkipUploadVerify(t *testing.T) {
 		NarSize:   999, Chunks: []string{ch},
 	}
 	body, _ := json.Marshal(pr)
-	if r := put(t, ts, "/c/api/path", body, ""); r.StatusCode != 200 {
+	if r := put(t, ts, "/default/c/api/path", body, ""); r.StatusCode != 200 {
 		t.Fatalf("skip-verify push → %d want 200", r.StatusCode)
 	}
 }
 
 func TestOversizedChunkRejected(t *testing.T) {
 	s, db, ts := newTestServerCfg(t, nil)
-	db.CreateCache("c", true, 40)
+	db.CreateCache("default", "c", true, 40)
 	big := bytes.Repeat([]byte("x"), int(s.maxChunkBody())+1)
 	sum := sha256.Sum256(big)
 	// The body is truncated at the cap, so the hash can't match → 400.
-	if r := put(t, ts, "/c/api/chunk/"+hex.EncodeToString(sum[:]), big, ""); r.StatusCode != 400 {
+	if r := put(t, ts, "/default/c/api/chunk/"+hex.EncodeToString(sum[:]), big, ""); r.StatusCode != 400 {
 		t.Fatalf("oversized chunk → %d want 400", r.StatusCode)
 	}
 }
 
 func TestNarAndNarinfo404(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, nil)
-	db.CreateCache("c", true, 40)
+	db.CreateCache("default", "c", true, 40)
 
-	resp, _ := http.Get(ts.URL + "/c/nar/" + h32b + ".nar")
+	resp, _ := http.Get(ts.URL + "/default/c/nar/" + h32b + ".nar")
 	if resp.StatusCode != 404 {
 		t.Fatalf("missing nar → %d want 404", resp.StatusCode)
 	}
-	resp, _ = http.Get(ts.URL + "/nope/nar/" + h32b + ".nar")
+	resp, _ = http.Get(ts.URL + "/default/nope/nar/" + h32b + ".nar")
 	if resp.StatusCode != 404 {
 		t.Fatalf("unknown cache nar → %d want 404", resp.StatusCode)
 	}
-	resp, _ = http.Get(ts.URL + "/c/" + h32b + ".narinfo")
+	resp, _ = http.Get(ts.URL + "/default/c/" + h32b + ".narinfo")
 	if resp.StatusCode != 404 {
 		t.Fatalf("missing narinfo → %d want 404", resp.StatusCode)
 	}
@@ -376,52 +376,52 @@ func TestNarAndNarinfo404(t *testing.T) {
 
 func TestTokenLifecycleAuth(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, func(c *config.Config) { c.Security.AllowOpenBootstrap = false })
-	db.CreateCache("priv", false, 40)
+	db.CreateCache("default", "priv", false, 40)
 
-	expired, _, _ := db.CreateToken("old", []string{"priv"}, []string{"pull"}, time.Now().Unix()-10)
-	if resp := rawGet(t, ts, "/priv/nix-cache-info", "", expired); resp.StatusCode != 401 {
+	expired, _, _ := db.CreateToken(0, "old", []string{"default/priv"}, []string{"pull"}, time.Now().Unix()-10)
+	if resp := rawGet(t, ts, "/default/priv/nix-cache-info", "", expired); resp.StatusCode != 401 {
 		t.Errorf("expired token → %d want 401", resp.StatusCode)
 	}
 
-	revoked, tok, _ := db.CreateToken("gone", []string{"priv"}, []string{"pull"}, 0)
+	revoked, tok, _ := db.CreateToken(0, "gone", []string{"default/priv"}, []string{"pull"}, 0)
 	db.RevokeToken(tok.ID)
-	if resp := rawGet(t, ts, "/priv/nix-cache-info", "", revoked); resp.StatusCode != 401 {
+	if resp := rawGet(t, ts, "/default/priv/nix-cache-info", "", revoked); resp.StatusCode != 401 {
 		t.Errorf("revoked token → %d want 401", resp.StatusCode)
 	}
 
 	// pull token cannot push
-	pullTok, _, _ := db.CreateToken("rd", []string{"priv"}, []string{"pull"}, 0)
+	pullTok, _, _ := db.CreateToken(0, "rd", []string{"default/priv"}, []string{"pull"}, 0)
 	data := []byte("d")
 	ch, _, _ := fakeNar(data)
-	if r := put(t, ts, "/priv/api/chunk/"+ch, data, pullTok); r.StatusCode != 401 {
+	if r := put(t, ts, "/default/priv/api/chunk/"+ch, data, pullTok); r.StatusCode != 401 {
 		t.Errorf("pull token push → %d want 401", r.StatusCode)
 	}
 
 	// Basic auth (netrc-style) carries the pull token
-	valid, _, _ := db.CreateToken("net", []string{"priv"}, []string{"pull"}, 0)
-	req, _ := http.NewRequest("GET", ts.URL+"/priv/nix-cache-info", nil)
+	valid, _, _ := db.CreateToken(0, "net", []string{"default/priv"}, []string{"pull"}, 0)
+	req, _ := http.NewRequest("GET", ts.URL+"/default/priv/nix-cache-info", nil)
 	req.SetBasicAuth("nix", valid)
 	resp, _ := http.DefaultClient.Do(req)
 	if resp.StatusCode != 200 {
 		t.Errorf("basic-auth pull → %d want 200", resp.StatusCode)
 	}
-	if resp := rawGet(t, ts, "/priv/nix-cache-info", "", ""); resp.Header.Get("WWW-Authenticate") == "" || resp.StatusCode != 401 {
+	if resp := rawGet(t, ts, "/default/priv/nix-cache-info", "", ""); resp.Header.Get("WWW-Authenticate") == "" || resp.StatusCode != 401 {
 		t.Errorf("anon private pull should 401 with WWW-Authenticate")
 	}
 }
 
 func TestBootstrapClosesAfterFirstToken(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, nil) // open bootstrap
-	db.CreateCache("c", true, 40)
+	db.CreateCache("default", "c", true, 40)
 	data := []byte("first")
 	ch, _, _ := fakeNar(data)
-	if r := put(t, ts, "/c/api/chunk/"+ch, data, ""); r.StatusCode != 200 {
+	if r := put(t, ts, "/default/c/api/chunk/"+ch, data, ""); r.StatusCode != 200 {
 		t.Fatalf("bootstrap push → %d want 200", r.StatusCode)
 	}
-	db.CreateToken("first", nil, []string{"push"}, 0)
+	db.CreateToken(0, "first", nil, []string{"push"}, 0)
 	data2 := []byte("second")
 	ch2, _, _ := fakeNar(data2)
-	if r := put(t, ts, "/c/api/chunk/"+ch2, data2, ""); r.StatusCode != 401 {
+	if r := put(t, ts, "/default/c/api/chunk/"+ch2, data2, ""); r.StatusCode != 401 {
 		t.Fatalf("post-token anon push → %d want 401", r.StatusCode)
 	}
 }

@@ -190,6 +190,21 @@ var en = map[string]string{
 	"confirm.2fa":    "Disable two-factor authentication?",
 	"confirm.user":   "Delete this user? Their passkeys and sessions go with them.",
 
+	// namespaces
+	"set.namespaces":    "Namespaces",
+	"caches.namespace":  "Namespace",
+	"tokens.namespace":  "Namespace",
+	"tokens.instance":   "Instance-wide",
+	"ns.new":            "Create",
+	"ns.delete":         "Delete namespace",
+	"ns.addmember":      "Add",
+	"ns.removemember":   "Remove member",
+	"ns.username":       "username",
+	"ns.member":         "member",
+	"ns.owner":          "owner",
+	"ns.hint":           "Namespaces group caches per team or tenant.",
+	"confirm.namespace": "Delete this namespace? It must be empty of caches; its tokens and memberships are removed.",
+
 	// user management
 	"set.users":     "Users",
 	"users.new":     "New user",
