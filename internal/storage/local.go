@@ -87,3 +87,13 @@ func (l *Local) Delete(ctx context.Context, key string) error {
 	}
 	return err
 }
+
+// DeleteMany just loops: a local unlink is cheap, there is no batch syscall.
+func (l *Local) DeleteMany(ctx context.Context, keys []string) error {
+	for _, k := range keys {
+		if err := l.Delete(ctx, k); err != nil {
+			return err
+		}
+	}
+	return nil
+}

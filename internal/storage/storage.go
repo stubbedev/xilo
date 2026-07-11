@@ -21,6 +21,14 @@ type Storage interface {
 	Delete(ctx context.Context, key string) error
 }
 
+// BulkDeleter is an optional fast path a Storage may offer: delete many keys
+// in fewer round trips (S3 multi-object delete). Callers type-assert and fall
+// back to per-key Delete — kept out of Storage so existing implementers and
+// fakes elsewhere need no change. Like Delete, missing keys are not an error.
+type BulkDeleter interface {
+	DeleteMany(ctx context.Context, keys []string) error
+}
+
 // ChunkKey is the storage key for a chunk given its sha256 hex hash. Sharded by
 // the first two hex chars so no single directory/prefix holds every chunk.
 func ChunkKey(hash string) string {

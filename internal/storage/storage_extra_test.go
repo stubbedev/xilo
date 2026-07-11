@@ -3,6 +3,8 @@ package storage
 import (
 	"bytes"
 	"context"
+	"encoding/xml"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -139,10 +141,12 @@ func TestLocalErrorPaths(t *testing.T) {
 // ---- S3 against a local fake endpoint (no network, no minio) ----
 
 // fakeS3 speaks just enough of the S3 REST dialect for the aws-sdk client:
-// path-style /bucket/key with PUT/GET/HEAD/DELETE.
+// path-style /bucket/key with PUT/GET/HEAD/DELETE, plus POST ?delete=
+// (multi-object delete).
 type fakeS3 struct {
-	mu   sync.Mutex
-	objs map[string][]byte
+	mu          sync.Mutex
+	objs        map[string][]byte
+	deleteCalls int // POST ?delete= requests seen
 }
 
 func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -150,6 +154,39 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	key := strings.TrimPrefix(r.URL.Path, "/bucket/")
 	switch r.Method {
+	case http.MethodPost:
+		if _, ok := r.URL.Query()["delete"]; !ok {
+			w.WriteHeader(http.StatusNotImplemented)
+			return
+		}
+		f.deleteCalls++
+		b, _ := io.ReadAll(r.Body)
+		var req struct {
+			Objects []struct {
+				Key string `xml:"Key"`
+			} `xml:"Object"`
+		}
+		if err := xml.Unmarshal(b, &req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		var res strings.Builder
+		res.WriteString(`<?xml version="1.0"?><DeleteResult>`)
+		for _, o := range req.Objects {
+			switch {
+			case o.Key == "poison":
+				res.WriteString(`<Error><Key>poison</Key><Code>AccessDenied</Code><Message>no</Message></Error>`)
+			case f.objs[o.Key] == nil:
+				// stricter than AWS quiet mode: report missing keys so the
+				// client's NoSuchKey tolerance is exercised
+				res.WriteString(`<Error><Key>` + o.Key + `</Key><Code>NoSuchKey</Code><Message>missing</Message></Error>`)
+			default:
+				delete(f.objs, o.Key)
+			}
+		}
+		res.WriteString(`</DeleteResult>`)
+		w.Header().Set("Content-Type", "application/xml")
+		io.WriteString(w, res.String())
 	case http.MethodPut:
 		b, _ := io.ReadAll(r.Body)
 		f.objs[key] = b
@@ -229,6 +266,87 @@ func TestS3RoundTrip(t *testing.T) {
 	// idempotent delete of a missing key
 	if err := s.Delete(ctx, key); err != nil {
 		t.Fatalf("Delete(missing): %v", err)
+	}
+}
+
+func TestLocalDeleteMany(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	l, err := NewLocal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := []string{ChunkKey("aa11"), ChunkKey("bb22"), ChunkKey("cc33")}
+	for _, k := range keys {
+		if err := l.Put(ctx, k, strings.NewReader("x")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// missing key mixed in is fine — Delete is idempotent
+	if err := l.DeleteMany(ctx, append(keys, ChunkKey("ffff"))); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range keys {
+		if ok, _ := l.Has(ctx, k); ok {
+			t.Fatalf("%s still present", k)
+		}
+	}
+	// non-ENOENT error surfaces (path component is a file → ENOTDIR)
+	if err := os.WriteFile(filepath.Join(root, "blocker"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.DeleteMany(ctx, []string{"blocker/sub"}); err == nil {
+		t.Fatal("DeleteMany through a file should error")
+	}
+}
+
+func TestS3DeleteMany(t *testing.T) {
+	f := &fakeS3{objs: map[string][]byte{}}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	u, _ := url.Parse(srv.URL)
+	s, err := NewS3(config.S3{
+		Endpoint: u.Host, Bucket: "bucket", Insecure: true,
+		AccessKey: "ak", SecretKey: "sk",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	// 1500 keys cross the 1000-per-call API limit → exactly 2 calls
+	keys := make([]string, 1500)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("chunk/aa/%04d", i)
+		f.objs[keys[i]] = []byte("x")
+	}
+	if err := s.DeleteMany(ctx, keys); err != nil {
+		t.Fatal(err)
+	}
+	if f.deleteCalls != 2 {
+		t.Fatalf("DeleteObjects calls=%d, want 2", f.deleteCalls)
+	}
+	if len(f.objs) != 0 {
+		t.Fatalf("%d objects remain", len(f.objs))
+	}
+
+	// empty slice: no round trip at all
+	if err := s.DeleteMany(ctx, nil); err != nil || f.deleteCalls != 2 {
+		t.Fatalf("empty DeleteMany: err=%v calls=%d", err, f.deleteCalls)
+	}
+	// already-deleted keys: per-key NoSuchKey tolerated like Delete
+	if err := s.DeleteMany(ctx, keys[:3]); err != nil {
+		t.Fatalf("DeleteMany(missing): %v", err)
+	}
+	// any other per-key error fails the call
+	f.objs["ok"] = []byte("x")
+	if err := s.DeleteMany(ctx, []string{"ok", "poison"}); err == nil || !strings.Contains(err.Error(), "AccessDenied") {
+		t.Fatalf("DeleteMany(poison) = %v, want AccessDenied error", err)
+	}
+	// transport error surfaces
+	srv.Close()
+	if err := s.DeleteMany(ctx, []string{"k"}); err == nil {
+		t.Fatal("DeleteMany against a dead endpoint should error")
 	}
 }
 

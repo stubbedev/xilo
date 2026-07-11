@@ -3,11 +3,13 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 
 	"github.com/stubbedev/xilo/internal/config"
@@ -73,6 +75,39 @@ func (s *S3) Delete(ctx context.Context, key string) error {
 	// DeleteObject is idempotent — deleting a missing key is not an error.
 	_, err := s.c.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &s.bucket, Key: &key})
 	return err
+}
+
+// s3DeleteBatch is the DeleteObjects API's hard per-call key limit.
+const s3DeleteBatch = 1000
+
+// DeleteMany deletes keys via the multi-object delete API, 1000 per call,
+// instead of one round trip per key. Missing keys are not an error.
+func (s *S3) DeleteMany(ctx context.Context, keys []string) error {
+	for start := 0; start < len(keys); start += s3DeleteBatch {
+		batch := keys[start:min(start+s3DeleteBatch, len(keys))]
+		objs := make([]types.ObjectIdentifier, len(batch))
+		for i := range batch {
+			objs[i] = types.ObjectIdentifier{Key: &batch[i]}
+		}
+		out, err := s.c.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: &s.bucket,
+			Delete: &types.Delete{Objects: objs, Quiet: aws.Bool(true)},
+		})
+		if err != nil {
+			return err
+		}
+		// Per-key failures come back in a 200 body; a missing key stays
+		// idempotent like Delete, anything else fails the sweep.
+		for _, e := range out.Errors {
+			switch aws.ToString(e.Code) {
+			case "NoSuchKey", "NotFound":
+				continue
+			}
+			return fmt.Errorf("s3 delete %s: %s %s",
+				aws.ToString(e.Key), aws.ToString(e.Code), aws.ToString(e.Message))
+		}
+	}
+	return nil
 }
 
 func isNotFound(err error) bool {

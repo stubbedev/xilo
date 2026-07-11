@@ -120,10 +120,14 @@ func TestDroppedTableErrorBranches(t *testing.T) {
 		}
 	})
 
-	t.Run("no sessions/metrics tables", func(t *testing.T) {
+	t.Run("no sessions/metrics/tokens tables", func(t *testing.T) {
 		db := openTest(t)
 		exec(t, db, `DROP TABLE sessions`)
 		exec(t, db, `DROP TABLE metrics_minutes`)
+		exec(t, db, `DROP TABLE tokens`)
+		if _, _, err := db.CreateToken("x", nil, nil, 0); err == nil {
+			t.Error("CreateToken should fail without tokens table")
+		}
 		if err := db.CreateSession("s", time.Now().Add(time.Hour)); err == nil {
 			t.Error("CreateSession should fail without sessions table")
 		}
@@ -199,8 +203,18 @@ func (s dropOnDelete) Delete(context.Context, string) error {
 	return nil
 }
 
+// setGCBatch forces a sweep batch size so per-chunk race interleavings stay
+// reproducible now that GC batches row deletes.
+func setGCBatch(t *testing.T, n int) {
+	t.Helper()
+	old := gcBatchSize
+	gcBatchSize = n
+	t.Cleanup(func() { gcBatchSize = old })
+}
+
 func TestGCRowDeleteErrorMidSweep(t *testing.T) {
 	db := openTest(t)
+	setGCBatch(t, 1)
 	db.PutChunk("a", 10, 5, "ka", 100)
 	db.PutChunk("b", 10, 7, "kb", 100)
 	// First orphan sweeps fine; its blob delete drops the table, so the second
@@ -216,6 +230,7 @@ func TestGCRowDeleteErrorMidSweep(t *testing.T) {
 
 func TestGCSkipsChunkRestampedMidSweep(t *testing.T) {
 	db := openTest(t)
+	setGCBatch(t, 1)
 	db.PutChunk("a", 10, 5, "ka", 100)
 	db.PutChunk("b", 10, 7, "kb", 100)
 	st := touchOnDelete{db: db, other: map[string]string{"ka": "b", "kb": "a"}}

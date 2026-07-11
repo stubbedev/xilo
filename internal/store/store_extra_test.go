@@ -8,8 +8,11 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/stubbedev/xilo/internal/storage"
 )
 
 // ---- caches CRUD ----
@@ -517,6 +520,183 @@ func TestGCStorageDeleteError(t *testing.T) {
 	}
 	if deleted != 0 {
 		t.Fatalf("deleted=%d before the failing blob delete", deleted)
+	}
+}
+
+// memStore is an in-memory Storage with a bulk path, instrumented so GC tests
+// can count DeleteMany calls and inject behavior per call.
+type memStore struct {
+	mu     sync.Mutex
+	objs   map[string]bool
+	bulk   int                                 // DeleteMany calls so far
+	onBulk func(call int, keys []string) error // optional; runs before deleting
+}
+
+func (m *memStore) Put(_ context.Context, key string, _ io.Reader) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.objs[key] = true
+	return nil
+}
+func (m *memStore) Get(context.Context, string) (io.ReadCloser, error) { return nil, ErrNotFound }
+func (m *memStore) Has(_ context.Context, key string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.objs[key], nil
+}
+func (m *memStore) Delete(_ context.Context, key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.objs, key)
+	return nil
+}
+func (m *memStore) DeleteMany(_ context.Context, keys []string) error {
+	m.mu.Lock()
+	m.bulk++
+	call := m.bulk
+	m.mu.Unlock()
+	if m.onBulk != nil {
+		if err := m.onBulk(call, keys); err != nil {
+			return err
+		}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, k := range keys {
+		delete(m.objs, k)
+	}
+	return nil
+}
+
+// 1200 orphans cross the 500 batch boundary: 3 batch txs + 3 bulk blob
+// deletes, everything orphaned gone, live and in-grace chunks untouched.
+func TestGCBatchSweep(t *testing.T) {
+	db := openTest(t)
+	m := &memStore{objs: map[string]bool{}}
+	ctx := context.Background()
+
+	const orphans = 1200
+	var wantFreed int64
+	for i := 0; i < orphans; i++ {
+		h := fmt.Sprintf("orph%04d", i)
+		if err := db.PutChunk(h, 10, int64(i%7+1), storage.ChunkKey(h), 100); err != nil {
+			t.Fatal(err)
+		}
+		m.Put(ctx, storage.ChunkKey(h), nil)
+		wantFreed += int64(i%7 + 1)
+	}
+	db.PutChunk("live", 10, 5, storage.ChunkKey("live"), 100)
+	db.PutChunk("fresh", 10, 5, storage.ChunkKey("fresh"), 9_000)
+	m.Put(ctx, storage.ChunkKey("live"), nil)
+	m.Put(ctx, storage.ChunkKey("fresh"), nil)
+	c, _ := db.CreateCache("c", true, 40)
+	putPath(t, db, c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"live"})
+
+	deleted, freed, err := db.GC(ctx, m, 5_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != orphans || freed != wantFreed {
+		t.Fatalf("deleted=%d freed=%d, want %d/%d", deleted, freed, orphans, wantFreed)
+	}
+	if m.bulk != 3 { // ceil(1200/500)
+		t.Fatalf("DeleteMany calls=%d, want 3", m.bulk)
+	}
+	all, err := db.AllChunks()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("%d chunk rows remain, want 2 (live+fresh)", len(all))
+	}
+	if len(m.objs) != 2 || !m.objs[storage.ChunkKey("live")] || !m.objs[storage.ChunkKey("fresh")] {
+		t.Fatalf("blobs remaining: %v, want live+fresh", len(m.objs))
+	}
+}
+
+// deleteChunkRowsIf must spare, per row inside the one tx, anything
+// re-stamped past the cutoff — its batch-mates still die (RETURNING tells
+// which). This is the batched form of the GC-vs-push race check.
+func TestDeleteChunkRowsIfSparesRestamped(t *testing.T) {
+	db := openTest(t)
+	db.PutChunk("a", 10, 1, "ka", 100)
+	db.PutChunk("b", 10, 1, "kb", 100)
+	db.PutChunk("c", 10, 1, "kc", 100)
+	if err := db.TouchChunks([]string{"b"}, 9_000); err != nil {
+		t.Fatal(err)
+	}
+	gone, err := db.deleteChunkRowsIf([]string{"a", "b", "c"}, 5_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gone) != 2 || gone[0] != "a" || gone[1] != "c" {
+		t.Fatalf("gone=%v, want [a c]", gone)
+	}
+	if !db.HasChunk("b") || db.HasChunk("a") || db.HasChunk("c") {
+		t.Fatal("wrong rows survived")
+	}
+}
+
+// End-to-end: a chunk re-stamped mid-sweep (during an earlier batch's blob
+// deletes) survives its own batch while its batch-mate is swept.
+func TestGCRestampedInBatchSurvives(t *testing.T) {
+	db := openTest(t)
+	setGCBatch(t, 2)
+	ctx := context.Background()
+	for _, h := range []string{"a", "b", "c", "d"} {
+		db.PutChunk(h, 10, 1, "k"+h, 100)
+	}
+	m := &memStore{objs: map[string]bool{"ka": true, "kb": true, "kc": true, "kd": true}}
+	m.onBulk = func(call int, _ []string) error {
+		if call == 1 { // push races in while batch [a b] deletes blobs
+			return db.TouchChunks([]string{"c"}, 1<<62)
+		}
+		return nil
+	}
+	deleted, freed, err := db.GC(ctx, m, 5_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deleted != 3 || freed != 3 {
+		t.Fatalf("deleted=%d freed=%d, want 3/3 (c spared)", deleted, freed)
+	}
+	if !db.HasChunk("c") || db.HasChunk("a") || db.HasChunk("b") || db.HasChunk("d") {
+		t.Fatal("re-stamped chunk swept or batch-mate spared")
+	}
+	if !m.objs["kc"] {
+		t.Fatal("spared chunk's blob deleted")
+	}
+}
+
+// A storage error mid-batch: that batch's rows are already gone (harmless
+// orphan blobs), the returned counts cover only fully completed batches.
+func TestGCMidBatchStorageError(t *testing.T) {
+	db := openTest(t)
+	setGCBatch(t, 2)
+	for _, h := range []string{"a", "b", "c", "d"} {
+		db.PutChunk(h, 10, 1, "k"+h, 100)
+	}
+	m := &memStore{objs: map[string]bool{"ka": true, "kb": true, "kc": true, "kd": true}}
+	m.onBulk = func(call int, _ []string) error {
+		if call == 2 {
+			return errors.New("bulk fail")
+		}
+		return nil
+	}
+	deleted, freed, err := db.GC(context.Background(), m, 5_000)
+	if err == nil || !strings.Contains(err.Error(), "bulk fail") {
+		t.Fatalf("GC should surface bulk delete error, got %v", err)
+	}
+	if deleted != 2 || freed != 2 {
+		t.Fatalf("deleted=%d freed=%d, want 2/2 (first batch only)", deleted, freed)
+	}
+	all, _ := db.AllChunks()
+	if len(all) != 0 {
+		t.Fatalf("%d rows remain, want 0 — rows go before blobs", len(all))
+	}
+	// second batch's blobs leaked as orphans, never a row without a blob
+	if m.objs["ka"] || m.objs["kb"] || !m.objs["kc"] || !m.objs["kd"] {
+		t.Fatalf("blob state wrong: %v", m.objs)
 	}
 }
 

@@ -29,24 +29,56 @@ func (db *DB) GC(ctx context.Context, st storage.Storage, graceCutoff int64) (de
 	if err != nil {
 		return 0, 0, err
 	}
+	byHash := map[string]ChunkRef{}
+	var cand []string
 	for _, c := range all {
 		if live[c.Hash] || c.Created >= graceCutoff {
 			continue
 		}
-		ok, err := db.deleteChunkRowIf(c.Hash, graceCutoff)
+		byHash[c.Hash] = c
+		cand = append(cand, c.Hash)
+	}
+	for i := 0; i < len(cand); i += gcBatchSize {
+		batch := cand[i:min(i+gcBatchSize, len(cand))]
+		// One tx per batch: rows not returned were re-stamped by a
+		// concurrent push since the snapshot and stay.
+		gone, err := db.deleteChunkRowsIf(batch, graceCutoff)
 		if err != nil {
 			return deleted, freed, err
 		}
-		if !ok {
-			continue // re-stamped by a concurrent push since the snapshot
+		if len(gone) == 0 {
+			continue
 		}
-		if err := st.Delete(ctx, c.Key); err != nil {
+		keys := make([]string, len(gone))
+		for j, h := range gone {
+			keys[j] = byHash[h].Key
+		}
+		if err := deleteBlobs(ctx, st, keys); err != nil {
 			return deleted, freed, err
 		}
-		freed += c.CSize
-		deleted++
+		for _, h := range gone {
+			freed += byHash[h].CSize
+			deleted++
+		}
 	}
 	return deleted, freed, nil
+}
+
+// gcBatchSize is how many orphan candidates one sweep batch (one write tx +
+// one bulk blob delete) covers. A var so race tests can force tiny batches.
+var gcBatchSize = 500
+
+// deleteBlobs takes the backend's bulk path when it has one, else per-key.
+func deleteBlobs(ctx context.Context, st storage.Storage, keys []string) error {
+	if bd, ok := st.(storage.BulkDeleter); ok {
+		return bd.DeleteMany(ctx, keys)
+	}
+	for _, k := range keys {
+		if err := st.Delete(ctx, k); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ChunkRef is a stored chunk's identity for GC.
@@ -96,21 +128,40 @@ func (db *DB) AllChunks() ([]ChunkRef, error) {
 	return out, rows.Err()
 }
 
-// deleteChunkRowIf removes a chunk row only if it is still older than the
-// grace cutoff, reporting whether the delete happened. The transactional
-// re-check is what closes the GC-vs-push race: a push that re-stamped the
-// chunk after the sweep snapshot keeps it.
-func (db *DB) deleteChunkRowIf(hash string, graceCutoff int64) (bool, error) {
-	var n int64
+// deleteChunkRowsIf removes the given chunk rows still older than the grace
+// cutoff — one transaction, per-row re-check via the WHERE clause — and
+// returns the hashes actually deleted (DELETE ... RETURNING). The
+// transactional re-check is what closes the GC-vs-push race: a push that
+// re-stamped a chunk after the sweep snapshot keeps it.
+func (db *DB) deleteChunkRowsIf(hashes []string, graceCutoff int64) ([]string, error) {
+	var gone []string
 	err := db.write(func(tx *sql.Tx) error {
-		res, err := tx.Exec(`DELETE FROM chunks WHERE hash=? AND created<?`, hash, graceCutoff)
+		rows, err := tx.Query(
+			`DELETE FROM chunks WHERE hash IN (`+placeholders(len(hashes))+`) AND created<? RETURNING hash`,
+			append(toArgs(hashes), graceCutoff)...)
 		if err != nil {
 			return err
 		}
-		n, err = res.RowsAffected()
-		return err
+		defer rows.Close()
+		for rows.Next() {
+			var h string
+			if err := rows.Scan(&h); err != nil {
+				return err
+			}
+			gone = append(gone, h)
+		}
+		return rows.Err()
 	})
-	return n > 0, err
+	if err != nil {
+		return nil, err
+	}
+	return gone, nil
+}
+
+// deleteChunkRowIf is the single-row form, reporting whether it deleted.
+func (db *DB) deleteChunkRowIf(hash string, graceCutoff int64) (bool, error) {
+	gone, err := db.deleteChunkRowsIf([]string{hash}, graceCutoff)
+	return len(gone) > 0, err
 }
 
 // EvictPathsOlderThan deletes path rows across all caches not accessed since
