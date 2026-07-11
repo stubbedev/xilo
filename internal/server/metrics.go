@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"runtime"
 	"sync/atomic"
 	"time"
 )
@@ -45,6 +46,26 @@ func (m *metrics) counters() []struct {
 	}
 }
 
+// runtimeGauges surfaces the process health signals a leak would show up in
+// (goroutine count, heap, GC). Hand-rolled from the runtime package to keep
+// the zero-runtime-dependency guarantee.
+func runtimeGauges() []struct {
+	Name, Help string
+	V          int64
+} {
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	return []struct {
+		Name, Help string
+		V          int64
+	}{
+		{"go_goroutines", "number of live goroutines", int64(runtime.NumGoroutine())},
+		{"go_heap_inuse_bytes", "heap bytes in use", int64(ms.HeapInuse)},
+		{"go_sys_bytes", "total bytes obtained from the OS", int64(ms.Sys)},
+		{"go_gc_cycles_total", "completed GC cycles", int64(ms.NumGC)},
+	}
+}
+
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	m := &s.metrics
 	if wantsJSON(r) {
@@ -52,11 +73,17 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		for _, c := range m.counters() {
 			out[c.Name] = c.V
 		}
+		for _, g := range runtimeGauges() {
+			out[g.Name] = g.V
+		}
 		jsonOut(w, out)
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 	for _, c := range m.counters() {
 		fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s counter\n%s %d\n", c.Name, c.Help, c.Name, c.Name, c.V)
+	}
+	for _, g := range runtimeGauges() {
+		fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s gauge\n%s %d\n", g.Name, g.Help, g.Name, g.Name, g.V)
 	}
 }

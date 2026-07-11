@@ -162,6 +162,17 @@ k6-deep:
     docker compose -f tests/k6/compose.yaml run --rm k6 run /scripts/deep.js
     docker compose -f tests/k6/compose.yaml down -v
 
+# Pressure: 512-VU storm, 5000rps arrival flood, 128-VU pull wall, client
+# aborts mid-NAR, goroutine-leak watch + recovery proof. Scale via env:
+# STORM_VUS=1024 FLOOD_RPS=10000 DROP_BUDGET=999999 just k6-pressure
+# (raise DROP_BUDGET when pushing FLOOD_RPS past the hardware ceiling —
+# drops then mean finite capacity, not collapse; failures stay at zero)
+k6-pressure:
+    docker compose -f tests/k6/compose.yaml run --rm \
+        -e STORM_VUS -e FLOOD_RPS -e PULL_VUS -e DURATION_S -e DROP_BUDGET \
+        k6 run /scripts/pressure.js
+    docker compose -f tests/k6/compose.yaml down -v
+
 # Chaos: SIGKILL mid-push, restart, prove nothing corrupted. Needs nix + docker.
 chaos:
     ./tests/e2e/chaos.sh
