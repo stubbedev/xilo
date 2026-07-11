@@ -73,7 +73,7 @@ func statusVariant(status string) badge.Variant {
 	case "active":
 		return badge.VariantDefault
 	case "expired":
-		return badge.VariantSecondary
+		return badge.VariantOutline
 	case "revoked":
 		return badge.VariantDestructive
 	default:
@@ -213,18 +213,18 @@ func ariaSort(s SortCtx, key string) string {
 // Ago renders a unix timestamp as a coarse relative time ("3h ago").
 func Ago(ts int64) string {
 	if ts <= 0 {
-		return "never"
+		return T("tok.never")
 	}
 	d := time.Since(time.Unix(ts, 0))
 	switch {
 	case d < time.Minute:
-		return "just now"
+		return T("time.justnow")
 	case d < time.Hour:
-		return itoa(int64(d.Minutes())) + "m ago"
+		return itoa(int64(d.Minutes())) + T("time.mago")
 	case d < 24*time.Hour:
-		return itoa(int64(d.Hours())) + "h ago"
+		return itoa(int64(d.Hours())) + T("time.hago")
 	case d < 30*24*time.Hour:
-		return itoa(int64(d.Hours()/24)) + "d ago"
+		return itoa(int64(d.Hours()/24)) + T("time.dago")
 	default:
 		return time.Unix(ts, 0).Format("2006-01-02")
 	}
@@ -240,10 +240,10 @@ func planLimits(p store.Plan) string {
 		}
 		return label + " " + fmtv + " · "
 	}
-	out := part("caches", p.MaxCaches, itoa(p.MaxCaches)) +
-		part("members", p.MaxMembers, itoa(p.MaxMembers)) +
-		part("storage", p.MaxStorage, humanBytesV(p.MaxStorage)) +
-		part("retention", p.MaxRetention, itoa(p.MaxRetention/86400)+"d")
+	out := part(T("plan.caches"), p.MaxCaches, itoa(p.MaxCaches)) +
+		part(T("plan.members"), p.MaxMembers, itoa(p.MaxMembers)) +
+		part(T("plan.storage"), p.MaxStorage, humanBytesV(p.MaxStorage)) +
+		part(T("plan.retention"), p.MaxRetention, itoa(p.MaxRetention/86400)+"d")
 	if out == "" {
 		return T("plan.unlimited")
 	}

@@ -49,12 +49,12 @@ templ SearchInput(action, name, value, placeholder, target string) {
 		Name: name, Value: value, Type: input.TypeSearch, Placeholder: placeholder,
 		Class: "w-full sm:w-64",
 		Attributes: templ.Attributes{
-			"hx-get":      action,
-			"hx-trigger":  "input changed delay:300ms, search",
-			"hx-target":   target,
-			"hx-select":   target,
-			"hx-swap":     "outerHTML",
-			"hx-push-url": "true",
+			"hx-get":       action,
+			"hx-trigger":   "input changed delay:300ms, search",
+			"hx-target":    target,
+			"hx-select":    target,
+			"hx-swap":      "outerHTML",
+			"hx-push-url":  "true",
 			"autocomplete": "off",
 			"aria-label":   placeholder,
 		},
@@ -111,7 +111,9 @@ templ StatTile(icon, value, label, id, tone string) {
 // EmptyState is the shared empty-list block: icon, message, optional action.
 templ EmptyState(icon, msg string) {
 	@card.Card(card.Props{Class: "flex flex-col items-center gap-3 border-dashed bg-transparent py-12 text-center shadow-none"}) {
-		<span class="text-muted-foreground">@IconClass(icon, 32, "")</span>
+		<span class="text-muted-foreground">
+			@IconClass(icon, 32, "")
+		</span>
 		<p class="text-sm text-muted-foreground">{ msg }</p>
 		<div class="flex items-center gap-2">
 			{ children... }
@@ -125,22 +127,23 @@ templ PagerNav(p Pager) {
 		@pagination.Pagination(pagination.Props{Class: "mt-4"}) {
 			@pagination.Content() {
 				@pagination.Item() {
-					@pagination.Previous(pagination.PreviousProps{Href: p.Prev, Disabled: p.Prev == "", Label: "Prev", Attributes: hxSwapAttrs(p.Target)})
+					@pagination.Previous(pagination.PreviousProps{Href: p.Prev, Disabled: p.Prev == "", Label: T("pager.prev"), Attributes: hxSwapAttrs(p.Target)})
 				}
 				@pagination.Item() {
 					<span class="px-2 text-sm text-muted-foreground tabular-nums">{ itoa(int64(p.Page)) } / { itoa(int64(p.Pages)) }</span>
 				}
 				@pagination.Item() {
-					@pagination.Next(pagination.NextProps{Href: p.Next, Disabled: p.Next == "", Label: "Next", Attributes: hxSwapAttrs(p.Target)})
+					@pagination.Next(pagination.NextProps{Href: p.Next, Disabled: p.Next == "", Label: T("pager.next"), Attributes: hxSwapAttrs(p.Target)})
 				}
 			}
 		}
 	}
 }
 
-// SortHead is a clickable, direction-indicating table header cell.
-templ SortHead(s SortCtx, key, label string) {
-	@table.Head() {
+// SortHead is a clickable, direction-indicating table header cell; class sets
+// a stable column width (tables render with table-fixed).
+templ SortHead(s SortCtx, key, label, class string) {
+	@table.Head(table.HeadProps{Class: class}) {
 		<a
 			class="inline-flex items-center gap-1 hover:text-foreground"
 			href={ templ.SafeURL(s.URL(key)) }
@@ -201,7 +204,7 @@ templ ConfirmForm(c Confirm) {
 				@dialog.Footer() {
 					@dialog.Close(dialog.CloseProps{For: c.ID}) {
 						@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
-							Cancel
+							{ T("action.cancel") }
 						}
 					}
 					@button.Button(button.Props{Variant: confirmVariant(c.Danger), Type: button.TypeSubmit}) {
@@ -219,7 +222,7 @@ templ ConfirmForm(c Confirm) {
 // StatusBadge renders a token's status as a colored badge.
 templ StatusBadge(status string) {
 	@badge.Badge(badge.Props{Variant: statusVariant(status)}) {
-		{ status }
+		{ T("tok." + status) }
 	}
 }
 
@@ -228,12 +231,12 @@ templ VisBadge(public bool) {
 	if public {
 		@badge.Badge(badge.Props{Variant: badge.VariantSecondary, Class: "gap-1"}) {
 			@Icon("globe")
-			<span>Public</span>
+			<span>{ T("vis.public") }</span>
 		}
 	} else {
 		@badge.Badge(badge.Props{Variant: badge.VariantOutline, Class: "gap-1"}) {
 			@Icon("lock")
-			<span>Private</span>
+			<span>{ T("vis.private") }</span>
 		}
 	}
 }
@@ -243,7 +246,7 @@ templ PermBadges(perms []string) {
 	<div class="flex flex-wrap gap-1">
 		for _, p := range perms {
 			@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
-				{ p }
+				{ T("perm." + p) }
 			}
 		}
 	</div>

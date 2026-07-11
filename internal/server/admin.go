@@ -573,7 +573,9 @@ func (s *Server) renderAccount(w http.ResponseWriter, r *http.Request, u *store.
 		return
 	}
 	views.Account(views.AccountData{
-		Nav: s.nav(r, u), User: u, TOTPEnabled: u.TOTPEnabled, Passkeys: pks, Flash: flash,
+		Nav: s.nav(r, u), User: u, TOTPEnabled: u.TOTPEnabled, Passkeys: pks,
+		CanCreateOrg: s.cfg.MultiTenant && s.userCanCreateOrg(u),
+		Flash:        flash,
 	}).Render(r.Context(), w)
 }
 

@@ -29,15 +29,20 @@ type InstanceData struct {
 
 // Instance is the general settings page (instance admins).
 templ Instance(d InstanceData) {
-	@Layout("Settings", "settings", d.Nav, d.Flash) {
-		@PageHeader("Instance settings", "Policy, plans, users and organizations for this Xilo instance.")
+	@Layout(T("nav.settings"), "settings", d.Nav, d.Flash) {
+		if d.MultiTenant {
+			@PageHeader(T("set.instance"), T("inst.subtitle"))
+		} else {
+			@PageHeader(T("set.instance"), T("inst.subtitle.single"))
+		}
 		<div class="grid gap-6">
 			if d.MultiTenant {
 				@policyCard(d)
 				@plansCard(d.Plans)
 			}
-			@usersCard(d.Nav.UserName, d.Users)
+			@usersCard(d.Nav.UserName, d.MultiTenant, d.Users)
 			@orgsCard(d.Orgs)
+			@maintCard()
 		</div>
 	}
 }
@@ -47,26 +52,26 @@ templ policyCard(d InstanceData) {
 	@card.Card() {
 		@card.Header() {
 			@card.Title() {
-				Registration policy
+				{ T("inst.policy") }
 			}
 		}
 		@card.Content() {
 			<form method="post" action="/admin/settings/instance" class="space-y-3">
 				@form.ItemFlex(form.ItemProps{Class: "justify-between rounded-lg border p-3"}) {
 					@form.Label(form.LabelProps{For: "allow_registrations"}) {
-						Allow self-registration
+						{ T("inst.regs") }
 					}
 					@switchcomp.Switch(switchcomp.Props{ID: "allow_registrations", Name: "allow_registrations", Value: "on", Checked: d.AllowRegs})
 				}
 				@form.ItemFlex(form.ItemProps{Class: "justify-between rounded-lg border p-3"}) {
 					@form.Label(form.LabelProps{For: "require_approval"}) {
-						Require admin approval
+						{ T("inst.approve") }
 					}
 					@switchcomp.Switch(switchcomp.Props{ID: "require_approval", Name: "require_approval", Value: "on", Checked: d.RequireOK})
 				}
 				@button.Button(button.Props{Type: button.TypeSubmit}) {
 					@Icon("check")
-					<span>Save policy</span>
+					<span>{ T("inst.savepolicy") }</span>
 				}
 			</form>
 		}
@@ -78,15 +83,15 @@ templ plansCard(plans []store.Plan) {
 	@card.Card() {
 		@card.Header(card.HeaderProps{Class: "flex-row items-center justify-between space-y-0"}) {
 			@card.Title() {
-				Plans
+				{ T("set.plans") }
 			}
 			@newPlanDialog()
 		}
 		@card.Content(card.ContentProps{Class: "space-y-2"}) {
 			if len(plans) == 0 {
-				@EmptyState("layers", "No plans yet.")
+				@EmptyState("layers", T("plan.empty"))
 			} else {
-				@card.Card(card.Props{Class: "p-0"}) {
+				<div class="overflow-hidden rounded-lg border">
 					@table.Table() {
 						@table.Body() {
 							for _, p := range plans {
@@ -95,38 +100,39 @@ templ plansCard(plans []store.Plan) {
 										<div class="flex flex-wrap items-center gap-2">
 											<span class="font-medium">{ p.Name }</span>
 											if p.Public {
-												@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
-													public
-												}
+												@VisBadge(true)
 											}
 											if p.OrgsAllowed {
 												@badge.Badge(badge.Props{Variant: badge.VariantOutline}) {
-													orgs
+													{ T("plan.orgs") }
 												}
 											}
 											<span class="text-xs text-muted-foreground">{ planLimits(p) }</span>
 										</div>
 									}
 									@table.Cell(table.CellProps{Class: "text-right"}) {
-										@ConfirmForm(Confirm{
-											ID:             "plan-" + strconv.FormatInt(p.ID, 10),
-											Action:         "/admin/plans/" + strconv.FormatInt(p.ID, 10) + "/delete",
-											Title:          "Delete plan?",
-											Message:        "Accounts on “" + p.Name + "” keep their data but lose this plan's limits.",
-											ConfirmLabel:   "Delete plan",
-											ConfirmIcon:    "trash-2",
-											Danger:         true,
-											TriggerIcon:    "trash-2",
-											IconOnly:       true,
-											TriggerTooltip: "Delete plan",
-											TriggerVariant: button.VariantGhost,
-										})
+										<div class="flex justify-end gap-1">
+											@editPlanDialog(p)
+											@ConfirmForm(Confirm{
+												ID:             "plan-" + strconv.FormatInt(p.ID, 10),
+												Action:         "/admin/plans/" + strconv.FormatInt(p.ID, 10) + "/delete",
+												Title:          T("plan.deletetitle"),
+												Message:        T("plan.delmsg.pre") + " “" + p.Name + "” " + T("plan.delmsg.post"),
+												ConfirmLabel:   T("plan.delete"),
+												ConfirmIcon:    "trash-2",
+												Danger:         true,
+												TriggerIcon:    "trash-2",
+												IconOnly:       true,
+												TriggerTooltip: T("plan.delete"),
+												TriggerVariant: button.VariantGhost,
+											})
+										</div>
 									}
 								}
 							}
 						}
 					}
-				}
+				</div>
 			}
 		}
 	}
@@ -137,62 +143,93 @@ templ newPlanDialog() {
 		@dialog.Trigger(dialog.TriggerProps{For: "dlg-plan-new"}) {
 			@button.Button(button.Props{Size: button.SizeSm}) {
 				@Icon("plus")
-				<span>New plan</span>
+				<span>{ T("plan.new") }</span>
 			}
 		}
-		@dialog.Content(dialog.ContentProps{Class: "sm:max-w-lg"}) {
+		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-lg"}) {
 			@dialog.Header() {
 				@dialog.Title() {
-					New plan
+					{ T("plan.new") }
+				}
+				@dialog.Description() {
+					{ T("plan.hint") }
 				}
 			}
-			<form method="post" action="/admin/plans" class="mt-2 space-y-4">
-				@Field("plan-name", "Name") {
-					@input.Input(input.Props{ID: "plan-name", Name: "name", Placeholder: "free", Required: true})
-				}
-				<div class="grid gap-4 sm:grid-cols-2">
-					@Field("plan-caches", "Max caches") {
-						@input.Input(input.Props{ID: "plan-caches", Name: "max_caches", Type: input.TypeNumber, Placeholder: "0 = unlimited", Attributes: templ.Attributes{"min": "0"}})
-					}
-					@Field("plan-members", "Max members") {
-						@input.Input(input.Props{ID: "plan-members", Name: "max_members", Type: input.TypeNumber, Placeholder: "0 = unlimited", Attributes: templ.Attributes{"min": "0"}})
-					}
-				</div>
-				@Field("", "Max storage") {
-					@SizeInput("plan_storage", 0)
-				}
-				@Field("", "Max retention") {
-					@DurationInput("plan_retention", 0)
-				}
-				@PermSwitch("orgs_allowed", "Members may create organizations", false)
-				@PermSwitch("public", "Selectable at self-registration", true)
-				@dialog.Footer() {
-					@dialog.Close(dialog.CloseProps{For: "dlg-plan-new"}) {
-						@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
-							Cancel
-						}
-					}
-					@button.Button(button.Props{Type: button.TypeSubmit}) {
-						@Icon("plus")
-						<span>Create plan</span>
-					}
-				}
-			</form>
+			@planFormBody("/admin/plans", nil, "plus", T("plan.create"), "dlg-plan-new")
 		}
 	}
 }
 
+// editPlanDialog is a per-row plan edit trigger + dialog.
+templ editPlanDialog(p store.Plan) {
+	{{ id := "dlg-plan-edit-" + strconv.FormatInt(p.ID, 10) }}
+	@dialog.Dialog(dialog.Props{ID: id}) {
+		@dialog.Trigger(dialog.TriggerProps{For: id}) {
+			@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton, Attributes: templ.Attributes{"aria-label": T("plan.edit"), "title": T("plan.edit")}}) {
+				@Icon("square-pen")
+			}
+		}
+		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-lg"}) {
+			@dialog.Header() {
+				@dialog.Title() {
+					{ T("plan.edit") }
+				}
+				@dialog.Description() {
+					{ T("plan.hint") }
+				}
+			}
+			@planFormBody("/admin/plans/"+strconv.FormatInt(p.ID, 10)+"/edit", &p, "check", T("tokens.save"), id)
+		}
+	}
+}
+
+// planFormBody is the shared create/edit plan form; p is nil on create.
+templ planFormBody(action string, p *store.Plan, submitIcon, submitLabel, dlgID string) {
+	<form method="post" action={ templ.SafeURL(action) } class="mt-2 space-y-4">
+		@Field(dlgID+"-name", T("plan.name")) {
+			@input.Input(input.Props{ID: dlgID + "-name", Name: "name", Value: planName(p), Placeholder: T("ph.planname"), Required: true})
+		}
+		<div class="grid gap-4 sm:grid-cols-2">
+			@Field(dlgID+"-caches", T("plan.maxcaches")) {
+				@input.Input(input.Props{ID: dlgID + "-caches", Name: "max_caches", Type: input.TypeNumber, Value: planLimit(p, "caches"), Placeholder: T("ph.zerounlimited"), Attributes: templ.Attributes{"min": "0"}})
+			}
+			@Field(dlgID+"-members", T("plan.maxmembers")) {
+				@input.Input(input.Props{ID: dlgID + "-members", Name: "max_members", Type: input.TypeNumber, Value: planLimit(p, "members"), Placeholder: T("ph.zerounlimited"), Attributes: templ.Attributes{"min": "0"}})
+			}
+		</div>
+		@Field("", T("plan.maxstorage")) {
+			@SizeInput("plan_storage", planBytes(p))
+		}
+		@Field("", T("plan.maxretention")) {
+			@DurationInput("plan_retention", planSecs(p))
+		}
+		@PermSwitch("orgs_allowed", T("plan.orgsallowed"), p != nil && p.OrgsAllowed)
+		@PermSwitch("public", T("plan.public"), p == nil || p.Public)
+		@dialog.Footer() {
+			@dialog.Close(dialog.CloseProps{For: dlgID}) {
+				@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
+					{ T("action.cancel") }
+				}
+			}
+			@button.Button(button.Props{Type: button.TypeSubmit}) {
+				@Icon(submitIcon)
+				<span>{ submitLabel }</span>
+			}
+		}
+	</form>
+}
+
 // usersCard is the user administration block.
-templ usersCard(actingName string, users []store.User) {
+templ usersCard(actingName string, multiTenant bool, users []store.User) {
 	@card.Card() {
 		@card.Header(card.HeaderProps{Class: "flex-row items-center justify-between space-y-0"}) {
 			@card.Title() {
-				Users
+				{ T("set.users") }
 			}
-			@newUserDialog()
+			@newUserDialog(multiTenant)
 		}
 		@card.Content() {
-			@card.Card(card.Props{Class: "p-0"}) {
+			<div class="overflow-hidden rounded-lg border">
 				@table.Table() {
 					@table.Body() {
 						for _, u := range users {
@@ -203,16 +240,16 @@ templ usersCard(actingName string, users []store.User) {
 										<span class="font-medium">{ u.Name }</span>
 										if u.Role == "admin" {
 											@badge.Badge(badge.Props{Variant: badge.VariantDefault}) {
-												admin
+												{ T("ns.owner") }
 											}
 										} else {
 											@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
-												member
+												{ T("ns.member") }
 											}
 										}
 										if u.Status == "pending" {
 											@badge.Badge(badge.Props{Variant: badge.VariantOutline}) {
-												pending
+												{ T("users.pending") }
 											}
 										}
 										if u.Email != "" {
@@ -224,7 +261,7 @@ templ usersCard(actingName string, users []store.User) {
 									<div class="flex justify-end gap-1">
 										if u.Status == "pending" {
 											<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/approve") }>
-												@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": "Approve", "title": "Approve"}}) {
+												@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.approve"), "title": T("users.approve")}}) {
 													@Icon("user-check")
 												}
 											</form>
@@ -234,12 +271,12 @@ templ usersCard(actingName string, users []store.User) {
 											<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/role") }>
 												if u.Role == "admin" {
 													<input type="hidden" name="role" value="member"/>
-													@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": "Demote", "title": "Demote"}}) {
+													@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.demote"), "title": T("users.demote")}}) {
 														@Icon("user-minus")
 													}
 												} else {
 													<input type="hidden" name="role" value="admin"/>
-													@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": "Promote", "title": "Promote"}}) {
+													@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.promote"), "title": T("users.promote")}}) {
 														@Icon("user-plus")
 													}
 												}
@@ -247,14 +284,14 @@ templ usersCard(actingName string, users []store.User) {
 											@ConfirmForm(Confirm{
 												ID:             "del-user-" + strconv.FormatInt(u.ID, 10),
 												Action:         "/admin/users/" + strconv.FormatInt(u.ID, 10) + "/delete",
-												Title:          "Delete user?",
-												Message:        "“" + u.Name + "” and their sessions will be removed.",
-												ConfirmLabel:   "Delete user",
+												Title:          T("users.deletetitle"),
+												Message:        "“" + u.Name + "” " + T("users.deletemsg"),
+												ConfirmLabel:   T("users.delete"),
 												ConfirmIcon:    "trash-2",
 												Danger:         true,
 												TriggerIcon:    "trash-2",
 												IconOnly:       true,
-												TriggerTooltip: "Delete user",
+												TriggerTooltip: T("users.delete"),
 												TriggerVariant: button.VariantGhost,
 											})
 										}
@@ -264,7 +301,7 @@ templ usersCard(actingName string, users []store.User) {
 						}
 					}
 				}
-			}
+			</div>
 		}
 	}
 }
@@ -273,29 +310,32 @@ templ resetUserDialog(u store.User) {
 	{{ id := "dlg-user-reset-" + strconv.FormatInt(u.ID, 10) }}
 	@dialog.Dialog(dialog.Props{ID: id}) {
 		@dialog.Trigger(dialog.TriggerProps{For: id}) {
-			@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton, Attributes: templ.Attributes{"aria-label": "Reset password", "title": "Reset password"}}) {
+			@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton, Attributes: templ.Attributes{"aria-label": T("users.reset"), "title": T("users.reset")}}) {
 				@Icon("key-round")
 			}
 		}
-		@dialog.Content(dialog.ContentProps{Class: "sm:max-w-md"}) {
+		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-md"}) {
 			@dialog.Header() {
 				@dialog.Title() {
-					Reset password for { u.Name }
+					{ T("users.resetfor") } { u.Name }
+				}
+				@dialog.Description() {
+					{ T("users.resethint") }
 				}
 			}
 			<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/reset") } class="mt-2 space-y-4">
-				@Field("reset-pw-"+strconv.FormatInt(u.ID, 10), "New password") {
+				@Field("reset-pw-"+strconv.FormatInt(u.ID, 10), T("users.newpw")) {
 					@input.Input(input.Props{ID: "reset-pw-" + strconv.FormatInt(u.ID, 10), Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "8"}})
 				}
 				@dialog.Footer() {
 					@dialog.Close(dialog.CloseProps{For: id}) {
 						@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
-							Cancel
+							{ T("action.cancel") }
 						}
 					}
 					@button.Button(button.Props{Type: button.TypeSubmit}) {
 						@Icon("key-round")
-						<span>Reset password</span>
+						<span>{ T("users.reset") }</span>
 					}
 				}
 			</form>
@@ -303,40 +343,43 @@ templ resetUserDialog(u store.User) {
 	}
 }
 
-templ newUserDialog() {
+templ newUserDialog(multiTenant bool) {
 	@dialog.Dialog(dialog.Props{ID: "dlg-user-new"}) {
 		@dialog.Trigger(dialog.TriggerProps{For: "dlg-user-new"}) {
 			@button.Button(button.Props{Size: button.SizeSm}) {
-				@Icon("user-plus")
-				<span>New user</span>
+				@Icon("plus")
+				<span>{ T("users.new") }</span>
 			}
 		}
-		@dialog.Content(dialog.ContentProps{Class: "sm:max-w-md"}) {
+		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-md"}) {
 			@dialog.Header() {
 				@dialog.Title() {
-					New user
+					{ T("users.new") }
+				}
+				@dialog.Description() {
+					{ T("users.hint") }
 				}
 			}
 			<form method="post" action="/admin/users" class="mt-2 space-y-4">
-				@Field("nu-name", "Username") {
-					@input.Input(input.Props{ID: "nu-name", Name: "username", Placeholder: "alice", Required: true})
+				@Field("nu-name", T("users.name")) {
+					@input.Input(input.Props{ID: "nu-name", Name: "username", Placeholder: T("ph.newuser"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
 				}
-				@Field("nu-email", "Email") {
-					@input.Input(input.Props{ID: "nu-email", Name: "email", Type: input.TypeEmail, Placeholder: "alice@example.com"})
+				@Field("nu-email", T("users.email")) {
+					@input.Input(input.Props{ID: "nu-email", Name: "email", Type: input.TypeEmail, Placeholder: T("ph.newemail"), Required: multiTenant})
 				}
-				@Field("nu-pw", "Password") {
+				@Field("nu-pw", T("login.password")) {
 					@input.Input(input.Props{ID: "nu-pw", Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "8"}})
 				}
-				@PermSwitch("role", "Instance admin", false)
+				@PermSwitchVal("role", "admin", T("users.instadmin"), false)
 				@dialog.Footer() {
 					@dialog.Close(dialog.CloseProps{For: "dlg-user-new"}) {
 						@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
-							Cancel
+							{ T("action.cancel") }
 						}
 					}
 					@button.Button(button.Props{Type: button.TypeSubmit}) {
-						@Icon("user-plus")
-						<span>Create user</span>
+						@Icon("plus")
+						<span>{ T("users.create") }</span>
 					}
 				}
 			</form>
@@ -344,17 +387,27 @@ templ newUserDialog() {
 	}
 }
 
-// orgsCard lists organizations with usage and the create-org form.
+// orgsCard lists organizations with usage and holds the create-org dialog.
 templ orgsCard(orgs []OrgInfo) {
 	@card.Card() {
-		@card.Header() {
+		@card.Header(card.HeaderProps{Class: "flex-row items-center justify-between space-y-0"}) {
 			@card.Title() {
-				Organizations
+				{ T("org.title") }
 			}
+			@newOrgDialog("/admin/orgs")
 		}
 		@card.Content(card.ContentProps{Class: "space-y-3"}) {
-			if len(orgs) > 0 {
-				@card.Card(card.Props{Class: "p-0"}) {
+			if len(orgs) == 0 {
+				@EmptyState("building-2", T("org.empty")) {
+					@dialog.Trigger(dialog.TriggerProps{For: "dlg-org-new"}) {
+						@button.Button(button.Props{Size: button.SizeSm}) {
+							@Icon("plus")
+							<span>{ T("org.new") }</span>
+						}
+					}
+				}
+			} else {
+				<div class="overflow-hidden rounded-lg border">
 					@table.Table() {
 						@table.Body() {
 							for _, info := range orgs {
@@ -363,21 +416,21 @@ templ orgsCard(orgs []OrgInfo) {
 										<div class="flex items-center gap-2">
 											@Icon("building-2")
 											<a href={ templ.SafeURL("/admin/org/" + info.Account.Slug) } class="font-medium hover:underline">{ info.Account.Slug }</a>
-											<span class="text-xs text-muted-foreground">{ UsagePhrase(info) }</span>
+											<span class="text-xs text-muted-foreground tabular-nums">{ UsagePhrase(info) }</span>
 										</div>
 									}
 									@table.Cell(table.CellProps{Class: "text-right"}) {
 										@ConfirmForm(Confirm{
 											ID:             "org-" + info.Account.Slug,
 											Action:         "/admin/org/" + info.Account.Slug + "/delete",
-											Title:          "Delete organization?",
-											Message:        "“" + info.Account.Slug + "” and its caches will be removed.",
-											ConfirmLabel:   "Delete organization",
+											Title:          T("org.deletetitle"),
+											Message:        "“" + info.Account.Slug + "” " + T("org.deletemsg"),
+											ConfirmLabel:   T("org.delete"),
 											ConfirmIcon:    "trash-2",
 											Danger:         true,
 											TriggerIcon:    "trash-2",
 											IconOnly:       true,
-											TriggerTooltip: "Delete organization",
+											TriggerTooltip: T("org.delete"),
 											TriggerVariant: button.VariantGhost,
 										})
 									}
@@ -385,20 +438,71 @@ templ orgsCard(orgs []OrgInfo) {
 							}
 						}
 					}
+				</div>
+			}
+		}
+	}
+}
+
+templ newOrgDialog(action string) {
+	@dialog.Dialog(dialog.Props{ID: "dlg-org-new"}) {
+		@dialog.Trigger(dialog.TriggerProps{For: "dlg-org-new"}) {
+			@button.Button(button.Props{Size: button.SizeSm}) {
+				@Icon("plus")
+				<span>{ T("org.new") }</span>
+			}
+		}
+		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-md"}) {
+			@dialog.Header() {
+				@dialog.Title() {
+					{ T("org.new") }
+				}
+				@dialog.Description() {
+					{ T("org.newhint") }
 				}
 			}
-			<form method="post" action="/admin/orgs" class="flex items-end gap-2">
-				@form.Item(form.ItemProps{Class: "flex-1"}) {
-					@form.Label(form.LabelProps{For: "org-name"}) {
-						New organization
-					}
-					@input.Input(input.Props{ID: "org-name", Name: "name", Placeholder: "my-org", Required: true, Attributes: templ.Attributes{"pattern": "[-a-zA-Z0-9_]+"}})
+			<form method="post" action={ templ.SafeURL(action) } class="mt-2 space-y-4">
+				@Field("org-name", T("org.name")) {
+					@input.Input(input.Props{ID: "org-name", Name: "name", Placeholder: T("ph.orgname"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
 				}
-				@button.Button(button.Props{Type: button.TypeSubmit}) {
-					@Icon("folder-plus")
-					<span>Create</span>
+				@dialog.Footer() {
+					@dialog.Close(dialog.CloseProps{For: "dlg-org-new"}) {
+						@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
+							{ T("action.cancel") }
+						}
+					}
+					@button.Button(button.Props{Type: button.TypeSubmit}) {
+						@Icon("plus")
+						<span>{ T("org.create") }</span>
+					}
 				}
 			</form>
+		}
+	}
+}
+
+// maintCard is instance-wide maintenance: garbage collection.
+templ maintCard() {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				{ T("inst.maint") }
+			}
+		}
+		@card.Content() {
+			<div class="flex items-center justify-between gap-3">
+				<p class="text-sm text-muted-foreground">{ T("inst.gcdesc") }</p>
+				@ConfirmForm(Confirm{
+					ID:           "gc",
+					Action:       "/admin/gc",
+					Title:        T("inst.gctitle"),
+					Message:      T("inst.gcmsg"),
+					ConfirmLabel: T("inst.gcrun"),
+					ConfirmIcon:  "recycle",
+					TriggerLabel: T("inst.gcrun"),
+					TriggerIcon:  "recycle",
+				})
+			</div>
 		}
 	}
 }

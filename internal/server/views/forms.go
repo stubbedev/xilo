@@ -16,12 +16,80 @@ func defaultAccount(accounts []store.Account) string {
 	return ""
 }
 
+// activeOr prefers the viewing context over a fallback for dialog presets.
+func activeOr(nav Nav, fallback string) string {
+	if nav.Active != "" {
+		return nav.Active
+	}
+	return fallback
+}
+
+// tokenNamespaceDefault preselects the viewing context for new tokens;
+// non-admins (who cannot mint instance-wide tokens) fall back to an account.
+func tokenNamespaceDefault(d DashboardData) string {
+	if d.Nav.Active != "" {
+		return d.Nav.Active
+	}
+	if !d.IsAdmin {
+		return defaultAccount(d.Accounts)
+	}
+	return ""
+}
+
+// tokenNamespacePlaceholder names the empty selection: instance-wide is an
+// admin-only concept.
+func tokenNamespacePlaceholder(d DashboardData) string {
+	if d.IsAdmin {
+		return T("tokens.instance")
+	}
+	return T("caches.pickaccount")
+}
+
 // firstStr returns the first element or "".
 func firstStr(s []string) string {
 	if len(s) > 0 {
 		return s[0]
 	}
 	return ""
+}
+
+// planName is the plan name preset ("" on create).
+func planName(p *store.Plan) string {
+	if p == nil {
+		return ""
+	}
+	return p.Name
+}
+
+// planLimit prefills a numeric plan cap; empty for 0/unlimited.
+func planLimit(p *store.Plan, which string) string {
+	if p == nil {
+		return ""
+	}
+	v := p.MaxCaches
+	if which == "members" {
+		v = p.MaxMembers
+	}
+	if v == 0 {
+		return ""
+	}
+	return itoa(v)
+}
+
+// planBytes is the storage cap preset (0 on create).
+func planBytes(p *store.Plan) int64 {
+	if p == nil {
+		return 0
+	}
+	return p.MaxStorage
+}
+
+// planSecs is the retention cap preset (0 on create).
+func planSecs(p *store.Plan) int64 {
+	if p == nil {
+		return 0
+	}
+	return p.MaxRetention
 }
 
 // tokenScopeValue is the cache-scope select value for a token ("*" = all).
@@ -38,7 +106,7 @@ func tokenScopeValue(t *store.Token) string {
 // tokenAccountLabel is the read-only owning-namespace label on token edit.
 func tokenAccountLabel(t *store.Token) string {
 	if t == nil || t.AccountID == 0 {
-		return "Instance-wide"
+		return T("tokens.instance")
 	}
 	return t.Account
 }

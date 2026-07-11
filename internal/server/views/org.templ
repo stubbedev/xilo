@@ -31,14 +31,14 @@ templ Org(d OrgPageData) {
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						Members
+						{ T("org.members") }
 					}
 				}
 				@card.Content(card.ContentProps{Class: "space-y-3"}) {
 					if len(d.Info.Members) == 0 {
-						@EmptyState("users", "No members yet.")
+						@EmptyState("users", T("org.membersempty"))
 					} else {
-						@card.Card(card.Props{Class: "p-0"}) {
+						<div class="overflow-hidden rounded-lg border">
 							@table.Table() {
 								@table.Body() {
 									for _, m := range d.Info.Members {
@@ -49,11 +49,11 @@ templ Org(d OrgPageData) {
 													<span class="font-medium">{ m.UserName }</span>
 													if m.Role == "admin" {
 														@badge.Badge(badge.Props{Variant: badge.VariantDefault}) {
-															admin
+															{ T("ns.owner") }
 														}
 													} else {
 														@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
-															member
+															{ T("ns.member") }
 														}
 													}
 												</div>
@@ -65,12 +65,12 @@ templ Org(d OrgPageData) {
 															<input type="hidden" name="user_id" value={ strconv.FormatInt(m.UserID, 10) }/>
 															if m.Role == "admin" {
 																<input type="hidden" name="role" value="member"/>
-																@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": "Demote", "title": "Demote to member"}}) {
+																@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.demote"), "title": T("org.demote")}}) {
 																	@Icon("user-minus")
 																}
 															} else {
 																<input type="hidden" name="role" value="admin"/>
-																@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": "Promote", "title": "Promote to admin"}}) {
+																@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.promote"), "title": T("org.promote")}}) {
 																	@Icon("user-plus")
 																}
 															}
@@ -78,14 +78,14 @@ templ Org(d OrgPageData) {
 														@ConfirmForm(Confirm{
 															ID:             "rm-member-" + strconv.FormatInt(m.UserID, 10),
 															Action:         "/admin/org/" + d.Info.Account.Slug + "/members/" + strconv.FormatInt(m.UserID, 10) + "/remove",
-															Title:          "Remove member?",
-															Message:        m.UserName + " will lose access to " + d.Info.Account.Slug + ".",
-															ConfirmLabel:   "Remove",
+															Title:          T("org.removetitle"),
+															Message:        m.UserName + " " + T("org.removemsg") + " " + d.Info.Account.Slug + ".",
+															ConfirmLabel:   T("set.passkeys.remove"),
 															ConfirmIcon:    "trash-2",
 															Danger:         true,
 															TriggerIcon:    "trash-2",
 															IconOnly:       true,
-															TriggerTooltip: "Remove member",
+															TriggerTooltip: T("ns.removemember"),
 															TriggerVariant: button.VariantGhost,
 														})
 													</div>
@@ -95,16 +95,16 @@ templ Org(d OrgPageData) {
 									}
 								}
 							}
-						}
+						</div>
 					}
 					if d.CanManage {
 						if len(d.AllUsers) > 0 {
 							<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") } class="flex flex-wrap items-end gap-2">
 								<div class="min-w-48 flex-1">
-									@Field("member-user", "Add member") {
+									@Field("", T("org.addmember")) {
 										@selectbox.SelectBox() {
 											@selectbox.Trigger(selectbox.TriggerProps{Name: "user_id"}) {
-												@selectbox.Value(selectbox.ValueProps{Placeholder: "Pick a user"})
+												@selectbox.Value(selectbox.ValueProps{Placeholder: T("org.pickuser")})
 											}
 											@selectbox.Content() {
 												for _, cand := range d.AllUsers {
@@ -117,17 +117,17 @@ templ Org(d OrgPageData) {
 									}
 								</div>
 								<div class="w-36">
-									@Field("member-role", "Role") {
+									@Field("", T("users.role")) {
 										@roleSelect("role", "member")
 									}
 								</div>
 								@button.Button(button.Props{Type: button.TypeSubmit}) {
 									@Icon("user-plus")
-									<span>Add</span>
+									<span>{ T("ns.addmember") }</span>
 								}
 							</form>
 						} else {
-							<p class="text-sm text-muted-foreground">Every active user is already a member.</p>
+							<p class="text-sm text-muted-foreground">{ T("org.nocandidates") }</p>
 						}
 					}
 				}
@@ -135,30 +135,21 @@ templ Org(d OrgPageData) {
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						Caches
+						{ T("org.caches") }
 					}
 				}
 				@card.Content() {
 					if len(d.Caches) == 0 {
-						@EmptyState("database", "No caches in this organization yet.")
+						@EmptyState("database", T("org.cachesempty")) {
+							@button.Button(button.Props{Href: "/admin", Variant: button.VariantOutline, Size: button.SizeSm}) {
+								@Icon("plus")
+								<span>{ T("caches.new") }</span>
+							}
+						}
 					} else {
-						@card.Card(card.Props{Class: "p-0"}) {
-							@table.Table() {
-								@table.Body() {
-									for _, u := range d.Caches {
-										@table.Row() {
-											@table.Cell() {
-												<div class="flex items-center gap-2">
-													<a href={ templ.SafeURL("/admin/cache/" + u.Cache.Ref()) } class="font-medium hover:underline">{ u.Cache.Name }</a>
-													@VisBadge(u.Cache.Public)
-												</div>
-											}
-											@table.Cell(table.CellProps{Class: "text-right text-xs text-muted-foreground tabular-nums"}) {
-												{ d.Bytes(u.Bytes) } · { Count(u.Paths) } paths
-											}
-										}
-									}
-								}
+						@card.Card(card.Props{Class: "divide-y p-0"}) {
+							for _, u := range d.Caches {
+								@cacheRow(u, d.Bytes)
 							}
 						}
 					}
@@ -176,10 +167,10 @@ templ roleSelect(name, value string) {
 		}
 		@selectbox.Content() {
 			@selectbox.Item(selectbox.ItemProps{Value: "member", Selected: value == "member"}) {
-				Member
+				{ T("users.member") }
 			}
 			@selectbox.Item(selectbox.ItemProps{Value: "admin", Selected: value == "admin"}) {
-				Admin
+				{ T("users.admin") }
 			}
 		}
 	}

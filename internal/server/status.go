@@ -237,10 +237,10 @@ func (s *Server) statusData(q statusRangeQ) views.StatusData {
 		To:        set.toStr,
 	}
 	d.Charts = []views.ChartData{
-		statusChartData("req", "Requests /s", set.req, set.times, fmtReq),
-		statusChartData("lat", "Latency (ms)", set.lat, set.times, fmtLat),
-		statusChartData("thru", "NAR throughput (MiB/s)", set.bps, set.times, fmtBps),
-		statusChartData("stored", "Stored (MiB)", set.stored, set.times, fmtB),
+		statusChartData("req", views.T("status.req"), set.req, set.times, fmtReq),
+		statusChartData("lat", views.T("status.lat"), set.lat, set.times, fmtLat),
+		statusChartData("thru", views.T("status.thru"), set.bps, set.times, fmtBps),
+		statusChartData("stored", views.T("status.storedchart"), set.stored, set.times, fmtB),
 	}
 	return d
 }

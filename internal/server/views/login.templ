@@ -18,45 +18,110 @@ import (
 // account pages.
 templ webauthnScript() {
 	<script>
-		function b64uToBuf(s){s=s.replace(/-/g,'+').replace(/_/g,'/');var b=atob(s),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++){a[i]=b.charCodeAt(i)}return a.buffer}
-		function bufToB64u(b){var a=new Uint8Array(b),s='';for(var i=0;i<a.length;i++){s+=String.fromCharCode(a[i])}return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
-		async function xiloPasskeyRegister(){
-			var res=await fetch('/admin/passkeys/register/begin',{method:'POST'});
-			if(!res.ok){alert(await res.text());return}
-			var opts=(await res.json()).publicKey;
-			opts.challenge=b64uToBuf(opts.challenge);
-			opts.user.id=b64uToBuf(opts.user.id);
-			(opts.excludeCredentials||[]).forEach(function(c){c.id=b64uToBuf(c.id)});
-			var cred;
-			try{cred=await navigator.credentials.create({publicKey:opts})}catch(e){return}
-			var body={id:cred.id,rawId:bufToB64u(cred.rawId),type:cred.type,response:{
-				attestationObject:bufToB64u(cred.response.attestationObject),
-				clientDataJSON:bufToB64u(cred.response.clientDataJSON)}};
-			var fin=await fetch('/admin/passkeys/register/finish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-			if(fin.ok){location.reload()}else{alert(await fin.text())}
+		function b64uToBuf(s) {
+			s = s.replace(/-/g, '+').replace(/_/g, '/');
+			var b = atob(s),
+				a = new Uint8Array(b.length);
+			for (var i = 0; i < b.length; i++) {
+				a[i] = b.charCodeAt(i);
+			}
+			return a.buffer;
 		}
-		async function xiloPasskeyLogin(){
-			var res=await fetch('/admin/login/passkey/begin',{method:'POST'});
-			if(!res.ok){alert(await res.text());return}
-			var opts=(await res.json()).publicKey;
-			opts.challenge=b64uToBuf(opts.challenge);
-			(opts.allowCredentials||[]).forEach(function(c){c.id=b64uToBuf(c.id)});
+		function bufToB64u(b) {
+			var a = new Uint8Array(b),
+				s = '';
+			for (var i = 0; i < a.length; i++) {
+				s += String.fromCharCode(a[i]);
+			}
+			return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+		}
+		async function xiloPasskeyRegister() {
+			var res = await fetch('/admin/passkeys/register/begin', {
+				method: 'POST',
+			});
+			if (!res.ok) {
+				alert(await res.text());
+				return;
+			}
+			var opts = (await res.json()).publicKey;
+			opts.challenge = b64uToBuf(opts.challenge);
+			opts.user.id = b64uToBuf(opts.user.id);
+			(opts.excludeCredentials || []).forEach(function (c) {
+				c.id = b64uToBuf(c.id);
+			});
 			var cred;
-			try{cred=await navigator.credentials.get({publicKey:opts})}catch(e){return}
-			var body={id:cred.id,rawId:bufToB64u(cred.rawId),type:cred.type,response:{
-				authenticatorData:bufToB64u(cred.response.authenticatorData),
-				clientDataJSON:bufToB64u(cred.response.clientDataJSON),
-				signature:bufToB64u(cred.response.signature),
-				userHandle:cred.response.userHandle?bufToB64u(cred.response.userHandle):null}};
-			var fin=await fetch('/admin/login/passkey/finish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-			if(fin.ok){location.href='/admin'}else{alert(await fin.text())}
+			try {
+				cred = await navigator.credentials.create({ publicKey: opts });
+			} catch (e) {
+				return;
+			}
+			var body = {
+				id: cred.id,
+				rawId: bufToB64u(cred.rawId),
+				type: cred.type,
+				response: {
+					attestationObject: bufToB64u(cred.response.attestationObject),
+					clientDataJSON: bufToB64u(cred.response.clientDataJSON),
+				},
+			};
+			var fin = await fetch('/admin/passkeys/register/finish', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body),
+			});
+			if (fin.ok) {
+				location.reload();
+			} else {
+				alert(await fin.text());
+			}
+		}
+		async function xiloPasskeyLogin() {
+			var res = await fetch('/admin/login/passkey/begin', { method: 'POST' });
+			if (!res.ok) {
+				alert(await res.text());
+				return;
+			}
+			var opts = (await res.json()).publicKey;
+			opts.challenge = b64uToBuf(opts.challenge);
+			(opts.allowCredentials || []).forEach(function (c) {
+				c.id = b64uToBuf(c.id);
+			});
+			var cred;
+			try {
+				cred = await navigator.credentials.get({ publicKey: opts });
+			} catch (e) {
+				return;
+			}
+			var body = {
+				id: cred.id,
+				rawId: bufToB64u(cred.rawId),
+				type: cred.type,
+				response: {
+					authenticatorData: bufToB64u(cred.response.authenticatorData),
+					clientDataJSON: bufToB64u(cred.response.clientDataJSON),
+					signature: bufToB64u(cred.response.signature),
+					userHandle: cred.response.userHandle
+						? bufToB64u(cred.response.userHandle)
+						: null,
+				},
+			};
+			var fin = await fetch('/admin/login/passkey/finish', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body),
+			});
+			if (fin.ok) {
+				location.href = '/admin';
+			} else {
+				alert(await fin.text());
+			}
 		}
 	</script>
 }
 
 // AuthShell is the minimal centered chrome for signed-out pages.
 templ AuthShell(title string, flash Flash) {
-	<!doctype html>
+	<!DOCTYPE html>
 	<html lang="en" class="h-full">
 		<head>
 			<meta charset="utf-8"/>
@@ -66,7 +131,19 @@ templ AuthShell(title string, flash Flash) {
 			<link rel="stylesheet" href={ Asset("xilo-tw.css") }/>
 			<script src={ Asset("htmx.min.js") }></script>
 			<script>
-				(function(){var t=localStorage.getItem('theme');if(!t){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t==='dark'){document.documentElement.classList.add('dark');}})();
+				(function () {
+					var t = localStorage.getItem('theme');
+					if (!t) {
+						t =
+							window.matchMedia &&
+							window.matchMedia('(prefers-color-scheme: dark)').matches
+								? 'dark'
+								: 'light';
+					}
+					if (t === 'dark') {
+						document.documentElement.classList.add('dark');
+					}
+				})();
 			</script>
 			@input.Script()
 			@label.Script()
@@ -76,7 +153,9 @@ templ AuthShell(title string, flash Flash) {
 		<body class="flex min-h-full items-center justify-center bg-background px-4 py-12 text-foreground antialiased">
 			<div class="w-full max-w-sm">
 				<div class="mb-6 flex items-center justify-center gap-2 text-lg font-semibold">
-					<span class="text-primary">@Icon("box")</span>
+					<span class="text-primary">
+						@Icon("box")
+					</span>
 					<span>Xilo</span>
 				</div>
 				if flash.Msg != "" {
@@ -95,32 +174,32 @@ templ AuthShell(title string, flash Flash) {
 }
 
 templ Login(noPassword, hasPasskeys, canRegister bool, flash Flash) {
-	@AuthShell("Sign in", flash) {
+	@AuthShell(T("login.title"), flash) {
 		@card.Card() {
 			@card.Header() {
 				@card.Title() {
-					Sign in
+					{ T("login.title") }
 				}
 				@card.Description() {
-					Access the Xilo admin.
+					{ T("login.subtitle") }
 				}
 			}
 			@card.Content(card.ContentProps{Class: "space-y-4"}) {
 				<form method="post" action="/admin/login" class="space-y-4">
-					@Field("username", "Username") {
-						@input.Input(input.Props{ID: "username", Name: "username", Placeholder: "you", Attributes: templ.Attributes{"autocomplete": "username", "autofocus": true}})
+					@Field("username", T("login.username")) {
+						@input.Input(input.Props{ID: "username", Name: "username", Placeholder: T("login.userph"), Required: true, Attributes: templ.Attributes{"autocomplete": "username", "autofocus": true}})
 					}
-					@Field("password", "Password") {
+					@Field("password", T("login.password")) {
 						@input.Input(input.Props{ID: "password", Name: "password", Type: input.TypePassword, Attributes: templ.Attributes{"autocomplete": "current-password"}})
 					}
 					@button.Button(button.Props{Type: button.TypeSubmit, FullWidth: true}) {
-						Sign in
+						{ T("login.submit") }
 					}
 				</form>
 				if hasPasskeys {
 					@button.Button(button.Props{Variant: button.VariantOutline, FullWidth: true, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": "xiloPasskeyLogin()"}}) {
 						@Icon("fingerprint-pattern")
-						<span>Use a passkey</span>
+						<span>{ T("login.passkey") }</span>
 					}
 				}
 			}
@@ -128,10 +207,10 @@ templ Login(noPassword, hasPasskeys, canRegister bool, flash Flash) {
 				@card.Footer(card.FooterProps{Class: "justify-center"}) {
 					<p class="text-center text-sm text-muted-foreground">
 						if canRegister {
-							Need an account? <a href="/register" class="font-medium text-foreground underline-offset-4 hover:underline">Register</a>
+							{ T("login.needacct") } <a href="/register" class="font-medium text-foreground underline-offset-4 hover:underline">{ T("login.register") }</a>
 						}
 						if noPassword {
-							Sign in with any username to create the first admin account.
+							{ T("login.nopassword") }
 						}
 					</p>
 				}
@@ -141,14 +220,14 @@ templ Login(noPassword, hasPasskeys, canRegister bool, flash Flash) {
 }
 
 templ LoginCode(pending string, flash Flash) {
-	@AuthShell("Two-factor", flash) {
+	@AuthShell(T("login.twofactor"), flash) {
 		@card.Card() {
 			@card.Header() {
 				@card.Title() {
-					Two-factor code
+					{ T("login.codetitle") }
 				}
 				@card.Description() {
-					Enter the 6-digit code from your authenticator.
+					{ T("login.codesub") }
 				}
 			}
 			@card.Content() {
@@ -168,12 +247,12 @@ templ LoginCode(pending string, flash Flash) {
 						}
 					}
 					@button.Button(button.Props{Type: button.TypeSubmit, FullWidth: true}) {
-						Verify
+						{ T("login.verify") }
 					}
 				</form>
 			}
 			@card.Footer(card.FooterProps{Class: "justify-center"}) {
-				<a href="/admin" class="text-sm text-muted-foreground hover:text-foreground">Back to sign in</a>
+				<a href="/admin" class="text-sm text-muted-foreground hover:text-foreground">{ T("login.back") }</a>
 			}
 		}
 	}
@@ -182,31 +261,31 @@ templ LoginCode(pending string, flash Flash) {
 // Register is the self-signup page. Picking a plan whose data-orgs is true
 // reveals the org-name field via a small inline script.
 templ Register(plans []store.Plan, flash Flash) {
-	@AuthShell("Register", flash) {
+	@AuthShell(T("login.register"), flash) {
 		@card.Card() {
 			@card.Header() {
 				@card.Title() {
-					Create your account
+					{ T("reg.title") }
 				}
 				@card.Description() {
-					Sign up for a Xilo cache account.
+					{ T("reg.subtitle") }
 				}
 			}
 			@card.Content() {
 				<form method="post" action="/register" class="space-y-4">
-					@Field("r-username", "Username") {
-						@input.Input(input.Props{ID: "r-username", Name: "username", Required: true, Placeholder: "lowercase, digits, -_", Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+", "autocomplete": "username", "autofocus": true}})
+					@Field("r-username", T("reg.username")) {
+						@input.Input(input.Props{ID: "r-username", Name: "username", Required: true, Placeholder: T("reg.userph"), Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+", "autocomplete": "username", "autofocus": true}})
 					}
-					@Field("r-email", "Email") {
-						@input.Input(input.Props{ID: "r-email", Name: "email", Type: input.TypeEmail, Attributes: templ.Attributes{"autocomplete": "email"}})
+					@Field("r-email", T("reg.email")) {
+						@input.Input(input.Props{ID: "r-email", Name: "email", Type: input.TypeEmail, Required: true, Attributes: templ.Attributes{"autocomplete": "email"}})
 					}
-					@Field("r-password", "Password") {
+					@Field("r-password", T("reg.password")) {
 						@input.Input(input.Props{ID: "r-password", Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "8"}})
 					}
 					if len(plans) > 0 {
 						<div class="space-y-2">
 							@label.Label() {
-								Plan
+								{ T("reg.plan") }
 							}
 							<div class="space-y-2" onchange="document.getElementById('org-field').hidden = document.querySelector('input[name=plan]:checked').dataset.orgs !== 'true'">
 								for i, p := range plans {
@@ -220,19 +299,19 @@ templ Register(plans []store.Plan, flash Flash) {
 								}
 							</div>
 							<div id="org-field" hidden?={ !(len(plans) > 0 && plans[0].OrgsAllowed) }>
-								@FieldHint("r-org", "Organization name", "Creates an organization you administer.") {
-									@input.Input(input.Props{ID: "r-org", Name: "org", Placeholder: "optional", Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
+								@FieldHint("r-org", T("reg.org"), T("reg.orghint")) {
+									@input.Input(input.Props{ID: "r-org", Name: "org", Placeholder: T("ph.optional"), Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
 								}
 							</div>
 						</div>
 					}
 					@button.Button(button.Props{Type: button.TypeSubmit, FullWidth: true}) {
-						Create account
+						{ T("reg.submit") }
 					}
 				</form>
 			}
 			@card.Footer(card.FooterProps{Class: "justify-center"}) {
-				<a href="/admin" class="text-sm text-muted-foreground hover:text-foreground">Back to sign in</a>
+				<a href="/admin" class="text-sm text-muted-foreground hover:text-foreground">{ T("reg.back") }</a>
 			}
 		}
 	}

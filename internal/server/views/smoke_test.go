@@ -89,8 +89,8 @@ func TestSmokeAllComponents(t *testing.T) {
 		{"IconClass", views.IconClass("sun", 20, "spin"), "svg"},
 		{"PagerNav", views.PagerNav(pager), "Next"},
 		{"PagerNav-single", views.PagerNav(views.Pager{Page: 1, Pages: 1}), ""},
-		{"SortHead-active", views.SortHead(sc, "name", "Name"), "Name"},
-		{"SortHead-desc", views.SortHead(views.SortCtx{Path: "/a", SortParam: "sort", DirParam: "dir", PageParam: "page", Key: "name", Dir: "desc"}, "name", "Name"), "descending"},
+		{"SortHead-active", views.SortHead(sc, "name", "Name", ""), "Name"},
+		{"SortHead-desc", views.SortHead(views.SortCtx{Path: "/a", SortParam: "sort", DirParam: "dir", PageParam: "page", Key: "name", Dir: "desc"}, "name", "Name", ""), "descending"},
 	}
 	for _, tc := range cases {
 		out := render(t, tc.name, tc.c)

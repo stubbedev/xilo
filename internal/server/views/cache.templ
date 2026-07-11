@@ -29,7 +29,7 @@ type CacheData struct {
 
 templ CacheView(d CacheData) {
 	@Layout(d.Cache.Ref(), "caches", d.Nav, Flash{}) {
-		<div id="cache-head" class="mb-6 flex flex-wrap items-center justify-between gap-3">
+		<div id="cache-head" class="mb-6 flex flex-wrap items-end justify-between gap-4">
 			<div class="space-y-1">
 				<h1 class="flex items-center gap-2 text-2xl font-semibold tracking-tight">
 					<span><span class="text-muted-foreground">{ d.Cache.Account }/</span>{ d.Cache.Name }</span>
@@ -39,14 +39,14 @@ templ CacheView(d CacheData) {
 			</div>
 			@button.Button(button.Props{Href: "/admin", Variant: button.VariantOutline, Size: button.SizeSm}) {
 				@Icon("arrow-left")
-				<span>All caches</span>
+				<span>{ T("tokens.scopeall") }</span>
 			}
 		</div>
-		<div class="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-			@StatTile("package", Count(d.Stats.Paths), "Store paths", "", "")
-			@StatTile("database", d.Bytes(d.Stats.LogicalBytes), "Logical", "", "")
-			@StatTile("hard-drive", d.Bytes(d.Stats.PhysicalBytes), "On disk"+capLabel(d.Cache.MaxBytes, d.Bytes), "", "")
-			@StatTile("layers", d.Dedup+"×", "Dedup ratio", "", "")
+		<div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+			@StatTile("package", Count(d.Stats.Paths), T("kpi.paths"), "", "")
+			@StatTile("database", d.Bytes(d.Stats.LogicalBytes), T("kpi.logical"), "", "")
+			@StatTile("hard-drive", d.Bytes(d.Stats.PhysicalBytes), T("kpi.physical")+capLabel(d.Cache.MaxBytes, d.Bytes), "", "")
+			@StatTile("layers", d.Dedup+"×", T("kpi.dedup"), "", "")
 		</div>
 		if d.Cache.MaxBytes > 0 {
 			<div class="mb-8">
@@ -57,10 +57,10 @@ templ CacheView(d CacheData) {
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						Use this cache
+						{ T("cd.use") }
 					}
 					@card.Description() {
-						Add it as a substituter.
+						{ T("cd.usehint") }
 					}
 				}
 				@card.Content() {
@@ -87,26 +87,26 @@ templ CacheView(d CacheData) {
 						}
 					}
 					if !d.Cache.Public {
-						<p class="mt-3 text-xs text-muted-foreground">This cache is private — pulls need a token with pull access.</p>
+						<p class="mt-3 text-xs text-muted-foreground">{ T("cd.private") }</p>
 					}
 				}
 			}
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						Push to this cache
+						{ T("cd.push") }
 					}
 					@card.Description() {
-						With a token that has push access.
+						{ T("cd.pushhint") }
 					}
 				}
 				@card.Content() {
 					@snippetBlock(snippetPush(d))
 				}
 			}
-			</div>
-		@SectionHeader("Store paths") {
-			@SearchInput("/admin/cache/"+d.Cache.Ref(), "q", d.PathQuery, "Search paths", "#path-results")
+		</div>
+		@SectionHeader(T("cd.paths")) {
+			@SearchInput("/admin/cache/"+d.Cache.Ref(), "q", d.PathQuery, T("cd.search"), "#path-results")
 		}
 		<div class="mb-8">
 			@pathResults(d)
@@ -115,22 +115,22 @@ templ CacheView(d CacheData) {
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						Settings
+						{ T("cd.settings") }
 					}
 				}
 				@card.Content() {
 					<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/configure") } class="space-y-4">
 						@VisibilitySwitch(!d.Cache.Public)
 						@PriorityField(d.Cache.Priority)
-						@Field("retention", "Retention") {
+						@Field("", T("cd.retention")) {
 							@DurationInput("retention", d.Cache.Retention)
 						}
-						@Field("max", "Max size") {
+						@Field("", T("cd.maxsize")) {
 							@SizeInput("max", d.Cache.MaxBytes)
 						}
 						@button.Button(button.Props{Type: button.TypeSubmit}) {
 							@Icon("check")
-							<span>Save settings</span>
+							<span>{ T("cd.save") }</span>
 						}
 					</form>
 				}
@@ -138,36 +138,36 @@ templ CacheView(d CacheData) {
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						Maintenance
+						{ T("cd.maint") }
 					}
 				}
 				@card.Content(card.ContentProps{Class: "space-y-4"}) {
 					<div class="flex items-center justify-between gap-3">
-						<p class="text-sm text-muted-foreground">Rotate the signing key. Clients must update the trusted public key.</p>
+						<p class="text-sm text-muted-foreground">{ T("cd.rotatehint") }</p>
 						@ConfirmForm(Confirm{
 							ID:             "rotate",
 							Action:         "/admin/cache/" + d.Cache.Ref() + "/rotate",
-							Title:          "Rotate signing key?",
-							Message:        "The old key stops verifying immediately. Update trusted-public-keys everywhere.",
-							ConfirmLabel:   "Rotate key",
+							Title:          T("cd.rotatetitle"),
+							Message:        T("confirm.rotate"),
+							ConfirmLabel:   T("cd.rotate"),
 							ConfirmIcon:    "key-round",
-							TriggerLabel:   "Rotate key",
+							TriggerLabel:   T("cd.rotate"),
 							TriggerIcon:    "key-round",
 							TriggerVariant: button.VariantSecondary,
 						})
 					</div>
 					@separator.Separator()
 					<div class="flex items-center justify-between gap-3">
-						<p class="text-sm text-muted-foreground">Delete this cache and all of its paths.</p>
+						<p class="text-sm text-muted-foreground">{ T("cd.deletehint") }</p>
 						@ConfirmForm(Confirm{
 							ID:           "delete-cache",
 							Action:       "/admin/cache/" + d.Cache.Ref() + "/delete",
-							Title:        "Delete cache?",
-							Message:      "“" + d.Cache.Ref() + "” and every path in it will be removed. This cannot be undone.",
-							ConfirmLabel: "Delete cache",
+							Title:        T("cd.deletetitle"),
+							Message:      "“" + d.Cache.Ref() + "” " + T("cd.deletemsg"),
+							ConfirmLabel: T("cd.delete"),
 							ConfirmIcon:  "trash-2",
 							Danger:       true,
-							TriggerLabel: "Delete",
+							TriggerLabel: T("action.delete"),
 							TriggerIcon:  "trash-2",
 						})
 					</div>
@@ -192,18 +192,18 @@ templ pathResults(d CacheData) {
 	<div id="path-results" hx-target="#path-results" hx-select="#path-results" hx-swap="outerHTML show:none">
 		if len(d.Paths) == 0 {
 			if d.PathQuery != "" {
-				@EmptyState("package-search", "No paths match your search.")
+				@EmptyState("package-search", T("cd.nomatch"))
 			} else {
-				@EmptyState("package-search", "No store paths yet.")
+				@EmptyState("package-search", T("cd.pathsempty"))
 			}
 		} else {
 			@card.Card(card.Props{Class: "p-0"}) {
-				@table.Table() {
+				@table.Table(table.Props{Class: "table-fixed"}) {
 					@table.Header() {
 						@table.Row() {
-							@SortHead(d.PathSort, "path", "Path")
-							@SortHead(d.PathSort, "size", "Size")
-							@SortHead(d.PathSort, "pulled", "Last pulled")
+							@SortHead(d.PathSort, "path", T("paths.path"), "")
+							@SortHead(d.PathSort, "size", T("paths.size"), "w-32")
+							@SortHead(d.PathSort, "pulled", T("paths.pulled"), "w-40")
 						}
 					}
 					@table.Body() {
@@ -211,8 +211,8 @@ templ pathResults(d CacheData) {
 							{{ hash, name := pathParts(p.StorePath) }}
 							@table.Row() {
 								@table.Cell() {
-									<div class="flex items-center gap-2" title={ p.StorePath }>
-										<span class="font-medium">{ name }</span>
+									<div class="flex min-w-0 items-center gap-2" title={ p.StorePath }>
+										<span class="truncate font-medium">{ name }</span>
 										if hash != "" {
 											<code class="font-mono text-xs text-muted-foreground">{ hash }</code>
 										}

@@ -55,7 +55,7 @@ templ AccountSelect(name, value, placeholder string, accounts []store.Account, i
 		@selectbox.Content() {
 			if instanceOption {
 				@selectbox.Item(selectbox.ItemProps{Value: "", Selected: value == ""}) {
-					Instance-wide
+					{ T("tokens.instance") }
 				}
 			}
 			for _, a := range accounts {
@@ -71,11 +71,11 @@ templ AccountSelect(name, value, placeholder string, accounts []store.Account, i
 templ ScopeSelect(name, value string, caches []CacheUsage) {
 	@selectbox.SelectBox() {
 		@selectbox.Trigger(selectbox.TriggerProps{Name: name}) {
-			@selectbox.Value(selectbox.ValueProps{Placeholder: "All caches"})
+			@selectbox.Value(selectbox.ValueProps{Placeholder: T("tokens.scopeall")})
 		}
 		@selectbox.Content() {
 			@selectbox.Item(selectbox.ItemProps{Value: "*", Selected: value == "*"}) {
-				All caches
+				{ T("tokens.scopeall") }
 			}
 			for _, u := range caches {
 				@selectbox.Item(selectbox.ItemProps{Value: u.Cache.Ref(), Selected: u.Cache.Ref() == value}) {
@@ -90,7 +90,7 @@ templ ScopeSelect(name, value string, caches []CacheUsage) {
 templ StorageSelect(name, value string, storages []string) {
 	@selectbox.SelectBox() {
 		@selectbox.Trigger(selectbox.TriggerProps{Name: name}) {
-			@selectbox.Value(selectbox.ValueProps{Placeholder: "Default"})
+			@selectbox.Value(selectbox.ValueProps{Placeholder: T("storage.default")})
 		}
 		@selectbox.Content() {
 			for _, s := range storages {
@@ -108,7 +108,7 @@ templ DurationInput(name string, secs int64) {
 	<div class="flex gap-2">
 		@input.Input(input.Props{
 			Name: name + "_value", Type: input.TypeNumber, Value: durValue(secs),
-			Class: "flex-1", Attributes: templ.Attributes{"min": "0", "step": "1", "aria-label": "Duration"},
+			Class: "flex-1", Attributes: templ.Attributes{"min": "0", "step": "1", "aria-label": T("unit.duration")},
 		})
 		<div class="w-32">
 			@selectbox.SelectBox() {
@@ -116,10 +116,10 @@ templ DurationInput(name string, secs int64) {
 					@selectbox.Value(selectbox.ValueProps{})
 				}
 				@selectbox.Content() {
-					@unitItem(name, "h", "Hours", secs)
-					@unitItem(name, "d", "Days", secs)
-					@unitItem(name, "mo", "Months", secs)
-					@unitItem(name, "y", "Years", secs)
+					@unitItem(name, "h", T("unit.hours"), secs)
+					@unitItem(name, "d", T("unit.days"), secs)
+					@unitItem(name, "mo", T("unit.months"), secs)
+					@unitItem(name, "y", T("unit.years"), secs)
 				}
 			}
 		</div>
@@ -138,7 +138,7 @@ templ SizeInput(name string, bytes int64) {
 	<div class="flex gap-2">
 		@input.Input(input.Props{
 			Name: name + "_value", Type: input.TypeNumber, Value: sizeValue(bytes),
-			Class: "flex-1", Placeholder: "unlimited", Attributes: templ.Attributes{"min": "0", "step": "1", "aria-label": "Size"},
+			Class: "flex-1", Placeholder: T("unit.unlimited"), Attributes: templ.Attributes{"min": "0", "step": "1", "aria-label": T("paths.size")},
 		})
 		<div class="w-32">
 			@selectbox.SelectBox() {
@@ -146,30 +146,30 @@ templ SizeInput(name string, bytes int64) {
 					@selectbox.Value(selectbox.ValueProps{})
 				}
 				@selectbox.Content() {
-					@sizeUnitItem(name, "MiB", bytes)
-					@sizeUnitItem(name, "GiB", bytes)
-					@sizeUnitItem(name, "TiB", bytes)
+					@sizeUnitItem(name, "MiB", T("unit.mib"), bytes)
+					@sizeUnitItem(name, "GiB", T("unit.gib"), bytes)
+					@sizeUnitItem(name, "TiB", T("unit.tib"), bytes)
 				}
 			}
 		</div>
 	</div>
 }
 
-templ sizeUnitItem(name, unit string, bytes int64) {
+templ sizeUnitItem(name, unit, label string, bytes int64) {
 	@selectbox.Item(selectbox.ItemProps{Value: unit, Selected: sizeUnit(bytes) == unit}) {
-		{ unit }
+		{ label }
 	}
 }
 
 // PriorityField is the 1–100 substituter-priority number input.
 templ PriorityField(value int) {
-	@Field("priority", "Priority") {
+	@Field("priority", T("caches.priority")) {
 		@input.Input(input.Props{
 			ID: "priority", Name: "priority", Type: input.TypeNumber, Value: strconv.Itoa(value),
 			Attributes: templ.Attributes{"min": "1", "max": "100"},
 		})
 		@form.Description() {
-			Lower numbers are preferred by Nix (1–100).
+			{ T("caches.priorityhint") }
 		}
 	}
 }
@@ -179,22 +179,27 @@ templ VisibilitySwitch(private bool) {
 	@form.ItemFlex(form.ItemProps{Class: "justify-between rounded-lg border p-3"}) {
 		@form.Item(form.ItemProps{Class: "space-y-0.5"}) {
 			@form.Label() {
-				Private
+				{ T("vis.private") }
 			}
 			@form.Description() {
-				Require a token to pull from this cache.
+				{ T("caches.privatehint") }
 			}
 		}
 		@switchcomp.Switch(switchcomp.Props{Name: "private", Value: "on", Checked: private})
 	}
 }
 
-// PermSwitch is one token-permission switch row.
-templ PermSwitch(name, text string, checked bool) {
+// PermSwitchVal is a labelled switch row posting `value` when checked.
+templ PermSwitchVal(name, value, text string, checked bool) {
 	@form.ItemFlex(form.ItemProps{Class: "justify-between rounded-lg border p-3"}) {
 		@form.Label(form.LabelProps{For: "perm-" + name}) {
 			{ text }
 		}
-		@switchcomp.Switch(switchcomp.Props{ID: "perm-" + name, Name: name, Value: "on", Checked: checked})
+		@switchcomp.Switch(switchcomp.Props{ID: "perm-" + name, Name: name, Value: value, Checked: checked})
 	}
+}
+
+// PermSwitch is one token-permission switch row ("on" when checked).
+templ PermSwitch(name, text string, checked bool) {
+	@PermSwitchVal(name, "on", text, checked)
 }

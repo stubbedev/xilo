@@ -74,11 +74,11 @@ var statusWindows = []struct {
 }{{10, "10m"}, {30, "30m"}, {60, "1h"}, {180, "3h"}, {720, "12h"}, {1440, "24h"}, {10080, "7d"}, {43200, "30d"}}
 
 templ StatusPage(d StatusData) {
-	@Layout("Status", "", d.Nav, Flash{}) {
-		@PageHeader("Status", "Live health, traffic and storage — instance-wide.") {
-			@button.Button(button.Props{Href: rateURL(d, d.Rate), Variant: button.VariantOutline, Size: button.SizeSm, Attributes: templ.Attributes{"title": "Refresh"}}) {
+	@Layout(T("status.title"), "status", d.Nav, Flash{}) {
+		@PageHeader(T("status.title"), T("status.subtitle")) {
+			@button.Button(button.Props{Href: rateURL(d, d.Rate), Variant: button.VariantOutline, Size: button.SizeSm}) {
 				@Icon("refresh-cw")
-				<span>Refresh</span>
+				<span>{ T("status.rate") }</span>
 			}
 		}
 		<div class="mb-6 flex flex-wrap items-center gap-2">
@@ -95,17 +95,17 @@ templ StatusPage(d StatusData) {
 					@datepicker.DatePicker(datepicker.Props{
 						Name: "from", EndName: "to", Mode: calendar.SelectionModeRange,
 						Value: parseDate(d.From), EndValue: parseDate(d.To),
-						Placeholder: "Start date", EndPlaceholder: "End date",
+						Placeholder: T("status.from"), EndPlaceholder: T("status.to"),
 					})
 				</div>
 				@button.Button(button.Props{Type: button.TypeSubmit, Size: button.SizeSm, Variant: segVariant(d.Window == 0)}) {
 					@Icon("calendar")
-					<span>Apply</span>
+					<span>{ T("status.apply") }</span>
 				}
 			</form>
 		</div>
 		<div class="mb-8 flex items-center gap-2 text-sm text-muted-foreground">
-			<span>Auto-refresh</span>
+			<span>{ T("status.autorefresh") }</span>
 			<div class="flex gap-1">
 				for _, rt := range statusRates {
 					@button.Button(button.Props{Href: rateURL(d, rt), Size: button.SizeSm, Variant: segVariant(rt == d.Rate)}) {
@@ -116,25 +116,29 @@ templ StatusPage(d StatusData) {
 		</div>
 		<div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 			if d.Healthy {
-				@StatTile("activity", "Healthy", "Health", "st-health", "text-green-500")
+				@StatTile("activity", T("status.ok"), T("status.health"), "st-health", "text-green-500")
 			} else {
-				@StatTile("activity", "Degraded", "Health", "st-health", "text-destructive")
+				@StatTile("activity", T("status.err"), T("status.health"), "st-health", "text-destructive")
 			}
-			@StatTile("clock", d.Uptime, "Uptime", "st-uptime", "")
-			@StatTile("target", d.HitPct, "Narinfo hit rate", "st-hit", "")
-			@StatTile("hard-drive", d.Bytes(d.Global.StoredBytes), "Stored", "st-stored", "")
-			@StatTile("package", Count(d.Global.Paths), "Store paths", "st-paths", "")
-			@StatTile("download", Count(d.NarServed), "NARs served", "st-nars", "")
-			@StatTile("network", Count(d.Requests), "Requests", "st-req", "")
-			@StatTile("shield", Count(d.AuthFails), "Auth failures", "st-auth", "")
+			@StatTile("clock", d.Uptime, T("status.uptime"), "st-uptime", "")
+			@StatTile("target", d.HitPct, T("status.hits"), "st-hit", "")
+			@StatTile("hard-drive", d.Bytes(d.Global.StoredBytes), T("status.stored"), "st-stored", "")
+			@StatTile("package", Count(d.Global.Paths), T("kpi.paths"), "st-paths", "")
+			@StatTile("download", Count(d.NarServed), T("status.nars"), "st-nars", "")
+			@StatTile("network", Count(d.Requests), T("status.reqs"), "st-req", "")
+			@StatTile("shield", Count(d.AuthFails), T("status.authfail"), "st-auth", "")
 		</div>
 		<div class="grid gap-6 lg:grid-cols-2">
 			for _, c := range d.Charts {
 				@statusChart(c)
 			}
 		</div>
-		<p id="status-updated" class="mt-6 text-center text-xs text-muted-foreground">Updated { d.Updated }</p>
-		@templ.JSONScript("status-poll", map[string]any{"url": dataURL(d), "rate": d.Rate})
+		<p id="status-updated" class="mt-6 text-center text-xs text-muted-foreground">{ T("status.updated") } { d.Updated }</p>
+		@templ.JSONScript("status-poll", map[string]any{
+			"url": dataURL(d), "rate": d.Rate,
+			"ok": T("status.ok"), "err": T("status.err"),
+			"updated": T("status.updated"), "peak": T("status.peak"),
+		})
 		@statusPollScript()
 	}
 }
@@ -149,7 +153,7 @@ templ statusChart(c ChartData) {
 				<span id={ "cur-" + c.ID } class="text-lg font-semibold tabular-nums">{ c.Cur }</span>
 				@badge.Badge(badge.Props{ID: "peak-" + c.ID, Variant: badge.VariantSecondary, Class: peakClass(c.Peak)}) {
 					if c.Peak != "" {
-						peak { c.Peak }
+						{ T("status.peak") } { c.Peak }
 					}
 				}
 			</div>
@@ -202,12 +206,22 @@ templ statusPollScript() {
 			var cfgEl = document.getElementById('status-poll');
 			if (!cfgEl) return;
 			var cfg = JSON.parse(cfgEl.textContent);
-			function setText(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
-			function hhmm(ms) { var t = new Date(ms); return ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2); }
+			function setText(id, v) {
+				var el = document.getElementById(id);
+				if (el) el.textContent = v;
+			}
+			function hhmm(ms) {
+				var t = new Date(ms);
+				return (
+					('0' + t.getHours()).slice(-2) +
+					':' +
+					('0' + t.getMinutes()).slice(-2)
+				);
+			}
 			function apply(d) {
 				var h = document.getElementById('st-health');
 				if (h) {
-					h.textContent = d.healthy ? 'Healthy' : 'Degraded';
+					h.textContent = d.healthy ? cfg.ok : cfg.err;
 					h.classList.toggle('text-green-500', d.healthy);
 					h.classList.toggle('text-destructive', !d.healthy);
 				}
@@ -218,25 +232,32 @@ templ statusPollScript() {
 				setText('st-nars', d.nars);
 				setText('st-req', d.requests);
 				setText('st-auth', d.authFails);
-				setText('status-updated', 'Updated ' + d.updated);
+				setText('status-updated', cfg.updated + ' ' + d.updated);
 				Object.keys(d.charts || {}).forEach(function (k) {
 					var c = d.charts[k];
 					setText('cur-' + k, c.cur);
 					var pk = document.getElementById('peak-' + k);
 					if (pk) {
 						pk.classList.toggle('hidden', !c.peak);
-						pk.textContent = c.peak ? 'peak ' + c.peak : '';
+						pk.textContent = c.peak ? cfg.peak + ' ' + c.peak : '';
 					}
 					var inst = window.Chart && Chart.getChart('chart-' + k + '-canvas');
 					if (!inst) return;
-					inst.data.labels = c.points.map(function (p) { return hhmm(p[0]); });
-					inst.data.datasets[0].data = c.points.map(function (p) { return p[1]; });
+					inst.data.labels = c.points.map(function (p) {
+						return hhmm(p[0]);
+					});
+					inst.data.datasets[0].data = c.points.map(function (p) {
+						return p[1];
+					});
 					inst.update('none');
 				});
 			}
 			setInterval(function () {
-				fetch(cfg.url, { headers: { 'Accept': 'application/json' } })
-					.then(function (r) { if (!r.ok) throw 0; return r.json(); })
+				fetch(cfg.url, { headers: { Accept: 'application/json' } })
+					.then(function (r) {
+						if (!r.ok) throw 0;
+						return r.json();
+					})
 					.then(apply)
 					.catch(function () {});
 			}, cfg.rate * 1000);
