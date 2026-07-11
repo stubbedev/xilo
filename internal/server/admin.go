@@ -400,6 +400,16 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Scope tokens to the chosen account, same as caches and the KPIs.
+	if ctx := s.activeContext(r, u); ctx != "" {
+		kept := tokens[:0]
+		for _, t := range tokens {
+			if t.Account == ctx {
+				kept = append(kept, t)
+			}
+		}
+		tokens = kept
+	}
 	owned, err := s.ownedNamespaces(u)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

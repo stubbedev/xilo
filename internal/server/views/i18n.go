@@ -31,7 +31,7 @@ var en = map[string]string{
 
 	// status dashboard
 	"status.title":       "Status",
-	"status.subtitle":    "Live health, traffic and storage.",
+	"status.subtitle":    "Live health, traffic and storage — instance-wide, across all accounts.",
 	"status.rate":        "Refresh",
 	"status.windowsel":   "Window",
 	"status.from":        "From",
@@ -123,6 +123,7 @@ var en = map[string]string{
 	// dashboard — overview
 	"dash.title":    "Overview",
 	"dash.subtitle": "Nix binary caches on this instance.",
+	"dash.scoped":   "Caches and tokens for",
 	"kpi.caches":    "caches",
 	"kpi.paths":     "paths",
 	"kpi.disk":      "disk used",

@@ -11,7 +11,11 @@ templ Dashboard(d DashboardData) {
 	@Layout(T("dash.title"), d.Nav, d.Flash) {
 		<hgroup>
 			<h1>{ T("dash.title") }</h1>
-			<p>{ T("dash.subtitle") }</p>
+			if d.Nav.Active != "" {
+				<p>{ T("dash.scoped") } <strong>{ d.Nav.Active }</strong>.</p>
+			} else {
+				<p>{ T("dash.subtitle") }</p>
+			}
 		</hgroup>
 		<article class="overview">
 			<div class="kpi">
