@@ -12,7 +12,7 @@ That one push does everything automatable:
 - **Docker workflow** publishes `ghcr.io/stubbedev/xilo` tagged `latest`,
   `<version>`, and the commit SHA.
 - **major-tag job** force-moves the floating major tag (`v1`) to the new
-  release, so `uses: stubbedev/xilo@v1` consumers get it immediately.
+  release, so `uses: stubbedev/xilo@v0` consumers get it immediately.
 
 ## GitHub Marketplace (composite action)
 

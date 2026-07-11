@@ -145,7 +145,7 @@ cached and `xilo push` needs no env:
 
 ```yaml
 - uses: DeterminateSystems/nix-installer-action@main
-- uses: stubbedev/xilo@v1
+- uses: stubbedev/xilo@v0
   with:
     url: https://cache.example.com
     cache: mycache
@@ -154,7 +154,7 @@ cached and `xilo push` needs no env:
 - run: xilo push mycache ./result
 ```
 
-The `v1` tag floats to the newest release automatically on every tag push.
+The `v0` tag floats to the newest release automatically on every tag push.
 
 Full workflow in [`examples/github-actions.yml`](./examples/github-actions.yml).
 

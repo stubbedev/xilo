@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: DeterminateSystems/nix-installer-action@main
-      - uses: stubbedev/xilo@v1
+      - uses: stubbedev/xilo@v0
         with:
           url: https://cache.example.com
           cache: mycache
