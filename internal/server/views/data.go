@@ -198,10 +198,28 @@ type SettingsData struct {
 	Flash       Flash
 }
 
-// OrgInfo is one account with its membership, for the settings page.
+// OrgInfo is one account with its membership and usage, for the settings page.
 type OrgInfo struct {
 	Account store.Account
 	Members []store.AccountMember
+	Plan    *store.Plan // nil = no plan (unlimited)
+	Used    int64       // logical bytes stored
+	Egress  int64       // NAR bytes served this month
+}
+
+// UsageLine renders "12 GiB stored (of 50 GiB) · 3 GiB egress this month".
+func (o OrgInfo) UsageLine() string {
+	out := humanBytesV(o.Used) + " " + T("acct.stored")
+	if o.Plan != nil && o.Plan.MaxStorage > 0 {
+		out += " (" + T("acct.of") + " " + humanBytesV(o.Plan.MaxStorage) + ")"
+	}
+	if o.Egress > 0 {
+		out += " · " + humanBytesV(o.Egress) + " " + T("acct.egress")
+	}
+	if o.Plan != nil {
+		out += " · " + T("acct.plan") + " " + o.Plan.Name
+	}
+	return out
 }
 
 // CacheUsage is one cache plus its measured storage footprint.

@@ -519,13 +519,18 @@ func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, u *store
 			return
 		}
 	}
+	month := time.Now().UTC().Format("2006-01")
 	for _, acct := range accountList {
 		members, err := s.db.ListMembers(acct.ID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		d.Orgs = append(d.Orgs, views.OrgInfo{Account: acct, Members: members})
+		info := views.OrgInfo{Account: acct, Members: members}
+		info.Plan, _ = s.db.AccountPlan(&acct)
+		info.Used, _ = s.db.AccountLogicalBytes(acct.ID)
+		info.Egress = s.db.AccountEgress(acct.ID, month)
+		d.Orgs = append(d.Orgs, info)
 	}
 	views.Settings(d).Render(r.Context(), w)
 }

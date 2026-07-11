@@ -41,6 +41,7 @@ type Server struct {
 	niCache   *narinfoCache // rendered+signed narinfo bodies
 	gzipPool  sync.Pool     // *gzip.Writer for NAR wire compression
 	touched   sync.Map      // "<cacheID>/<storeHash>" → unix secs of last LRU bump
+	egress    sync.Map      // accountID (int64) → *atomic.Int64 pending NAR bytes
 	metrics   metrics
 	stat      statusRing
 	started   time.Time

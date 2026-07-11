@@ -91,6 +91,10 @@ var en = map[string]string{
 	"plan.unlimited":    "no limits",
 	"confirm.plan":      "Delete this plan? Accounts using it keep working (as unlimited).",
 	"users.pending":     "Pending",
+	"acct.stored":       "stored",
+	"acct.of":           "of",
+	"acct.egress":       "served this month",
+	"acct.plan":         "plan",
 	"users.approve":     "Approve",
 
 	// dashboard — overview

@@ -338,6 +338,28 @@ func (s *Server) checkCacheQuota(acc *store.Account) error {
 	return nil
 }
 
+// checkStorageQuota rejects pushes once an account's plan storage cap is
+// reached. Logical bytes (summed NarSize) are the quota currency; pulls keep
+// working — over-quota accounts go read-only, data is never auto-deleted.
+func (s *Server) checkStorageQuota(c *store.Cache) error {
+	acc, err := s.db.GetAccountByID(c.AccountID)
+	if err != nil {
+		return nil // account lookup failing must not block pushes
+	}
+	plan, err := s.db.AccountPlan(acc)
+	if err != nil || plan == nil || plan.MaxStorage == 0 {
+		return nil
+	}
+	used, err := s.db.AccountLogicalBytes(acc.ID)
+	if err != nil {
+		return nil
+	}
+	if used >= plan.MaxStorage {
+		return fmt.Errorf("storage quota exceeded (plan %q, %d of %d bytes) — account is read-only for pushes", plan.Name, used, plan.MaxStorage)
+	}
+	return nil
+}
+
 // checkMemberQuota is the same gate for org membership.
 func (s *Server) checkMemberQuota(acc *store.Account) error {
 	plan, err := s.db.AccountPlan(acc)

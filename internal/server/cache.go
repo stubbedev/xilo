@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/stubbedev/xilo/internal/narinfo"
 	"github.com/stubbedev/xilo/internal/store"
@@ -129,6 +131,10 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.Header().Set("ETag", contentETag(p.NarHash, "")) // NAR bytes ⇔ NarHash
 	s.metrics.narServed.Add(1)
+	// Egress metering: the logical NAR size is what leaves regardless of
+	// transfer encoding; counting it here (not per-write) keeps the hot loop
+	// allocation-free. Flushed to the DB by the status sampler.
+	s.addEgress(c.AccountID, int64(p.NarSize))
 
 	// zstd clients get the stored frames verbatim: chunks are complete zstd
 	// frames and a concatenation of frames is a valid stream (RFC 8878), so
@@ -194,6 +200,27 @@ func (s *Server) touchPath(cacheID int64, storeHash string) {
 	}
 	s.touched.Store(key, now)
 	go s.db.TouchPath(cacheID, storeHash, now, 3600)
+}
+
+// addEgress accumulates served bytes for an account in memory.
+func (s *Server) addEgress(accountID, n int64) {
+	v, _ := s.egress.LoadOrStore(accountID, new(atomic.Int64))
+	v.(*atomic.Int64).Add(n)
+}
+
+// flushEgress persists and resets the in-memory egress counters (called from
+// the status sampler tick). Monthly rollups keyed YYYY-MM.
+func (s *Server) flushEgress() {
+	month := time.Now().UTC().Format("2006-01")
+	s.egress.Range(func(k, v any) bool {
+		n := v.(*atomic.Int64).Swap(0)
+		if n > 0 {
+			if err := s.db.AddEgress(k.(int64), month, n); err != nil {
+				v.(*atomic.Int64).Add(n) // retry next tick
+			}
+		}
+		return true
+	})
 }
 
 // contentETag derives an ETag from what the response actually contains: the

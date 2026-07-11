@@ -59,6 +59,7 @@ func (s *Server) startStatusSampler(ctx context.Context) {
 				return
 			case <-t.C:
 				s.sampleStatus()
+				s.flushEgress()
 			}
 		}
 	}()

@@ -15,10 +15,29 @@ func (s *Server) runGC(ctx context.Context) (deleted int, freed int64, err error
 	if err != nil {
 		return 0, 0, err
 	}
+	// Plan retention ceilings, resolved once per account per sweep.
+	ceiling := map[int64]time.Duration{}
+	for _, c := range caches {
+		if _, ok := ceiling[c.AccountID]; ok {
+			continue
+		}
+		var lim time.Duration
+		if acc, err := s.db.GetAccountByID(c.AccountID); err == nil {
+			if plan, err := s.db.AccountPlan(acc); err == nil && plan != nil && plan.MaxRetention > 0 {
+				lim = time.Duration(plan.MaxRetention) * time.Second
+			}
+		}
+		ceiling[c.AccountID] = lim
+	}
 	for _, c := range caches {
 		ret := globalRetention
 		if c.Retention > 0 {
 			ret = time.Duration(c.Retention) * time.Second
+		}
+		// A plan ceiling caps whatever the cache asked for (including
+		// "no retention at all" — the ceiling then IS the retention).
+		if lim := ceiling[c.AccountID]; lim > 0 && (ret == 0 || ret > lim) {
+			ret = lim
 		}
 		if ret > 0 {
 			cutoff := now.Add(-ret).Unix()

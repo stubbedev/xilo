@@ -69,6 +69,10 @@ func (s *Server) handleMissingPaths(w http.ResponseWriter, r *http.Request) {
 	if !s.requirePush(w, r, c) {
 		return
 	}
+	if err := s.checkStorageQuota(c); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	var req api.MissingReq
 	if !decodeJSON(w, r, &req) {
 		return
@@ -184,6 +188,10 @@ func (s *Server) handlePutPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.requirePush(w, r, c) {
+		return
+	}
+	if err := s.checkStorageQuota(c); err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
 	var req api.PathReq

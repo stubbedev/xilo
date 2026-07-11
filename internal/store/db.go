@@ -291,6 +291,12 @@ func migrate(w *sql.DB, pg bool) error {
 			public        INTEGER NOT NULL DEFAULT 0,
 			created       INTEGER NOT NULL DEFAULT 0
 		)`,
+		`CREATE TABLE IF NOT EXISTS account_egress (
+			account_id INTEGER NOT NULL,
+			month      TEXT NOT NULL,
+			bytes      INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (account_id, month)
+		)`,
 		`CREATE TABLE IF NOT EXISTS settings (
 			key   TEXT PRIMARY KEY,
 			value TEXT NOT NULL DEFAULT ''

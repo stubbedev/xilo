@@ -239,7 +239,7 @@ templ orgsSection(d SettingsData) {
 				<p>
 					@Icon("folder")
 					{ info.Account.Slug }
-					<small>· { Ago(info.Account.Created) }</small>
+					<small>· { info.UsageLine() }</small>
 				</p>
 				<div class="row-actions">
 					<form method="post" action={ templ.SafeURL("/admin/orgs/" + info.Account.Slug + "/delete") } data-confirm={ T("confirm.namespace") }>

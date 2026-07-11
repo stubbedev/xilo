@@ -121,6 +121,33 @@ func (db *DB) AccountPlan(a *Account) (*Plan, error) {
 	return p, err
 }
 
+// AccountLogicalBytes sums the NAR sizes registered across an account's
+// caches — the quota currency (cheap to compute; physical dedup'd size would
+// need a distinct-chunk walk per push).
+func (db *DB) AccountLogicalBytes(accountID int64) (int64, error) {
+	var n int64
+	err := db.r.QueryRow(`SELECT COALESCE(SUM(p.nar_size),0) FROM paths p
+		JOIN caches c ON c.id = p.cache_id WHERE c.account_id=?`, accountID).Scan(&n)
+	return n, err
+}
+
+// AddEgress accumulates served NAR bytes for an account's monthly rollup.
+func (db *DB) AddEgress(accountID int64, month string, delta int64) error {
+	return db.write(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`INSERT INTO account_egress (account_id, month, bytes) VALUES (?,?,?)
+			 ON CONFLICT (account_id, month) DO UPDATE SET bytes = account_egress.bytes + excluded.bytes`,
+			accountID, month, delta)
+		return err
+	})
+}
+
+// AccountEgress reads one account's egress for a month.
+func (db *DB) AccountEgress(accountID int64, month string) int64 {
+	var n int64
+	_ = db.r.QueryRow(`SELECT bytes FROM account_egress WHERE account_id=? AND month=?`, accountID, month).Scan(&n)
+	return n
+}
+
 // ---- instance settings (DB-backed policy; yaml stays deployment-only) ----
 
 // Setting reads one instance setting ("" when unset).
