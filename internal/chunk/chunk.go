@@ -55,10 +55,17 @@ func Split(r io.Reader, p Params, fn func(Chunk) error) error {
 }
 
 // SplitHashes is like Split but only reports the ordered chunk hashes, without
-// copying chunk bytes — for the push client's first pass, which needs the hash
-// list but not the data. Halves per-chunk allocation over a whole NAR.
+// copying chunk bytes — for callers that need the hash list but not the data.
 func SplitHashes(r io.Reader, p Params, fn func(hash string) error) error {
 	return split(r, p, func(hash string, _ []byte) error { return fn(hash) })
+}
+
+// SplitRaw is like Split but hands fn a transient buffer: data is only valid
+// during the call (the underlying chunker reuses it), so fn must copy any
+// bytes it wants to keep. This lets the push client copy only the chunks it
+// may actually upload instead of every chunk in the stream.
+func SplitRaw(r io.Reader, p Params, fn func(hash string, data []byte) error) error {
+	return split(r, p, fn)
 }
 
 func split(r io.Reader, p Params, fn func(hash string, data []byte) error) error {

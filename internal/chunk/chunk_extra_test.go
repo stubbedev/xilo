@@ -9,6 +9,32 @@ import (
 	"testing/iotest"
 )
 
+// SplitRaw delivers the same hashes/bytes as Split, but the buffer is
+// transient — hashing the delivered bytes during the call must agree.
+func TestSplitRawMatchesSplit(t *testing.T) {
+	data := make([]byte, 3<<20)
+	rand.New(rand.NewSource(6)).Read(data)
+	full := collect(t, data)
+	i := 0
+	if err := SplitRaw(bytes.NewReader(data), Default(), func(h string, d []byte) error {
+		if i >= len(full) || h != full[i].Hash || Hash(d) != h {
+			return errors.New("mismatch")
+		}
+		i++
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if i != len(full) {
+		t.Fatalf("SplitRaw delivered %d chunks, want %d", i, len(full))
+	}
+	// callback error propagates
+	boom := errors.New("boom")
+	if err := SplitRaw(bytes.NewReader(data), Default(), func(string, []byte) error { return boom }); !errors.Is(err, boom) {
+		t.Fatalf("SplitRaw error not propagated: %v", err)
+	}
+}
+
 func TestHash(t *testing.T) {
 	// sha256("abc"), a fixed vector.
 	const want = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"

@@ -5,6 +5,7 @@ package push
 // httptest.Server speaking the wire protocol from internal/api.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -48,10 +49,27 @@ func fakeNix(t *testing.T, pathInfoJSON string, nars map[string][]byte) {
 		}
 	}
 	writeScript("nix", `exec cat "$XILO_TEST_PATHINFO"`)
-	writeScript("nix-store", `exec cat "$XILO_TEST_NARDIR/$(basename "$2")"`)
+	// each dump invocation is logged so tests can assert dump counts
+	writeScript("nix-store", `echo "$(basename "$2")" >> "$XILO_TEST_DUMPLOG"
+exec cat "$XILO_TEST_NARDIR/$(basename "$2")"`)
 	t.Setenv("XILO_TEST_PATHINFO", filepath.Join(dir, "pathinfo.json"))
 	t.Setenv("XILO_TEST_NARDIR", narDir)
+	t.Setenv("XILO_TEST_DUMPLOG", filepath.Join(dir, "dumplog"))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// dumpCounts reads the fake nix-store's invocation log: basename -> dump count.
+func dumpCounts(t *testing.T) map[string]int {
+	t.Helper()
+	data, err := os.ReadFile(os.Getenv("XILO_TEST_DUMPLOG"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]int{}
+	for _, l := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		counts[l]++
+	}
+	return counts
 }
 
 // fakeServer implements the push wire protocol and records what was uploaded.
@@ -62,14 +80,16 @@ type fakeServer struct {
 	// nil = report everything missing; otherwise return the intersection.
 	haveChunks map[string]bool
 
-	failChunkPut bool
-	failPathPut  bool
+	failChunkPut      bool
+	failPathPut       bool
+	failMissingChunks bool
 
-	mu         sync.Mutex
-	chunks     map[string][]byte // hash -> uploaded bytes
-	paths      []api.PathReq
-	auths      map[string]bool // seen Authorization header values
-	pathsAsked [][]string      // hashes sent to get-missing-paths
+	mu          sync.Mutex
+	chunks      map[string][]byte // hash -> uploaded bytes
+	paths       []api.PathReq
+	auths       map[string]bool // seen Authorization header values
+	pathsAsked  [][]string      // hashes sent to get-missing-paths
+	chunksAsked [][]string      // hashes sent to get-missing-chunks
 
 	srv *httptest.Server
 }
@@ -110,11 +130,20 @@ func (f *fakeServer) handle(w http.ResponseWriter, r *http.Request) {
 			f.pathsAsked = append(f.pathsAsked, req.Hashes)
 			f.mu.Unlock()
 		}
-		if rest == "get-missing-chunks" && f.haveChunks != nil {
-			missing = nil
-			for _, h := range req.Hashes {
-				if !f.haveChunks[h] {
-					missing = append(missing, h)
+		if rest == "get-missing-chunks" {
+			if f.failMissingChunks {
+				http.Error(w, "missing-chunks broken", http.StatusInternalServerError)
+				return
+			}
+			f.mu.Lock()
+			f.chunksAsked = append(f.chunksAsked, req.Hashes)
+			f.mu.Unlock()
+			if f.haveChunks != nil {
+				missing = nil
+				for _, h := range req.Hashes {
+					if !f.haveChunks[h] {
+						missing = append(missing, h)
+					}
 				}
 			}
 		}
@@ -613,6 +642,197 @@ func TestBadBaseURLRequestErrors(t *testing.T) {
 	}
 	if err := c.putPath(ctx, api.PathReq{}); err == nil {
 		t.Fatal("putPath should fail")
+	}
+}
+
+// The point of the single-pass pipeline: `nix-store --dump` runs EXACTLY once
+// per pushed path. The old code dumped chunked NARs twice (hash pass + upload
+// pass).
+func TestPushDumpsEachPathExactlyOnce(t *testing.T) {
+	small := []byte("small nar contents")
+	big := randBytes(8 << 10)
+	fakeNix(t, pathInfoJSON(t, []pathInfo{
+		{Path: pathSmall, NarHash: "sha256:x", NarSize: uint64(len(small))},
+		{Path: pathBig, NarHash: "sha256:y", NarSize: uint64(len(big))},
+	}), map[string][]byte{
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-small": small,
+		"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-big":   big,
+	})
+	f := newFakeServer(t, baseCfg())
+
+	c := newTestClient(f, "", 0)
+	if err := c.Push(context.Background(), []string{pathSmall, pathBig}); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.paths) != 2 {
+		t.Fatalf("paths = %d, want 2", len(f.paths))
+	}
+	counts := dumpCounts(t)
+	for _, base := range []string{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-small", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-big"} {
+		if counts[base] != 1 {
+			t.Fatalf("nix-store --dump ran %d times for %s, want exactly 1 (all: %v)", counts[base], base, counts)
+		}
+	}
+}
+
+// Most chunks already exist server-side: only the missing chunks' bytes may
+// cross the wire, and missing-chunk queries must arrive in bounded windows.
+func TestPushChunkedMostChunksPresent(t *testing.T) {
+	nar := randBytes(64 << 10) // ~256 chunks at AvgSize 256 -> several windows
+	fakeNix(t, pathInfoJSON(t, []pathInfo{{Path: pathBig, NarHash: "sha256:y", NarSize: uint64(len(nar))}}),
+		map[string][]byte{"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-big": nar})
+	f := newFakeServer(t, baseCfg())
+
+	var want []string
+	wantData := map[string]string{}
+	err := chunk.Split(strings.NewReader(string(nar)), chunk.Params{MinSize: 64, AvgSize: 256, MaxSize: 1024}, func(ch chunk.Chunk) error {
+		want = append(want, ch.Hash)
+		wantData[ch.Hash] = string(ch.Data)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(want) <= 2*missingWindow {
+		t.Fatalf("test data produced %d chunks; need > %d for multiple windows", len(want), 2*missingWindow)
+	}
+
+	// server has everything except one early and one late chunk
+	miss := map[string]bool{want[1]: true, want[len(want)-1]: true}
+	f.haveChunks = map[string]bool{}
+	for _, h := range want {
+		if !miss[h] {
+			f.haveChunks[h] = true
+		}
+	}
+
+	c := newTestClient(f, "", 0)
+	if err := c.Push(context.Background(), []string{pathBig}); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(f.chunks) != len(miss) {
+		t.Fatalf("uploaded %d chunks, want %d (only the missing ones)", len(f.chunks), len(miss))
+	}
+	for h := range miss {
+		if string(f.chunks[h]) != wantData[h] {
+			t.Fatalf("missing chunk %s not uploaded intact", h)
+		}
+	}
+	if len(f.chunksAsked) < 2 {
+		t.Fatalf("get-missing-chunks called %d times; want windowed queries (>= 2)", len(f.chunksAsked))
+	}
+	for i, q := range f.chunksAsked {
+		if len(q) > missingWindow {
+			t.Fatalf("query %d asked %d hashes, exceeds window %d", i, len(q), missingWindow)
+		}
+	}
+	if len(f.paths) != 1 || len(f.paths[0].Chunks) != len(want) {
+		t.Fatalf("put-path chunk list wrong: %+v", f.paths)
+	}
+	for i := range want {
+		if f.paths[0].Chunks[i] != want[i] {
+			t.Fatalf("chunk order mismatch at %d", i)
+		}
+	}
+}
+
+// A NAR with repeating content: put-path keeps the duplicate hashes in order,
+// but each unique chunk is buffered/uploaded once.
+func TestPushChunkedDuplicateChunks(t *testing.T) {
+	block := randBytes(3 << 10)
+	nar := bytes.Repeat(block, 8)
+	fakeNix(t, pathInfoJSON(t, []pathInfo{{Path: pathBig, NarHash: "sha256:y", NarSize: uint64(len(nar))}}),
+		map[string][]byte{"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-big": nar})
+	f := newFakeServer(t, baseCfg())
+
+	var want []string
+	uniq := map[string]bool{}
+	err := chunk.SplitHashes(bytes.NewReader(nar), chunk.Params{MinSize: 64, AvgSize: 256, MaxSize: 1024}, func(h string) error {
+		want = append(want, h)
+		uniq[h] = true
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(uniq) == len(want) {
+		t.Fatalf("test data produced no duplicate chunks (%d total)", len(want))
+	}
+
+	c := newTestClient(f, "", 0)
+	if err := c.Push(context.Background(), []string{pathBig}); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.chunks) != len(uniq) {
+		t.Fatalf("uploaded %d chunks, want %d unique", len(f.chunks), len(uniq))
+	}
+	if len(f.paths) != 1 || len(f.paths[0].Chunks) != len(want) {
+		t.Fatalf("put-path must keep duplicates in the ordered list: got %d, want %d",
+			len(f.paths[0].Chunks), len(want))
+	}
+	for i := range want {
+		if f.paths[0].Chunks[i] != want[i] {
+			t.Fatalf("chunk order mismatch at %d", i)
+		}
+	}
+}
+
+// get-missing-chunks failing mid-stream must abort the push with the server's
+// error (and, via runDump, kill the dump subprocess).
+func TestPushMissingChunksEndpointError(t *testing.T) {
+	nar := randBytes(8 << 10)
+	fakeNix(t, pathInfoJSON(t, []pathInfo{{Path: pathBig, NarHash: "sha256:y", NarSize: uint64(len(nar))}}),
+		map[string][]byte{"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-big": nar})
+	f := newFakeServer(t, baseCfg())
+	f.failMissingChunks = true
+
+	c := newTestClient(f, "", 0)
+	err := c.Push(context.Background(), []string{pathBig})
+	if err == nil || !strings.Contains(err.Error(), "missing-chunks broken") {
+		t.Fatalf("err = %v, want get-missing-chunks failure", err)
+	}
+	if len(f.chunks) != 0 || len(f.paths) != 0 {
+		t.Fatal("uploads happened despite missing-chunks failure")
+	}
+}
+
+// An upload failure while the dump is still streaming must stop the dump early
+// (errAbort) instead of chunking the rest of the NAR: the fake nix-store dumps
+// the first half, sleeps, dumps the rest, sleeps, then writes a done-marker.
+// The failed first-window uploads land during the first sleep, so the push
+// must error out and kill the dump before the marker is written.
+func TestPushUploadFailureStopsDumpMidStream(t *testing.T) {
+	nar := randBytes(128 << 10)
+	fakeNix(t, pathInfoJSON(t, []pathInfo{{Path: pathBig, NarHash: "sha256:y", NarSize: uint64(len(nar))}}),
+		map[string][]byte{"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-big": nar})
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "dump-completed")
+	script := fmt.Sprintf(`#!/bin/sh
+nar="$XILO_TEST_NARDIR/$(basename "$2")"
+head -c 65536 "$nar"
+sleep 1
+tail -c +65537 "$nar"
+sleep 1
+touch %q
+`, marker)
+	if err := os.WriteFile(filepath.Join(dir, "nix-store"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH")) // shadows fakeNix's nix-store
+	f := newFakeServer(t, baseCfg())
+	f.failChunkPut = true
+
+	c := newTestClient(f, "", 0)
+	err := c.Push(context.Background(), []string{pathBig})
+	if err == nil || !strings.Contains(err.Error(), "chunk store on fire") {
+		t.Fatalf("err = %v, want chunk upload failure", err)
+	}
+	if _, statErr := os.Stat(marker); statErr == nil {
+		t.Fatal("dump ran to completion; should have been killed after the upload failure")
+	}
+	if len(f.paths) != 0 {
+		t.Fatal("path registered despite failed chunk upload")
 	}
 }
 

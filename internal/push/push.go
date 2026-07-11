@@ -157,37 +157,20 @@ func (c *Client) signedByUpstream(in pathInfo) bool {
 	return false
 }
 
+// missingWindow is how many chunks pushOne buffers before asking the server
+// which of them are missing. It bounds retained chunk bytes per in-flight
+// path to missingWindow × MaxSize (32 × 1MiB = 32MiB with default params);
+// chunks handed off for upload are additionally bounded by the shared jobs
+// semaphore.
+const missingWindow = 32
+
 func (c *Client) pushOne(ctx context.Context, in pathInfo, params chunk.Params) error {
 	// Small NARs are stored as a single chunk — skip CDC overhead entirely.
 	if in.NarSize < uint64(c.narThreshold) {
 		return c.pushWhole(ctx, in)
 	}
 
-	// Pass 1: chunk the NAR to get the ordered hash list. Hash-only (no data
-	// copy) — cheap.
-	var order []string
-	if err := dumpHashes(ctx, in.Path, params, func(h string) error {
-		order = append(order, h)
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	need, err := c.missing(ctx, "get-missing-chunks", order)
-	if err != nil {
-		return err
-	}
-	if len(need) == 0 {
-		return c.putPath(ctx, in.pathReq(order))
-	}
-	needSet := map[string]bool{}
-	for _, h := range need {
-		needSet[h] = true
-	}
-
-	// Pass 2: re-dump, upload missing chunks in parallel via the SHARED gate.
 	var mu sync.Mutex
-	uploaded := map[string]bool{}
 	var wg sync.WaitGroup
 	var firstErr error
 	failed := func() bool { mu.Lock(); defer mu.Unlock(); return firstErr != nil }
@@ -199,29 +182,65 @@ func (c *Client) pushOne(ctx context.Context, in pathInfo, params chunk.Params) 
 		}
 	}
 
-	dumpErr := dumpChunks(ctx, in.Path, params, func(ch chunk.Chunk) error {
-		if failed() {
-			return errAbort // stop dumping once an upload has failed
-		}
-		mu.Lock()
-		if !needSet[ch.Hash] || uploaded[ch.Hash] {
-			mu.Unlock()
-			return nil
-		}
-		uploaded[ch.Hash] = true
-		mu.Unlock()
+	var order []string        // full ordered chunk list for put-path
+	var window []chunk.Chunk  // chunks whose fate (missing or not) is unknown
+	seen := map[string]bool{} // hashes already windowed once for this NAR
 
-		c.sem <- struct{}{}
-		wg.Add(1)
-		go func(ch chunk.Chunk) {
-			defer wg.Done()
-			defer func() { <-c.sem }()
-			if err := c.putChunk(ctx, ch); err != nil {
-				setErr(err)
+	// flush asks the server which windowed chunks it lacks, uploads those in
+	// parallel via the SHARED gate, and drops the rest immediately.
+	flush := func() error {
+		hashes := make([]string, len(window))
+		for i, ch := range window {
+			hashes[i] = ch.Hash
+		}
+		need, err := c.missing(ctx, "get-missing-chunks", hashes)
+		if err != nil {
+			return err
+		}
+		needSet := map[string]bool{}
+		for _, h := range need {
+			needSet[h] = true
+		}
+		for _, ch := range window {
+			if !needSet[ch.Hash] {
+				continue
 			}
-		}(ch)
+			c.sem <- struct{}{}
+			wg.Add(1)
+			go func(ch chunk.Chunk) {
+				defer wg.Done()
+				defer func() { <-c.sem }()
+				if err := c.putChunk(ctx, ch); err != nil {
+					setErr(err)
+				}
+			}(ch)
+		}
+		window = nil // drop buffered bytes; upload goroutines hold their own
 		return nil
+	}
+
+	// ONE dump: hash every chunk as it streams by, copy bytes only while a
+	// chunk's fate is unknown, resolving fates window by window.
+	dumpErr := runDump(ctx, in.Path, func(r io.Reader) error {
+		return chunk.SplitRaw(r, params, func(hash string, data []byte) error {
+			if failed() {
+				return errAbort // stop dumping once an upload has failed
+			}
+			order = append(order, hash)
+			if seen[hash] {
+				return nil // duplicate within this NAR; first copy decides
+			}
+			seen[hash] = true
+			window = append(window, chunk.Chunk{Hash: hash, Data: bytes.Clone(data)})
+			if len(window) >= missingWindow {
+				return flush()
+			}
+			return nil
+		})
 	})
+	if dumpErr == nil && len(window) > 0 {
+		dumpErr = flush() // tail window
+	}
 	wg.Wait()
 	if firstErr != nil {
 		return firstErr
@@ -233,7 +252,7 @@ func (c *Client) pushOne(ctx context.Context, in pathInfo, params chunk.Params) 
 	return c.putPath(ctx, in.pathReq(order))
 }
 
-// errAbort signals the pass-2 dump to stop early after an upload failure.
+// errAbort signals the dump to stop early after an upload failure.
 var errAbort = errors.New("aborted")
 
 // pushWhole uploads a small NAR as one chunk.
@@ -333,21 +352,6 @@ func parsePathInfo(out []byte) ([]pathInfo, error) {
 		arr = append(arr, in)
 	}
 	return arr, nil
-}
-
-// dumpHashes streams `nix-store --dump path` through the chunker, reporting only
-// the ordered chunk hashes (no data copy).
-func dumpHashes(ctx context.Context, path string, params chunk.Params, fn func(hash string) error) error {
-	return runDump(ctx, path, func(r io.Reader) error {
-		return chunk.SplitHashes(r, params, fn)
-	})
-}
-
-// dumpChunks streams `nix-store --dump path` through the chunker.
-func dumpChunks(ctx context.Context, path string, params chunk.Params, fn func(chunk.Chunk) error) error {
-	return runDump(ctx, path, func(r io.Reader) error {
-		return chunk.Split(r, params, fn)
-	})
 }
 
 func runDump(ctx context.Context, path string, consume func(io.Reader) error) error {
