@@ -62,7 +62,7 @@ templ Org(d OrgPageData) {
 					if len(d.AllUsers) > 0 {
 						<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") } class="member-add member-add-combo">
 							@Combobox(Combo{Name: "user_id", Placeholder: T("org.pickuser"), AriaLabel: T("ns.username"), Search: boolPtr(true), Options: userOptions(d.AllUsers)})
-							@Combobox(Combo{Name: "role", Value: "member", AriaLabel: T("users.role"), Options: roleOptions()})
+							@Combobox(Combo{Name: "role", Value: "member", AriaLabel: T("users.role"), Search: boolPtr(false), Options: roleOptions()})
 							<button type="submit">@Icon("user-plus") <span>{ T("ns.addmember") }</span></button>
 						</form>
 					} else {

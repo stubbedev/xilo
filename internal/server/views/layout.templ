@@ -113,7 +113,7 @@ templ Layout(title string, nav Nav, flash Flash) {
 						open:false, q:'', active:0,
 						value:cfg.value||'', options:cfg.options||[],
 						auto:!!cfg.auto, placeholder:cfg.placeholder||'',
-						get searchable(){return cfg.search===true||(cfg.search!==false&&this.options.length>7)},
+						get searchable(){return cfg.search!==false},
 						label(){var self=this;var o=this.options.find(function(x){return x.value===self.value});return o?o.label:''},
 						filtered(){var q=this.q.trim().toLowerCase();if(!q)return this.options;
 							return this.options.filter(function(o){return (o.label+' '+(o.sub||'')+' '+o.value).toLowerCase().indexOf(q)>=0})},
@@ -140,7 +140,7 @@ templ Layout(title string, nav Nav, flash Flash) {
 					<ul>
 						if nav.LoggedIn {
 							if len(nav.Contexts) > 1 {
-								<li class="ctx-switch" data-tooltip={ T("nav.contexthint") }>
+								<li class="ctx-switch">
 									@Icon("eye")
 									<form method="post" action="/admin/context" class="ctx-form">
 										@Combobox(Combo{
