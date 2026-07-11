@@ -57,3 +57,22 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+
+  # Keep the floating major tag (uses: stubbedev/xilo@v1) on the newest
+  # release — the convention Marketplace consumers pin to. The Marketplace
+  # listing itself tracks the latest release automatically after the one-time
+  # manual publish (GitHub exposes no API for that step; see RELEASING.md).
+  major-tag:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: move major tag
+        run: |
+          major="${GITHUB_REF_NAME%%.*}"      # v1.2.3 → v1
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -f "$major" "$GITHUB_REF_NAME"
+          git push -f origin "$major"
