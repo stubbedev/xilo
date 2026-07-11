@@ -1,17 +1,113 @@
 package views
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/a-h/templ"
 	"github.com/stubbedev/xilo/internal/store"
+	"github.com/templui/templui/components/badge"
+	"github.com/templui/templui/components/button"
+	"github.com/templui/templui/components/progress"
 )
 
-// cls joins a base class with optional extras into one class attribute value.
-func cls(base string, extra ...string) string {
-	return strings.Join(append([]string{base}, extra...), " ")
+// capVariant grades a usage bar: success (fine), warning (≥75%), danger (≥95%).
+func capVariant(used, capacity int64) progress.Variant {
+	switch fillClass(used, capacity) {
+	case "over":
+		return progress.VariantDanger
+	case "warn":
+		return progress.VariantWarning
+	default:
+		return progress.VariantSuccess
+	}
+}
+
+// confirmVariant is the button variant for a confirm action's submit button.
+func confirmVariant(danger bool) button.Variant {
+	if danger {
+		return button.VariantDestructive
+	}
+	return button.VariantDefault
+}
+
+// confirmTriggerProps builds the inline trigger button's props for a Confirm.
+func confirmTriggerProps(c Confirm) button.Props {
+	v := c.TriggerVariant
+	if v == "" {
+		v = button.VariantOutline
+	}
+	p := button.Props{Variant: v, Type: button.TypeButton, Size: button.SizeSm}
+	if c.IconOnly {
+		p.Size = button.SizeIcon
+		if c.TriggerTooltip != "" {
+			p.Attributes = templ.Attributes{"aria-label": c.TriggerTooltip, "title": c.TriggerTooltip}
+		}
+	}
+	return p
+}
+
+// segVariant is the button variant for a segmented-control option.
+func segVariant(active bool) button.Variant {
+	if active {
+		return button.VariantDefault
+	}
+	return button.VariantOutline
+}
+
+// toastDuration is the flash toast lifetime (ms). A flash paired with a secret
+// lingers longer so the user reads it before copying.
+func toastDuration(flash Flash) int {
+	if flash.Code != "" {
+		return 10000
+	}
+	return 5000
+}
+
+// statusVariant maps a token status to a badge variant.
+func statusVariant(status string) badge.Variant {
+	switch status {
+	case "active":
+		return badge.VariantDefault
+	case "expired":
+		return badge.VariantSecondary
+	case "revoked":
+		return badge.VariantDestructive
+	default:
+		return badge.VariantOutline
+	}
+}
+
+// contextLabel is the current context-switcher label ("All accounts" or slug).
+func contextLabel(nav Nav) string {
+	if nav.Active == "" {
+		return "All accounts"
+	}
+	return nav.Active
+}
+
+// initials derives up to two uppercase initials from a display name for avatars.
+func initials(name string) string {
+	fields := strings.Fields(name)
+	if len(fields) == 0 {
+		return "?"
+	}
+	first := []rune(fields[0])
+	out := strings.ToUpper(string(first[0]))
+	if len(fields) > 1 {
+		last := []rune(fields[len(fields)-1])
+		out += strings.ToUpper(string(last[0]))
+	}
+	return out
+}
+
+// copyID is a stable DOM id for a copy target, derived from its value.
+func copyID(value string) string {
+	sum := sha1.Sum([]byte(value))
+	return "cp-" + hex.EncodeToString(sum[:6])
 }
 
 // pathParts splits "/nix/store/<hash>-<name>" for compact display: an 8-char
@@ -108,14 +204,6 @@ func Remaining(expires int64) int64 {
 	default:
 		return (left + 3599) / 3600 * 3600
 	}
-}
-
-// visValue is the form value for the visibility toggle's hidden input.
-func visValue(private bool) string {
-	if private {
-		return "on"
-	}
-	return ""
 }
 
 // hasPerm reports whether a token carries a permission.

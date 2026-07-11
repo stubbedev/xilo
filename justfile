@@ -16,8 +16,15 @@ GO_LDFLAGS := "-X main.version=$(git describe --tags --always --dirty 2>/dev/nul
 generate:
     templ generate
 
+# Rebuild the Tailwind stylesheet (internal/server/static/xilo-tw.css) from the
+# templ views + templui component sources. The output is a generated artifact
+# (git-ignored, embedded via //go:embed); every build recipe runs this first.
+css:
+    TAILWINDCSS='nix run nixpkgs#tailwindcss_4 --' ./scripts/build-css.sh
+    @echo "Built internal/server/static/xilo-tw.css"
+
 # Build the binary into ./bin/ (regenerates views first).
-build: generate
+build: css generate
     mkdir -p bin
     go build -ldflags="{{GO_LDFLAGS}}" -o bin/xilo ./cmd/xilo
     @echo "Built ./bin/xilo"
@@ -37,11 +44,11 @@ fmt:
 
 # Vet + build + test — the local gate. Views regenerate first: *_templ.go is
 # never committed, only built.
-lint: generate
+lint: css generate
     gofmt -l .
     go vet ./...
 
-test: generate
+test: css generate
     go test ./...
 
 # ─────────────────────────── Codegen ───────────────────────────

@@ -5,17 +5,23 @@ import (
 	"strconv"
 
 	"github.com/stubbedev/xilo/internal/store"
+
+	"github.com/templui/templui/components/badge"
+	"github.com/templui/templui/components/button"
+	"github.com/templui/templui/components/card"
+	"github.com/templui/templui/components/chart"
+	"github.com/templui/templui/components/input"
 )
 
-// StatusData is the status page's initial view model; after first paint the
-// page script keeps everything fresh from the /admin/status/data JSON.
+// StatusData is the status page view model. The page is fully server-rendered
+// per window; a reload timer keeps it fresh.
 type StatusData struct {
-	Nav Nav
+	Nav       Nav
 	Healthy   bool
 	Uptime    string
 	HitPct    string
 	Updated   string // wall clock of this render
-	Rate      int    // poll interval in seconds (server-validated)
+	Rate      int    // reload interval in seconds (server-validated)
 	Window    int    // chart window in minutes (server-validated; 0 = custom)
 	From, To  string // custom range dates (empty on presets)
 	Global    store.Global
@@ -26,26 +32,29 @@ type StatusData struct {
 	Charts    []ChartData
 }
 
-// ChartData is one chart's header: a stable ID plus server-formatted strings.
-// Series data flows through the JSON endpoint, not the template.
+// ChartData is one chart: header strings plus the drawn series.
 type ChartData struct {
-	ID               string
-	Label, Cur, Peak string
+	ID          string
+	Label       string
+	Cur, Peak   string
+	Points      []float64
+	Labels      []string
+	Fill        interface{} // border/background color token
 }
 
 var statusRates = []int{2, 5, 10, 30, 60}
 
-// windowURL swaps the window preset, keeping the poll rate.
-func windowURL(d StatusData, win int) templ.SafeURL {
-	return templ.SafeURL(fmt.Sprintf("/admin/status?window=%d&rate=%d", win, d.Rate))
+// windowURL swaps the window preset, keeping the reload rate.
+func windowURL(d StatusData, win int) string {
+	return fmt.Sprintf("/admin/status?window=%d&rate=%d", win, d.Rate)
 }
 
-// rateURL swaps the poll rate, keeping the window or custom range.
-func rateURL(d StatusData, rate int) templ.SafeURL {
+// rateURL swaps the reload rate, keeping the window or custom range.
+func rateURL(d StatusData, rate int) string {
 	if d.Window == 0 {
-		return templ.SafeURL(fmt.Sprintf("/admin/status?from=%s&to=%s&rate=%d", d.From, d.To, rate))
+		return fmt.Sprintf("/admin/status?from=%s&to=%s&rate=%d", d.From, d.To, rate)
 	}
-	return templ.SafeURL(fmt.Sprintf("/admin/status?window=%d&rate=%d", d.Window, rate))
+	return fmt.Sprintf("/admin/status?window=%d&rate=%d", d.Window, rate)
 }
 
 var statusWindows = []struct {
@@ -53,153 +62,109 @@ var statusWindows = []struct {
 	Label string
 }{{10, "10m"}, {30, "30m"}, {60, "1h"}, {180, "3h"}, {720, "12h"}, {1440, "24h"}, {10080, "7d"}, {43200, "30d"}}
 
-// statusScript renders the page's chart-and-poll module. Presentation only:
-// it initializes the four ECharts instances once, then polls the JSON data
-// endpoint and applies values via setOption/textContent — charts update in
-// place, so refreshes never blink. All numbers arrive pre-computed.
-func statusScript(d StatusData) string {
-	return fmt.Sprintf(`<script>
-(function(){
-	if(window.xiloStatusTimer){clearInterval(window.xiloStatusTimer)}
-	var URL='/admin/status/data?window=%d&from=%s&to=%s';
-	var RATE=%d*1000;
-	var fmt={
-		bytes:function(v){return v>=1073741824?(v/1073741824).toFixed(1)+' GiB':v>=1048576?(v/1048576).toFixed(1)+' MiB':v>=1024?(v/1024).toFixed(1)+' KiB':Math.round(v)+' B'},
-		bps:function(v){return fmt.bytes(v)+'/s'},
-		ms:function(v){return v+' ms'},
-		persec:function(v){return v+'/s'}
-	};
-	var KIND={req:'persec',lat:'ms',thru:'bps',stored:'bytes'};
-	var charts={};
-	function ensure(id){
-		var el=document.getElementById('xchart-'+id);
-		if(!el){return null}
-		if(!charts[id]){charts[id]=echarts.init(el)}
-		return charts[id];
-	}
-	function option(id,d){
-		return {
-			animation:false,
-			color:['#ff9502'],
-			grid:{left:64,right:16,top:16,bottom:28},
-			tooltip:{show:true,trigger:'axis',valueFormatter:function(v){return v==null?'—':fmt[KIND[id]](v)}},
-			xAxis:{type:'time',min:d.minT,max:d.maxT,splitNumber:5,axisLabel:{hideOverlap:true}},
-			yAxis:{type:'value',axisLabel:{formatter:fmt[KIND[id]]}},
-			series:[{type:'line',showSymbol:false,smooth:true,areaStyle:{opacity:0.15},data:d.charts[id].points}]
-		};
-	}
-	function setText(id,v){var el=document.getElementById(id);if(el){el.textContent=v}}
-	function apply(d){
-		Object.keys(KIND).forEach(function(id){
-			var inst=ensure(id);
-			if(inst){inst.setOption(option(id,d),{notMerge:true})}
-			setText('cur-'+id,d.charts[id].cur);
-			var pk=document.getElementById('peak-'+id);
-			if(pk){pk.style.display=d.charts[id].peak?'':'none'}
-			setText('peakv-'+id,d.charts[id].peak);
-		});
-		setText('kpi-uptime',d.uptime);setText('kpi-hits',d.hitPct);setText('kpi-stored',d.stored);
-		setText('kpi-paths',d.paths);setText('kpi-nars',d.nars);setText('kpi-reqs',d.requests);
-		setText('kpi-auth',d.authFails);
-		var h=document.getElementById('kpi-health');
-		if(h){h.textContent=d.healthy?%q:%q;h.className='n '+(d.healthy?'ok-text':'bad-text')}
-		setText('status-updated',%q+' '+d.updated);
-	}
-	function tick(){
-		if(!document.getElementById('xchart-req')){
-			clearInterval(window.xiloStatusTimer);window.xiloStatusTimer=null;
-			Object.keys(charts).forEach(function(k){charts[k].dispose()});
-			return;
-		}
-		// After a boosted navigation the echarts <script> loads async; retry
-		// shortly so the first paint doesn't wait a whole poll interval.
-		if(!window.echarts){setTimeout(tick,100);return}
-		fetch(URL).then(function(r){return r.ok?r.json():null}).then(function(d){if(d){apply(d)}}).catch(function(){});
-	}
-	addEventListener('resize',function(){Object.keys(charts).forEach(function(k){charts[k].resize()})});
-	tick();
-	window.xiloStatusTimer=setInterval(tick,RATE);
-})();
-</script>`, d.Window, d.From, d.To, d.Rate, T("status.ok"), T("status.err"), T("status.updated"))
-}
-
 templ StatusPage(d StatusData) {
-	@Layout(T("status.title"), d.Nav, Flash{}) {
-		<div class="status-head">
-			<hgroup>
-				<h1>{ T("status.title") }</h1>
-				<p>{ T("status.subtitle") }</p>
-			</hgroup>
-			<div class="status-controls">
-				<nav class="seg" aria-label={ T("status.windowsel") }>
-					for _, wo := range statusWindows {
-						<a class={ "seg-btn", templ.KV("active", wo.Min == d.Window) } href={ windowURL(d, wo.Min) }>{ wo.Label }</a>
+	@Layout("Status", "", d.Nav, Flash{}) {
+		@PageHeader("Status", "Live health, traffic and storage — instance-wide.") {
+			@button.Button(button.Props{Href: rateURL(d, d.Rate), Variant: button.VariantOutline, Size: button.SizeSm, Attributes: templ.Attributes{"title": "Refresh"}}) {
+				@Icon("refresh-cw")
+				<span>Refresh</span>
+			}
+		}
+		<div class="mb-6 flex flex-wrap items-center gap-2">
+			<div class="flex flex-wrap gap-1">
+				for _, wo := range statusWindows {
+					@button.Button(button.Props{Href: windowURL(d, wo.Min), Size: button.SizeSm, Variant: segVariant(wo.Min == d.Window)}) {
+						{ wo.Label }
 					}
-					<details class="seg-custom">
-						<summary class={ "seg-btn", templ.KV("active", d.Window == 0) }>
-							@Icon("calendar")
-							if d.Window == 0 {
-								<span>{ d.From } → { d.To }</span>
-							} else {
-								<span>{ T("status.custom") }</span>
-							}
-						</summary>
-						<form method="get" action="/admin/status" class="seg-pop">
-							<input type="hidden" name="rate" value={ strconv.Itoa(d.Rate) }/>
-							<label>{ T("status.from") } <input type="date" name="from" value={ d.From } required/></label>
-							<label>{ T("status.to") } <input type="date" name="to" value={ d.To } required/></label>
-							<button type="submit">@Icon("check") <span>{ T("status.apply") }</span></button>
-						</form>
-					</details>
-				</nav>
-				<nav class="seg" aria-label={ T("status.rate") }>
-					<span class="seg-btn seg-label">@Icon("refresh-cw")</span>
-					for _, rt := range statusRates {
-						<a class={ "seg-btn", templ.KV("active", rt == d.Rate) } href={ rateURL(d, rt) }>{ strconv.Itoa(rt) }s</a>
+				}
+			</div>
+			<form method="get" action="/admin/status" class="ml-auto flex items-end gap-2">
+				<input type="hidden" name="rate" value={ strconv.Itoa(d.Rate) }/>
+				<div class="w-40">
+					@input.Input(input.Props{Name: "from", Type: input.TypeDate, Value: d.From})
+				</div>
+				<div class="w-40">
+					@input.Input(input.Props{Name: "to", Type: input.TypeDate, Value: d.To})
+				</div>
+				@button.Button(button.Props{Type: button.TypeSubmit, Size: button.SizeSm, Variant: segVariant(d.Window == 0)}) {
+					@Icon("calendar")
+					<span>Apply</span>
+				}
+			</form>
+		</div>
+		<div class="mb-8 flex items-center gap-2 text-sm text-muted-foreground">
+			<span>Auto-refresh</span>
+			<div class="flex gap-1">
+				for _, rt := range statusRates {
+					@button.Button(button.Props{Href: rateURL(d, rt), Size: button.SizeSm, Variant: segVariant(rt == d.Rate)}) {
+						{ strconv.Itoa(rt) }s
 					}
-				</nav>
+				}
 			</div>
 		</div>
-		<article>
-			<div class="kpi">
-				if d.Healthy {
-					@KPITile("activity", T("status.ok"), T("status.health"), "kpi-health", "ok-text")
-				} else {
-					@KPITile("activity", T("status.err"), T("status.health"), "kpi-health", "bad-text")
-				}
-				@KPITile("clock", d.Uptime, T("status.uptime"), "kpi-uptime")
-				@KPITile("target", d.HitPct, T("status.hits"), "kpi-hits")
-				@KPITile("hard-drive", d.Bytes(d.Global.StoredBytes), T("status.stored"), "kpi-stored")
-				@KPITile("package", Count(d.Global.Paths), T("kpi.paths"), "kpi-paths")
-				@KPITile("download", Count(d.NarServed), T("status.nars"), "kpi-nars")
-				@KPITile("network", Count(d.Requests), T("status.reqs"), "kpi-reqs")
-				@KPITile("shield", Count(d.AuthFails), T("status.authfail"), "kpi-auth")
-			</div>
-		</article>
-		<div class="charts">
+		<div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+			if d.Healthy {
+				@StatTile("activity", "Healthy", "Health", "", "text-green-500")
+			} else {
+				@StatTile("activity", "Degraded", "Health", "", "text-destructive")
+			}
+			@StatTile("clock", d.Uptime, "Uptime", "", "")
+			@StatTile("target", d.HitPct, "Narinfo hit rate", "", "")
+			@StatTile("hard-drive", d.Bytes(d.Global.StoredBytes), "Stored", "", "")
+			@StatTile("package", Count(d.Global.Paths), "Store paths", "", "")
+			@StatTile("download", Count(d.NarServed), "NARs served", "", "")
+			@StatTile("network", Count(d.Requests), "Requests", "", "")
+			@StatTile("shield", Count(d.AuthFails), "Auth failures", "", "")
+		</div>
+		<div class="grid gap-6 lg:grid-cols-2">
 			for _, c := range d.Charts {
-				<article class="chart">
-					<header class="chart-head">
-						<span class="l">{ c.Label }</span>
-						<span class="vals">
-							<span class="v" id={ "cur-" + c.ID }>{ c.Cur }</span>
-							<small class="peak" id={ "peak-" + c.ID } style={ peakStyle(c.Peak) }>{ T("status.peak") } <span id={ "peakv-" + c.ID }>{ c.Peak }</span></small>
-						</span>
-					</header>
-					<div class="echart" id={ "xchart-" + c.ID }></div>
-				</article>
+				@statusChart(c)
 			}
 		</div>
-		<p class="status-updated" id="status-updated">{ T("status.updated") } { d.Updated }</p>
-		<script src={ Asset("echarts.min.js") }></script>
-		@templ.Raw(statusScript(d))
+		<p class="mt-6 text-center text-xs text-muted-foreground">Updated { d.Updated }</p>
+		@templ.JSONScript("status-rate", d.Rate)
+		<script>
+			(function(){var r=Number(document.getElementById('status-rate').textContent)||5;setTimeout(function(){location.reload()},r*1000)})();
+		</script>
 	}
 }
 
-// peakStyle hides the peak label until there is a nonzero peak.
-func peakStyle(peak string) string {
-	if peak == "" {
-		return "display: none"
+templ statusChart(c ChartData) {
+	@card.Card() {
+		@card.Header(card.HeaderProps{Class: "flex-row items-baseline justify-between space-y-0"}) {
+			@card.Title(card.TitleProps{Class: "text-base"}) {
+				{ c.Label }
+			}
+			<div class="flex items-baseline gap-2">
+				<span class="text-lg font-semibold tabular-nums">{ c.Cur }</span>
+				if c.Peak != "" {
+					@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
+						peak { c.Peak }
+					}
+				}
+			</div>
+		}
+		@card.Content() {
+			@chart.Chart(chart.Props{
+				ID:          "chart-" + c.ID,
+				Variant:     chart.VariantLine,
+				Class:       "h-48",
+				ShowXAxis:   true,
+				ShowYAxis:   true,
+				ShowYLabels: true,
+				Data: chart.Data{
+					Labels: c.Labels,
+					Datasets: []chart.Dataset{{
+						Label:           c.Label,
+						Data:            c.Points,
+						BorderColor:     "var(--chart-1)",
+						BackgroundColor: "color-mix(in oklab, var(--chart-1) 15%, transparent)",
+						BorderWidth:     2,
+						Tension:         0.3,
+						Fill:            true,
+					}},
+				},
+			})
+		}
 	}
-	return ""
 }

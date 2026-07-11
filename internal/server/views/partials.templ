@@ -1,0 +1,250 @@
+package views
+
+import (
+	"github.com/templui/templui/components/badge"
+	"github.com/templui/templui/components/button"
+	"github.com/templui/templui/components/card"
+	"github.com/templui/templui/components/copybutton"
+	"github.com/templui/templui/components/dialog"
+	"github.com/templui/templui/components/input"
+	"github.com/templui/templui/components/table"
+	"github.com/templui/templui/components/toast"
+)
+
+// FlashToast surfaces a one-shot message as a templui toast. When the flash
+// carries a secret Code, a persistent SecretCard is rendered too (a copyable
+// secret must not auto-dismiss).
+templ FlashToast(flash Flash) {
+	if flash.Msg != "" {
+		@toast.Toast(toast.Props{
+			Description:   flash.Msg,
+			Position:      toast.PositionBottomRight,
+			Duration:      toastDuration(flash),
+			Dismissible:   true,
+			ShowIndicator: flash.Code == "",
+			Icon:          true,
+		})
+	}
+	if flash.Code != "" {
+		@SecretCard(flash.Code)
+	}
+}
+
+// SecretCard shows a one-time secret with a copy button — persistent, since it
+// is shown only once.
+templ SecretCard(code string) {
+	@card.Card(card.Props{Class: "mb-6 border-primary/40"}) {
+		@card.Content(card.ContentProps{Class: "flex items-center gap-3 p-4"}) {
+			<code id={ copyID(code) } class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs">{ code }</code>
+			@copybutton.CopyButton(copybutton.Props{TargetID: copyID(code), Class: "shrink-0"})
+		}
+	}
+}
+
+// SearchInput is a live-search box: typing swaps just `target` in place via
+// htmx, preserving the rest of the page.
+templ SearchInput(action, name, value, placeholder, target string) {
+	@input.Input(input.Props{
+		Name: name, Value: value, Type: input.TypeSearch, Placeholder: placeholder,
+		Class: "w-full sm:w-64",
+		Attributes: templ.Attributes{
+			"hx-get":      action,
+			"hx-trigger":  "input changed delay:300ms, search",
+			"hx-target":   target,
+			"hx-select":   target,
+			"hx-swap":     "outerHTML",
+			"hx-push-url": "true",
+			"autocomplete": "off",
+		},
+	})
+}
+
+// PageHeader is a page title + optional subtitle, with a right-aligned actions
+// slot (children).
+templ PageHeader(title, subtitle string) {
+	<div class="mb-6 flex flex-wrap items-end justify-between gap-4">
+		<div class="space-y-1">
+			<h1 class="text-2xl font-semibold tracking-tight">{ title }</h1>
+			if subtitle != "" {
+				<p class="text-sm text-muted-foreground">{ subtitle }</p>
+			}
+		</div>
+		<div class="flex items-center gap-2">
+			{ children... }
+		</div>
+	</div>
+}
+
+// SectionHeader is a lighter heading for a card/region, with an actions slot.
+templ SectionHeader(title string) {
+	<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+		<h2 class="text-lg font-semibold tracking-tight">{ title }</h2>
+		<div class="flex items-center gap-2">
+			{ children... }
+		</div>
+	</div>
+}
+
+// StatTile is one KPI: icon, big value, label. A non-empty id marks the value
+// for live updates; tone adds a text color class to the value.
+templ StatTile(icon, value, label, id, tone string) {
+	@card.Card(card.Props{Class: "p-0"}) {
+		@card.Content(card.ContentProps{Class: "flex items-center gap-4 p-4"}) {
+			<div class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+				@IconClass(icon, 20, "")
+			</div>
+			<div class="min-w-0">
+				<div
+					class={ "truncate text-2xl font-semibold tabular-nums", tone }
+					if id != "" {
+						id={ id }
+					}
+				>{ value }</div>
+				<div class="truncate text-xs text-muted-foreground">{ label }</div>
+			</div>
+		}
+	}
+}
+
+// EmptyState is the shared empty-list block: icon, message, optional action.
+templ EmptyState(icon, msg string) {
+	<div class="flex flex-col items-center gap-3 rounded-lg border border-dashed py-12 text-center">
+		<span class="text-muted-foreground">@IconClass(icon, 32, "")</span>
+		<p class="text-sm text-muted-foreground">{ msg }</p>
+		<div class="flex items-center gap-2">
+			{ children... }
+		</div>
+	</div>
+}
+
+// PagerNav renders prev/next controls; nothing when there is a single page.
+templ PagerNav(p Pager) {
+	if p.Pages > 1 {
+		<nav class="mt-4 flex items-center justify-center gap-3" aria-label="Pagination">
+			if p.Prev != "" {
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Href: p.Prev, Attributes: hxSwapAttrs(p.Target)}) {
+					@Icon("chevron-left")
+					<span>Prev</span>
+				}
+			}
+			<span class="text-sm text-muted-foreground tabular-nums">{ itoa(int64(p.Page)) } / { itoa(int64(p.Pages)) }</span>
+			if p.Next != "" {
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Href: p.Next, Attributes: hxSwapAttrs(p.Target)}) {
+					<span>Next</span>
+					@Icon("chevron-right")
+				}
+			}
+		</nav>
+	}
+}
+
+// SortHead is a clickable, direction-indicating table header cell.
+templ SortHead(s SortCtx, key, label string) {
+	@table.Head() {
+		<a
+			class="inline-flex items-center gap-1 hover:text-foreground"
+			href={ templ.SafeURL(s.URL(key)) }
+			aria-sort={ ariaSort(s, key) }
+			{ hxSwapAttrs(s.Target)... }
+		>
+			<span>{ label }</span>
+			if s.Key == key {
+				if s.Dir == "asc" {
+					@IconClass("chevron-up", 12, "")
+				} else {
+					@IconClass("chevron-down", 12, "")
+				}
+			}
+		</a>
+	}
+}
+
+// Confirm parameterizes a confirm-before-POST action: an inline trigger button
+// that opens a dialog; confirming submits `Action`. Extra hidden inputs go in
+// the children slot.
+type Confirm struct {
+	ID             string
+	Action         string
+	Title          string
+	Message        string
+	ConfirmLabel   string
+	ConfirmIcon    string
+	Danger         bool
+	TriggerLabel   string
+	TriggerIcon    string
+	TriggerVariant button.Variant
+	IconOnly       bool
+	TriggerTooltip string
+}
+
+templ ConfirmForm(c Confirm) {
+	@dialog.Dialog(dialog.Props{ID: c.ID}) {
+		@dialog.Trigger(dialog.TriggerProps{For: c.ID}) {
+			@button.Button(confirmTriggerProps(c)) {
+				@Icon(c.TriggerIcon)
+				if !c.IconOnly {
+					<span>{ c.TriggerLabel }</span>
+				}
+			}
+		}
+		@dialog.Content(dialog.ContentProps{Class: "sm:max-w-md"}) {
+			@dialog.Header() {
+				@dialog.Title() {
+					{ c.Title }
+				}
+				@dialog.Description() {
+					{ c.Message }
+				}
+			}
+			<form method="post" action={ templ.SafeURL(c.Action) } class="mt-2">
+				{ children... }
+				@dialog.Footer() {
+					@dialog.Close(dialog.CloseProps{For: c.ID}) {
+						@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
+							Cancel
+						}
+					}
+					@button.Button(button.Props{Variant: confirmVariant(c.Danger), Type: button.TypeSubmit}) {
+						if c.ConfirmIcon != "" {
+							@Icon(c.ConfirmIcon)
+						}
+						<span>{ c.ConfirmLabel }</span>
+					}
+				}
+			</form>
+		}
+	}
+}
+
+// StatusBadge renders a token's status as a colored badge.
+templ StatusBadge(status string) {
+	@badge.Badge(badge.Props{Variant: statusVariant(status)}) {
+		{ status }
+	}
+}
+
+// VisBadge shows a cache's public/private state.
+templ VisBadge(public bool) {
+	if public {
+		@badge.Badge(badge.Props{Variant: badge.VariantSecondary, Class: "gap-1"}) {
+			@Icon("globe")
+			<span>Public</span>
+		}
+	} else {
+		@badge.Badge(badge.Props{Variant: badge.VariantOutline, Class: "gap-1"}) {
+			@Icon("lock")
+			<span>Private</span>
+		}
+	}
+}
+
+// PermBadges renders a token's permissions as small labelled badges.
+templ PermBadges(perms []string) {
+	<div class="flex flex-wrap gap-1">
+		for _, p := range perms {
+			@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
+				{ p }
+			}
+		}
+	</div>
+}

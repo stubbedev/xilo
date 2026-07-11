@@ -1,46 +1,239 @@
 package views
 
+import (
+	"strconv"
+
+	"github.com/stubbedev/xilo/internal/store"
+
+	"github.com/templui/templui/components/alert"
+	"github.com/templui/templui/components/button"
+	"github.com/templui/templui/components/card"
+	"github.com/templui/templui/components/input"
+	"github.com/templui/templui/components/inputotp"
+	"github.com/templui/templui/components/label"
+	"github.com/templui/templui/components/radio"
+)
+
+// webauthnScript carries the passkey ceremony plumbing shared by the login and
+// account pages.
+templ webauthnScript() {
+	<script>
+		function b64uToBuf(s){s=s.replace(/-/g,'+').replace(/_/g,'/');var b=atob(s),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++){a[i]=b.charCodeAt(i)}return a.buffer}
+		function bufToB64u(b){var a=new Uint8Array(b),s='';for(var i=0;i<a.length;i++){s+=String.fromCharCode(a[i])}return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
+		async function xiloPasskeyRegister(){
+			var res=await fetch('/admin/passkeys/register/begin',{method:'POST'});
+			if(!res.ok){alert(await res.text());return}
+			var opts=(await res.json()).publicKey;
+			opts.challenge=b64uToBuf(opts.challenge);
+			opts.user.id=b64uToBuf(opts.user.id);
+			(opts.excludeCredentials||[]).forEach(function(c){c.id=b64uToBuf(c.id)});
+			var cred;
+			try{cred=await navigator.credentials.create({publicKey:opts})}catch(e){return}
+			var body={id:cred.id,rawId:bufToB64u(cred.rawId),type:cred.type,response:{
+				attestationObject:bufToB64u(cred.response.attestationObject),
+				clientDataJSON:bufToB64u(cred.response.clientDataJSON)}};
+			var fin=await fetch('/admin/passkeys/register/finish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+			if(fin.ok){location.reload()}else{alert(await fin.text())}
+		}
+		async function xiloPasskeyLogin(){
+			var res=await fetch('/admin/login/passkey/begin',{method:'POST'});
+			if(!res.ok){alert(await res.text());return}
+			var opts=(await res.json()).publicKey;
+			opts.challenge=b64uToBuf(opts.challenge);
+			(opts.allowCredentials||[]).forEach(function(c){c.id=b64uToBuf(c.id)});
+			var cred;
+			try{cred=await navigator.credentials.get({publicKey:opts})}catch(e){return}
+			var body={id:cred.id,rawId:bufToB64u(cred.rawId),type:cred.type,response:{
+				authenticatorData:bufToB64u(cred.response.authenticatorData),
+				clientDataJSON:bufToB64u(cred.response.clientDataJSON),
+				signature:bufToB64u(cred.response.signature),
+				userHandle:cred.response.userHandle?bufToB64u(cred.response.userHandle):null}};
+			var fin=await fetch('/admin/login/passkey/finish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+			if(fin.ok){location.href='/admin'}else{alert(await fin.text())}
+		}
+	</script>
+}
+
+// AuthShell is the minimal centered chrome for signed-out pages.
+templ AuthShell(title string, flash Flash) {
+	<!doctype html>
+	<html lang="en" class="h-full">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>Xilo — { title }</title>
+			<link rel="icon" type="image/svg+xml" href={ Asset("favicon.svg") }/>
+			<link rel="stylesheet" href={ Asset("xilo-tw.css") }/>
+			<script src={ Asset("htmx.min.js") }></script>
+			<script>
+				(function(){var t=localStorage.getItem('theme');if(!t){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t==='dark'){document.documentElement.classList.add('dark');}})();
+			</script>
+			@input.Script()
+			@label.Script()
+			@inputotp.Script()
+			@webauthnScript()
+		</head>
+		<body class="flex min-h-full items-center justify-center bg-background px-4 py-12 text-foreground antialiased">
+			<div class="w-full max-w-sm">
+				<div class="mb-6 flex items-center justify-center gap-2 text-lg font-semibold">
+					<span class="text-primary">@Icon("box")</span>
+					<span>Xilo</span>
+				</div>
+				if flash.Msg != "" {
+					<div class="mb-4">
+						@alert.Alert(alert.Props{Variant: alert.VariantDestructive}) {
+							@alert.Description() {
+								{ flash.Msg }
+							}
+						}
+					</div>
+				}
+				{ children... }
+			</div>
+		</body>
+	</html>
+}
+
 templ Login(noPassword, hasPasskeys, canRegister bool, flash Flash) {
-	@Layout(T("login.title"), Nav{}, flash) {
-		<article class="auth">
-			<div class="ic-lg">@Icon("lock")</div>
-			<hgroup>
-				<h1>{ T("login.title") }</h1>
-				<p>{ T("login.subtitle") }</p>
-			</hgroup>
-			<form method="post" action="/admin/login">
-				<input name="username" placeholder={ T("login.username") } autocomplete="username" autofocus/>
-				<input type="password" name="password" placeholder={ T("login.password") } autocomplete="current-password"/>
-				<button type="submit">{ T("login.submit") }</button>
-			</form>
-			if hasPasskeys {
-				<button type="button" class="outline" onclick="xiloPasskeyLogin()">@Icon("fingerprint") <span>{ T("login.passkey") }</span></button>
+	@AuthShell("Sign in", flash) {
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					Sign in
+				}
+				@card.Description() {
+					Access the Xilo admin.
+				}
 			}
-			if canRegister {
-				<p><small><a href="/register">{ T("login.register") }</a></small></p>
+			@card.Content(card.ContentProps{Class: "space-y-4"}) {
+				<form method="post" action="/admin/login" class="space-y-4">
+					@Field("username", "Username") {
+						@input.Input(input.Props{ID: "username", Name: "username", Placeholder: "you", Attributes: templ.Attributes{"autocomplete": "username", "autofocus": true}})
+					}
+					@Field("password", "Password") {
+						@input.Input(input.Props{ID: "password", Name: "password", Type: input.TypePassword, Attributes: templ.Attributes{"autocomplete": "current-password"}})
+					}
+					@button.Button(button.Props{Type: button.TypeSubmit, FullWidth: true}) {
+						Sign in
+					}
+				</form>
+				if hasPasskeys {
+					@button.Button(button.Props{Variant: button.VariantOutline, FullWidth: true, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": "xiloPasskeyLogin()"}}) {
+						@Icon("fingerprint")
+						<span>Use a passkey</span>
+					}
+				}
 			}
-			if noPassword {
-				<p><small>{ T("login.nopassword") }</small></p>
+			if canRegister || noPassword {
+				@card.Footer(card.FooterProps{Class: "justify-center"}) {
+					<p class="text-center text-sm text-muted-foreground">
+						if canRegister {
+							Need an account? <a href="/register" class="font-medium text-foreground underline-offset-4 hover:underline">Register</a>
+						}
+						if noPassword {
+							Sign in with any username to create the first admin account.
+						}
+					</p>
+				}
 			}
-		</article>
+		}
 	}
 }
 
-// LoginCode is the second sign-in step when 2FA is enabled.
 templ LoginCode(pending string, flash Flash) {
-	@Layout(T("login.codetitle"), Nav{}, flash) {
-		<article class="auth">
-			<div class="ic-lg">@Icon("shield")</div>
-			<hgroup>
-				<h1>{ T("login.codetitle") }</h1>
-				<p>{ T("login.codesub") }</p>
-			</hgroup>
-			<form method="post" action="/admin/login/code">
-				<input type="hidden" name="pending" value={ pending }/>
-				<input name="code" placeholder={ T("login.code") } inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6" autofocus/>
-				<button type="submit">{ T("login.verify") }</button>
-			</form>
-			<p><small><a href="/admin">{ T("login.back") }</a></small></p>
-		</article>
+	@AuthShell("Two-factor", flash) {
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					Two-factor code
+				}
+				@card.Description() {
+					Enter the 6-digit code from your authenticator.
+				}
+			}
+			@card.Content() {
+				<form method="post" action="/admin/login/code" class="space-y-4">
+					<input type="hidden" name="pending" value={ pending }/>
+					@inputotp.InputOTP(inputotp.Props{ID: "code", Name: "code"}) {
+						@inputotp.Group() {
+							@inputotp.Slot(inputotp.SlotProps{Index: 0})
+							@inputotp.Slot(inputotp.SlotProps{Index: 1})
+							@inputotp.Slot(inputotp.SlotProps{Index: 2})
+						}
+						@inputotp.Separator()
+						@inputotp.Group() {
+							@inputotp.Slot(inputotp.SlotProps{Index: 3})
+							@inputotp.Slot(inputotp.SlotProps{Index: 4})
+							@inputotp.Slot(inputotp.SlotProps{Index: 5})
+						}
+					}
+					@button.Button(button.Props{Type: button.TypeSubmit, FullWidth: true}) {
+						Verify
+					}
+				</form>
+			}
+			@card.Footer(card.FooterProps{Class: "justify-center"}) {
+				<a href="/admin" class="text-sm text-muted-foreground hover:text-foreground">Back to sign in</a>
+			}
+		}
+	}
+}
+
+// Register is the self-signup page. Picking a plan whose data-orgs is true
+// reveals the org-name field via a small inline script.
+templ Register(plans []store.Plan, flash Flash) {
+	@AuthShell("Register", flash) {
+		@card.Card() {
+			@card.Header() {
+				@card.Title() {
+					Create your account
+				}
+				@card.Description() {
+					Sign up for a Xilo cache account.
+				}
+			}
+			@card.Content() {
+				<form method="post" action="/register" class="space-y-4">
+					@Field("r-username", "Username") {
+						@input.Input(input.Props{ID: "r-username", Name: "username", Required: true, Placeholder: "lowercase, digits, -_", Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+", "autocomplete": "username", "autofocus": true}})
+					}
+					@Field("r-email", "Email") {
+						@input.Input(input.Props{ID: "r-email", Name: "email", Type: input.TypeEmail, Attributes: templ.Attributes{"autocomplete": "email"}})
+					}
+					@Field("r-password", "Password") {
+						@input.Input(input.Props{ID: "r-password", Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "8"}})
+					}
+					if len(plans) > 0 {
+						<div class="space-y-2">
+							@label.Label() {
+								Plan
+							}
+							<div class="space-y-2" onchange="document.getElementById('org-field').hidden = document.querySelector('input[name=plan]:checked').dataset.orgs !== 'true'">
+								for i, p := range plans {
+									<label class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:bg-accent/40">
+										@radio.Radio(radio.Props{Name: "plan", Value: strconv.FormatInt(p.ID, 10), Checked: i == 0, Attributes: templ.Attributes{"data-orgs": strconv.FormatBool(p.OrgsAllowed)}})
+										<span class="space-y-0.5">
+											<span class="block text-sm font-medium">{ p.Name }</span>
+											<span class="block text-xs text-muted-foreground">{ planLimits(p) }</span>
+										</span>
+									</label>
+								}
+							</div>
+							<div id="org-field" hidden?={ !(len(plans) > 0 && plans[0].OrgsAllowed) }>
+								@FieldHint("r-org", "Organization name", "Creates an organization you administer.") {
+									@input.Input(input.Props{ID: "r-org", Name: "org", Placeholder: "optional", Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
+								}
+							</div>
+						</div>
+					}
+					@button.Button(button.Props{Type: button.TypeSubmit, FullWidth: true}) {
+						Create account
+					}
+				</form>
+			}
+			@card.Footer(card.FooterProps{Class: "justify-center"}) {
+				<a href="/admin" class="text-sm text-muted-foreground hover:text-foreground">Back to sign in</a>
+			}
+		}
 	}
 }

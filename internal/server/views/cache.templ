@@ -1,9 +1,14 @@
 package views
 
 import (
-	"strconv"
-
 	"github.com/stubbedev/xilo/internal/store"
+
+	"github.com/templui/templui/components/button"
+	"github.com/templui/templui/components/card"
+	"github.com/templui/templui/components/copybutton"
+	"github.com/templui/templui/components/progress"
+	"github.com/templui/templui/components/table"
+	"github.com/templui/templui/components/tabs"
 )
 
 type CacheData struct {
@@ -22,184 +27,207 @@ type CacheData struct {
 }
 
 templ CacheView(d CacheData) {
-	@Layout(d.Cache.Ref(), d.Nav, Flash{}) {
-		<hgroup id="cache-head">
-			<h1><small class="muted-row">{ d.Cache.Account }/</small>{ d.Cache.Name } @visBadge(d.Cache.Public)</h1>
-			<p>{ d.BaseURL }/c/{ d.Cache.Ref() }</p>
-		</hgroup>
-		<h2>{ T("cd.stats") }</h2>
-		<article>
-			<div class="kpi">
-				@KPITile("package", Count(d.Stats.Paths), T("kpi.paths"), "")
-				@KPITile("database", d.Bytes(d.Stats.LogicalBytes), T("kpi.logical"), "")
-				@KPITile("hard-drive", d.Bytes(d.Stats.PhysicalBytes), T("kpi.physical")+capLabel(d.Cache.MaxBytes, d.Bytes), "")
-				@KPITile("layers", d.Dedup+"×", T("kpi.dedup"), "")
+	@Layout(d.Cache.Ref(), "caches", d.Nav, Flash{}) {
+		<div id="cache-head" class="mb-6 flex flex-wrap items-center justify-between gap-3">
+			<div class="space-y-1">
+				<h1 class="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+					<span><span class="text-muted-foreground">{ d.Cache.Account }/</span>{ d.Cache.Name }</span>
+					@VisBadge(d.Cache.Public)
+				</h1>
+				<p class="font-mono text-sm text-muted-foreground">{ d.BaseURL }/c/{ d.Cache.Ref() }</p>
 			</div>
-			if d.Cache.MaxBytes > 0 {
-				<progress class={ fillClass(d.Stats.PhysicalBytes, d.Cache.MaxBytes) } value={ strconv.FormatInt(d.Stats.PhysicalBytes, 10) } max={ strconv.FormatInt(d.Cache.MaxBytes, 10) }></progress>
+			@button.Button(button.Props{Href: "/admin", Variant: button.VariantOutline, Size: button.SizeSm}) {
+				@Icon("arrow-left")
+				<span>All caches</span>
 			}
-		</article>
-		@SectionHead(T("cd.paths")) {
-			@SearchBox("/admin/cache/"+d.Cache.Ref(), "q", d.PathQuery, T("cd.search"), "#path-results")
+		</div>
+		<div class="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+			@StatTile("package", Count(d.Stats.Paths), "Store paths", "", "")
+			@StatTile("database", d.Bytes(d.Stats.LogicalBytes), "Logical", "", "")
+			@StatTile("hard-drive", d.Bytes(d.Stats.PhysicalBytes), "On disk"+capLabel(d.Cache.MaxBytes, d.Bytes), "", "")
+			@StatTile("layers", d.Dedup+"×", "Dedup ratio", "", "")
+		</div>
+		if d.Cache.MaxBytes > 0 {
+			<div class="mb-8">
+				@progress.Progress(progress.Props{Value: fillPct(d.Stats.PhysicalBytes, d.Cache.MaxBytes), Size: progress.SizeSm, Variant: capVariant(d.Stats.PhysicalBytes, d.Cache.MaxBytes)})
+			</div>
 		}
-		<article>
-			@pathResults(d)
-		</article>
-		<h2>{ T("cd.use") }</h2>
-		<article x-data="{tab:'nixconf'}">
-			<div class="tabs">
-				<button type="button" :class="{active: tab==='nixconf'}" @click="tab='nixconf'">nix.conf</button>
-				<button type="button" :class="{active: tab==='flake'}" @click="tab='flake'">flake</button>
-				<button type="button" :class="{active: tab==='cli'}" @click="tab='cli'">CLI</button>
-			</div>
-			<div x-show="tab==='nixconf'">
-				@copyRow(snippetNixConf(d))
-			</div>
-			<div x-show="tab==='flake'" x-cloak>
-				@copyRow(snippetFlake(d))
-			</div>
-			<div x-show="tab==='cli'" x-cloak>
-				@copyRow(snippetCLI(d))
-			</div>
-			if !d.Cache.Public {
-				<p><small>{ T("cd.private") }</small></p>
+		<div class="mb-8 grid gap-6 lg:grid-cols-2">
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						Use this cache
+					}
+					@card.Description() {
+						Add it as a substituter.
+					}
+				}
+				@card.Content() {
+					@tabs.Tabs(tabs.Props{ID: "use"}) {
+						@tabs.List() {
+							@tabs.Trigger(tabs.TriggerProps{Value: "nixconf", IsActive: true}) {
+								nix.conf
+							}
+							@tabs.Trigger(tabs.TriggerProps{Value: "flake"}) {
+								flake
+							}
+							@tabs.Trigger(tabs.TriggerProps{Value: "cli"}) {
+								CLI
+							}
+						}
+						@tabs.Content(tabs.ContentProps{Value: "nixconf", IsActive: true}) {
+							@snippetBlock(snippetNixConf(d))
+						}
+						@tabs.Content(tabs.ContentProps{Value: "flake"}) {
+							@snippetBlock(snippetFlake(d))
+						}
+						@tabs.Content(tabs.ContentProps{Value: "cli"}) {
+							@snippetBlock(snippetCLI(d))
+						}
+					}
+					if !d.Cache.Public {
+						<p class="mt-3 text-xs text-muted-foreground">This cache is private — pulls need a token with pull access.</p>
+					}
+				}
 			}
-		</article>
-		<h2>{ T("cd.push") }</h2>
-		<article>
-			@copyRow(snippetPush(d))
-		</article>
-		<h2>{ T("cd.settings") }</h2>
-		<article>
-			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/configure") } class="fields" id="cache-settings"
-				hx-post={ "/admin/cache/" + d.Cache.Ref() + "/configure" }
-				hx-trigger="input delay:600ms"
-				hx-target="#cache-settings" hx-select="#cache-settings" hx-select-oob="#cache-head" hx-swap="outerHTML">
-				<div class="prio-row">
-					@priorityInput(d.Cache.Priority)
-					@visToggle(!d.Cache.Public)
-				</div>
-				<label>
-					{ T("cd.retention") }
-					@durInput("retention", d.Cache.Retention)
-				</label>
-				<label>
-					{ T("cd.maxsize") }
-					@sizeInput("max", d.Cache.MaxBytes)
-				</label>
-			</form>
-			@ActionRow(T("cd.rotatehint"), "/admin/cache/"+d.Cache.Ref()+"/rotate", T("confirm.rotate"), "secondary", "key-round", T("cd.rotate"), "rule-above")
-		</article>
-		<h2>{ T("cd.maint") }</h2>
-		<article>
-			@ActionRow(T("cd.gchint"), "/admin/gc", T("confirm.gc"), "secondary", "refresh-cw", T("cd.gc"), "")
-			@ActionRow(T("cd.deletehint"), "/admin/cache/"+d.Cache.Ref()+"/delete", T("confirm.delete"), "danger", "trash-2", T("cd.delete"), "")
-		</article>
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						Push to this cache
+					}
+					@card.Description() {
+						With a token that has push access.
+					}
+				}
+				@card.Content() {
+					@snippetBlock(snippetPush(d))
+				}
+			}
+			</div>
+		@SectionHeader("Store paths") {
+			@SearchInput("/admin/cache/"+d.Cache.Ref(), "q", d.PathQuery, "Search paths", "#path-results")
+		}
+		<div class="mb-8">
+			@pathResults(d)
+		</div>
+		<div class="grid gap-6 lg:grid-cols-2">
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						Settings
+					}
+				}
+				@card.Content() {
+					<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/configure") } class="space-y-4">
+						@VisibilitySwitch(!d.Cache.Public)
+						@PriorityField(d.Cache.Priority)
+						@Field("retention", "Retention") {
+							@DurationInput("retention", d.Cache.Retention)
+						}
+						@Field("max", "Max size") {
+							@SizeInput("max", d.Cache.MaxBytes)
+						}
+						@button.Button(button.Props{Type: button.TypeSubmit}) {
+							@Icon("check")
+							<span>Save settings</span>
+						}
+					</form>
+				}
+			}
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						Maintenance
+					}
+				}
+				@card.Content(card.ContentProps{Class: "space-y-4"}) {
+					<div class="flex items-center justify-between gap-3">
+						<p class="text-sm text-muted-foreground">Rotate the signing key. Clients must update the trusted public key.</p>
+						@ConfirmForm(Confirm{
+							ID:             "rotate",
+							Action:         "/admin/cache/" + d.Cache.Ref() + "/rotate",
+							Title:          "Rotate signing key?",
+							Message:        "The old key stops verifying immediately. Update trusted-public-keys everywhere.",
+							ConfirmLabel:   "Rotate key",
+							ConfirmIcon:    "key-round",
+							TriggerLabel:   "Rotate key",
+							TriggerIcon:    "key-round",
+							TriggerVariant: button.VariantSecondary,
+						})
+					</div>
+					<div class="flex items-center justify-between gap-3 border-t pt-4">
+						<p class="text-sm text-muted-foreground">Delete this cache and all of its paths.</p>
+						@ConfirmForm(Confirm{
+							ID:           "delete-cache",
+							Action:       "/admin/cache/" + d.Cache.Ref() + "/delete",
+							Title:        "Delete cache?",
+							Message:      "“" + d.Cache.Ref() + "” and every path in it will be removed. This cannot be undone.",
+							ConfirmLabel: "Delete cache",
+							ConfirmIcon:  "trash-2",
+							Danger:       true,
+							TriggerLabel: "Delete",
+							TriggerIcon:  "trash-2",
+						})
+					</div>
+				}
+			}
+		</div>
 	}
 }
 
-// copyRow is a snippet block with its copy-to-clipboard button.
-templ copyRow(text string) {
-	<div class="copyrow">
-		<pre>{ text }</pre>
-		@CopyButton(text)
+// snippetBlock is a code snippet with a copy button.
+templ snippetBlock(text string) {
+	<div class="relative rounded-lg border bg-muted/40">
+		<pre id={ copyID(text) } class="overflow-x-auto p-3 pr-12 font-mono text-xs leading-relaxed">{ text }</pre>
+		<div class="absolute right-2 top-2">
+			@copybutton.CopyButton(copybutton.Props{TargetID: copyID(text)})
+		</div>
 	</div>
 }
 
-// durInput is a number + unit pair posting <name>_value and <name>_unit.
-templ durInput(name string, secs int64) {
-	{{ v, u := durParts(secs) }}
-	<div role="group">
-		<input type="number" name={ name + "_value" } min="0" step="1" value={ v } placeholder="30"/>
-		@Combobox(Combo{Name: name + "_unit", Value: u, AriaLabel: "unit", Search: boolPtr(false), Options: durUnitOptions()})
-	</div>
-}
-
-// sizeInput is a number + binary-unit pair posting <name>_value and <name>_unit.
-templ sizeInput(name string, bytes int64) {
-	{{ v, u := sizeParts(bytes) }}
-	<div role="group">
-		<input type="number" name={ name + "_value" } min="0" step="1" value={ v } placeholder="50"/>
-		@Combobox(Combo{Name: name + "_unit", Value: u, AriaLabel: "unit", Search: boolPtr(false), Options: sizeUnitOptions()})
-	</div>
-}
-
-// pathResults is the swap target for live search: everything below the
-// search box re-renders per keystroke.
+// pathResults is the swap target for live path search.
 templ pathResults(d CacheData) {
 	<div id="path-results" hx-target="#path-results" hx-select="#path-results" hx-swap="outerHTML show:none">
 		if len(d.Paths) == 0 {
 			if d.PathQuery != "" {
-				@Empty("package-search", T("cd.nomatch"))
+				@EmptyState("package-search", "No paths match your search.")
 			} else {
-				@Empty("package-search", T("cd.pathsempty"))
+				@EmptyState("package-search", "No store paths yet.")
 			}
 		} else {
-			<table class="striped">
-				<thead>
-					<tr>
-						@SortTH(d.PathSort, "path", T("paths.path"))
-						@SortTH(d.PathSort, "size", T("paths.size"), "num")
-						@SortTH(d.PathSort, "pulled", T("paths.pulled"), "num")
-					</tr>
-				</thead>
-				<tbody>
-					for _, p := range d.Paths {
-						{{ hash, name := pathParts(p.StorePath) }}
-						<tr>
-							<td class="pathcell" title={ p.StorePath }>
-								<span class="pname">{ name }</span>
-								if hash != "" {
-									<code class="phash">{ hash }</code>
-								}
-							</td>
-							<td class="num">{ d.Bytes(p.NarSize) }</td>
-							<td class="num"><small>{ Ago(p.Accessed) }</small></td>
-						</tr>
+			@card.Card(card.Props{Class: "p-0"}) {
+				@table.Table() {
+					@table.Header() {
+						@table.Row() {
+							@SortHead(d.PathSort, "path", "Path")
+							@SortHead(d.PathSort, "size", "Size")
+							@SortHead(d.PathSort, "pulled", "Last pulled")
+						}
 					}
-				</tbody>
-			</table>
+					@table.Body() {
+						for _, p := range d.Paths {
+							{{ hash, name := pathParts(p.StorePath) }}
+							@table.Row() {
+								@table.Cell() {
+									<div class="flex items-center gap-2" title={ p.StorePath }>
+										<span class="font-medium">{ name }</span>
+										if hash != "" {
+											<code class="font-mono text-xs text-muted-foreground">{ hash }</code>
+										}
+									</div>
+								}
+								@table.Cell(table.CellProps{Class: "tabular-nums"}) {
+									{ d.Bytes(p.NarSize) }
+								}
+								@table.Cell(table.CellProps{Class: "text-muted-foreground"}) {
+									{ Ago(p.Accessed) }
+								}
+							}
+						}
+					}
+				}
+			}
 			@PagerNav(d.PathPager)
 		}
 	</div>
-}
-
-// priorityInput is a bounded slider with a live value readout; "lower wins"
-// lives in a tooltip instead of a hint line.
-templ priorityInput(value int) {
-	<label x-data={ "{p: " + strconv.Itoa(value) + "}" }>
-		<span class="range-head">
-			{ T("caches.priority") }
-			<output class="range-val" x-text="p">{ strconv.Itoa(value) }</output>
-		</span>
-		<span class="range-row">
-			<span class="range-end">
-				@IconClass("signal-low", 14, "")
-				100
-			</span>
-			<input type="range" name="priority" min="1" max="100" step="1" value={ strconv.Itoa(value) } x-model="p"/>
-			<span class="range-end">
-				1
-				@IconClass("signal-high", 14, "")
-			</span>
-		</span>
-	</label>
-}
-
-// visToggle is a hidden checkbox driven by an icon button that flips between
-// globe-lock (private) and globe-check (public).
-templ visToggle(private bool) {
-	<span class="vis-toggle" x-data={ "{priv: " + strconv.FormatBool(private) + "}" }>
-		<input type="hidden" name="private" :value="priv ? 'on' : ''" value={ visValue(private) }/>
-		<button type="button" class="iconbtn vis-btn" :class="priv ? 'priv' : 'pub'" data-placement="left" aria-label={ T("caches.visibility") }
-			:data-tooltip={ "priv ? '" + T("vis.private") + "' : '" + T("vis.public") + "'" }
-			@click="priv = !priv; $nextTick(() => $el.dispatchEvent(new Event('input', {bubbles: true})))">
-			<span x-show="priv">
-				@IconClass("globe-lock", 16, "")
-			</span>
-			<span x-show="!priv" x-cloak>
-				@IconClass("globe-check", 16, "")
-			</span>
-		</button>
-	</span>
 }

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"path"
 
+	"github.com/templui/templui/utils"
+
 	"github.com/stubbedev/xilo/internal/server/views"
 )
 
@@ -21,7 +23,7 @@ var staticFS embed.FS
 func (s *Server) registerStatic(mux *http.ServeMux) {
 	types := map[string]string{".css": "text/css; charset=utf-8", ".js": "application/javascript; charset=utf-8", ".svg": "image/svg+xml"}
 	versions := map[string]string{}
-	for _, name := range []string{"pico.min.css", "xilo.css", "alpine.min.js", "htmx.min.js", "echarts.min.js", "favicon.svg"} {
+	for _, name := range []string{"xilo-tw.css", "htmx.min.js", "favicon.svg"} {
 		data, err := staticFS.ReadFile("static/" + name)
 		if err != nil {
 			panic(err)
@@ -45,6 +47,9 @@ func (s *Server) registerStatic(mux *http.ServeMux) {
 		})
 	}
 	views.SetAssetVersions(versions)
+	// Serve templui component JavaScript (dialog, dropdown, selectbox, …) under
+	// /templui/js/. URLs are versioned per server start, so long-cache is safe.
+	utils.SetupScriptRoutes(mux, false)
 }
 
 func humanBytes(n int64) string {

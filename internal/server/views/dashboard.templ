@@ -5,241 +5,307 @@ import (
 	"strings"
 
 	"github.com/stubbedev/xilo/internal/store"
+
+	"github.com/templui/templui/components/button"
+	"github.com/templui/templui/components/card"
+	"github.com/templui/templui/components/dialog"
+	"github.com/templui/templui/components/input"
+	"github.com/templui/templui/components/progress"
+	"github.com/templui/templui/components/table"
 )
 
 templ Dashboard(d DashboardData) {
-	@Layout(T("dash.title"), d.Nav, d.Flash) {
-		<hgroup>
-			<h1>{ T("dash.title") }</h1>
-			if d.Nav.Active != "" {
-				<p>{ T("dash.scoped") } <strong>{ d.Nav.Active }</strong>.</p>
-			} else {
-				<p>{ T("dash.subtitle") }</p>
-			}
-		</hgroup>
-		<article class="overview">
-			<div class="kpi">
-				@KPITile("database", Count(d.Global.Caches), T("kpi.caches"), "")
-				@KPITile("package", Count(d.Global.Paths), T("kpi.paths"), "")
-				@KPITile("hard-drive", d.Bytes(d.Global.StoredBytes), T("kpi.disk")+capSuffix(d.ServerCap, d.Bytes), "")
-				@KPITile("layers", dedupRatio(d.Global.LogicalBytes, d.Global.StoredBytes)+"×", T("kpi.dedup"), "")
-			</div>
-			if d.ServerCap > 0 {
-				<progress class={ fillClass(d.Global.StoredBytes, d.ServerCap) } value={ strconv.FormatInt(d.Global.StoredBytes, 10) } max={ strconv.FormatInt(d.ServerCap, 10) }></progress>
-			}
-		</article>
-		@SectionHead(T("caches.title")) {
-			@HeadSearch("caches[q]", d.CacheQuery, T("caches.search"), "#cache-list", "dlg-cache")
+	@Layout("Caches", "caches", d.Nav, d.Flash) {
+		if d.Nav.Active != "" {
+			@PageHeader("Caches", "Scoped to "+d.Nav.Active+".")
+		} else {
+			@PageHeader("Caches", "Storage and access across every cache you can see.")
 		}
-		<article id="cache-list">
+		<div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+			@StatTile("database", Count(d.Global.Caches), "Caches", "", "")
+			@StatTile("package", Count(d.Global.Paths), "Store paths", "", "")
+			@StatTile("hard-drive", d.Bytes(d.Global.StoredBytes), "Disk used"+capSuffix(d.ServerCap, d.Bytes), "", "")
+			@StatTile("layers", dedupRatio(d.Global.LogicalBytes, d.Global.StoredBytes)+"×", "Dedup ratio", "", "")
+		</div>
+		if d.ServerCap > 0 {
+			<div class="mb-8">
+				@progress.Progress(progress.Props{Value: fillPct(d.Global.StoredBytes, d.ServerCap), Size: progress.SizeSm, Variant: capVariant(d.Global.StoredBytes, d.ServerCap)})
+			</div>
+		}
+		@SectionHeader("Caches") {
+			@SearchInput("/admin", "caches[q]", d.CacheQuery, "Search caches", "#cache-list")
+			@newCacheDialog(d)
+		}
+		<div id="cache-list" class="mb-10">
 			if len(d.Caches) == 0 {
 				if d.CacheQuery != "" {
-					@Empty("database", T("search.nomatch"))
+					@EmptyState("database", "No caches match your search.")
 				} else {
-					@Empty("database", T("caches.empty")) {
-						<button class="outline sm" type="button" onclick="document.getElementById('dlg-cache').showModal()">@Icon("plus") <span>{ T("caches.new") }</span></button>
+					@EmptyState("database", "No caches yet.") {
+						@newCacheDialog(d)
 					}
 				}
 			} else {
-				<div class="usage">
+				@card.Card(card.Props{Class: "divide-y p-0"}) {
 					for _, u := range d.Caches {
-						<div class="row">
-							<span class="name"><a href={ templ.SafeURL("/admin/cache/" + u.Cache.Ref()) }><small class="muted-row">{ u.Cache.Account }/</small>{ u.Cache.Name }</a> @visBadge(u.Cache.Public)</span>
-							<span class="fig">
-								{ d.Bytes(u.Bytes) }
-								if u.Cache.MaxBytes > 0 {
-									{ " / " + d.Bytes(u.Cache.MaxBytes) }
-									<span class={ "pct " + fillClass(u.Bytes, u.Cache.MaxBytes) }>{ strconv.Itoa(u.Pct()) }%</span>
-								}
-								· { Count(u.Paths) } { T("cache.paths") }
-							</span>
-							if u.Cache.MaxBytes > 0 {
-								<progress class={ fillClass(u.Bytes, u.Cache.MaxBytes) } value={ strconv.FormatInt(u.Bytes, 10) } max={ strconv.FormatInt(u.Cache.MaxBytes, 10) }></progress>
-							} else {
-								<progress class={ unlimitedClass(d.Global.StoredBytes, d.ServerCap) } value="1" max="1"></progress>
-							}
-						</div>
+						@cacheRow(d, u)
 					}
-				</div>
-			}
-		</article>
-		@SectionHead(T("tokens.title")) {
-			@HeadSearch("tokens[q]", d.TokenQuery, T("tokens.search"), "#token-list", "dlg-token")
-		}
-		<article id="token-list">
-			<table class="striped">
-				<thead>
-					<tr>
-						@SortTH(d.TokenSort, "name", T("tokens.name"))
-						@SortTH(d.TokenSort, "perms", T("tokens.perms"))
-						@SortTH(d.TokenSort, "scope", T("tokens.scope"))
-						@SortTH(d.TokenSort, "expires", T("tokens.expires"))
-						@SortTH(d.TokenSort, "status", T("tokens.status"))
-						<th class="actions">{ T("tokens.actions") }</th>
-					</tr>
-				</thead>
-				<tbody>
-					for _, t := range d.Tokens {
-						<tr>
-							<td>{ t.Name }</td>
-							<td class="permcell">@permBadges(t.Perms)</td>
-							<td>
-								if t.AccountID != 0 {
-									<small class="muted-row">{ t.Account }:</small>
-								}
-								if scopeAll(t.Caches) {
-									<span class="muted-row">{ T("tokens.all") }</span>
-								} else {
-									{ strings.Join(t.Caches, ", ") }
-								}
-							</td>
-							<td><small>{ TokenExpiry(t) }</small></td>
-							<td>@tokenBadge(t)</td>
-							<td class="actions">
-								if !t.Revoked {
-									<button class="iconbtn" type="button" aria-label={ T("tokens.edit") } data-tooltip={ T("tokens.edit") }
-										data-dlg={ "dlg-token-edit-" + strconv.FormatInt(t.ID, 10) }
-										onclick="document.getElementById(this.dataset.dlg).showModal()">
-										@IconClass("square-pen", 16, "")
-									</button>
-									@tokenEditModal(t, d.Caches, d.Accounts, d.IsAdmin)
-								}
-								if TokenActive(t) {
-									<form method="post" action={ templ.SafeURL("/admin/tokens/" + strconv.FormatInt(t.ID, 10) + "/revoke") } data-confirm={ T("confirm.revoke") }>
-										<button class="iconbtn danger" aria-label={ T("tokens.revoke") } data-tooltip={ T("tokens.revoke") }>@IconClass("ban", 16, "")</button>
-									</form>
-								}
-							</td>
-						</tr>
-					}
-					if len(d.Tokens) == 0 {
-						<tr><td colspan="6">
-							if d.TokenQuery != "" {
-								@Empty("key-round", T("search.nomatch"))
-							} else {
-								@Empty("key-round", T("tokens.empty"))
-							}
-						</td></tr>
-					}
-				</tbody>
-			</table>
-		</article>
-		@Modal("dlg-cache", T("caches.new")) {
-			<form method="post" action="/admin/caches">
-				<label>
-					{ T("caches.account") }
-					@Combobox(Combo{Name: "namespace", Value: defaultAccount(d.Accounts), Placeholder: T("caches.pickaccount"), Options: accountOptions(d.Accounts, false)})
-				</label>
-				<label>
-					{ T("caches.name") }
-					<input name="name" placeholder="nixpkgs" required pattern="[-a-zA-Z0-9_]+" autofocus/>
-				</label>
-				if d.IsAdmin && len(d.Storages) > 1 {
-					<label>
-						{ T("caches.storage") }
-						@Combobox(Combo{Name: "storage", Value: firstStr(d.Storages), Options: storageOptions(d.Storages)})
-					</label>
 				}
-				<div class="switch-row vis-row">
-					<span>{ T("caches.visibility") }</span>
-					@visToggle(false)
-				</div>
-				@priorityInput(40)
-				@ModalFoot("plus", T("caches.create"))
-			</form>
+				@PagerNav(d.CachePager)
+			}
+		</div>
+		@SectionHeader("Access tokens") {
+			@SearchInput("/admin", "tokens[q]", d.TokenQuery, "Search tokens", "#token-list")
+			@newTokenDialog(d)
 		}
-		@Modal("dlg-token", T("tokens.new")) {
-			@tokenForm("/admin/tokens", nil, d.Caches, d.Accounts, d.IsAdmin, "plus", T("tokens.create"))
-		}
+		<div id="token-list">
+			@card.Card(card.Props{Class: "p-0"}) {
+				@table.Table() {
+					@table.Header() {
+						@table.Row() {
+							@SortHead(d.TokenSort, "name", "Name")
+							@SortHead(d.TokenSort, "perms", "Permissions")
+							@SortHead(d.TokenSort, "scope", "Scope")
+							@SortHead(d.TokenSort, "expires", "Expires")
+							@SortHead(d.TokenSort, "status", "Status")
+							@table.Head(table.HeadProps{Class: "text-right"}) {
+								Actions
+							}
+						}
+					}
+					@table.Body() {
+						for _, t := range d.Tokens {
+							@tokenRow(d, t)
+						}
+						if len(d.Tokens) == 0 {
+							@table.Row() {
+								@table.Cell(table.CellProps{Class: "py-8", Attributes: templ.Attributes{"colspan": "6"}}) {
+									if d.TokenQuery != "" {
+										@EmptyState("key-round", "No tokens match your search.")
+									} else {
+										@EmptyState("key-round", "No access tokens yet.")
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			@PagerNav(d.TokenPager)
+		</div>
 	}
 }
 
-// tokenEditModal is a per-row dialog for rewriting a token's metadata.
-templ tokenEditModal(t store.Token, caches []CacheUsage, orgs []store.Account, isAdmin bool) {
-	@Modal("dlg-token-edit-"+strconv.FormatInt(t.ID, 10), T("tokens.edit")) {
-		@tokenForm("/admin/tokens/"+strconv.FormatInt(t.ID, 10)+"/edit", &t, caches, orgs, isAdmin, "save", T("cd.save"))
-	}
-}
-
-// tokenForm is the shared create/edit token dialog body; t is nil on create.
-// The owning namespace is chosen at creation and immutable afterwards.
-templ tokenForm(action string, t *store.Token, caches []CacheUsage, orgs []store.Account, isAdmin bool, submitIcon, submitLabel string) {
-	<form method="post" action={ templ.SafeURL(action) } x-data={ "{permanent: " + strconv.FormatBool(t != nil && t.Expires == 0) + "}" }>
-		<label>
-			{ T("tokens.name") }
-			if t != nil {
-				<input name="name" value={ t.Name } required/>
-			} else {
-				<input name="name" placeholder="ci-push" required autofocus/>
-			}
-		</label>
-		<label>
-			{ T("tokens.namespace") }
-			if t != nil {
-				// Owning account is fixed after creation.
-				<input value={ tokenAccountLabel(t) } disabled/>
-			} else {
-				@Combobox(Combo{Name: "namespace", Value: "", Placeholder: T("tokens.pickaccount"), Options: accountOptions(orgs, isAdmin)})
-			}
-		</label>
-		<label>
-			{ T("tokens.scope") }
-			@Combobox(Combo{Name: "cache", Value: tokenScopeValue(t), Options: tokenScopeOptions(caches)})
-		</label>
-		<fieldset class="switch-group">
-			<legend>{ T("tokens.perms") }</legend>
-			<div class="switch-row">
-				<label><input type="checkbox" role="switch" name="push" checked?={ t != nil && hasPerm(*t, "push") }/> { T("tokens.push") }</label>
-				<label><input type="checkbox" role="switch" name="pull" checked?={ t == nil || hasPerm(*t, "pull") }/> { T("tokens.pull") }</label>
-				if isAdmin {
-					<label><input type="checkbox" role="switch" name="admin" checked?={ t != nil && hasPerm(*t, "admin") }/> { T("tokens.admin") }</label>
+// cacheRow is one cache line: name, visibility, footprint, usage bar.
+templ cacheRow(d DashboardData, u CacheUsage) {
+	<div class="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+		<div class="flex items-center gap-2">
+			<a href={ templ.SafeURL("/admin/cache/" + u.Cache.Ref()) } class="font-medium hover:underline">
+				<span class="text-muted-foreground">{ u.Cache.Account }/</span>{ u.Cache.Name }
+			</a>
+			@VisBadge(u.Cache.Public)
+		</div>
+		<div class="flex items-center gap-3 sm:w-72">
+			<div class="min-w-0 flex-1">
+				if u.Cache.MaxBytes > 0 {
+					@progress.Progress(progress.Props{Value: u.Pct(), Size: progress.SizeSm, Variant: capVariant(u.Bytes, u.Cache.MaxBytes)})
+				} else {
+					@progress.Progress(progress.Props{Value: 100, Size: progress.SizeSm, BarClass: "bg-muted-foreground/30"})
 				}
 			</div>
-		</fieldset>
-		<fieldset class="switch-group">
-			<legend>{ T("tokens.expires") }</legend>
-			<label class="switch-row"><input type="checkbox" role="switch" name="permanent" x-model="permanent"/> { T("tokens.permanent") }</label>
-			<fieldset class="ttl-wrap" x-show="!permanent" :disabled="permanent">
-				if t != nil {
-					@durInput("ttl", Remaining(t.Expires))
-				} else {
-					@durInput("ttl", 30*86400)
+			<span class="shrink-0 whitespace-nowrap text-xs text-muted-foreground tabular-nums">
+				{ d.Bytes(u.Bytes) }
+				if u.Cache.MaxBytes > 0 {
+					{ " / " + d.Bytes(u.Cache.MaxBytes) }
 				}
-			</fieldset>
-		</fieldset>
-		@ModalFoot(submitIcon, submitLabel)
-	</form>
+				· { Count(u.Paths) } paths
+			</span>
+		</div>
+	</div>
 }
 
-// permBadges renders a token's permissions as icon badges with tooltips.
-templ permBadges(perms []string) {
-	for _, p := range perms {
-		switch p {
-			case "push":
-				@IconBadge("priv", T("tokens.push"), "database-arrow-up")
-			case "pull":
-				@IconBadge("pub", T("tokens.pull"), "database-arrow-down")
-			case "admin":
-				@IconBadge("rev", T("tokens.admin"), "shield-check")
+// tokenRow is one token table row with edit + revoke actions.
+templ tokenRow(d DashboardData, t store.Token) {
+	@table.Row() {
+		@table.Cell(table.CellProps{Class: "font-medium"}) {
+			{ t.Name }
+		}
+		@table.Cell() {
+			@PermBadges(t.Perms)
+		}
+		@table.Cell() {
+			if t.AccountID != 0 {
+				<span class="text-muted-foreground">{ t.Account }:</span>
+			}
+			if scopeAll(t.Caches) {
+				<span class="text-muted-foreground">all caches</span>
+			} else {
+				{ strings.Join(t.Caches, ", ") }
+			}
+		}
+		@table.Cell(table.CellProps{Class: "text-muted-foreground"}) {
+			{ TokenExpiry(t) }
+		}
+		@table.Cell() {
+			@StatusBadge(TokenStatus(t))
+		}
+		@table.Cell(table.CellProps{Class: "text-right"}) {
+			<div class="flex justify-end gap-1">
+				if !t.Revoked {
+					@editTokenDialog(d, t)
+				}
+				if TokenActive(t) {
+					@ConfirmForm(Confirm{
+						ID:             "revoke-" + strconv.FormatInt(t.ID, 10),
+						Action:         "/admin/tokens/" + strconv.FormatInt(t.ID, 10) + "/revoke",
+						Title:          "Revoke token?",
+						Message:        "“" + t.Name + "” will stop working immediately. This cannot be undone.",
+						ConfirmLabel:   "Revoke",
+						ConfirmIcon:    "ban",
+						Danger:         true,
+						TriggerIcon:    "ban",
+						IconOnly:       true,
+						TriggerTooltip: "Revoke",
+						TriggerVariant: button.VariantGhost,
+					})
+				}
+			</div>
 		}
 	}
 }
 
-templ visBadge(public bool) {
-	if public {
-		@IconBadge("pub", T("vis.public"), "globe-check")
-	} else {
-		@IconBadge("priv", T("vis.private"), "globe-lock")
+// newCacheDialog is the create-cache trigger + dialog.
+templ newCacheDialog(d DashboardData) {
+	@dialog.Dialog(dialog.Props{ID: "dlg-cache"}) {
+		@dialog.Trigger(dialog.TriggerProps{For: "dlg-cache"}) {
+			@button.Button(button.Props{Size: button.SizeSm}) {
+				@Icon("plus")
+				<span>New cache</span>
+			}
+		}
+		@dialog.Content(dialog.ContentProps{Class: "sm:max-w-lg"}) {
+			@dialog.Header() {
+				@dialog.Title() {
+					New cache
+				}
+				@dialog.Description() {
+					Create a binary cache in an account you administer.
+				}
+			}
+			<form method="post" action="/admin/caches" class="mt-2 space-y-4">
+				@Field("cache-account", "Account") {
+					@AccountSelect("namespace", defaultAccount(d.Accounts), "Pick an account", d.Accounts, false)
+				}
+				@Field("cache-name", "Name") {
+					@input.Input(input.Props{ID: "cache-name", Name: "name", Placeholder: "nixpkgs", Required: true, Attributes: templ.Attributes{"pattern": "[-a-zA-Z0-9_]+"}})
+				}
+				if d.IsAdmin && len(d.Storages) > 1 {
+					@Field("cache-storage", "Storage backend") {
+						@StorageSelect("storage", firstStr(d.Storages), d.Storages)
+					}
+				}
+				@VisibilitySwitch(false)
+				@PriorityField(40)
+				@dialog.Footer() {
+					@dialog.Close(dialog.CloseProps{For: "dlg-cache"}) {
+						@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
+							Cancel
+						}
+					}
+					@button.Button(button.Props{Type: button.TypeSubmit}) {
+						@Icon("plus")
+						<span>Create cache</span>
+					}
+				}
+			</form>
+		}
 	}
 }
 
-templ tokenBadge(t store.Token) {
-	switch TokenStatus(t) {
-		case "active":
-			@IconBadge("pub", T("tok.active"), "circle-check")
-		case "expired":
-			@IconBadge("rev", T("tok.expired"), "clock")
-		default:
-			@IconBadge("rev", T("tok.revoked"), "ban")
+// newTokenDialog is the create-token trigger + dialog.
+templ newTokenDialog(d DashboardData) {
+	@dialog.Dialog(dialog.Props{ID: "dlg-token"}) {
+		@dialog.Trigger(dialog.TriggerProps{For: "dlg-token"}) {
+			@button.Button(button.Props{Size: button.SizeSm}) {
+				@Icon("plus")
+				<span>New token</span>
+			}
+		}
+		@dialog.Content(dialog.ContentProps{Class: "sm:max-w-lg"}) {
+			@dialog.Header() {
+				@dialog.Title() {
+					New access token
+				}
+				@dialog.Description() {
+					Mint a token for pushing or pulling.
+				}
+			}
+			@tokenFormBody("/admin/tokens", nil, d, "plus", "Create token", "dlg-token")
+		}
 	}
+}
+
+// editTokenDialog is a per-row token edit trigger + dialog.
+templ editTokenDialog(d DashboardData, t store.Token) {
+	{{ id := "dlg-token-edit-" + strconv.FormatInt(t.ID, 10) }}
+	@dialog.Dialog(dialog.Props{ID: id}) {
+		@dialog.Trigger(dialog.TriggerProps{For: id}) {
+			@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton, Attributes: templ.Attributes{"aria-label": "Edit", "title": "Edit"}}) {
+				@Icon("square-pen")
+			}
+		}
+		@dialog.Content(dialog.ContentProps{Class: "sm:max-w-lg"}) {
+			@dialog.Header() {
+				@dialog.Title() {
+					Edit token
+				}
+			}
+			@tokenFormBody("/admin/tokens/"+strconv.FormatInt(t.ID, 10)+"/edit", &t, d, "save", "Save changes", id)
+		}
+	}
+}
+
+// tokenFormBody is the shared create/edit token form; t is nil on create.
+templ tokenFormBody(action string, t *store.Token, d DashboardData, submitIcon, submitLabel, dlgID string) {
+	<form method="post" action={ templ.SafeURL(action) } class="mt-2 space-y-4">
+		@Field("token-name", "Name") {
+			@input.Input(input.Props{ID: "token-name", Name: "name", Value: tokenName(t), Placeholder: "ci-push", Required: true})
+		}
+		@Field("token-ns", "Account") {
+			if t != nil {
+				@input.Input(input.Props{ID: "token-ns", Value: tokenAccountLabel(t), Disabled: true})
+			} else {
+				@AccountSelect("namespace", "", "Instance-wide", d.Accounts, d.IsAdmin)
+			}
+		}
+		@Field("token-scope", "Scope") {
+			@ScopeSelect("cache", tokenScopeValue(t), d.Caches)
+		}
+		@Field("", "Permissions") {
+			<div class="space-y-2">
+				@PermSwitch("push", "Push", tokenPerm(t, "push"))
+				@PermSwitch("pull", "Pull", tokenPerm(t, "pull"))
+				if d.IsAdmin {
+					@PermSwitch("admin", "Admin (instance-wide)", tokenPerm(t, "admin"))
+				}
+			</div>
+		}
+		@Field("", "Expiry") {
+			@PermSwitch("permanent", "Never expires", tokenPermanent(t))
+			<div class="mt-2">
+				@DurationInput("ttl", tokenTTL(t))
+			</div>
+		}
+		@dialog.Footer() {
+			@dialog.Close(dialog.CloseProps{For: dlgID}) {
+				@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
+					Cancel
+				}
+			}
+			@button.Button(button.Props{Type: button.TypeSubmit}) {
+				@Icon(submitIcon)
+				<span>{ submitLabel }</span>
+			}
+		}
+	</form>
 }

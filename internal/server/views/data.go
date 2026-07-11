@@ -109,6 +109,14 @@ func sizeParts(b int64) (string, string) {
 	}
 }
 
+// durValue / durUnit split a duration for the DurationInput field pair.
+func durValue(secs int64) string { v, _ := durParts(secs); return v }
+func durUnit(secs int64) string  { _, u := durParts(secs); return u }
+
+// sizeValue / sizeUnit split a byte count for the SizeInput field pair.
+func sizeValue(b int64) string { v, _ := sizeParts(b); return v }
+func sizeUnit(b int64) string  { _, u := sizeParts(b); return u }
+
 // SortCtx carries a table's active sort and everything needed to build
 // header links: click a column to sort ascending, click again to flip.
 type SortCtx struct {

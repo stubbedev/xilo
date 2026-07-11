@@ -1,0 +1,193 @@
+package views
+
+import (
+	"strconv"
+
+	"github.com/stubbedev/xilo/internal/store"
+
+	"github.com/templui/templui/components/form"
+	"github.com/templui/templui/components/input"
+	"github.com/templui/templui/components/selectbox"
+	"github.com/templui/templui/components/switch"
+)
+
+// Field is a labelled form control built on the templui form component:
+// form.Item groups the form.Label with the control (children).
+templ Field(id, text string) {
+	@form.Item() {
+		if text != "" {
+			@form.Label(form.LabelProps{For: id}) {
+				{ text }
+			}
+		}
+		{ children... }
+	}
+}
+
+// FieldHint is a Field with a trailing form.Description hint line.
+templ FieldHint(id, text, hint string) {
+	@form.Item() {
+		@form.Label(form.LabelProps{For: id}) {
+			{ text }
+		}
+		{ children... }
+		@form.Description() {
+			{ hint }
+		}
+	}
+}
+
+// AccountSelect is a namespace picker. When instanceOption is set an
+// "Instance-wide" (empty value) choice leads the list — admins minting
+// instance tokens.
+templ AccountSelect(name, value, placeholder string, accounts []store.Account, instanceOption bool) {
+	@selectbox.SelectBox() {
+		@selectbox.Trigger(selectbox.TriggerProps{Name: name}) {
+			@selectbox.Value(selectbox.ValueProps{Placeholder: placeholder})
+		}
+		@selectbox.Content() {
+			if instanceOption {
+				@selectbox.Item(selectbox.ItemProps{Value: "", Selected: value == ""}) {
+					Instance-wide
+				}
+			}
+			for _, a := range accounts {
+				@selectbox.Item(selectbox.ItemProps{Value: a.Slug, Selected: a.Slug == value}) {
+					{ a.Slug }
+				}
+			}
+		}
+	}
+}
+
+// ScopeSelect chooses a token's cache scope ("*" = every cache).
+templ ScopeSelect(name, value string, caches []CacheUsage) {
+	@selectbox.SelectBox() {
+		@selectbox.Trigger(selectbox.TriggerProps{Name: name}) {
+			@selectbox.Value(selectbox.ValueProps{Placeholder: "All caches"})
+		}
+		@selectbox.Content() {
+			@selectbox.Item(selectbox.ItemProps{Value: "*", Selected: value == "*"}) {
+				All caches
+			}
+			for _, u := range caches {
+				@selectbox.Item(selectbox.ItemProps{Value: u.Cache.Ref(), Selected: u.Cache.Ref() == value}) {
+					{ u.Cache.Ref() }
+				}
+			}
+		}
+	}
+}
+
+// StorageSelect chooses a blob backend by name.
+templ StorageSelect(name, value string, storages []string) {
+	@selectbox.SelectBox() {
+		@selectbox.Trigger(selectbox.TriggerProps{Name: name}) {
+			@selectbox.Value(selectbox.ValueProps{Placeholder: "Default"})
+		}
+		@selectbox.Content() {
+			for _, s := range storages {
+				@selectbox.Item(selectbox.ItemProps{Value: s, Selected: s == value}) {
+					{ s }
+				}
+			}
+		}
+	}
+}
+
+// DurationInput is a number + unit (hours/days/months/years) pair backed by
+// "<name>_value" and "<name>_unit" fields.
+templ DurationInput(name string, secs int64) {
+	<div class="flex gap-2">
+		@input.Input(input.Props{
+			Name: name + "_value", Type: input.TypeNumber, Value: durValue(secs),
+			Class: "flex-1", Attributes: templ.Attributes{"min": "0", "step": "1"},
+		})
+		<div class="w-32">
+			@selectbox.SelectBox() {
+				@selectbox.Trigger(selectbox.TriggerProps{Name: name + "_unit"}) {
+					@selectbox.Value(selectbox.ValueProps{})
+				}
+				@selectbox.Content(selectbox.ContentProps{NoSearch: true}) {
+					@unitItem(name, "h", "Hours", secs)
+					@unitItem(name, "d", "Days", secs)
+					@unitItem(name, "mo", "Months", secs)
+					@unitItem(name, "y", "Years", secs)
+				}
+			}
+		</div>
+	</div>
+}
+
+templ unitItem(name, unit, label string, secs int64) {
+	@selectbox.Item(selectbox.ItemProps{Value: unit, Selected: durUnit(secs) == unit}) {
+		{ label }
+	}
+}
+
+// SizeInput is a number + binary unit (MiB/GiB/TiB) pair backed by
+// "<name>_value" and "<name>_unit".
+templ SizeInput(name string, bytes int64) {
+	<div class="flex gap-2">
+		@input.Input(input.Props{
+			Name: name + "_value", Type: input.TypeNumber, Value: sizeValue(bytes),
+			Class: "flex-1", Placeholder: "unlimited", Attributes: templ.Attributes{"min": "0", "step": "1"},
+		})
+		<div class="w-32">
+			@selectbox.SelectBox() {
+				@selectbox.Trigger(selectbox.TriggerProps{Name: name + "_unit"}) {
+					@selectbox.Value(selectbox.ValueProps{})
+				}
+				@selectbox.Content(selectbox.ContentProps{NoSearch: true}) {
+					@sizeUnitItem(name, "MiB", bytes)
+					@sizeUnitItem(name, "GiB", bytes)
+					@sizeUnitItem(name, "TiB", bytes)
+				}
+			}
+		</div>
+	</div>
+}
+
+templ sizeUnitItem(name, unit string, bytes int64) {
+	@selectbox.Item(selectbox.ItemProps{Value: unit, Selected: sizeUnit(bytes) == unit}) {
+		{ unit }
+	}
+}
+
+// PriorityField is the 1–100 substituter-priority number input.
+templ PriorityField(value int) {
+	@Field("priority", "Priority") {
+		@input.Input(input.Props{
+			ID: "priority", Name: "priority", Type: input.TypeNumber, Value: strconv.Itoa(value),
+			Attributes: templ.Attributes{"min": "1", "max": "100"},
+		})
+		@form.Description() {
+			Lower numbers are preferred by Nix (1–100).
+		}
+	}
+}
+
+// VisibilitySwitch toggles a cache's privacy; checked = private.
+templ VisibilitySwitch(private bool) {
+	@form.ItemFlex(form.ItemProps{Class: "justify-between rounded-lg border p-3"}) {
+		@form.Item(form.ItemProps{Class: "space-y-0.5"}) {
+			@form.Label() {
+				Private
+			}
+			@form.Description() {
+				Require a token to pull from this cache.
+			}
+		}
+		@switchcomp.Switch(switchcomp.Props{Name: "private", Value: "on", Checked: private})
+	}
+}
+
+// PermSwitch is one token-permission switch row.
+templ PermSwitch(name, text string, checked bool) {
+	@form.ItemFlex(form.ItemProps{Class: "justify-between rounded-lg border p-3"}) {
+		@form.Label(form.LabelProps{For: "perm-" + name}) {
+			{ text }
+		}
+		@switchcomp.Switch(switchcomp.Props{ID: "perm-" + name, Name: name, Value: "on", Checked: checked})
+	}
+}

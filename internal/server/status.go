@@ -237,10 +237,10 @@ func (s *Server) statusData(q statusRangeQ) views.StatusData {
 		To:        set.toStr,
 	}
 	d.Charts = []views.ChartData{
-		statusChartData("req", "status.req", set.req, fmtReq),
-		statusChartData("lat", "status.lat", set.lat, fmtLat),
-		statusChartData("thru", "status.thru", set.bps, fmtBps),
-		statusChartData("stored", "status.storedchart", set.stored, fmtB),
+		statusChartData("req", "Requests /s", set.req, set.times, fmtReq),
+		statusChartData("lat", "Latency (ms)", set.lat, set.times, fmtLat),
+		statusChartData("thru", "NAR throughput", set.bps, set.times, fmtBps),
+		statusChartData("stored", "Stored bytes", set.stored, set.times, fmtB),
 	}
 	return d
 }
@@ -394,9 +394,17 @@ func statusRange(r *http.Request) statusRangeQ {
 	return statusRangeQ{WinMin: 60}
 }
 
-// statusChartData packages one series' header strings for the page render.
-func statusChartData(id, labelKey string, vals []float64, f func(float64) string) views.ChartData {
-	c := views.ChartData{ID: id, Label: views.T(labelKey)}
+// statusChartData packages one series (header strings + drawn points) for the
+// server-side templui chart render.
+func statusChartData(id, label string, vals []float64, times []int64, f func(float64) string) views.ChartData {
+	c := views.ChartData{ID: id, Label: label}
+	c.Points = vals
+	c.Labels = make([]string, len(vals))
+	for i := range vals {
+		if i < len(times) {
+			c.Labels[i] = time.Unix(times[i], 0).Format("15:04")
+		}
+	}
 	if len(vals) == 0 {
 		return c
 	}

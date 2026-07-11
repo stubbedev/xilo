@@ -1,6 +1,27 @@
 package views
 
-import "github.com/stubbedev/xilo/internal/store"
+import (
+	"github.com/stubbedev/xilo/internal/store"
+
+	"github.com/templui/templui/components/avatar"
+	"github.com/templui/templui/components/button"
+	"github.com/templui/templui/components/checkbox"
+	"github.com/templui/templui/components/chart"
+	"github.com/templui/templui/components/copybutton"
+	"github.com/templui/templui/components/dialog"
+	"github.com/templui/templui/components/dropdown"
+	"github.com/templui/templui/components/input"
+	"github.com/templui/templui/components/inputotp"
+	"github.com/templui/templui/components/label"
+	"github.com/templui/templui/components/popover"
+	"github.com/templui/templui/components/progress"
+	"github.com/templui/templui/components/selectbox"
+	"github.com/templui/templui/components/sidebar"
+	"github.com/templui/templui/components/tabs"
+	"github.com/templui/templui/components/textarea"
+	"github.com/templui/templui/components/toast"
+	"github.com/templui/templui/components/tooltip"
+)
 
 // Flash is a one-shot banner. A non-empty Code renders as a copy-me token box.
 type Flash struct {
@@ -18,365 +39,240 @@ type Nav struct {
 	Active   string          // active context slug; "" = all accounts
 }
 
-templ Layout(title string, nav Nav, flash Flash) {
+// Layout is the signed-in app shell: top navigation bar, flash banner, and the
+// page body. `section` marks the active nav item ("caches"/"account"/"settings").
+templ Layout(title, section string, nav Nav, flash Flash) {
 	<!doctype html>
-	<html lang="en">
+	<html lang="en" class="h-full">
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>Xilo — { title }</title>
 			<link rel="icon" type="image/svg+xml" href={ Asset("favicon.svg") }/>
-			<link rel="stylesheet" href={ Asset("pico.min.css") }/>
-			<link rel="stylesheet" href={ Asset("xilo.css") }/>
+			<link rel="stylesheet" href={ Asset("xilo-tw.css") }/>
 			<script src={ Asset("htmx.min.js") }></script>
-			<script defer src={ Asset("alpine.min.js") }></script>
-			// Resolve + apply the theme before paint (no flash), and expose the toggle.
 			<script>
-				(function(){var t=localStorage.getItem('theme')||(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t)})();
-				function xiloTheme(){var c=document.documentElement.getAttribute('data-theme');var n=c==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',n);localStorage.setItem('theme',n)}
-				// htmx drives navigation (hx-boost on <body>): swaps ride the View
-				// Transitions API for the same cross-fade as real navigation.
-				addEventListener('DOMContentLoaded',function(){htmx.config.globalViewTransitions=true});
-				// WebAuthn: base64url <-> ArrayBuffer plumbing for passkey ceremonies.
-				function b64uToBuf(s){s=s.replace(/-/g,'+').replace(/_/g,'/');var b=atob(s),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++){a[i]=b.charCodeAt(i)}return a.buffer}
-				function bufToB64u(b){var a=new Uint8Array(b),s='';for(var i=0;i<a.length;i++){s+=String.fromCharCode(a[i])}return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
-				async function xiloPasskeyRegister(){
-					var res=await fetch('/admin/passkeys/register/begin',{method:'POST'});
-					if(!res.ok){alert(await res.text());return}
-					var opts=(await res.json()).publicKey;
-					opts.challenge=b64uToBuf(opts.challenge);
-					opts.user.id=b64uToBuf(opts.user.id);
-					(opts.excludeCredentials||[]).forEach(function(c){c.id=b64uToBuf(c.id)});
-					var cred;
-					try{cred=await navigator.credentials.create({publicKey:opts})}catch(e){return}
-					var body={id:cred.id,rawId:bufToB64u(cred.rawId),type:cred.type,response:{
-						attestationObject:bufToB64u(cred.response.attestationObject),
-						clientDataJSON:bufToB64u(cred.response.clientDataJSON)}};
-					var fin=await fetch('/admin/passkeys/register/finish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-					if(fin.ok){location.reload()}else{alert(await fin.text())}
-				}
-				async function xiloPasskeyLogin(){
-					var res=await fetch('/admin/login/passkey/begin',{method:'POST'});
-					if(!res.ok){alert(await res.text());return}
-					var opts=(await res.json()).publicKey;
-					opts.challenge=b64uToBuf(opts.challenge);
-					(opts.allowCredentials||[]).forEach(function(c){c.id=b64uToBuf(c.id)});
-					var cred;
-					try{cred=await navigator.credentials.get({publicKey:opts})}catch(e){return}
-					var body={id:cred.id,rawId:bufToB64u(cred.rawId),type:cred.type,response:{
-						authenticatorData:bufToB64u(cred.response.authenticatorData),
-						clientDataJSON:bufToB64u(cred.response.clientDataJSON),
-						signature:bufToB64u(cred.response.signature),
-						userHandle:cred.response.userHandle?bufToB64u(cred.response.userHandle):null}};
-					var fin=await fetch('/admin/login/passkey/finish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-					if(fin.ok){location.href='/admin'}else{alert(await fin.text())}
-				}
-				// Forms with data-confirm get a real <dialog> instead of window.confirm.
-				// Capture phase runs before hx-boost; a confirmed re-submit passes through.
-				var xiloConfirmForm=null;
-				document.addEventListener('submit',function(e){
-					var f=e.target;
-					if(!f.dataset||!f.dataset.confirm||f.dataset.confirmed){return}
-					e.preventDefault();e.stopImmediatePropagation();
-					xiloConfirmForm=f;
-					document.getElementById('confirm-msg').textContent=f.dataset.confirm;
-					document.getElementById('dlg-confirm').showModal();
-				},true);
-				function xiloConfirmOK(){
-					document.getElementById('dlg-confirm').close();
-					var f=xiloConfirmForm;xiloConfirmForm=null;
-					if(!f){return}
-					f.dataset.confirmed='1';
-					f.requestSubmit();
-					setTimeout(function(){delete f.dataset.confirmed},200);
-				}
-				// Click on a modal's backdrop closes it (the backdrop IS the <dialog>
-				// element; content clicks target its children). The pointerdown guard
-				// keeps a text-selection drag that ends on the backdrop from closing.
-				var xiloDownOnBackdrop=false;
-				document.addEventListener('pointerdown',function(e){xiloDownOnBackdrop=e.target.tagName==='DIALOG'});
-				document.addEventListener('click',function(e){if(xiloDownOnBackdrop&&e.target.tagName==='DIALOG'&&e.target.open){e.target.close()}});
-				// Clicking outside an open dropdown (details.seg-custom) closes it.
-				document.addEventListener('click',function(e){document.querySelectorAll('details.seg-custom[open]').forEach(function(d){if(!d.contains(e.target)){d.removeAttribute('open')}})});
-				// Mark the active topbar link (cache detail pages count as "Caches");
-				// re-run after boosted navigations since the page never reloads.
-				function xiloMarkNav(){var p=location.pathname;document.querySelectorAll('.topbar nav a').forEach(function(a){var h=a.getAttribute('href');if(p===h||(h!=='/admin'&&p.indexOf(h+'/')===0)||(h==='/admin'&&p.indexOf('/admin/cache/')===0)){a.setAttribute('aria-current','page')}else{a.removeAttribute('aria-current')}})}
-				addEventListener('DOMContentLoaded',xiloMarkNav);
-				document.addEventListener('htmx:afterSettle',xiloMarkNav);
-				document.addEventListener('htmx:historyRestore',xiloMarkNav);
-				// xcombo: a searchable, keyboard-navigable combobox backed by a
-				// hidden input — the rich replacement for native <select>. Config:
-				// {value, options:[{value,label,sub,group}], search, auto, placeholder}.
-				// auto=true submits the enclosing form on pick (context switcher).
-				document.addEventListener('alpine:init',function(){
-					Alpine.data('xcombo',function(cfg){return{
-						open:false, q:'', active:0,
-						value:cfg.value||'', options:cfg.options||[],
-						auto:!!cfg.auto, placeholder:cfg.placeholder||'',
-						get searchable(){return cfg.search!==false},
-						label(){var self=this;var o=this.options.find(function(x){return x.value===self.value});return o?o.label:''},
-						filtered(){var q=this.q.trim().toLowerCase();if(!q)return this.options;
-							return this.options.filter(function(o){return (o.label+' '+(o.sub||'')+' '+o.value).toLowerCase().indexOf(q)>=0})},
-						toggle(){this.open?this.close():this.openMenu()},
-						openMenu(){var self=this;this.open=true;this.q='';var f=this.filtered();
-							this.active=Math.max(0,f.findIndex(function(o){return o.value===self.value}));
-							this.$nextTick(function(){if(self.$refs.search)self.$refs.search.focus();self.scrollActive()})},
-						close(){this.open=false},
-						move(d){var n=this.filtered().length;if(!n)return;this.active=(this.active+d+n)%n;this.scrollActive()},
-						scrollActive(){var self=this;this.$nextTick(function(){var el=self.$refs.list&&self.$refs.list.children[self.active];if(el&&el.scrollIntoView)el.scrollIntoView({block:'nearest'})})},
-						pick(i){var self=this;var o=this.filtered()[i];if(!o)return;this.value=o.value;this.close();
-							this.$nextTick(function(){self.$refs.input.dispatchEvent(new Event('input',{bubbles:true}));self.$refs.input.dispatchEvent(new Event('change',{bubbles:true}));
-								if(self.auto){var fm=self.$refs.input.closest('form');if(fm)fm.requestSubmit()}})},
-					}})
-				});
+				(function(){var t=localStorage.getItem('theme');if(!t){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t==='dark'){document.documentElement.classList.add('dark');}})();
+				function xiloTheme(){var d=document.documentElement.classList.toggle('dark');localStorage.setItem('theme',d?'dark':'light');}
 			</script>
+			@input.Script()
+			@label.Script()
+			@checkbox.Script()
+			@selectbox.Script()
+			@textarea.Script()
+			@popover.Script()
+			@dialog.Script()
+			@dropdown.Script()
+			@tabs.Script()
+			@tooltip.Script()
+			@toast.Script()
+			@inputotp.Script()
+			@copybutton.Script()
+			@progress.Script()
+			@avatar.Script()
+			@chart.Script()
+			@sidebar.Script()
+			@webauthnScript()
 		</head>
-		<body hx-boost="true">
-			<header class="topbar">
-				<nav class="bar-inner" aria-label="Main">
-					<ul>
-						<li><a class="brand" href="/admin"><span class="logo">@IconClass("paper-bag", 16, "logo-ic")</span> Xilo</a></li>
-					</ul>
-					<ul>
-						if nav.LoggedIn {
-							if len(nav.Contexts) > 1 {
-								<li class="ctx-switch">
-									@Icon("eye")
-									<form method="post" action="/admin/context" class="ctx-form">
-										@Combobox(Combo{
-											Name:      "ctx",
-											Value:     nav.Active,
-											Auto:      true,
-											AriaLabel: T("nav.context"),
-											Options:   contextOptions(nav.Contexts),
-										})
-									</form>
-								</li>
-							}
-							<li><a href="/admin">@Icon("database") <span>{ T("nav.caches") }</span></a></li>
-							<li><a href="/admin/account">@Icon("user") <span>{ T("nav.account") }</span></a></li>
-							if nav.IsAdmin {
-								<li><a href="/admin/settings">@Icon("settings") <span>{ T("nav.settings") }</span></a></li>
-							}
-							<li>
-								<form method="post" action="/admin/logout"><button class="ghost">@Icon("log-out") <span>{ T("nav.logout") }</span></button></form>
-							</li>
-						}
-						<li>
-							<button class="ghost theme-toggle" type="button" onclick="xiloTheme()" title={ T("nav.theme") } aria-label={ T("nav.theme") }>
-								@IconClass("sun", 18, "icon-sun")
-								@IconClass("moon", 18, "icon-moon")
-							</button>
-						</li>
-					</ul>
-				</nav>
-			</header>
-			<main class="container">
-				if flash.Msg != "" {
-					<article class={ templ.KV("secret", flash.Code != "") }>
-						{ flash.Msg }
-						if flash.Code != "" {
-							<div class="copyrow">
-								<code>{ flash.Code }</code>
-								@CopyButton(flash.Code)
-							</div>
-						}
-					</article>
-				}
-				{ children... }
-			</main>
-			<dialog id="dlg-confirm" class="modal">
-				<article>
-					<header>
-						<button type="button" aria-label="Close" rel="prev" onclick="this.closest('dialog').close()"></button>
-						<p><strong>{ T("confirm.title") }</strong></p>
-					</header>
-					<div class="modal-body">
-						<p id="confirm-msg"></p>
-						<div class="modal-foot">
-							<button type="button" class="secondary" onclick="this.closest('dialog').close()">{ T("action.cancel") }</button>
-							<button type="button" class="danger" onclick="xiloConfirmOK()">{ T("action.confirm") }</button>
+		<body class="bg-background text-foreground antialiased">
+			if nav.LoggedIn {
+				@sidebar.Layout() {
+					@appSidebar(section, nav)
+					@sidebar.Inset() {
+						<div class="flex min-h-svh flex-col">
+							<header class="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur">
+								@sidebar.Trigger(sidebar.TriggerProps{Target: "app-sidebar", Class: "-ml-1"})
+								<div class="ml-auto flex items-center gap-2">
+									if len(nav.Contexts) > 1 {
+										@contextSwitcher(nav)
+									}
+									@themeToggle()
+								</div>
+							</header>
+							<main class="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
+								@FlashToast(flash)
+								{ children... }
+							</main>
+							@footer()
 						</div>
-					</div>
-				</article>
-			</dialog>
-			<footer class="site-footer">
-				<nav class="foot-inner" aria-label="Meta">
-					<ul>
-						<li><span class="brand-name">Xilo</span> { T("footer.tagline") }</li>
-					</ul>
-					<ul>
-						<li><a href="/admin/status">@Icon("activity") <span>{ T("footer.status") }</span></a></li>
-					</ul>
-				</nav>
-			</footer>
+					}
+				}
+			} else {
+				<main class="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6">
+					@FlashToast(flash)
+					{ children... }
+				</main>
+			}
 		</body>
 	</html>
 }
 
-// Modal is a native <dialog> styled by Pico. Open with
-// document.getElementById(id).showModal().
-templ Modal(id, title string) {
-	<dialog id={ id } class="modal">
-		<article>
-			<header>
-				<button type="button" aria-label="Close" rel="prev" onclick="this.closest('dialog').close()"></button>
-				<p><strong>{ title }</strong></p>
-			</header>
-			{ children... }
-		</article>
-	</dialog>
-}
-
-// SectionHead is a section title with a right-aligned action slot (typically a
-// modal-opening button).
-templ SectionHead(title string) {
-	<div class="section-head">
-		<h2>{ title }</h2>
-		{ children... }
-	</div>
-}
-
-// SearchBox is the shared live-search form: typing swaps the target region in
-// place; children (e.g. a New button) sit to the input's right.
-templ SearchBox(action, qName, qVal, placeholder, target string) {
-	<form class="headsearch" role="search"
-		hx-get={ action } hx-trigger="input changed delay:350ms from:find input, search from:find input"
-		hx-target={ target } hx-select={ target } hx-swap="outerHTML" hx-push-url="true">
-		<input type="search" name={ qName } value={ qVal } placeholder={ placeholder } aria-label={ placeholder } autocomplete="off"/>
-		{ children... }
-	</form>
-}
-
-// HeadSearch is a section's SearchBox plus a New button opening the given modal.
-templ HeadSearch(qName, qVal, placeholder, target, dlg string) {
-	@SearchBox("/admin", qName, qVal, placeholder, target) {
-		<button type="button" data-dlg={ dlg } onclick="document.getElementById(this.dataset.dlg).showModal()">@Icon("plus") <span>{ T("action.new") }</span></button>
+// appSidebar is the collapsible left navigation rail.
+templ appSidebar(section string, nav Nav) {
+	@sidebar.Sidebar(sidebar.Props{ID: "app-sidebar", Collapsible: sidebar.CollapsibleIcon}) {
+		@sidebar.Header() {
+			<a href="/admin" class="flex items-center gap-2 px-2 py-1 font-semibold tracking-tight">
+				<span class="text-primary">@Icon("box")</span>
+				<span class="group-data-[collapsible=icon]:hidden">Xilo</span>
+			</a>
+		}
+		@sidebar.Content() {
+			@sidebar.Group() {
+				@sidebar.Menu() {
+					@navItem("/admin", "Caches", "database", section == "caches")
+					@navItem("/admin/account", "Account", "user", section == "account")
+					if nav.IsAdmin {
+						@navItem("/admin/settings", "Settings", "settings", section == "settings")
+					}
+					@navItem("/admin/status", "Status", "activity", section == "status")
+				}
+			}
+		}
+		@sidebar.Footer() {
+			@userMenu(nav)
+		}
 	}
 }
 
-// KPITile is one stat tile; a non-empty id marks the value for live updates;
-// extra classes (e.g. "ok-text") color the value.
-templ KPITile(icon, value, label, id string, nclass ...string) {
-	<div class="tile">
-		<div class="ic-lg">@Icon(icon)</div>
-		<div>
-			<div
-				class={ cls("n", nclass...) }
-				if id != "" {
-					id={ id }
+templ navItem(href, text, icon string, active bool) {
+	@sidebar.MenuItem() {
+		@sidebar.MenuButton(sidebar.MenuButtonProps{Href: href, IsActive: active, Tooltip: text}) {
+			@Icon(icon)
+			<span>{ text }</span>
+		}
+	}
+}
+
+templ themeToggle() {
+	@button.Button(button.Props{
+		Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton,
+		Attributes: templ.Attributes{"onclick": "xiloTheme()", "aria-label": "Toggle theme", "title": "Toggle theme"},
+	}) {
+		<span class="hidden dark:block">@Icon("sun")</span>
+		<span class="block dark:hidden">@Icon("moon")</span>
+	}
+}
+
+// contextSwitcher scopes the dashboard to one account (or all).
+templ contextSwitcher(nav Nav) {
+	@dropdown.Dropdown() {
+		@dropdown.Trigger() {
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Type: button.TypeButton}) {
+				@Icon("eye")
+				<span class="max-w-32 truncate">{ contextLabel(nav) }</span>
+				@Icon("chevrons-up-down")
+			}
+		}
+		@dropdown.Content(dropdown.ContentProps{Class: "w-56"}) {
+			@dropdown.Label() {
+				Viewing
+			}
+			@ctxItem("", "All accounts", nav.Active == "")
+			@dropdown.Separator()
+			for _, c := range nav.Contexts {
+				@ctxItem(c.Slug, c.Slug, nav.Active == c.Slug)
+			}
+		}
+	}
+}
+
+templ ctxItem(slug, label string, active bool) {
+	@dropdown.Item(dropdown.ItemProps{PreventClose: false}) {
+		<form method="post" action="/admin/context" class="w-full">
+			<input type="hidden" name="ctx" value={ slug }/>
+			@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantGhost, FullWidth: true, Class: "h-8 justify-between gap-2 px-2"}) {
+				<span class="truncate">{ label }</span>
+				if active {
+					@Icon("check")
 				}
-			>{ value }</div>
-			<div class="l">{ label }</div>
+			}
+		</form>
+	}
+}
+
+// userMenu is the signed-in user's account dropdown, styled for the sidebar
+// footer (avatar + name expanded, avatar-only when collapsed to icons).
+templ userMenu(nav Nav) {
+	@dropdown.Dropdown() {
+		@dropdown.Trigger() {
+			@button.Button(button.Props{Variant: button.VariantGhost, Type: button.TypeButton, FullWidth: true, Class: "h-12 justify-start gap-2 px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"}) {
+				@avatar.Avatar(avatar.Props{Class: "size-8 shrink-0"}) {
+					@avatar.Fallback() {
+						{ initials(nav.UserName) }
+					}
+				}
+				<span class="flex min-w-0 flex-col items-start group-data-[collapsible=icon]:hidden">
+					<span class="truncate text-sm font-medium">{ nav.UserName }</span>
+					if nav.IsAdmin {
+						<span class="text-xs text-muted-foreground">Instance admin</span>
+					}
+				</span>
+			}
+		}
+		@dropdown.Content(dropdown.ContentProps{Class: "w-56", Placement: dropdown.PlacementRightEnd}) {
+			@dropdown.Label() {
+				<div class="flex flex-col">
+					<span class="text-sm font-medium">{ nav.UserName }</span>
+					if nav.IsAdmin {
+						<span class="text-xs text-muted-foreground">Instance admin</span>
+					}
+				</div>
+			}
+			@dropdown.Separator()
+			@dropdown.Item(dropdown.ItemProps{Href: "/admin/account"}) {
+				@Icon("user")
+				<span>Account</span>
+			}
+			@dropdown.Item(dropdown.ItemProps{Href: "/admin/status"}) {
+				@Icon("activity")
+				<span>Status</span>
+			}
+			@dropdown.Separator()
+			@dropdown.Item(dropdown.ItemProps{PreventClose: false}) {
+				<form method="post" action="/admin/logout" class="w-full">
+					@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantGhost, FullWidth: true, Class: "h-8 justify-start gap-2 px-2 text-destructive hover:text-destructive"}) {
+						@Icon("log-out")
+						<span>Log out</span>
+					}
+				</form>
+			}
+		}
+	}
+}
+
+templ footer() {
+	<footer class="border-t">
+		<div class="mx-auto w-full max-w-6xl px-4 py-5 text-center text-sm text-muted-foreground sm:px-6">
+			<span class="font-medium text-foreground">Xilo</span> · self-hosted Nix cache
 		</div>
-	</div>
-}
-
-// Empty is the shared empty-state block: icon, message, optional action.
-templ Empty(icon, msg string) {
-	<div class="empty">
-		@Icon(icon)
-		<p>{ msg }</p>
-		{ children... }
-	</div>
-}
-
-// IconBadge is a circular status badge whose label lives in the tooltip.
-templ IconBadge(variant, tooltip, icon string) {
-	<span class={ "badge", variant, "icon-badge" } data-tooltip={ tooltip }>@IconClass(icon, 16, "")</span>
-}
-
-// ModalFoot is the shared dialog footer: quiet cancel, prominent submit.
-templ ModalFoot(icon, label string) {
-	<footer>
-		<button class="secondary" type="button" onclick="this.closest('dialog').close()">{ T("action.cancel") }</button>
-		<button type="submit">@Icon(icon) <span>{ label }</span></button>
 	</footer>
 }
 
-// ActionRow is a hint with a right-aligned POST action; confirm (optional)
-// routes the submit through the shared confirmation dialog. extra adds a
-// wrapper class (e.g. "rule-above").
-templ ActionRow(hint, action, confirm, btnClass, icon, label, extra string) {
-	<div class={ "row-split", extra }>
-		<p>{ hint }</p>
-		<form
-			method="post"
-			action={ templ.SafeURL(action) }
-			if confirm != "" {
-				data-confirm={ confirm }
-			}
-		>
-			<button class={ btnClass } type="submit">@Icon(icon) <span>{ label }</span></button>
-		</form>
+// CopyField shows a value in a monospace box with a copy button.
+templ CopyField(value string) {
+	<div class="mt-3 flex items-center gap-2 rounded-md border bg-muted/50 p-2">
+		<code id={ copyID(value) } class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap px-1 font-mono text-xs">{ value }</code>
+		@copybutton.CopyButton(copybutton.Props{TargetID: copyID(value), Class: "shrink-0"})
 	</div>
 }
 
 // NotFound is the styled 404 page for browser routes.
 templ NotFound(nav Nav) {
-	@Layout(T("nf.title"), nav, Flash{}) {
-		<article class="notfound">
-			<div class="ic-xl">@Icon("compass")</div>
-			<hgroup>
-				<h1>{ T("nf.title") }</h1>
-				<p>{ T("nf.sub") }</p>
-			</hgroup>
-			<a href="/admin" role="button" class="outline">@Icon("arrow-left") <span>{ T("nf.back") }</span></a>
-		</article>
+	@Layout("Not found", "", nav, Flash{}) {
+		<div class="flex flex-col items-center gap-4 py-24 text-center">
+			<span class="text-muted-foreground">@IconClass("compass", 48, "")</span>
+			<h1 class="text-2xl font-semibold">Page not found</h1>
+			<p class="text-muted-foreground">That page does not exist, or you cannot access it.</p>
+			@button.Button(button.Props{Href: "/admin", Variant: button.VariantOutline}) {
+				@Icon("arrow-left")
+				<span>Back to caches</span>
+			}
+		</div>
 	}
 }
 
-// Icon renders a Lucide glyph followed by any label children, so
-// `@Icon("plus") { "New" }` produces an icon + text (children after a plain
-// component call would otherwise be swallowed).
+// Icon renders a Lucide glyph followed by any label children.
 templ Icon(name string) {
 	@rawIcon(name)
 	{ children... }
-}
-
-// CopyButton copies value to the clipboard on click (Alpine.js).
-templ CopyButton(value string) {
-	<button type="button" class="outline copybtn"
-		x-data="{copied:false}" data-copy={ value }
-		aria-label={ T("copy") } data-tooltip={ T("copy") }
-		:data-tooltip={ "copied ? '" + T("copy.copied") + "' : '" + T("copy") + "'" }
-		@click="navigator.clipboard.writeText($el.dataset.copy); copied=true; setTimeout(()=>copied=false,1200)">
-		@Icon("copy")
-		<span x-show="copied" x-cloak x-text="'✓'"></span>
-	</button>
-}
-
-// PagerNav renders prev/next paging controls; hidden when there is one page.
-templ PagerNav(p Pager) {
-	if p.Pages > 1 {
-		<nav class="pager" aria-label="Pagination" { hxSwapAttrs(p.Target)... }>
-			if p.Prev != "" {
-				<a role="button" class="outline sm" href={ templ.SafeURL(p.Prev) }>@Icon("chevron-left") <span>{ T("pager.prev") }</span></a>
-			} else {
-				<span class="pager-slot"></span>
-			}
-			<span class="pager-pos">{ itoa(int64(p.Page)) } / { itoa(int64(p.Pages)) }</span>
-			if p.Next != "" {
-				<a role="button" class="outline sm" href={ templ.SafeURL(p.Next) }><span>{ T("pager.next") }</span> @Icon("chevron-right")</a>
-			} else {
-				<span class="pager-slot"></span>
-			}
-		</nav>
-	}
-}
-
-// SortTH is a clickable, direction-indicating table header cell.
-templ SortTH(s SortCtx, key, label string, class ...string) {
-	<th class={ class } aria-sort={ ariaSort(s, key) }>
-		<a class="sorth" href={ templ.SafeURL(s.URL(key)) } { hxSwapAttrs(s.Target)... }>
-			{ label }
-			if s.Key == key {
-				if s.Dir == "asc" {
-					@IconClass("chevron-up", 12, "sort-ic")
-				} else {
-					@IconClass("chevron-down", 12, "sort-ic")
-				}
-			}
-		</a>
-	</th>
 }

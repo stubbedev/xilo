@@ -4,6 +4,13 @@ import (
 	"strconv"
 
 	"github.com/stubbedev/xilo/internal/store"
+
+	"github.com/templui/templui/components/badge"
+	"github.com/templui/templui/components/button"
+	"github.com/templui/templui/components/card"
+	"github.com/templui/templui/components/form"
+	"github.com/templui/templui/components/input"
+	"github.com/templui/templui/components/inputotp"
 )
 
 // AccountData is everything the personal account page renders.
@@ -15,73 +22,152 @@ type AccountData struct {
 	Flash       Flash
 }
 
-// Account is the personal page: sign-in identity and credentials. Instance
-// and tenancy management live on their own pages.
+// Account is the personal page: sign-in identity and credentials.
 templ Account(d AccountData) {
-	@Layout(T("acct.title"), d.Nav, d.Flash) {
-		<hgroup>
-			<h1>{ T("acct.title") }</h1>
-			<p>{ T("acct.subtitle") } <small>· { d.User.Name }</small></p>
-		</hgroup>
-		<h2>{ T("acct.email") }</h2>
-		<article>
-			<form method="post" action="/admin/account/email" class="member-add">
-				<fieldset role="group">
-					<input type="email" name="email" value={ d.User.Email } placeholder="you@example.com" autocomplete="email"/>
-					<button type="submit">@Icon("check") <span>{ T("cd.save") }</span></button>
-				</fieldset>
-			</form>
-			<p><small>{ T("acct.emailhint") }</small></p>
-		</article>
-		<h2>{ T("set.passkeys") }</h2>
-		<article>
-			for _, pk := range d.Passkeys {
-				<div class="row-split">
-					<p>
+	@Layout("Account", "account", d.Nav, d.Flash) {
+		@PageHeader("Account", "Your sign-in identity and credentials — "+d.User.Name+".")
+		<div class="grid gap-6">
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						Email
+					}
+					@card.Description() {
+						Used for notifications and (optionally) sign-in.
+					}
+				}
+				@card.Content() {
+					<form method="post" action="/admin/account/email" class="flex items-end gap-2">
+						@form.Item(form.ItemProps{Class: "flex-1"}) {
+							@form.Label(form.LabelProps{For: "email"}) {
+								Email address
+							}
+							@input.Input(input.Props{ID: "email", Name: "email", Type: input.TypeEmail, Value: d.User.Email, Placeholder: "you@example.com", Attributes: templ.Attributes{"autocomplete": "email"}})
+						}
+						@button.Button(button.Props{Type: button.TypeSubmit}) {
+							@Icon("check")
+							<span>Save</span>
+						}
+					</form>
+				}
+			}
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						Passkeys
+					}
+					@card.Description() {
+						Sign in with a hardware key, Touch ID, or Windows Hello.
+					}
+				}
+				@card.Content(card.ContentProps{Class: "space-y-3"}) {
+					for _, pk := range d.Passkeys {
+						<div class="flex items-center justify-between rounded-lg border p-3">
+							<div class="flex items-center gap-2 text-sm">
+								@Icon("fingerprint")
+								<span class="font-medium">{ pk.Name }</span>
+								<span class="text-muted-foreground">· { Ago(pk.Created) }</span>
+							</div>
+							@ConfirmForm(Confirm{
+								ID:             "pk-" + strconv.FormatInt(pk.ID, 10),
+								Action:         "/admin/passkeys/" + strconv.FormatInt(pk.ID, 10) + "/delete",
+								Title:          "Remove passkey?",
+								Message:        "“" + pk.Name + "” will no longer be able to sign in.",
+								ConfirmLabel:   "Remove",
+								ConfirmIcon:    "trash-2",
+								Danger:         true,
+								TriggerIcon:    "trash-2",
+								IconOnly:       true,
+								TriggerTooltip: "Remove passkey",
+								TriggerVariant: button.VariantGhost,
+							})
+						</div>
+					}
+					@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": "xiloPasskeyRegister()"}}) {
 						@Icon("fingerprint")
-						{ pk.Name }
-						<small>· { Ago(pk.Created) }</small>
-					</p>
-					<form method="post" action={ templ.SafeURL("/admin/passkeys/" + strconv.FormatInt(pk.ID, 10) + "/delete") } data-confirm={ T("confirm.passkey") }>
-						<button class="iconbtn danger" aria-label={ T("set.passkeys.remove") } data-tooltip={ T("set.passkeys.remove") }>@IconClass("trash-2", 16, "")</button>
-					</form>
-				</div>
+						<span>Add a passkey</span>
+					}
+				}
 			}
-			<div class={ "row-split" , templ.KV("rule-above", len(d.Passkeys) > 0) }>
-				<p>{ T("set.passkeys.hint") }</p>
-				<button type="button" onclick="xiloPasskeyRegister()">@Icon("fingerprint") <span>{ T("set.passkeys.add") }</span></button>
-			</div>
-		</article>
-		<h2>{ T("set.2fa") }</h2>
-		<article>
-			if d.TOTPEnabled {
-				<div class="row-split">
-					<p>@Icon("shield-check") <span class="badge pub">{ T("set.2fa.on") }</span> { T("set.2fa.enabled") }</p>
-					<form method="post" action="/admin/account/totp/disable" data-confirm={ T("confirm.2fa") }>
-						<button class="danger" type="submit">@Icon("shield-off") <span>{ T("set.2fa.disable") }</span></button>
-					</form>
-				</div>
-			} else {
-				@ActionRow(T("set.2fa.hint"), "/admin/account/totp/enroll", "", "", "shield", T("set.2fa.enable"), "")
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						Two-factor authentication
+					}
+					@card.Description() {
+						A time-based code from an authenticator app.
+					}
+				}
+				@card.Content() {
+					if d.TOTPEnabled {
+						<div class="flex items-center justify-between">
+							<div class="flex items-center gap-2 text-sm">
+								@badge.Badge(badge.Props{Variant: badge.VariantDefault, Class: "gap-1"}) {
+									@Icon("shield-check")
+									<span>Enabled</span>
+								}
+							</div>
+							@ConfirmForm(Confirm{
+								ID:             "totp-off",
+								Action:         "/admin/account/totp/disable",
+								Title:          "Disable two-factor?",
+								Message:        "Your account will be protected by password only.",
+								ConfirmLabel:   "Disable",
+								ConfirmIcon:    "shield-off",
+								Danger:         true,
+								TriggerLabel:   "Disable",
+								TriggerIcon:    "shield-off",
+								TriggerVariant: button.VariantOutline,
+							})
+						</div>
+					} else {
+						<div class="flex items-center justify-between">
+							<p class="text-sm text-muted-foreground">Protect your account with a second factor.</p>
+							<form method="post" action="/admin/account/totp/enroll">
+								@button.Button(button.Props{Type: button.TypeSubmit}) {
+									@Icon("shield")
+									<span>Enable</span>
+								}
+							</form>
+						</div>
+					}
+				}
 			}
-		</article>
-		<h2>{ T("set.password") }</h2>
-		<article>
-			<form method="post" action="/admin/account/password" class="fields pw-fields">
-				<label>{ T("set.current") } <input type="password" name="current" autocomplete="current-password" required/></label>
-				<label>{ T("set.new") } <input type="password" name="new" autocomplete="new-password" required { pwCheckAttrs()... }/></label>
-				<label>{ T("set.new2") } <input type="password" name="confirm" autocomplete="new-password" required { pwCheckAttrs()... }/></label>
-				<div class="fields-foot">
-					<span id="pw-hint"></span>
-					<button type="submit">@Icon("check") <span>{ T("set.update") }</span></button>
-				</div>
-			</form>
-		</article>
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						Password
+					}
+					@card.Description() {
+						Change your sign-in password.
+					}
+				}
+				@card.Content() {
+					<form method="post" action="/admin/account/password" class="space-y-4">
+						@Field("cur-pw", "Current password") {
+							@input.Input(input.Props{ID: "cur-pw", Name: "current", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "current-password"}})
+						}
+						@Field("new-pw", "New password") {
+							@input.Input(input.Props{ID: "new-pw", Name: "new", Type: input.TypePassword, Required: true, Attributes: pwCheckAttrs()})
+						}
+						@Field("new-pw2", "Confirm new password") {
+							@input.Input(input.Props{ID: "new-pw2", Name: "confirm", Type: input.TypePassword, Required: true, Attributes: pwCheckAttrs()})
+						}
+						<div class="flex items-center justify-between">
+							<span id="pw-hint" class="text-sm"></span>
+							@button.Button(button.Props{Type: button.TypeSubmit}) {
+								@Icon("check")
+								<span>Update password</span>
+							}
+						</div>
+					</form>
+				}
+			}
+		</div>
 	}
 }
 
-// pwCheckAttrs wires a password input to the server-side strength check: the
-// browser only debounces and swaps in whatever hint the server renders.
+// pwCheckAttrs wires a password input to the server-side strength check.
 func pwCheckAttrs() templ.Attributes {
 	return templ.Attributes{
 		"hx-post":    "/admin/account/password/check",
@@ -90,21 +176,21 @@ func pwCheckAttrs() templ.Attributes {
 		"hx-params":  "new,confirm",
 		"hx-target":  "#pw-hint",
 		"hx-swap":    "innerHTML",
+		"autocomplete": "new-password",
 	}
 }
 
-// PwHint renders the server's verdict on the new password pair. Empty state
-// renders nothing (clears the hint).
+// PwHint renders the server's verdict on the new password pair.
 templ PwHint(state string) {
 	switch state {
 		case "short":
-			<small class="pw-hint warn">{ T("set.pw.short") }</small>
+			<span class="text-yellow-500">Too short — at least 8 characters.</span>
 		case "mismatch":
-			<small class="pw-hint warn">{ T("set.pw.mismatch") }</small>
+			<span class="text-yellow-500">Passwords do not match.</span>
 		case "weak":
-			<small class="pw-hint warn">{ T("set.pw.weak") }</small>
+			<span class="text-yellow-500">Weak — add length or character variety.</span>
 		case "strong":
-			<small class="pw-hint ok">{ T("set.pw.strong") }</small>
+			<span class="text-green-500">Strong password.</span>
 	}
 }
 
@@ -117,18 +203,37 @@ templ TOTPEnrollErr(nav Nav, qrDataURI, secret, errMsg string) {
 }
 
 templ totpEnrollPage(nav Nav, qrDataURI, secret, errMsg string) {
-	@Layout(T("set.enroll"), nav, Flash{Msg: errMsg}) {
-		<hgroup>
-			<h1>{ T("set.enroll") }</h1>
-			<p>{ T("set.enrollhint") }</p>
-		</hgroup>
-		<article class="narrow">
-			<img class="qr" src={ qrDataURI } alt="TOTP QR"/>
-			<p><small>{ T("set.manual") }</small><br/><code>{ secret }</code></p>
-			<form method="post" action="/admin/account/totp/enable">
-				<input name="code" placeholder={ T("set.code") } inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" autofocus/>
-				<button type="submit">@Icon("check") <span>{ T("set.confirm") }</span></button>
-			</form>
-		</article>
+	@Layout("Set up two-factor", "account", nav, Flash{Msg: errMsg}) {
+		@PageHeader("Set up two-factor", "Scan the QR with your authenticator app, then enter a code to confirm.")
+		<div class="mx-auto max-w-md">
+			@card.Card() {
+				@card.Content(card.ContentProps{Class: "flex flex-col items-center gap-4 p-6"}) {
+					<img class="rounded-lg border bg-white p-2" width="200" height="200" src={ qrDataURI } alt="TOTP QR"/>
+					<div class="text-center text-sm text-muted-foreground">
+						<p>Or enter this secret manually:</p>
+						<code class="font-mono text-xs">{ secret }</code>
+					</div>
+					<form method="post" action="/admin/account/totp/enable" class="flex w-full flex-col items-center gap-4">
+						@inputotp.InputOTP(inputotp.Props{ID: "totp-code", Name: "code"}) {
+							@inputotp.Group() {
+								@inputotp.Slot(inputotp.SlotProps{Index: 0})
+								@inputotp.Slot(inputotp.SlotProps{Index: 1})
+								@inputotp.Slot(inputotp.SlotProps{Index: 2})
+							}
+							@inputotp.Separator()
+							@inputotp.Group() {
+								@inputotp.Slot(inputotp.SlotProps{Index: 3})
+								@inputotp.Slot(inputotp.SlotProps{Index: 4})
+								@inputotp.Slot(inputotp.SlotProps{Index: 5})
+							}
+						}
+						@button.Button(button.Props{Type: button.TypeSubmit, FullWidth: true}) {
+							@Icon("check")
+							<span>Confirm &amp; enable</span>
+						}
+					</form>
+				}
+			}
+		</div>
 	}
 }

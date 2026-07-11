@@ -139,7 +139,7 @@ func TestDirectSmallGaps(t *testing.T) {
 	}
 
 	// statusChartData with no samples
-	if c := statusChartData("x", "status.req", nil, fmtReq); c.Cur != "" || c.Peak != "" {
+	if c := statusChartData("x", "status.req", nil, nil, fmtReq); c.Cur != "" || c.Peak != "" {
 		t.Errorf("empty chart data: %+v", c)
 	}
 

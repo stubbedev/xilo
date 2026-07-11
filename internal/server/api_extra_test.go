@@ -466,12 +466,12 @@ func TestHealthJSONAndIndex(t *testing.T) {
 
 func TestStaticAssets(t *testing.T) {
 	_, _, ts := newTestServerCfg(t, nil)
-	resp, _ := http.Get(ts.URL + "/static/xilo.css")
+	resp, _ := http.Get(ts.URL + "/static/xilo-tw.css")
 	if resp.StatusCode != 200 || resp.Header.Get("ETag") == "" {
 		t.Fatalf("static asset: %d etag=%q", resp.StatusCode, resp.Header.Get("ETag"))
 	}
 	etag := resp.Header.Get("ETag")
-	req, _ := http.NewRequest("GET", ts.URL+"/static/xilo.css", nil)
+	req, _ := http.NewRequest("GET", ts.URL+"/static/xilo-tw.css", nil)
 	req.Header.Set("If-None-Match", etag)
 	resp, _ = http.DefaultClient.Do(req)
 	if resp.StatusCode != http.StatusNotModified {

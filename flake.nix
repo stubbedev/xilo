@@ -16,10 +16,14 @@
           pname = "xilo";
           version = "0-unstable-${self.shortRev or "dirty"}";
           src = self;
-          vendorHash = "sha256-jL5YjgT/I+0R/ut7r/WOjTlnQDjsHkbKk3/Jf+AoR9Q=";
+          vendorHash = "sha256-IsVMraNNn2kaFnOEDXIIiQpag9Fr8RUo0em8F09TUHE=";
           subPackages = [ "cmd/xilo" ];
-          nativeBuildInputs = [ pkgs.templ ];
-          preBuild = "templ generate";
+          nativeBuildInputs = [ pkgs.templ pkgs.tailwindcss_4 ];
+          # Build the admin CSS (embedded via go:embed) then generate views.
+          preBuild = ''
+            sh scripts/build-css.sh
+            templ generate
+          '';
           env.CGO_ENABLED = 0; # sqlite via modernc.org, pure Go
           ldflags = [ "-s" "-w" "-X main.version=${self.shortRev or "dev"}" ];
           meta = {
@@ -37,6 +41,7 @@
             gotools # goimports
             golangci-lint
             templ # regenerate views: `just generate`
+            tailwindcss_4 # admin CSS: `just css`
             air # live reload: `just dev`
             just
             sqlite # inspect the metadata db

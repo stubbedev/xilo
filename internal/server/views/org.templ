@@ -4,6 +4,12 @@ import (
 	"strconv"
 
 	"github.com/stubbedev/xilo/internal/store"
+
+	"github.com/templui/templui/components/badge"
+	"github.com/templui/templui/components/button"
+	"github.com/templui/templui/components/card"
+	"github.com/templui/templui/components/selectbox"
+	"github.com/templui/templui/components/table"
 )
 
 // OrgPageData is one organization's page: members, caches, usage.
@@ -19,73 +25,151 @@ type OrgPageData struct {
 
 // Org renders one organization.
 templ Org(d OrgPageData) {
-	@Layout(d.Info.Account.Slug, d.Nav, d.Flash) {
-		<hgroup>
-			<h1>{ d.Info.Account.Slug }</h1>
-			<p>{ UsagePhrase(d.Info) }</p>
-		</hgroup>
-		<h2>{ T("org.members") }</h2>
-		<article>
-			for _, m := range d.Info.Members {
-				<div class="row-split">
-					<p>
-						@Icon("user")
-						{ m.UserName }
-						if m.Role == "admin" {
-							<span class="badge priv">{ T("org.admin") }</span>
-						} else {
-							<span class="badge pub">{ T("org.member") }</span>
+	@Layout(d.Info.Account.Slug, "", d.Nav, d.Flash) {
+		@PageHeader(d.Info.Account.Slug, UsagePhrase(d.Info))
+		<div class="grid gap-6">
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						Members
+					}
+				}
+				@card.Content(card.ContentProps{Class: "space-y-3"}) {
+					@card.Card(card.Props{Class: "p-0"}) {
+						@table.Table() {
+							@table.Body() {
+								for _, m := range d.Info.Members {
+									@table.Row() {
+										@table.Cell() {
+											<div class="flex items-center gap-2">
+												@Icon("user")
+												<span class="font-medium">{ m.UserName }</span>
+												if m.Role == "admin" {
+													@badge.Badge(badge.Props{Variant: badge.VariantDefault}) {
+														admin
+													}
+												} else {
+													@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
+														member
+													}
+												}
+											</div>
+										}
+										@table.Cell(table.CellProps{Class: "text-right"}) {
+											if d.CanManage {
+												<div class="flex justify-end gap-1">
+													<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") }>
+														<input type="hidden" name="user_id" value={ strconv.FormatInt(m.UserID, 10) }/>
+														if m.Role == "admin" {
+															<input type="hidden" name="role" value="member"/>
+															@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": "Demote", "title": "Demote to member"}}) {
+																@Icon("user-minus")
+															}
+														} else {
+															<input type="hidden" name="role" value="admin"/>
+															@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": "Promote", "title": "Promote to admin"}}) {
+																@Icon("user-plus")
+															}
+														}
+													</form>
+													@ConfirmForm(Confirm{
+														ID:             "rm-member-" + strconv.FormatInt(m.UserID, 10),
+														Action:         "/admin/org/" + d.Info.Account.Slug + "/members/" + strconv.FormatInt(m.UserID, 10) + "/remove",
+														Title:          "Remove member?",
+														Message:        m.UserName + " will lose access to " + d.Info.Account.Slug + ".",
+														ConfirmLabel:   "Remove",
+														ConfirmIcon:    "trash-2",
+														Danger:         true,
+														TriggerIcon:    "trash-2",
+														IconOnly:       true,
+														TriggerTooltip: "Remove member",
+														TriggerVariant: button.VariantGhost,
+													})
+												</div>
+											}
+										}
+									}
+								}
+							}
 						}
-					</p>
+					}
 					if d.CanManage {
-						<div class="row-actions">
-							<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") }>
-								<input type="hidden" name="user_id" value={ strconv.FormatInt(m.UserID, 10) }/>
-								if m.Role == "admin" {
-									<input type="hidden" name="role" value="member"/>
-									<button class="iconbtn" aria-label={ T("users.demote") } data-tooltip={ T("users.demote") }>@IconClass("user-minus", 16, "")</button>
-								} else {
-									<input type="hidden" name="role" value="admin"/>
-									<button class="iconbtn" aria-label={ T("users.promote") } data-tooltip={ T("users.promote") }>@IconClass("user-plus", 16, "")</button>
+						if len(d.AllUsers) > 0 {
+							<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") } class="flex flex-wrap items-end gap-2">
+								<div class="min-w-48 flex-1">
+									@Field("member-user", "Add member") {
+										@selectbox.SelectBox() {
+											@selectbox.Trigger(selectbox.TriggerProps{Name: "user_id"}) {
+												@selectbox.Value(selectbox.ValueProps{Placeholder: "Pick a user"})
+											}
+											@selectbox.Content() {
+												for _, cand := range d.AllUsers {
+													@selectbox.Item(selectbox.ItemProps{Value: strconv.FormatInt(cand.ID, 10)}) {
+														{ cand.Name }
+													}
+												}
+											}
+										}
+									}
+								</div>
+								<div class="w-36">
+									@Field("member-role", "Role") {
+										@roleSelect("role", "member")
+									}
+								</div>
+								@button.Button(button.Props{Type: button.TypeSubmit}) {
+									@Icon("user-plus")
+									<span>Add</span>
 								}
 							</form>
-							<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members/" + strconv.FormatInt(m.UserID, 10) + "/remove") } data-confirm={ T("org.removeconfirm") }>
-								<button class="iconbtn danger" aria-label={ T("ns.removemember") } data-tooltip={ T("ns.removemember") }>@IconClass("trash-2", 16, "")</button>
-							</form>
-						</div>
+						} else {
+							<p class="text-sm text-muted-foreground">Every active user is already a member.</p>
+						}
 					}
-				</div>
+				}
 			}
-			if d.CanManage {
-				<div class={ "row-split", templ.KV("rule-above", len(d.Info.Members) > 0) }>
-					<p>{ T("org.addhint") }</p>
-					if len(d.AllUsers) > 0 {
-						<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") } class="member-add member-add-combo">
-							@Combobox(Combo{Name: "user_id", Placeholder: T("org.pickuser"), AriaLabel: T("ns.username"), Search: boolPtr(true), Options: userOptions(d.AllUsers)})
-							@Combobox(Combo{Name: "role", Value: "member", AriaLabel: T("users.role"), Search: boolPtr(false), Options: roleOptions()})
-							<button type="submit">@Icon("user-plus") <span>{ T("ns.addmember") }</span></button>
-						</form>
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						Caches
+					}
+				}
+				@card.Content() {
+					if len(d.Caches) == 0 {
+						@EmptyState("database", "No caches in this organization yet.")
 					} else {
-						<p><small>{ T("org.nocandidates") }</small></p>
+						@card.Card(card.Props{Class: "divide-y p-0"}) {
+							for _, u := range d.Caches {
+								<div class="flex items-center justify-between p-4">
+									<div class="flex items-center gap-2">
+										<a href={ templ.SafeURL("/admin/cache/" + u.Cache.Ref()) } class="font-medium hover:underline">{ u.Cache.Name }</a>
+										@VisBadge(u.Cache.Public)
+									</div>
+									<span class="text-xs text-muted-foreground tabular-nums">{ d.Bytes(u.Bytes) } · { Count(u.Paths) } paths</span>
+								</div>
+							}
+						}
 					}
-				</div>
+				}
 			}
-		</article>
-		<h2>{ T("org.caches") }</h2>
-		<article>
-			if len(d.Caches) == 0 {
-				@Empty("database", T("caches.empty"))
-			} else {
-				<div class="usage">
-					for _, u := range d.Caches {
-						<div class="row">
-							<span class="name"><a href={ templ.SafeURL("/admin/cache/" + u.Cache.Ref()) }>{ u.Cache.Name }</a> @visBadge(u.Cache.Public)</span>
-							<span class="fig">{ d.Bytes(u.Bytes) } · { Count(u.Paths) } { T("cache.paths") }</span>
-						</div>
-					}
-				</div>
+		</div>
+	}
+}
+
+// roleSelect is a member/admin role picker.
+templ roleSelect(name, value string) {
+	@selectbox.SelectBox() {
+		@selectbox.Trigger(selectbox.TriggerProps{Name: name}) {
+			@selectbox.Value(selectbox.ValueProps{})
+		}
+		@selectbox.Content(selectbox.ContentProps{NoSearch: true}) {
+			@selectbox.Item(selectbox.ItemProps{Value: "member", Selected: value == "member"}) {
+				Member
 			}
-		</article>
+			@selectbox.Item(selectbox.ItemProps{Value: "admin", Selected: value == "admin"}) {
+				Admin
+			}
+		}
 	}
 }
 
