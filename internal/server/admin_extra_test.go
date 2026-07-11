@@ -29,9 +29,19 @@ func bootstrapAdmin(t *testing.T, db *store.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.BootstrapAdmin(string(hash)); err != nil {
+	if _, err := db.CreateUser("admin", string(hash), "admin"); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// adminID returns the bootstrapped admin account's id.
+func adminID(t *testing.T, db *store.DB) int64 {
+	t.Helper()
+	u, err := db.GetUserByName("admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u.ID
 }
 
 // adminClient logs in and returns a cookie-jar client plus the final response body.
@@ -39,7 +49,7 @@ func adminClient(t *testing.T, ts *httptest.Server) *http.Client {
 	t.Helper()
 	jar, _ := cookiejar.New(nil)
 	c := &http.Client{Jar: jar}
-	resp, err := c.PostForm(ts.URL+"/admin/login", url.Values{"password": {adminPass}})
+	resp, err := c.PostForm(ts.URL+"/admin/login", url.Values{"username": {"admin"}, "password": {adminPass}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +74,7 @@ func TestAdminLoginLogout(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, nil)
 
 	// no admin yet: login POST re-renders the bootstrap login page
-	resp, _ := http.PostForm(ts.URL+"/admin/login", url.Values{"password": {"x"}})
+	resp, _ := http.PostForm(ts.URL+"/admin/login", url.Values{"username": {"admin"}, "password": {"x"}})
 	if resp.StatusCode != 200 {
 		t.Fatalf("pre-bootstrap login → %d", resp.StatusCode)
 	}
@@ -73,8 +83,8 @@ func TestAdminLoginLogout(t *testing.T) {
 	bootstrapAdmin(t, db)
 
 	// wrong password
-	resp, _ = http.PostForm(ts.URL+"/admin/login", url.Values{"password": {"nope"}})
-	if b := body(t, resp); !strings.Contains(b, "Invalid password") {
+	resp, _ = http.PostForm(ts.URL+"/admin/login", url.Values{"username": {"admin"}, "password": {"nope"}})
+	if b := body(t, resp); !strings.Contains(b, "Invalid username or password") {
 		t.Fatalf("wrong password should re-render login: %q", b)
 	}
 
@@ -319,7 +329,7 @@ func TestChangePassword(t *testing.T) {
 	// new password logs in
 	jar, _ := cookiejar.New(nil)
 	c2 := &http.Client{Jar: jar}
-	resp, _ := c2.PostForm(ts.URL+"/admin/login", url.Values{"password": {"NewPass123456"}})
+	resp, _ := c2.PostForm(ts.URL+"/admin/login", url.Values{"username": {"admin"}, "password": {"NewPass123456"}})
 	if resp.StatusCode != 200 || resp.Request.URL.Path != "/admin" {
 		t.Fatalf("login with new password → %d", resp.StatusCode)
 	}
@@ -364,7 +374,7 @@ func TestTOTPEnrollAndTwoStepLogin(t *testing.T) {
 	if b := body(t, resp); !strings.Contains(b, "data:image/png") {
 		t.Fatalf("enroll page missing QR: %.100q", b)
 	}
-	secret, enabled, err := db.TOTP()
+	secret, enabled, err := db.UserTOTP(adminID(t, db))
 	if err != nil || enabled || len(secret) == 0 {
 		t.Fatalf("post-enroll totp state: enabled=%v err=%v", enabled, err)
 	}
@@ -383,7 +393,7 @@ func TestTOTPEnrollAndTwoStepLogin(t *testing.T) {
 	// fresh login now requires the second step
 	jar, _ := cookiejar.New(nil)
 	c2 := &http.Client{Jar: jar}
-	resp, _ = c2.PostForm(ts.URL+"/admin/login", url.Values{"password": {adminPass}})
+	resp, _ = c2.PostForm(ts.URL+"/admin/login", url.Values{"username": {"admin"}, "password": {adminPass}})
 	b := body(t, resp)
 	m := pendingRe.FindStringSubmatch(b)
 	if m == nil {
@@ -418,7 +428,7 @@ func TestTOTPEnrollAndTwoStepLogin(t *testing.T) {
 	if b := body(t, resp); !strings.Contains(b, "disabled") {
 		t.Fatalf("disable: %.200q", b)
 	}
-	if _, on, _ := db.TOTP(); on {
+	if _, on, _ := db.UserTOTP(adminID(t, db)); on {
 		t.Fatal("totp still enabled")
 	}
 }
@@ -429,19 +439,19 @@ func TestLoginCodeAfterTOTPDisabledMidFlight(t *testing.T) {
 	c := adminClient(t, ts)
 	resp, _ := c.PostForm(ts.URL+"/admin/settings/totp/enroll", nil)
 	resp.Body.Close()
-	secret, _, _ := db.TOTP()
+	secret, _, _ := db.UserTOTP(adminID(t, db))
 	resp, _ = c.PostForm(ts.URL+"/admin/settings/totp/enable", url.Values{"code": {totpCode(secret, time.Now())}})
 	resp.Body.Close()
 
 	jar, _ := cookiejar.New(nil)
 	c2 := &http.Client{Jar: jar}
-	resp, _ = c2.PostForm(ts.URL+"/admin/login", url.Values{"password": {adminPass}})
+	resp, _ = c2.PostForm(ts.URL+"/admin/login", url.Values{"username": {"admin"}, "password": {adminPass}})
 	m := pendingRe.FindStringSubmatch(body(t, resp))
 	if m == nil {
 		t.Fatal("no pending ticket")
 	}
 	// admin disables 2FA while the second step is pending
-	db.SetTOTPEnabled(false)
+	db.SetUserTOTPEnabled(adminID(t, db), false)
 	resp, _ = c2.PostForm(ts.URL+"/admin/login/code", url.Values{"pending": {m[1]}, "code": {"whatever"}})
 	if resp.StatusCode != 200 || resp.Request.URL.Path != "/admin" {
 		t.Fatalf("mid-flight disabled login → %d at %s", resp.StatusCode, resp.Request.URL)
@@ -489,8 +499,8 @@ func TestPasskeyEndpoints(t *testing.T) {
 
 	// seed one readable and one unreadable credential row
 	blob, _ := json.Marshal(webauthn.Credential{ID: []byte("cred-id")})
-	db.AddPasskey("good", blob)
-	db.AddPasskey("bad", []byte("not-json"))
+	db.AddPasskey(adminID(t, db), "good", blob)
+	db.AddPasskey(adminID(t, db), "bad", []byte("not-json"))
 
 	resp, _ = http.Post(ts.URL+"/admin/login/passkey/begin", "", nil)
 	if resp.StatusCode != 200 {
@@ -498,8 +508,8 @@ func TestPasskeyEndpoints(t *testing.T) {
 	}
 	resp.Body.Close()
 	resp, _ = http.Post(ts.URL+"/admin/login/passkey/finish", "application/json", strings.NewReader("{}"))
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("garbage login finish → %d want 401", resp.StatusCode)
+	if resp.StatusCode != 400 {
+		t.Fatalf("garbage login finish → %d want 400 (unparsable body)", resp.StatusCode)
 	}
 	resp.Body.Close()
 	resp, _ = http.Post(ts.URL+"/admin/login/passkey/finish", "application/json", strings.NewReader("{}"))

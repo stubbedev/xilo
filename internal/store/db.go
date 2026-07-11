@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -194,11 +195,14 @@ func migrate(w *sql.DB, pg bool) error {
 			privkey   BLOB NOT NULL,
 			created   INTEGER NOT NULL
 		)`,
-		`CREATE TABLE IF NOT EXISTS admin (
-			id            INTEGER PRIMARY KEY CHECK (id = 1),
+		`CREATE TABLE IF NOT EXISTS users (
+			id            INTEGER PRIMARY KEY,
+			username      TEXT UNIQUE NOT NULL,
 			password_hash TEXT NOT NULL,
+			role          TEXT NOT NULL DEFAULT 'member',
 			totp_secret   BLOB,
-			totp_enabled  INTEGER NOT NULL DEFAULT 0
+			totp_enabled  INTEGER NOT NULL DEFAULT 0,
+			created       INTEGER NOT NULL DEFAULT 0
 		)`,
 		`CREATE TABLE IF NOT EXISTS chunks (
 			hash        TEXT PRIMARY KEY,
@@ -266,11 +270,17 @@ func migrate(w *sql.DB, pg bool) error {
 		{"chunks", "csize", "INTEGER NOT NULL DEFAULT 0"},
 		{"chunks", "created", "INTEGER NOT NULL DEFAULT 0"},
 		{"tokens", "expires", "INTEGER NOT NULL DEFAULT 0"},
+		{"passkeys", "user_id", "INTEGER NOT NULL DEFAULT 0"},
+		{"sessions", "user_id", "INTEGER NOT NULL DEFAULT 0"},
 	}
 	for _, a := range adds {
 		if err := addColumnIfMissing(w, pg, a.table, a.col, a.def); err != nil {
 			return fmt.Errorf("migrate %s.%s: %w", a.table, a.col, err)
 		}
+	}
+
+	if err := migrateAdminToUsers(w, pg); err != nil {
+		return fmt.Errorf("migrate admin→users: %w", err)
 	}
 
 	// Indexes last — they may reference columns the ALTERs just added.
@@ -283,6 +293,51 @@ func migrate(w *sql.DB, pg bool) error {
 		}
 	}
 	return nil
+}
+
+// migrateAdminToUsers converts a pre-1.0 singleton `admin` row into the first
+// user (username "admin", role admin), claims the existing passkeys for it,
+// and drops the old table. Sessions are wiped — one forced re-login beats
+// carrying ownerless cookies forward.
+func migrateAdminToUsers(w *sql.DB, pg bool) error {
+	exists := `SELECT 1 FROM sqlite_master WHERE type='table' AND name='admin'`
+	if pg {
+		exists = `SELECT 1 FROM information_schema.tables WHERE table_name='admin' AND table_schema=current_schema()`
+	}
+	var one int
+	if err := w.QueryRow(exists).Scan(&one); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil // fresh database, nothing to migrate
+		}
+		return err
+	}
+	var hash string
+	var totpSecret []byte
+	var totpEnabled int
+	err := w.QueryRow(`SELECT password_hash, totp_secret, totp_enabled FROM admin WHERE id=1`).
+		Scan(&hash, &totpSecret, &totpEnabled)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err == nil {
+		// The pg pool rewrites `?` at the driver boundary, so one placeholder
+		// style serves both dialects here too.
+		var uid int64
+		if err := w.QueryRow(
+			`INSERT INTO users (username,password_hash,role,totp_secret,totp_enabled,created)
+			 VALUES ('admin',?,'admin',?,?,?) RETURNING id`,
+			hash, totpSecret, totpEnabled, time.Now().Unix()).Scan(&uid); err != nil {
+			return err
+		}
+		if _, err := w.Exec(`UPDATE passkeys SET user_id=? WHERE user_id=0`, uid); err != nil {
+			return err
+		}
+		if _, err := w.Exec(`DELETE FROM sessions`); err != nil {
+			return err
+		}
+	}
+	_, err = w.Exec(`DROP TABLE admin`)
+	return err
 }
 
 // addColumnIfMissing runs ALTER TABLE ADD COLUMN only when the column is absent

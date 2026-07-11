@@ -28,7 +28,7 @@ func TestPostgres(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	// Fresh slate: earlier runs against the same server leave rows behind.
-	for _, tbl := range []string{"paths", "chunks", "tokens", "caches", "passkeys", "sessions", "metrics_minutes", "admin"} {
+	for _, tbl := range []string{"paths", "chunks", "tokens", "caches", "passkeys", "sessions", "metrics_minutes", "users"} {
 		if err := db.write(func(tx *sql.Tx) error { _, err := tx.Exec(`DELETE FROM ` + tbl); return err }); err != nil {
 			t.Fatalf("clean %s: %v", tbl, err)
 		}
@@ -171,45 +171,52 @@ func TestPostgres(t *testing.T) {
 		t.Fatalf("GlobalStats: %v", err)
 	}
 
-	// --- admin auth / totp ---
-	if db.AdminExists() {
-		t.Fatal("admin should not exist yet")
+	// --- users / totp ---
+	if db.UsersExist() {
+		t.Fatal("no users should exist yet")
 	}
-	if err := db.BootstrapAdmin("hash1"); err != nil {
-		t.Fatalf("BootstrapAdmin: %v", err)
+	usr, err := db.CreateUser("admin", "hash1", "admin")
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
 	}
-	if err := db.BootstrapAdmin("hash2"); err != nil {
-		t.Fatalf("BootstrapAdmin twice: %v", err)
+	if got, err := db.GetUserByName("admin"); err != nil || got.ID != usr.ID {
+		t.Fatalf("GetUserByName: %+v %v", got, err)
 	}
-	if h, err := db.AdminPasswordHash(); err != nil || h != "hash1" {
-		t.Fatalf("AdminPasswordHash: %q %v (bootstrap must not overwrite)", h, err)
+	if n, _ := db.CountAdmins(); n != 1 {
+		t.Fatalf("CountAdmins = %d", n)
 	}
-	if err := db.SetTOTPSecret([]byte("s3cret")); err != nil {
-		t.Fatalf("SetTOTPSecret: %v", err)
+	if err := db.SetUserTOTPSecret(usr.ID, []byte("s3cret")); err != nil {
+		t.Fatalf("SetUserTOTPSecret: %v", err)
 	}
-	if err := db.SetTOTPEnabled(true); err != nil {
-		t.Fatalf("SetTOTPEnabled: %v", err)
+	if err := db.SetUserTOTPEnabled(usr.ID, true); err != nil {
+		t.Fatalf("SetUserTOTPEnabled: %v", err)
 	}
-	if sec, on, err := db.TOTP(); err != nil || !on || string(sec) != "s3cret" {
-		t.Fatalf("TOTP: %q %v %v", sec, on, err)
+	if sec, on, err := db.UserTOTP(usr.ID); err != nil || !on || string(sec) != "s3cret" {
+		t.Fatalf("UserTOTP: %q %v %v", sec, on, err)
 	}
 
 	// --- sessions / passkeys ---
-	if err := db.CreateSession("sess1", time.Now().Add(time.Hour)); err != nil {
+	if err := db.CreateSession("sess1", usr.ID, time.Now().Add(time.Hour)); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	if !db.SessionValid("sess1") || db.SessionValid("nope") {
-		t.Fatal("SessionValid wrong")
+	if uid, ok := db.SessionUser("sess1"); !ok || uid != usr.ID {
+		t.Fatalf("SessionUser: %d %v", uid, ok)
 	}
-	if err := db.DropSession("sess1"); err != nil || db.SessionValid("sess1") {
+	if _, ok := db.SessionUser("nope"); ok {
+		t.Fatal("bogus session should not resolve")
+	}
+	if err := db.DropSession("sess1"); err != nil {
 		t.Fatal("DropSession failed")
 	}
-	if err := db.AddPasskey("key1", []byte{1, 2, 3}); err != nil {
+	if _, ok := db.SessionUser("sess1"); ok {
+		t.Fatal("dropped session should not resolve")
+	}
+	if err := db.AddPasskey(usr.ID, "key1", []byte{1, 2, 3}); err != nil {
 		t.Fatalf("AddPasskey: %v", err)
 	}
-	pks, err := db.ListPasskeys()
+	pks, err := db.ListUserPasskeys(usr.ID)
 	if err != nil || len(pks) != 1 {
-		t.Fatalf("ListPasskeys: %v %v", pks, err)
+		t.Fatalf("ListUserPasskeys: %v %v", pks, err)
 	}
 
 	// --- metrics ---

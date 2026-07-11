@@ -13,11 +13,11 @@ import (
 	"github.com/stubbedev/xilo/internal/store"
 )
 
-// bootstrapAdmin seeds the admin credential from the config/env password on
-// first run. Once an admin exists (e.g. after a UI password change), the config
-// value is ignored so a stale env var can't reset it.
+// bootstrapAdmin seeds the first account ("admin", role admin) from the
+// config/env password on first run. Once any user exists, the config value is
+// ignored so a stale env var can't reset a password.
 func bootstrapAdmin(db *store.DB, password string) error {
-	if db.AdminExists() || password == "" {
+	if db.UsersExist() || password == "" {
 		return nil
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -25,7 +25,8 @@ func bootstrapAdmin(db *store.DB, password string) error {
 		return err
 	}
 	log.Printf("bootstrapping admin account from configured password")
-	return db.BootstrapAdmin(string(hash))
+	_, err = db.CreateUser("admin", string(hash), "admin")
+	return err
 }
 
 func serveCmd() *cobra.Command {

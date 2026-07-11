@@ -9,7 +9,8 @@ templ Login(noPassword, hasPasskeys bool, flash Flash) {
 				<p>{ T("login.subtitle") }</p>
 			</hgroup>
 			<form method="post" action="/admin/login">
-				<input type="password" name="password" placeholder={ T("login.password") } autocomplete="current-password" autofocus/>
+				<input name="username" placeholder={ T("login.username") } autocomplete="username" autofocus/>
+				<input type="password" name="password" placeholder={ T("login.password") } autocomplete="current-password"/>
 				<button type="submit">{ T("login.submit") }</button>
 			</form>
 			if hasPasskeys {

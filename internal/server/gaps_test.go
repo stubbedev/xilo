@@ -120,7 +120,7 @@ func TestDirectSmallGaps(t *testing.T) {
 
 	// passkeyName strips the port
 	s, _, _ := newTestServerCfg(t, func(cfg *config.Config) { cfg.BaseURL = "https://cache.example.com:8443" })
-	if got := s.passkeyName(); got != "cache.example.com - xilo" {
+	if got := s.passkeyName(&store.User{Name: "admin"}); got != "admin@cache.example.com" {
 		t.Errorf("passkeyName = %q", got)
 	}
 

@@ -39,7 +39,7 @@ func TestMigrateUpgradesOldSchema(t *testing.T) {
 		`SELECT retention, max_bytes FROM caches`,
 		`SELECT csize, created FROM chunks`,
 		`SELECT expires FROM tokens`,
-		`SELECT password_hash FROM admin WHERE id=1`, // table created
+		`SELECT password_hash, role FROM users`, // table created
 	} {
 		if _, err := raw.Query(q); err != nil {
 			t.Errorf("%q after migrate: %v", q, err)

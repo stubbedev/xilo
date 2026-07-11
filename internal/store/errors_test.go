@@ -31,7 +31,7 @@ func TestScanErrorBranches(t *testing.T) {
 		VALUES ('bad',1,40,0,0,'k',x'00','notanint')`)
 	exec(t, db, `INSERT INTO tokens (name,hash,caches,perms,revoked,expires,created)
 		VALUES ('bad','h','*','pull',0,0,'notanint')`)
-	exec(t, db, `INSERT INTO passkeys (name,credential,created) VALUES ('bad',x'00','notanint')`)
+	exec(t, db, `INSERT INTO passkeys (user_id,name,credential,created) VALUES (1,'bad',x'00','notanint')`)
 	exec(t, db, `INSERT INTO metrics_minutes (ts,req,lat,bps,stored) VALUES (1,1,1,1,'notanint')`)
 	exec(t, db, `INSERT INTO chunks (hash,size,csize,storage_key,created) VALUES ('bad','x','x','k','x')`)
 	exec(t, db, `INSERT INTO paths (cache_id,store_hash,store_path,nar_hash,nar_size,accessed)
@@ -128,7 +128,7 @@ func TestDroppedTableErrorBranches(t *testing.T) {
 		if _, _, err := db.CreateToken("x", nil, nil, 0); err == nil {
 			t.Error("CreateToken should fail without tokens table")
 		}
-		if err := db.CreateSession("s", time.Now().Add(time.Hour)); err == nil {
+		if err := db.CreateSession("s", 1, time.Now().Add(time.Hour)); err == nil {
 			t.Error("CreateSession should fail without sessions table")
 		}
 		if err := db.AddMetricMinute(MetricMinute{TS: 1}); err == nil {

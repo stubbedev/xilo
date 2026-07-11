@@ -48,6 +48,7 @@ var en = map[string]string{
 	// login
 	"login.title":      "Sign in",
 	"login.subtitle":   "Manage caches and tokens.",
+	"login.username":   "Username",
 	"login.password":   "Password",
 	"login.code":       "2FA code",
 	"login.submit":     "Sign in",
@@ -187,6 +188,22 @@ var en = map[string]string{
 	"confirm.gc":     "Run garbage collection now?",
 	"confirm.delete": "Delete this cache and all its paths? This cannot be undone.",
 	"confirm.2fa":    "Disable two-factor authentication?",
+	"confirm.user":   "Delete this user? Their passkeys and sessions go with them.",
+
+	// user management
+	"set.users":     "Users",
+	"users.new":     "New user",
+	"users.create":  "Create",
+	"users.name":    "Username",
+	"users.newpw":   "New password",
+	"users.role":    "Role",
+	"users.admin":   "Admin",
+	"users.member":  "Member",
+	"users.reset":   "Reset password",
+	"users.promote": "Make admin",
+	"users.demote":  "Make member",
+	"users.delete":  "Delete user",
+	"users.hint":    "Accounts that can sign in to this dashboard.",
 
 	// generic actions
 	"action.new":     "New",

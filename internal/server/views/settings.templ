@@ -6,12 +6,15 @@ import (
 	"github.com/stubbedev/xilo/internal/store"
 )
 
-templ Settings(totpEnabled bool, passkeys []store.Passkey, flash Flash) {
+templ Settings(user *store.User, totpEnabled bool, passkeys []store.Passkey, users []store.User, flash Flash) {
 	@Layout(T("set.title"), true, flash) {
 		<hgroup>
 			<h1>{ T("set.title") }</h1>
-			<p>{ T("set.subtitle") }</p>
+			<p>{ T("set.subtitle") } <small>· { user.Name } ({ user.Role })</small></p>
 		</hgroup>
+		if user.Role == "admin" {
+			@usersSection(user, users)
+		}
 		<h2>{ T("set.passkeys") }</h2>
 		<article>
 			for _, pk := range passkeys {
@@ -57,6 +60,75 @@ templ Settings(totpEnabled bool, passkeys []store.Passkey, flash Flash) {
 			</form>
 		</article>
 	}
+}
+
+// usersSection is the admin-only account management block.
+templ usersSection(acting *store.User, users []store.User) {
+	<h2>{ T("set.users") }</h2>
+	<article>
+		for _, u := range users {
+			<div class="row-split">
+				<p>
+					@Icon("user")
+					{ u.Name }
+					if u.Role == "admin" {
+						<span class="badge priv">{ T("users.admin") }</span>
+					} else {
+						<span class="badge pub">{ T("users.member") }</span>
+					}
+					<small>· { Ago(u.Created) }</small>
+				</p>
+				<div class="row-actions">
+					@Modal("dlg-user-reset-"+strconv.FormatInt(u.ID, 10), T("users.reset")) {
+						<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/reset") }>
+							<label>{ T("users.newpw") } <input type="password" name="password" autocomplete="new-password" required minlength="8"/></label>
+							@ModalFoot("key-round", T("users.reset"))
+						</form>
+					}
+					<button
+						class="iconbtn"
+						type="button"
+						aria-label={ T("users.reset") }
+						data-tooltip={ T("users.reset") }
+						data-dlg={ "dlg-user-reset-" + strconv.FormatInt(u.ID, 10) }
+						onclick="document.getElementById(this.dataset.dlg).showModal()">
+						@IconClass("key-round", 16, "")
+					</button>
+					if u.ID != acting.ID {
+						<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/role") }>
+							if u.Role == "admin" {
+								<input type="hidden" name="role" value="member"/>
+								<button class="iconbtn" aria-label={ T("users.demote") } data-tooltip={ T("users.demote") }>@IconClass("user-minus", 16, "")</button>
+							} else {
+								<input type="hidden" name="role" value="admin"/>
+								<button class="iconbtn" aria-label={ T("users.promote") } data-tooltip={ T("users.promote") }>@IconClass("user-plus", 16, "")</button>
+							}
+						</form>
+						<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/delete") } data-confirm={ T("confirm.user") }>
+							<button class="iconbtn danger" aria-label={ T("users.delete") } data-tooltip={ T("users.delete") }>@IconClass("trash-2", 16, "")</button>
+						</form>
+					}
+				</div>
+			</div>
+		}
+		<div class={ "row-split", templ.KV("rule-above", len(users) > 0) }>
+			<p>{ T("users.hint") }</p>
+			<button type="button" data-dlg="dlg-user-new" onclick="document.getElementById(this.dataset.dlg).showModal()">@Icon("user-plus") <span>{ T("users.new") }</span></button>
+			@Modal("dlg-user-new", T("users.new")) {
+				<form method="post" action="/admin/users">
+					<label>{ T("users.name") } <input name="username" placeholder="alice" required autofocus/></label>
+					<label>{ T("users.newpw") } <input type="password" name="password" autocomplete="new-password" required minlength="8"/></label>
+					<fieldset class="switch-group">
+						<legend>{ T("users.role") }</legend>
+						<div class="switch-row">
+							<label><input type="checkbox" role="switch" name="role" value="admin"/> { T("users.admin") }</label>
+						</div>
+					</fieldset>
+					@ModalFoot("user-plus", T("users.create"))
+				</form>
+			}
+		</div>
+	</article>
 }
 
 // pwCheckAttrs wires a password input to the server-side strength check: the

@@ -451,26 +451,28 @@ func TestBootstrapAdmin(t *testing.T) {
 	if err := bootstrapAdmin(db, ""); err != nil {
 		t.Fatal(err)
 	}
-	if db.AdminExists() {
+	if db.UsersExist() {
 		t.Fatal("admin created from empty password")
 	}
 
 	if err := bootstrapAdmin(db, "hunter2"); err != nil {
 		t.Fatal(err)
 	}
-	if !db.AdminExists() {
+	if !db.UsersExist() {
 		t.Fatal("admin not created")
 	}
-	hash1, err := db.AdminPasswordHash()
+	u1, err := db.GetUserByName("admin")
 	if err != nil {
 		t.Fatal(err)
 	}
+	hash1 := u1.PassHash
 
 	// second bootstrap with a different password must not overwrite
 	if err := bootstrapAdmin(db, "other"); err != nil {
 		t.Fatal(err)
 	}
-	hash2, _ := db.AdminPasswordHash()
+	u2, _ := db.GetUserByName("admin")
+	hash2 := u2.PassHash
 	if hash1 != hash2 {
 		t.Fatal("existing admin credential overwritten")
 	}

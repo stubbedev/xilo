@@ -35,11 +35,18 @@ const sessionTTL = 12 * time.Hour
 type sessions struct {
 	mu      sync.Mutex
 	db      *store.DB
-	pending map[string]time.Time // password accepted, awaiting 2FA code
+	pending map[string]pendingLogin // password accepted, awaiting 2FA code
+}
+
+// pendingLogin remembers who passed the password step while their 2FA code is
+// outstanding.
+type pendingLogin struct {
+	exp    time.Time
+	userID int64
 }
 
 func newSessions(db *store.DB) *sessions {
-	return &sessions{db: db, pending: map[string]time.Time{}}
+	return &sessions{db: db, pending: map[string]pendingLogin{}}
 }
 
 // hashSession derives the storage key for a session id.
@@ -52,28 +59,28 @@ func hashSession(id string) string {
 const pendingTTL = 3 * time.Minute
 
 // createPending issues a one-shot pre-auth ticket for the 2FA step.
-func (s *sessions) createPending() (string, error) {
+func (s *sessions) createPending(userID int64) (string, error) {
 	b := make([]byte, 24)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
 	id := base64.RawURLEncoding.EncodeToString(b)
 	s.mu.Lock()
-	s.pending[id] = time.Now().Add(pendingTTL)
+	s.pending[id] = pendingLogin{exp: time.Now().Add(pendingTTL), userID: userID}
 	s.mu.Unlock()
 	return id, nil
 }
 
-// pendingValid reports whether a pre-auth ticket is still live.
-func (s *sessions) pendingValid(id string) bool {
+// pendingUser returns the user behind a live pre-auth ticket, or ok=false.
+func (s *sessions) pendingUser(id string) (int64, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	exp, ok := s.pending[id]
-	if !ok || time.Now().After(exp) {
+	p, ok := s.pending[id]
+	if !ok || time.Now().After(p.exp) {
 		delete(s.pending, id)
-		return false
+		return 0, false
 	}
-	return true
+	return p.userID, true
 }
 
 // consumePending burns a ticket after a successful code check.
@@ -83,40 +90,69 @@ func (s *sessions) consumePending(id string) {
 	s.mu.Unlock()
 }
 
-func (s *sessions) create() (string, error) {
+func (s *sessions) create(userID int64) (string, error) {
 	b := make([]byte, 24)
 	if _, err := rand.Read(b); err != nil {
 		return "", err // never emit a low-entropy session id
 	}
 	id := base64.RawURLEncoding.EncodeToString(b)
-	if err := s.db.CreateSession(hashSession(id), time.Now().Add(sessionTTL)); err != nil {
+	if err := s.db.CreateSession(hashSession(id), userID, time.Now().Add(sessionTTL)); err != nil {
 		return "", err
 	}
 	return id, nil
 }
 
-func (s *sessions) valid(id string) bool {
-	return s.db.SessionValid(hashSession(id))
+func (s *sessions) user(id string) (int64, bool) {
+	return s.db.SessionUser(hashSession(id))
 }
 
 func (s *sessions) drop(id string) {
 	_ = s.db.DropSession(hashSession(id))
 }
 
-func (s *Server) loggedIn(r *http.Request) bool {
+// currentUser resolves the session cookie to its account, nil when signed out.
+func (s *Server) currentUser(r *http.Request) *store.User {
 	c, err := r.Cookie(sessionCookie)
-	return err == nil && s.sess.valid(c.Value)
+	if err != nil {
+		return nil
+	}
+	uid, ok := s.sess.user(c.Value)
+	if !ok {
+		return nil
+	}
+	u, err := s.db.GetUser(uid)
+	if err != nil {
+		return nil
+	}
+	return u
 }
 
-// requireAdmin gates the mutating admin endpoints: requires a session AND, for
-// POSTs, a same-origin request (CSRF defense-in-depth beyond SameSite=Lax).
-func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	if !s.loggedIn(r) {
+func (s *Server) loggedIn(r *http.Request) bool { return s.currentUser(r) != nil }
+
+// requireUser gates per-account endpoints: any signed-in user, plus a
+// same-origin check on POSTs (CSRF defense-in-depth beyond SameSite=Lax).
+func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) *store.User {
+	u := s.currentUser(r)
+	if u == nil {
 		http.Redirect(w, r, "/admin", http.StatusSeeOther)
-		return false
+		return nil
 	}
 	if r.Method == http.MethodPost && !s.sameOrigin(r) {
 		http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+		return nil
+	}
+	return u
+}
+
+// requireAdmin additionally demands the admin role — the gate for every
+// cache/token/user mutation and instance-wide view.
+func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	u := s.requireUser(w, r)
+	if u == nil {
+		return false
+	}
+	if u.Role != "admin" {
+		http.Error(w, "admin role required", http.StatusForbidden)
 		return false
 	}
 	return true
@@ -157,6 +193,10 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/settings/totp/enroll", s.handleTOTPEnroll)
 	mux.HandleFunc("POST /admin/settings/totp/enable", s.handleTOTPEnable)
 	mux.HandleFunc("POST /admin/settings/totp/disable", s.handleTOTPDisable)
+	mux.HandleFunc("POST /admin/users", s.handleCreateUser)
+	mux.HandleFunc("POST /admin/users/{id}/role", s.handleUserRole)
+	mux.HandleFunc("POST /admin/users/{id}/reset", s.handleUserReset)
+	mux.HandleFunc("POST /admin/users/{id}/delete", s.handleUserDelete)
 }
 
 // hasPasskeys reports whether any WebAuthn credential is registered.
@@ -165,15 +205,9 @@ func (s *Server) hasPasskeys() bool {
 	return len(pks) > 0
 }
 
-// totpEnabled reports whether admin 2FA is on (ignoring errors → treated as off).
-func (s *Server) totpEnabled() bool {
-	_, enabled, _ := s.db.TOTP()
-	return enabled
-}
-
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	if !s.loggedIn(r) {
-		views.Login(!s.db.AdminExists(), s.hasPasskeys(), views.Flash{}).Render(r.Context(), w)
+		views.Login(!s.db.UsersExist(), s.hasPasskeys(), views.Flash{}).Render(r.Context(), w)
 		return
 	}
 	s.renderDashboard(w, r, views.Flash{})
@@ -256,23 +290,30 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "too many attempts — wait a moment", http.StatusTooManyRequests)
 		return
 	}
-	hash, err := s.db.AdminPasswordHash()
+	u, err := s.db.GetUserByName(strings.TrimSpace(r.FormValue("username")))
 	if errors.Is(err, store.ErrNotFound) {
-		views.Login(true, s.hasPasskeys(), views.Flash{}).Render(r.Context(), w)
+		if !s.db.UsersExist() {
+			views.Login(true, s.hasPasskeys(), views.Flash{}).Render(r.Context(), w)
+			return
+		}
+		// Burn a bcrypt anyway so unknown usernames cost the same as wrong
+		// passwords (no user-enumeration timing signal).
+		bcrypt.CompareHashAndPassword([]byte("$2a$10$0000000000000000000000000000000000000000000000000000"), []byte(r.FormValue("password")))
+		views.Login(false, s.hasPasskeys(), views.Flash{Msg: "Invalid username or password"}).Render(r.Context(), w)
 		return
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(r.FormValue("password"))) != nil {
-		views.Login(false, s.hasPasskeys(), views.Flash{Msg: "Invalid password"}).Render(r.Context(), w)
+	if bcrypt.CompareHashAndPassword([]byte(u.PassHash), []byte(r.FormValue("password"))) != nil {
+		views.Login(false, s.hasPasskeys(), views.Flash{Msg: "Invalid username or password"}).Render(r.Context(), w)
 		return
 	}
 	// Password accepted. With 2FA on, the code is a second step gated by a
 	// short-lived pre-auth ticket — the password never rides along again.
-	if s.totpEnabled() {
-		pid, err := s.sess.createPending()
+	if u.TOTPEnabled {
+		pid, err := s.sess.createPending(u.ID)
 		if err != nil {
 			http.Error(w, "session error", http.StatusInternalServerError)
 			return
@@ -280,7 +321,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		views.LoginCode(pid, views.Flash{}).Render(r.Context(), w)
 		return
 	}
-	s.grantSession(w, r)
+	s.grantSession(w, r, u.ID)
 }
 
 // handleLoginCode is step two: a valid pre-auth ticket plus a TOTP code.
@@ -292,15 +333,16 @@ func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pid := r.FormValue("pending")
-	if !s.sess.pendingValid(pid) {
+	uid, ok := s.sess.pendingUser(pid)
+	if !ok {
 		views.Login(false, s.hasPasskeys(), views.Flash{Msg: "That sign-in attempt expired — enter your password again."}).Render(r.Context(), w)
 		return
 	}
-	secret, on, _ := s.db.TOTP()
+	secret, on, _ := s.db.UserTOTP(uid)
 	if !on {
 		// 2FA turned off mid-flight; the password step already passed.
 		s.sess.consumePending(pid)
-		s.grantSession(w, r)
+		s.grantSession(w, r, uid)
 		return
 	}
 	if !totpVerify(secret, r.FormValue("code"), time.Now()) {
@@ -308,12 +350,12 @@ func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.sess.consumePending(pid)
-	s.grantSession(w, r)
+	s.grantSession(w, r, uid)
 }
 
 // grantSession issues the session cookie and lands on the dashboard.
-func (s *Server) grantSession(w http.ResponseWriter, r *http.Request) {
-	id, err := s.sess.create()
+func (s *Server) grantSession(w http.ResponseWriter, r *http.Request, userID int64) {
+	id, err := s.sess.create(userID)
 	if err != nil {
 		http.Error(w, "session error", http.StatusInternalServerError)
 		return
@@ -333,38 +375,45 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, id string) {
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
-		return
+	if u := s.requireUser(w, r); u != nil {
+		s.renderSettings(w, r, u, views.Flash{})
 	}
-	s.renderSettings(w, r, views.Flash{})
 }
 
-// renderSettings gathers the settings page inputs (2FA state, passkeys).
-func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, flash views.Flash) {
-	pks, err := s.db.ListPasskeys()
+// renderSettings gathers the settings page inputs (2FA state, the user's
+// passkeys, and — for admins — the user management section).
+func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, u *store.User, flash views.Flash) {
+	pks, err := s.db.ListUserPasskeys(u.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	views.Settings(s.totpEnabled(), pks, flash).Render(r.Context(), w)
+	var users []store.User
+	if u.Role == "admin" {
+		if users, err = s.db.ListUsers(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	views.Settings(u, u.TOTPEnabled, pks, users, flash).Render(r.Context(), w)
 }
 
 func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
+	u := s.requireUser(w, r)
+	if u == nil {
 		return
 	}
-	hash, _ := s.db.AdminPasswordHash()
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(r.FormValue("current"))) != nil {
-		s.renderSettings(w, r, views.Flash{Msg: "Current password is incorrect"})
+	if bcrypt.CompareHashAndPassword([]byte(u.PassHash), []byte(r.FormValue("current"))) != nil {
+		s.renderSettings(w, r, u, views.Flash{Msg: "Current password is incorrect"})
 		return
 	}
 	next := r.FormValue("new")
 	switch pwState(next, r.FormValue("confirm")) {
 	case "short", "":
-		s.renderSettings(w, r, views.Flash{Msg: "New password must be at least 8 characters"})
+		s.renderSettings(w, r, u, views.Flash{Msg: "New password must be at least 8 characters"})
 		return
 	case "mismatch":
-		s.renderSettings(w, r, views.Flash{Msg: "Passwords do not match"})
+		s.renderSettings(w, r, u, views.Flash{Msg: "Passwords do not match"})
 		return
 	}
 	nh, err := bcrypt.GenerateFromPassword([]byte(next), bcrypt.DefaultCost)
@@ -372,11 +421,11 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := s.db.SetAdminPassword(string(nh)); err != nil {
+	if err := s.db.SetUserPassword(u.ID, string(nh)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.renderSettings(w, r, views.Flash{Msg: "Password changed."})
+	s.renderSettings(w, r, u, views.Flash{Msg: "Password changed."})
 }
 
 // pwState is the single source of truth for new-password validation: the
@@ -430,7 +479,8 @@ func (s *Server) handlePasswordCheck(w http.ResponseWriter, r *http.Request) {
 // handleTOTPEnroll generates a fresh secret, stores it (not yet enabled), and
 // shows the QR + a confirm-code form.
 func (s *Server) handleTOTPEnroll(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
+	u := s.requireUser(w, r)
+	if u == nil {
 		return
 	}
 	secret, err := newTOTPSecret()
@@ -438,11 +488,11 @@ func (s *Server) handleTOTPEnroll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := s.db.SetTOTPSecret(secret); err != nil {
+	if err := s.db.SetUserTOTPSecret(u.ID, secret); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	uri := totpURI(secret, "xilo", hostOf(s.cfg.BaseURL))
+	uri := totpURI(secret, "xilo", u.Name+"@"+hostOf(s.cfg.BaseURL))
 	qr, err := totpQRDataURI(uri)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -452,32 +502,36 @@ func (s *Server) handleTOTPEnroll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
+	u := s.requireUser(w, r)
+	if u == nil {
 		return
 	}
-	secret, _, _ := s.db.TOTP()
+	secret, _, _ := s.db.UserTOTP(u.ID)
 	if len(secret) == 0 || !totpVerify(secret, r.FormValue("code"), time.Now()) {
-		uri := totpURI(secret, "xilo", hostOf(s.cfg.BaseURL))
+		uri := totpURI(secret, "xilo", u.Name+"@"+hostOf(s.cfg.BaseURL))
 		qr, _ := totpQRDataURI(uri)
 		views.TOTPEnrollErr(qr, secretB32(secret), "That code didn't match — try again.").Render(r.Context(), w)
 		return
 	}
-	if err := s.db.SetTOTPEnabled(true); err != nil {
+	if err := s.db.SetUserTOTPEnabled(u.ID, true); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.renderSettings(w, r, views.Flash{Msg: "Two-factor authentication enabled."})
+	u.TOTPEnabled = true
+	s.renderSettings(w, r, u, views.Flash{Msg: "Two-factor authentication enabled."})
 }
 
 func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
+	u := s.requireUser(w, r)
+	if u == nil {
 		return
 	}
-	if err := s.db.SetTOTPEnabled(false); err != nil {
+	if err := s.db.SetUserTOTPEnabled(u.ID, false); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.renderSettings(w, r, views.Flash{Msg: "Two-factor authentication disabled."})
+	u.TOTPEnabled = false
+	s.renderSettings(w, r, u, views.Flash{Msg: "Two-factor authentication disabled."})
 }
 
 // secureCookies marks session cookies Secure when the public base URL is HTTPS
@@ -917,6 +971,146 @@ func (s *Server) handleGC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.renderDashboard(w, r, views.Flash{Msg: fmt.Sprintf("GC done: removed %d chunks, freed %s", deleted, humanBytes(freed))})
+}
+
+// ---- user management (admin role only) ----
+
+// settingsFlash re-renders settings for the acting admin with a message.
+func (s *Server) settingsFlash(w http.ResponseWriter, r *http.Request, msg string) {
+	u := s.currentUser(r)
+	if u == nil {
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		return
+	}
+	s.renderSettings(w, r, u, views.Flash{Msg: msg})
+}
+
+func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("username"))
+	pw := r.FormValue("password")
+	role := formRole(r)
+	if name == "" {
+		s.settingsFlash(w, r, "Username is required")
+		return
+	}
+	if len(pw) < 8 {
+		s.settingsFlash(w, r, "Password must be at least 8 characters")
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if _, err := s.db.CreateUser(name, string(hash), role); err != nil {
+		s.settingsFlash(w, r, "Could not create user: "+err.Error())
+		return
+	}
+	s.settingsFlash(w, r, fmt.Sprintf("User %q created.", name))
+}
+
+// formRole whitelists the role field.
+func formRole(r *http.Request) string {
+	if r.FormValue("role") == "admin" {
+		return "admin"
+	}
+	return "member"
+}
+
+// userByPath resolves the {id} path value to a user, or writes 404.
+func (s *Server) userByPath(w http.ResponseWriter, r *http.Request) (*store.User, bool) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	u, err := s.db.GetUser(id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.notFound(w, r)
+		return nil, false
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return nil, false
+	}
+	return u, true
+}
+
+// lastAdmin reports whether u is the only admin left — the one account that
+// can never be demoted or deleted.
+func (s *Server) lastAdmin(u *store.User) bool {
+	if u.Role != "admin" {
+		return false
+	}
+	n, err := s.db.CountAdmins()
+	return err != nil || n <= 1
+}
+
+func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	u, ok := s.userByPath(w, r)
+	if !ok {
+		return
+	}
+	role := formRole(r)
+	if role != "admin" && s.lastAdmin(u) {
+		s.settingsFlash(w, r, "Cannot demote the last admin.")
+		return
+	}
+	if err := s.db.SetUserRole(u.ID, role); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.settingsFlash(w, r, fmt.Sprintf("%s is now a %s.", u.Name, role))
+}
+
+func (s *Server) handleUserReset(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	u, ok := s.userByPath(w, r)
+	if !ok {
+		return
+	}
+	pw := r.FormValue("password")
+	if len(pw) < 8 {
+		s.settingsFlash(w, r, "Password must be at least 8 characters")
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := s.db.SetUserPassword(u.ID, string(hash)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.settingsFlash(w, r, fmt.Sprintf("Password reset for %s.", u.Name))
+}
+
+func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	u, ok := s.userByPath(w, r)
+	if !ok {
+		return
+	}
+	if acting := s.currentUser(r); acting != nil && acting.ID == u.ID {
+		s.settingsFlash(w, r, "You cannot delete your own account.")
+		return
+	}
+	if s.lastAdmin(u) {
+		s.settingsFlash(w, r, "Cannot delete the last admin.")
+		return
+	}
+	if err := s.db.DeleteUser(u.ID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.settingsFlash(w, r, fmt.Sprintf("User %s deleted.", u.Name))
 }
 
 // formPerms reads the token permission checkboxes shared by the create and

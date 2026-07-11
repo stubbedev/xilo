@@ -148,13 +148,13 @@ func TestSessionLifecycle(t *testing.T) {
 	future := time.Now().Add(time.Hour)
 
 	// expired row gets pruned by the next CreateSession
-	if err := db.CreateSession("stale", time.Now().Add(-time.Hour)); err != nil {
+	if err := db.CreateSession("stale", 1, time.Now().Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if db.SessionValid("stale") {
+	if _, ok := db.SessionUser("stale"); ok {
 		t.Fatal("expired session should not validate")
 	}
-	if err := db.CreateSession("live", future); err != nil {
+	if err := db.CreateSession("live", 1, future); err != nil {
 		t.Fatal(err)
 	}
 	var n int
@@ -162,16 +162,16 @@ func TestSessionLifecycle(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("stale session not pruned, %d rows", n)
 	}
-	if !db.SessionValid("live") {
+	if _, ok := db.SessionUser("live"); !ok {
 		t.Fatal("live session should validate")
 	}
-	if db.SessionValid("unknown") {
+	if _, ok := db.SessionUser("unknown"); ok {
 		t.Fatal("unknown session should not validate")
 	}
 	if err := db.DropSession("live"); err != nil {
 		t.Fatal(err)
 	}
-	if db.SessionValid("live") {
+	if _, ok := db.SessionUser("live"); ok {
 		t.Fatal("dropped session should not validate")
 	}
 }
@@ -220,10 +220,10 @@ func TestMetricsAddRangePrune(t *testing.T) {
 
 func TestPasskeyCRUD(t *testing.T) {
 	db := openTest(t)
-	if err := db.AddPasskey("yubi", []byte(`{"a":1}`)); err != nil {
+	if err := db.AddPasskey(1, "yubi", []byte(`{"a":1}`)); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AddPasskey("phone", []byte(`{"b":2}`)); err != nil {
+	if err := db.AddPasskey(1, "phone", []byte(`{"b":2}`)); err != nil {
 		t.Fatal(err)
 	}
 	list, err := db.ListPasskeys()
@@ -237,7 +237,7 @@ func TestPasskeyCRUD(t *testing.T) {
 	if string(list[0].Credential) != `{"a":2}` {
 		t.Fatalf("credential not updated: %s", list[0].Credential)
 	}
-	if err := db.DeletePasskey(list[0].ID); err != nil {
+	if err := db.DeletePasskey(1, list[0].ID); err != nil {
 		t.Fatal(err)
 	}
 	list, _ = db.ListPasskeys()
@@ -281,11 +281,11 @@ func TestCacheStatsEmpty(t *testing.T) {
 
 func TestAdminNotFound(t *testing.T) {
 	db := openTest(t)
-	if _, err := db.AdminPasswordHash(); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("AdminPasswordHash = %v, want ErrNotFound", err)
+	if _, err := db.GetUserByName("admin"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetUserByName = %v, want ErrNotFound", err)
 	}
-	if _, _, err := db.TOTP(); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("TOTP = %v, want ErrNotFound", err)
+	if _, _, err := db.UserTOTP(1); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UserTOTP = %v, want ErrNotFound", err)
 	}
 }
 
@@ -810,11 +810,11 @@ func TestUseAfterClose(t *testing.T) {
 	if db.HasChunk("h") {
 		t.Fatal("HasChunk after close should be false")
 	}
-	if db.SessionValid("s") {
+	if _, ok := db.SessionUser("s"); ok {
 		t.Fatal("SessionValid after close should be false")
 	}
-	if db.AdminExists() {
-		t.Fatal("AdminExists after close should be false")
+	if db.UsersExist() {
+		t.Fatal("UsersExist after close should be false")
 	}
 	db.TouchPath(c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 1, 1) // must not panic
 }

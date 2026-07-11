@@ -2,44 +2,70 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 
 	"github.com/stubbedev/xilo/internal/store"
 )
 
-// adminUser adapts the single admin account to webauthn.User.
-type adminUser struct {
-	creds []webauthn.Credential
-	ids   []int64 // store row id per credential, same order
+// passkeyUser adapts one account (or, for login, the union of all accounts)
+// to webauthn.User.
+type passkeyUser struct {
+	id      []byte
+	name    string
+	creds   []webauthn.Credential
+	rowIDs  []int64 // store row id per credential, same order
+	userIDs []int64 // owning user per credential, same order
 }
 
-func (adminUser) WebAuthnID() []byte                           { return []byte("xilo-admin") }
-func (adminUser) WebAuthnName() string                         { return "admin" }
-func (adminUser) WebAuthnDisplayName() string                  { return "xilo admin" }
-func (u adminUser) WebAuthnCredentials() []webauthn.Credential { return u.creds }
+func (u passkeyUser) WebAuthnID() []byte                         { return u.id }
+func (u passkeyUser) WebAuthnName() string                       { return u.name }
+func (u passkeyUser) WebAuthnDisplayName() string                { return u.name }
+func (u passkeyUser) WebAuthnCredentials() []webauthn.Credential { return u.creds }
 
-// loadAdminUser builds the webauthn user from stored credentials.
-func (s *Server) loadAdminUser() (adminUser, error) {
-	rows, err := s.db.ListPasskeys()
-	if err != nil {
-		return adminUser{}, err
-	}
-	u := adminUser{}
+// fillCreds decodes stored credential rows into the adapter.
+func (u *passkeyUser) fillCreds(rows []store.Passkey) {
 	for _, p := range rows {
 		var c webauthn.Credential
 		if err := json.Unmarshal(p.Credential, &c); err != nil {
-			continue // skip an unreadable row rather than lock the admin out
+			continue // skip an unreadable row rather than lock the user out
 		}
 		u.creds = append(u.creds, c)
-		u.ids = append(u.ids, p.ID)
+		u.rowIDs = append(u.rowIDs, p.ID)
+		u.userIDs = append(u.userIDs, p.UserID)
 	}
-	return u, nil
+}
+
+// loadUserPasskeys builds the webauthn user for one account (registration).
+func (s *Server) loadUserPasskeys(u *store.User) (passkeyUser, error) {
+	rows, err := s.db.ListUserPasskeys(u.ID)
+	if err != nil {
+		return passkeyUser{}, err
+	}
+	pu := passkeyUser{id: []byte(fmt.Sprintf("xilo-user-%d", u.ID)), name: u.Name}
+	pu.fillCreds(rows)
+	return pu, nil
+}
+
+// loadAllPasskeys builds a synthetic user holding every account's credentials.
+// Passkey sign-in has no username field, so the assertion is verified against
+// the union and the matching credential identifies the owner.
+// ponytail: fine at self-hosted user counts; per-user allow-lists if ever needed.
+func (s *Server) loadAllPasskeys() (passkeyUser, error) {
+	rows, err := s.db.ListPasskeys()
+	if err != nil {
+		return passkeyUser{}, err
+	}
+	pu := passkeyUser{id: []byte("xilo-admin"), name: "xilo"}
+	pu.fillCreds(rows)
+	return pu, nil
 }
 
 // webAuthn lazily builds the relying party from the configured base URL.
@@ -59,30 +85,31 @@ func (s *Server) webAuthn() (*webauthn.WebAuthn, error) {
 }
 
 // ceremonies holds the single in-flight registration/login challenge each.
-// Single-admin: last begin wins, entries expire after two minutes.
+// Last begin wins; entries expire after two minutes.
 type ceremonies struct {
 	mu       sync.Mutex
 	reg      *webauthn.SessionData
+	regUser  int64 // account the registration belongs to
 	regExp   time.Time
 	login    *webauthn.SessionData
 	loginExp time.Time
 }
 
-func (c *ceremonies) putReg(sd *webauthn.SessionData) {
+func (c *ceremonies) putReg(sd *webauthn.SessionData, userID int64) {
 	c.mu.Lock()
-	c.reg, c.regExp = sd, time.Now().Add(2*time.Minute)
+	c.reg, c.regUser, c.regExp = sd, userID, time.Now().Add(2*time.Minute)
 	c.mu.Unlock()
 }
 
-func (c *ceremonies) takeReg() *webauthn.SessionData {
+func (c *ceremonies) takeReg() (*webauthn.SessionData, int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	sd := c.reg
+	sd, uid := c.reg, c.regUser
 	c.reg = nil
 	if sd == nil || time.Now().After(c.regExp) {
-		return nil
+		return nil, 0
 	}
-	return sd
+	return sd, uid
 }
 
 func (c *ceremonies) putLogin(sd *webauthn.SessionData) {
@@ -111,12 +138,12 @@ func (s *Server) registerPasskeyRoutes(mux *http.ServeMux) {
 }
 
 // passkeyName is the default label for a new credential.
-func (s *Server) passkeyName() string {
+func (s *Server) passkeyName(u *store.User) string {
 	host := hostOf(s.cfg.BaseURL)
 	if i := strings.LastIndex(host, ":"); i >= 0 {
 		host = host[:i]
 	}
-	return host + " - xilo"
+	return u.Name + "@" + host
 }
 
 func jsonOut(w http.ResponseWriter, v any) {
@@ -125,7 +152,8 @@ func jsonOut(w http.ResponseWriter, v any) {
 }
 
 func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
+	u := s.requireUser(w, r)
+	if u == nil {
 		return
 	}
 	wan, err := s.webAuthn()
@@ -133,7 +161,7 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	user, err := s.loadAdminUser()
+	user, err := s.loadUserPasskeys(u)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -143,12 +171,13 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.ceremony.putReg(sd)
+	s.ceremony.putReg(sd, u.ID)
 	jsonOut(w, opts)
 }
 
 func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
+	u := s.requireUser(w, r)
+	if u == nil {
 		return
 	}
 	wan, err := s.webAuthn()
@@ -156,12 +185,12 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	sd := s.ceremony.takeReg()
-	if sd == nil {
+	sd, regUser := s.ceremony.takeReg()
+	if sd == nil || regUser != u.ID {
 		http.Error(w, "registration expired — try again", http.StatusBadRequest)
 		return
 	}
-	user, err := s.loadAdminUser()
+	user, err := s.loadUserPasskeys(u)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -171,15 +200,15 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	// Autoname server-side: "<hostname> - xilo". Client-supplied names went
+	// Autoname server-side: "<user>@<hostname>". Client-supplied names went
 	// stale-tab wrong once already.
-	name := s.passkeyName()
+	name := s.passkeyName(u)
 	blob, err := json.Marshal(cred)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := s.db.AddPasskey(name, blob); err != nil {
+	if err := s.db.AddPasskey(u.ID, name, blob); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -187,11 +216,12 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
+	u := s.requireUser(w, r)
+	if u == nil {
 		return
 	}
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err := s.db.DeletePasskey(id); err != nil {
+	if err := s.db.DeletePasskey(u.ID, id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -204,7 +234,7 @@ func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	user, err := s.loadAdminUser()
+	user, err := s.loadAllPasskeys()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -224,6 +254,14 @@ func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request)
 
 // handlePasskeyLoginFinish verifies the assertion; a passkey is
 // user-verified multi-factor on its own, so it bypasses password and TOTP.
+//
+// The asserted credential ID identifies which account signs in. The adapter's
+// WebAuthnID (and the session's) are aligned to the authenticator-reported
+// user handle before validation, because resident keys echo the handle they
+// were registered under — "xilo-admin" for pre-users credentials,
+// "xilo-user-N" since — and go-webauthn requires all three to agree. Identity
+// still rests on the signature over the credential we looked up, not the
+// handle.
 func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 	wan, err := s.webAuthn()
 	if err != nil {
@@ -235,26 +273,51 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 		http.Error(w, "sign-in expired — try again", http.StatusBadRequest)
 		return
 	}
-	user, err := s.loadAdminUser()
+	parsed, err := protocol.ParseCredentialRequestResponseBody(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	all, err := s.loadAllPasskeys()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	cred, err := wan.FinishLogin(user, *sd, r)
+	var owner passkeyUser
+	var ownerID, rowID int64
+	for i, c := range all.creds {
+		if string(c.ID) == string(parsed.RawID) {
+			ownerID, rowID = all.userIDs[i], all.rowIDs[i]
+			break
+		}
+	}
+	if ownerID == 0 {
+		http.Error(w, "unknown credential", http.StatusUnauthorized)
+		return
+	}
+	u, err := s.db.GetUser(ownerID)
+	if err != nil {
+		http.Error(w, "credential has no owner", http.StatusUnauthorized)
+		return
+	}
+	if owner, err = s.loadUserPasskeys(u); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if h := parsed.Response.UserHandle; len(h) > 0 {
+		owner.id = h
+	}
+	sd.UserID = owner.id
+	cred, err := wan.ValidateLogin(owner, *sd, parsed)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 	// Persist the updated sign counter / clone-detection state.
-	for i, c := range user.creds {
-		if string(c.ID) == string(cred.ID) {
-			if blob, err := json.Marshal(cred); err == nil {
-				_ = s.db.UpdatePasskeyCredential(user.ids[i], blob)
-			}
-			break
-		}
+	if blob, err := json.Marshal(cred); err == nil {
+		_ = s.db.UpdatePasskeyCredential(rowID, blob)
 	}
-	id, err := s.sess.create()
+	id, err := s.sess.create(ownerID)
 	if err != nil {
 		http.Error(w, "session error", http.StatusInternalServerError)
 		return
@@ -262,5 +325,3 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 	s.setSessionCookie(w, id)
 	jsonOut(w, map[string]bool{"ok": true})
 }
-
-var _ = store.Passkey{} // keep the import while the adapter stays thin

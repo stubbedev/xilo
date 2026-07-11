@@ -5,20 +5,21 @@ import (
 	"time"
 )
 
-// Passkey is one registered WebAuthn credential. Credential holds the
-// go-webauthn credential as JSON — the store stays webauthn-agnostic.
+// Passkey is one registered WebAuthn credential, owned by a user. Credential
+// holds the go-webauthn credential as JSON — the store stays webauthn-agnostic.
 type Passkey struct {
 	ID         int64
+	UserID     int64
 	Name       string
 	Credential []byte
 	Created    int64
 }
 
-// AddPasskey stores a newly registered credential.
-func (db *DB) AddPasskey(name string, credential []byte) error {
+// AddPasskey stores a newly registered credential for a user.
+func (db *DB) AddPasskey(userID int64, name string, credential []byte) error {
 	return db.write(func(tx *sql.Tx) error {
-		_, err := tx.Exec(`INSERT INTO passkeys (name, credential, created) VALUES (?,?,?)`,
-			name, credential, time.Now().Unix())
+		_, err := tx.Exec(`INSERT INTO passkeys (user_id, name, credential, created) VALUES (?,?,?,?)`,
+			userID, name, credential, time.Now().Unix())
 		return err
 	})
 }
@@ -31,9 +32,19 @@ func (db *DB) UpdatePasskeyCredential(id int64, credential []byte) error {
 	})
 }
 
-// ListPasskeys returns all registered passkeys, oldest first.
+// ListPasskeys returns all registered passkeys, oldest first (passkey login
+// matches the asserted credential against every user's keys).
 func (db *DB) ListPasskeys() ([]Passkey, error) {
-	rows, err := db.r.Query(`SELECT id, name, credential, created FROM passkeys ORDER BY id`)
+	return db.listPasskeys(`SELECT id, user_id, name, credential, created FROM passkeys ORDER BY id`)
+}
+
+// ListUserPasskeys returns one user's passkeys, oldest first.
+func (db *DB) ListUserPasskeys(userID int64) ([]Passkey, error) {
+	return db.listPasskeys(`SELECT id, user_id, name, credential, created FROM passkeys WHERE user_id=? ORDER BY id`, userID)
+}
+
+func (db *DB) listPasskeys(q string, args ...any) ([]Passkey, error) {
+	rows, err := db.r.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +52,7 @@ func (db *DB) ListPasskeys() ([]Passkey, error) {
 	var out []Passkey
 	for rows.Next() {
 		var p Passkey
-		if err := rows.Scan(&p.ID, &p.Name, &p.Credential, &p.Created); err != nil {
+		if err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.Credential, &p.Created); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -49,10 +60,10 @@ func (db *DB) ListPasskeys() ([]Passkey, error) {
 	return out, rows.Err()
 }
 
-// DeletePasskey removes a credential by id.
-func (db *DB) DeletePasskey(id int64) error {
+// DeletePasskey removes a credential by id, scoped to its owner.
+func (db *DB) DeletePasskey(userID, id int64) error {
 	return db.write(func(tx *sql.Tx) error {
-		_, err := tx.Exec(`DELETE FROM passkeys WHERE id=?`, id)
+		_, err := tx.Exec(`DELETE FROM passkeys WHERE id=? AND user_id=?`, id, userID)
 		return err
 	})
 }
