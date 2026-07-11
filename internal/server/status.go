@@ -239,10 +239,23 @@ func (s *Server) statusData(q statusRangeQ) views.StatusData {
 	d.Charts = []views.ChartData{
 		statusChartData("req", "Requests /s", set.req, set.times, fmtReq),
 		statusChartData("lat", "Latency (ms)", set.lat, set.times, fmtLat),
-		statusChartData("thru", "NAR throughput", set.bps, set.times, fmtBps),
-		statusChartData("stored", "Stored bytes", set.stored, set.times, fmtB),
+		statusChartData("thru", "NAR throughput (MiB/s)", set.bps, set.times, fmtBps),
+		statusChartData("stored", "Stored (MiB)", set.stored, set.times, fmtB),
 	}
 	return d
+}
+
+// statusChartMeta pins each chart's drawn-point scale and line color. Scaling
+// byte series to MiB keeps the Y axis readable; colors must be literal (the
+// canvas can't resolve var()/color-mix), picked to hold up in both themes.
+var statusChartMeta = map[string]struct {
+	Scale float64
+	Color string
+}{
+	"req":    {1, "oklch(0.646 0.222 41.116)"},
+	"lat":    {1, "oklch(0.6 0.118 184.704)"},
+	"thru":   {1 << 20, "oklch(0.828 0.189 84.429)"},
+	"stored": {1 << 20, "oklch(0.769 0.188 70.08)"},
 }
 
 // statusChartJSON is one chart's slice of the polled JSON payload.
@@ -278,10 +291,11 @@ func (s *Server) buildStatusJSON(q statusRangeQ) statusJSON {
 	g := s.stat.global
 	s.stat.mu.Unlock()
 
-	chart := func(vals []float64, f func(float64) string) statusChartJSON {
+	chart := func(id string, vals []float64, f func(float64) string) statusChartJSON {
+		scale := statusChartMeta[id].Scale
 		c := statusChartJSON{Points: make([][2]float64, len(vals))}
 		for i, v := range vals {
-			c.Points[i] = [2]float64{float64(set.times[i] * 1000), v}
+			c.Points[i] = [2]float64{float64(set.times[i] * 1000), v / scale}
 		}
 		if len(vals) > 0 {
 			c.Cur = f(vals[len(vals)-1])
@@ -304,10 +318,10 @@ func (s *Server) buildStatusJSON(q statusRangeQ) statusJSON {
 		MinT:      set.minT * 1000,
 		MaxT:      set.maxT * 1000,
 		Charts: map[string]statusChartJSON{
-			"req":    chart(set.req, fmtReq),
-			"lat":    chart(set.lat, fmtLat),
-			"thru":   chart(set.bps, fmtBps),
-			"stored": chart(set.stored, fmtB),
+			"req":    chart("req", set.req, fmtReq),
+			"lat":    chart("lat", set.lat, fmtLat),
+			"thru":   chart("thru", set.bps, fmtBps),
+			"stored": chart("stored", set.stored, fmtB),
 		},
 	}
 }
@@ -395,12 +409,15 @@ func statusRange(r *http.Request) statusRangeQ {
 }
 
 // statusChartData packages one series (header strings + drawn points) for the
-// server-side templui chart render.
+// server-side templui chart render. Cur/Peak format the raw values; drawn
+// points are scaled per statusChartMeta.
 func statusChartData(id, label string, vals []float64, times []int64, f func(float64) string) views.ChartData {
-	c := views.ChartData{ID: id, Label: label}
-	c.Points = vals
+	meta := statusChartMeta[id]
+	c := views.ChartData{ID: id, Label: label, Color: meta.Color}
+	c.Points = make([]float64, len(vals))
 	c.Labels = make([]string, len(vals))
-	for i := range vals {
+	for i, v := range vals {
+		c.Points[i] = v / meta.Scale
 		if i < len(times) {
 			c.Labels[i] = time.Unix(times[i], 0).Format("15:04")
 		}
@@ -474,10 +491,17 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleStatusData is the polling target: pure JSON, applied client-side to
-// the existing chart instances (no DOM swaps, no blink).
+// the existing chart instances (no DOM swaps, no blink). Same admin gate as
+// the page it feeds, but a plain 403 — a JSON poller must not be redirected
+// to the login page.
 func (s *Server) handleStatusData(w http.ResponseWriter, r *http.Request) {
-	if !s.loggedIn(r) {
+	u := s.currentUser(r)
+	if u == nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if u.Role != "admin" {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	jsonOut(w, s.buildStatusJSON(statusRange(r)))

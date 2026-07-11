@@ -55,6 +55,7 @@ templ SearchInput(action, name, value, placeholder, target string) {
 			"hx-swap":     "outerHTML",
 			"hx-push-url": "true",
 			"autocomplete": "off",
+			"aria-label":   placeholder,
 		},
 	})
 }
@@ -187,7 +188,7 @@ templ ConfirmForm(c Confirm) {
 				}
 			}
 		}
-		@dialog.Content(dialog.ContentProps{Class: "sm:max-w-md"}) {
+		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-md"}) {
 			@dialog.Header() {
 				@dialog.Title() {
 					{ c.Title }

@@ -3,6 +3,7 @@ package views
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/stubbedev/xilo/internal/store"
 
@@ -32,14 +33,15 @@ type StatusData struct {
 	Charts    []ChartData
 }
 
-// ChartData is one chart: header strings plus the drawn series.
+// ChartData is one chart: header strings plus the drawn series. Color must be
+// a literal CSS color (canvas can't resolve var()/color-mix in dataset colors).
 type ChartData struct {
-	ID          string
-	Label       string
-	Cur, Peak   string
-	Points      []float64
-	Labels      []string
-	Fill        interface{} // border/background color token
+	ID        string
+	Label     string
+	Cur, Peak string
+	Points    []float64
+	Labels    []string
+	Color     string
 }
 
 var statusRates = []int{2, 5, 10, 30, 60}
@@ -55,6 +57,14 @@ func rateURL(d StatusData, rate int) string {
 		return fmt.Sprintf("/admin/status?from=%s&to=%s&rate=%d", d.From, d.To, rate)
 	}
 	return fmt.Sprintf("/admin/status?window=%d&rate=%d", d.Window, rate)
+}
+
+// dataURL is the JSON poll endpoint for the current range.
+func dataURL(d StatusData) string {
+	if d.Window == 0 {
+		return fmt.Sprintf("/admin/status/data?from=%s&to=%s", d.From, d.To)
+	}
+	return fmt.Sprintf("/admin/status/data?window=%d", d.Window)
 }
 
 var statusWindows = []struct {
@@ -104,28 +114,26 @@ templ StatusPage(d StatusData) {
 		</div>
 		<div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 			if d.Healthy {
-				@StatTile("activity", "Healthy", "Health", "", "text-green-500")
+				@StatTile("activity", "Healthy", "Health", "st-health", "text-green-500")
 			} else {
-				@StatTile("activity", "Degraded", "Health", "", "text-destructive")
+				@StatTile("activity", "Degraded", "Health", "st-health", "text-destructive")
 			}
-			@StatTile("clock", d.Uptime, "Uptime", "", "")
-			@StatTile("target", d.HitPct, "Narinfo hit rate", "", "")
-			@StatTile("hard-drive", d.Bytes(d.Global.StoredBytes), "Stored", "", "")
-			@StatTile("package", Count(d.Global.Paths), "Store paths", "", "")
-			@StatTile("download", Count(d.NarServed), "NARs served", "", "")
-			@StatTile("network", Count(d.Requests), "Requests", "", "")
-			@StatTile("shield", Count(d.AuthFails), "Auth failures", "", "")
+			@StatTile("clock", d.Uptime, "Uptime", "st-uptime", "")
+			@StatTile("target", d.HitPct, "Narinfo hit rate", "st-hit", "")
+			@StatTile("hard-drive", d.Bytes(d.Global.StoredBytes), "Stored", "st-stored", "")
+			@StatTile("package", Count(d.Global.Paths), "Store paths", "st-paths", "")
+			@StatTile("download", Count(d.NarServed), "NARs served", "st-nars", "")
+			@StatTile("network", Count(d.Requests), "Requests", "st-req", "")
+			@StatTile("shield", Count(d.AuthFails), "Auth failures", "st-auth", "")
 		</div>
 		<div class="grid gap-6 lg:grid-cols-2">
 			for _, c := range d.Charts {
 				@statusChart(c)
 			}
 		</div>
-		<p class="mt-6 text-center text-xs text-muted-foreground">Updated { d.Updated }</p>
-		@templ.JSONScript("status-rate", d.Rate)
-		<script>
-			(function(){var r=Number(document.getElementById('status-rate').textContent)||5;setTimeout(function(){location.reload()},r*1000)})();
-		</script>
+		<p id="status-updated" class="mt-6 text-center text-xs text-muted-foreground">Updated { d.Updated }</p>
+		@templ.JSONScript("status-poll", map[string]any{"url": dataURL(d), "rate": d.Rate})
+		@statusPollScript()
 	}
 }
 
@@ -136,9 +144,9 @@ templ statusChart(c ChartData) {
 				{ c.Label }
 			}
 			<div class="flex items-baseline gap-2">
-				<span class="text-lg font-semibold tabular-nums">{ c.Cur }</span>
-				if c.Peak != "" {
-					@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
+				<span id={ "cur-" + c.ID } class="text-lg font-semibold tabular-nums">{ c.Cur }</span>
+				@badge.Badge(badge.Props{ID: "peak-" + c.ID, Variant: badge.VariantSecondary, Class: peakClass(c.Peak)}) {
+					if c.Peak != "" {
 						peak { c.Peak }
 					}
 				}
@@ -157,8 +165,8 @@ templ statusChart(c ChartData) {
 					Datasets: []chart.Dataset{{
 						Label:           c.Label,
 						Data:            c.Points,
-						BorderColor:     "var(--chart-1)",
-						BackgroundColor: "color-mix(in oklab, var(--chart-1) 15%, transparent)",
+						BorderColor:     c.Color,
+						BackgroundColor: chartFill(c.Color),
 						BorderWidth:     2,
 						Tension:         0.3,
 						Fill:            true,
@@ -167,4 +175,69 @@ templ statusChart(c ChartData) {
 			})
 		}
 	}
+}
+
+// peakClass hides the peak badge until there is a peak; the poll script
+// unhides it in place.
+func peakClass(peak string) string {
+	if peak == "" {
+		return "hidden"
+	}
+	return ""
+}
+
+// chartFill is the 15%-alpha area fill for a literal oklch line color.
+func chartFill(color string) string {
+	return strings.TrimSuffix(color, ")") + " / 0.15)"
+}
+
+// statusPollScript applies the /admin/status/data payload in place: KPI tile
+// text, chart headers, and chart datasets via Chart.js update('none') — no
+// DOM swaps, no re-render blink.
+templ statusPollScript() {
+	<script>
+		(function () {
+			var cfgEl = document.getElementById('status-poll');
+			if (!cfgEl) return;
+			var cfg = JSON.parse(cfgEl.textContent);
+			function setText(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
+			function hhmm(ms) { var t = new Date(ms); return ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2); }
+			function apply(d) {
+				var h = document.getElementById('st-health');
+				if (h) {
+					h.textContent = d.healthy ? 'Healthy' : 'Degraded';
+					h.classList.toggle('text-green-500', d.healthy);
+					h.classList.toggle('text-destructive', !d.healthy);
+				}
+				setText('st-uptime', d.uptime);
+				setText('st-hit', d.hitPct);
+				setText('st-stored', d.stored);
+				setText('st-paths', d.paths);
+				setText('st-nars', d.nars);
+				setText('st-req', d.requests);
+				setText('st-auth', d.authFails);
+				setText('status-updated', 'Updated ' + d.updated);
+				Object.keys(d.charts || {}).forEach(function (k) {
+					var c = d.charts[k];
+					setText('cur-' + k, c.cur);
+					var pk = document.getElementById('peak-' + k);
+					if (pk) {
+						pk.classList.toggle('hidden', !c.peak);
+						pk.textContent = c.peak ? 'peak ' + c.peak : '';
+					}
+					var inst = window.Chart && Chart.getChart('chart-' + k + '-canvas');
+					if (!inst) return;
+					inst.data.labels = c.points.map(function (p) { return hhmm(p[0]); });
+					inst.data.datasets[0].data = c.points.map(function (p) { return p[1]; });
+					inst.update('none');
+				});
+			}
+			setInterval(function () {
+				fetch(cfg.url, { headers: { 'Accept': 'application/json' } })
+					.then(function (r) { if (!r.ok) throw 0; return r.json(); })
+					.then(apply)
+					.catch(function () {});
+			}, cfg.rate * 1000);
+		})();
+	</script>
 }

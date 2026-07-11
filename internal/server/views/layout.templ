@@ -113,7 +113,7 @@ templ appSidebar(section string, nav Nav) {
 		@sidebar.Header() {
 			<a href="/admin" class="flex items-center gap-2 px-2 py-1 font-semibold tracking-tight">
 				<span class="text-primary">@Icon("box")</span>
-				<span class="group-data-[collapsible=icon]:hidden">Xilo</span>
+				<span class="group-data-[tui-sidebar-state=collapsed]:hidden">Xilo</span>
 			</a>
 		}
 		@sidebar.Content() {
@@ -195,13 +195,13 @@ templ ctxItem(slug, label string, active bool) {
 templ userMenu(nav Nav) {
 	@dropdown.Dropdown() {
 		@dropdown.Trigger() {
-			@button.Button(button.Props{Variant: button.VariantGhost, Type: button.TypeButton, FullWidth: true, Class: "h-12 justify-start gap-2 px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"}) {
+			@button.Button(button.Props{Variant: button.VariantGhost, Type: button.TypeButton, FullWidth: true, Class: "h-12 justify-start gap-2 px-2 group-data-[tui-sidebar-state=collapsed]:justify-center group-data-[tui-sidebar-state=collapsed]:px-0"}) {
 				@avatar.Avatar(avatar.Props{Class: "size-8 shrink-0"}) {
 					@avatar.Fallback() {
 						{ initials(nav.UserName) }
 					}
 				}
-				<span class="flex min-w-0 flex-col items-start group-data-[collapsible=icon]:hidden">
+				<span class="flex min-w-0 flex-col items-start group-data-[tui-sidebar-state=collapsed]:hidden">
 					<span class="truncate text-sm font-medium">{ nav.UserName }</span>
 					if nav.IsAdmin {
 						<span class="text-xs text-muted-foreground">Instance admin</span>
@@ -219,11 +219,11 @@ templ userMenu(nav Nav) {
 				</div>
 			}
 			@dropdown.Separator()
-			@dropdown.Item(dropdown.ItemProps{Href: "/admin/account"}) {
+			@dropdown.Item(dropdown.ItemProps{Href: "/admin/account", Class: "justify-start gap-2"}) {
 				@Icon("user")
 				<span>Account</span>
 			}
-			@dropdown.Item(dropdown.ItemProps{Href: "/admin/status"}) {
+			@dropdown.Item(dropdown.ItemProps{Href: "/admin/status", Class: "justify-start gap-2"}) {
 				@Icon("activity")
 				<span>Status</span>
 			}

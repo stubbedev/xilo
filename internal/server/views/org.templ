@@ -35,57 +35,61 @@ templ Org(d OrgPageData) {
 					}
 				}
 				@card.Content(card.ContentProps{Class: "space-y-3"}) {
-					@card.Card(card.Props{Class: "p-0"}) {
-						@table.Table() {
-							@table.Body() {
-								for _, m := range d.Info.Members {
-									@table.Row() {
-										@table.Cell() {
-											<div class="flex items-center gap-2">
-												@Icon("user")
-												<span class="font-medium">{ m.UserName }</span>
-												if m.Role == "admin" {
-													@badge.Badge(badge.Props{Variant: badge.VariantDefault}) {
-														admin
-													}
-												} else {
-													@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
-														member
-													}
-												}
-											</div>
-										}
-										@table.Cell(table.CellProps{Class: "text-right"}) {
-											if d.CanManage {
-												<div class="flex justify-end gap-1">
-													<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") }>
-														<input type="hidden" name="user_id" value={ strconv.FormatInt(m.UserID, 10) }/>
-														if m.Role == "admin" {
-															<input type="hidden" name="role" value="member"/>
-															@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": "Demote", "title": "Demote to member"}}) {
-																@Icon("user-minus")
-															}
-														} else {
-															<input type="hidden" name="role" value="admin"/>
-															@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": "Promote", "title": "Promote to admin"}}) {
-																@Icon("user-plus")
-															}
+					if len(d.Info.Members) == 0 {
+						@EmptyState("users", "No members yet.")
+					} else {
+						@card.Card(card.Props{Class: "p-0"}) {
+							@table.Table() {
+								@table.Body() {
+									for _, m := range d.Info.Members {
+										@table.Row() {
+											@table.Cell() {
+												<div class="flex items-center gap-2">
+													@Icon("user")
+													<span class="font-medium">{ m.UserName }</span>
+													if m.Role == "admin" {
+														@badge.Badge(badge.Props{Variant: badge.VariantDefault}) {
+															admin
 														}
-													</form>
-													@ConfirmForm(Confirm{
-														ID:             "rm-member-" + strconv.FormatInt(m.UserID, 10),
-														Action:         "/admin/org/" + d.Info.Account.Slug + "/members/" + strconv.FormatInt(m.UserID, 10) + "/remove",
-														Title:          "Remove member?",
-														Message:        m.UserName + " will lose access to " + d.Info.Account.Slug + ".",
-														ConfirmLabel:   "Remove",
-														ConfirmIcon:    "trash-2",
-														Danger:         true,
-														TriggerIcon:    "trash-2",
-														IconOnly:       true,
-														TriggerTooltip: "Remove member",
-														TriggerVariant: button.VariantGhost,
-													})
+													} else {
+														@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
+															member
+														}
+													}
 												</div>
+											}
+											@table.Cell(table.CellProps{Class: "text-right"}) {
+												if d.CanManage {
+													<div class="flex justify-end gap-1">
+														<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") }>
+															<input type="hidden" name="user_id" value={ strconv.FormatInt(m.UserID, 10) }/>
+															if m.Role == "admin" {
+																<input type="hidden" name="role" value="member"/>
+																@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": "Demote", "title": "Demote to member"}}) {
+																	@Icon("user-minus")
+																}
+															} else {
+																<input type="hidden" name="role" value="admin"/>
+																@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": "Promote", "title": "Promote to admin"}}) {
+																	@Icon("user-plus")
+																}
+															}
+														</form>
+														@ConfirmForm(Confirm{
+															ID:             "rm-member-" + strconv.FormatInt(m.UserID, 10),
+															Action:         "/admin/org/" + d.Info.Account.Slug + "/members/" + strconv.FormatInt(m.UserID, 10) + "/remove",
+															Title:          "Remove member?",
+															Message:        m.UserName + " will lose access to " + d.Info.Account.Slug + ".",
+															ConfirmLabel:   "Remove",
+															ConfirmIcon:    "trash-2",
+															Danger:         true,
+															TriggerIcon:    "trash-2",
+															IconOnly:       true,
+															TriggerTooltip: "Remove member",
+															TriggerVariant: button.VariantGhost,
+														})
+													</div>
+												}
 											}
 										}
 									}

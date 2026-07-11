@@ -12,12 +12,19 @@ import (
 )
 
 // Field is a labelled form control built on the templui form component:
-// form.Item groups the form.Label with the control (children).
+// form.Item groups the form.Label with the control (children). An empty id
+// means the "label" is a group heading over several controls, not a <label>
+// for one input — rendered as a span so screen readers don't get a dangling
+// label element.
 templ Field(id, text string) {
 	@form.Item() {
 		if text != "" {
-			@form.Label(form.LabelProps{For: id}) {
-				{ text }
+			if id != "" {
+				@form.Label(form.LabelProps{For: id}) {
+					{ text }
+				}
+			} else {
+				<span class="block text-sm font-medium leading-none">{ text }</span>
 			}
 		}
 		{ children... }
@@ -101,7 +108,7 @@ templ DurationInput(name string, secs int64) {
 	<div class="flex gap-2">
 		@input.Input(input.Props{
 			Name: name + "_value", Type: input.TypeNumber, Value: durValue(secs),
-			Class: "flex-1", Attributes: templ.Attributes{"min": "0", "step": "1"},
+			Class: "flex-1", Attributes: templ.Attributes{"min": "0", "step": "1", "aria-label": "Duration"},
 		})
 		<div class="w-32">
 			@selectbox.SelectBox() {
@@ -131,7 +138,7 @@ templ SizeInput(name string, bytes int64) {
 	<div class="flex gap-2">
 		@input.Input(input.Props{
 			Name: name + "_value", Type: input.TypeNumber, Value: sizeValue(bytes),
-			Class: "flex-1", Placeholder: "unlimited", Attributes: templ.Attributes{"min": "0", "step": "1"},
+			Class: "flex-1", Placeholder: "unlimited", Attributes: templ.Attributes{"min": "0", "step": "1", "aria-label": "Size"},
 		})
 		<div class="w-32">
 			@selectbox.SelectBox() {
