@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "templui": {
+      "command": "npx",
+      "args": ["-y", "templui-mcp-server"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
+    }
+  }
+}
