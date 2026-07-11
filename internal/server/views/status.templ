@@ -81,7 +81,7 @@ func statusScript(d StatusData) string {
 			animation:false,
 			color:['#ff9502'],
 			grid:{left:64,right:16,top:16,bottom:28},
-			tooltip:{show:true,trigger:'axis'},
+			tooltip:{show:true,trigger:'axis',valueFormatter:function(v){return v==null?'—':fmt[KIND[id]](v)}},
 			xAxis:{type:'time',min:d.minT,max:d.maxT,splitNumber:5,axisLabel:{hideOverlap:true}},
 			yAxis:{type:'value',axisLabel:{formatter:fmt[KIND[id]]}},
 			series:[{type:'line',showSymbol:false,smooth:true,areaStyle:{opacity:0.15},data:d.charts[id].points}]
