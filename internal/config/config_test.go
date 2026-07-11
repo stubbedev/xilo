@@ -239,3 +239,34 @@ func TestEnvBeforeDefaults(t *testing.T) {
 		t.Fatalf("db path = %q", c.DBPath())
 	}
 }
+
+func TestLoggingAndDurabilityValidation(t *testing.T) {
+	for _, tc := range []struct{ field, yaml string }{
+		{"logging", "logging: loud\n"},
+		{"durability", "durability: paranoid\n"},
+	} {
+		path := filepath.Join(t.TempDir(), "xilo.yaml")
+		if err := os.WriteFile(path, []byte(tc.yaml), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(path); err == nil {
+			t.Fatalf("invalid %s accepted", tc.field)
+		}
+	}
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Logging != "full" || c.Durability != "normal" {
+		t.Fatalf("defaults: logging=%q durability=%q", c.Logging, c.Durability)
+	}
+	path := filepath.Join(t.TempDir(), "xilo.yaml")
+	os.WriteFile(path, []byte("logging: quiet\ndurability: full\n"), 0o644)
+	c, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Logging != "quiet" || c.Durability != "full" {
+		t.Fatalf("explicit values: %q %q", c.Logging, c.Durability)
+	}
+}

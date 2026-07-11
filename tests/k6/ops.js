@@ -263,7 +263,8 @@ export default function () {
     r.body.includes("Compression: none") &&
     r.body.includes("Sig: pub:") &&
     r.headers["Cache-Control"].includes("immutable") &&
-    r.headers["Etag"] === `"${storeHash}"`);
+    // content-derived ETag (survives re-push upserts + key rotation)
+    r.headers["Etag"].length > 10);
   res = http.get(`${BASE}/pub/ffffffffffffffffffffffffffffffff.narinfo`);
   must(res, "narinfo miss 404 + negative cache", (r) =>
     r.status === 404 && r.headers["Cache-Control"].includes("max-age=30"));

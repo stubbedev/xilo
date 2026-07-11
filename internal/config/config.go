@@ -48,6 +48,16 @@ type Config struct {
 	Security Security `yaml:"security" json:"security"`
 	// Server-wide storage limits.
 	Limits Limits `yaml:"limits" json:"limits"`
+	// Request logging: "full" logs every request (default), "quiet" logs only
+	// errors (status >= 400) and slow requests (> 1s). At tens of thousands of
+	// requests/second the synchronous log write is measurable — flip to quiet
+	// on busy production instances.
+	Logging string `yaml:"logging" json:"logging" jsonschema:"enum=full,enum=quiet"`
+	// Commit durability: "normal" (default; no fsync per commit — power loss
+	// can drop the last few acknowledged pushes, which heal on the next run)
+	// or "full" (fsync every commit; acknowledged pushes survive power loss
+	// at a per-write latency cost).
+	Durability string `yaml:"durability" json:"durability" jsonschema:"enum=normal,enum=full"`
 }
 
 // Limits caps total storage. Per-cache caps are set per cache in the dashboard.
@@ -246,6 +256,12 @@ func (c *Config) applyDefaults() {
 	if c.GC.Grace == "" {
 		c.GC.Grace = "1h"
 	}
+	if c.Logging == "" {
+		c.Logging = "full"
+	}
+	if c.Durability == "" {
+		c.Durability = "normal"
+	}
 }
 
 func (c *Config) applyEnv() {
@@ -291,6 +307,16 @@ func (c *Config) validate() error {
 	case "local", "s3":
 	default:
 		return fmt.Errorf("storage.backend %q invalid (want local|s3)", c.Storage.Backend)
+	}
+	switch c.Logging {
+	case "full", "quiet":
+	default:
+		return fmt.Errorf("logging %q invalid (want full|quiet)", c.Logging)
+	}
+	switch c.Durability {
+	case "normal", "full":
+	default:
+		return fmt.Errorf("durability %q invalid (want normal|full)", c.Durability)
 	}
 	return nil
 }

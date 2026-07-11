@@ -64,3 +64,7 @@ security:
 # Per-cache caps are set per cache in the dashboard. Empty/"0" = unlimited.
 limits:
   total: "" # e.g. "500GB", "2TB"
+
+# Request logging: full (every request) | quiet (errors + >1s requests only —
+# the synchronous log write is measurable at very high request rates).
+logging: full

@@ -251,6 +251,11 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if !s.logins.allow(clientIP(r)) {
+		s.metrics.authFailures.Add(1)
+		http.Error(w, "too many attempts — wait a moment", http.StatusTooManyRequests)
+		return
+	}
 	hash, err := s.db.AdminPasswordHash()
 	if errors.Is(err, store.ErrNotFound) {
 		views.Login(true, s.hasPasskeys(), views.Flash{}).Render(r.Context(), w)
@@ -280,6 +285,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 // handleLoginCode is step two: a valid pre-auth ticket plus a TOTP code.
 func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
+	// Same bucket as passwords: a 6-digit TOTP is brute-forceable without it.
+	if !s.logins.allow(clientIP(r)) {
+		s.metrics.authFailures.Add(1)
+		http.Error(w, "too many attempts — wait a moment", http.StatusTooManyRequests)
+		return
+	}
 	pid := r.FormValue("pending")
 	if !s.sess.pendingValid(pid) {
 		views.Login(false, s.hasPasskeys(), views.Flash{Msg: "That sign-in attempt expired — enter your password again."}).Render(r.Context(), w)

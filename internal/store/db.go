@@ -23,13 +23,25 @@ type wtask struct {
 	resp chan error
 }
 
-const pragmas = "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)" +
-	"&_pragma=foreign_keys(1)&_pragma=synchronous(1)"
+const pragmaBase = "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)" +
+	"&_pragma=foreign_keys(1)&_pragma=synchronous("
 
-// Open opens (creating if needed) the sqlite database at path, runs migrations,
-// and starts the writer goroutine.
-func Open(path string) (*DB, error) {
-	dsn := "file:" + path + pragmas
+// pragmas is the default (synchronous=NORMAL) DSN suffix, exactly what Open
+// uses — tests build raw pre-migration DBs with it.
+const pragmas = pragmaBase + "1)"
+
+// Open opens (creating if needed) the sqlite database at path with
+// synchronous=NORMAL: no fsync per commit — a power loss can drop the last
+// few acknowledged writes (the DB itself stays consistent). The right
+// default for a cache, where a lost push heals on the next run.
+func Open(path string) (*DB, error) { return open(path, 1) }
+
+// OpenDurable is Open with synchronous=FULL: every commit fsyncs, so an
+// acknowledged push survives power loss, at a per-write latency cost.
+func OpenDurable(path string) (*DB, error) { return open(path, 2) }
+
+func open(path string, sync int) (*DB, error) {
+	dsn := fmt.Sprintf("file:%s%s%d)", path, pragmaBase, sync)
 	w, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err

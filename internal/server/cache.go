@@ -2,6 +2,8 @@ package server
 
 import (
 	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -53,32 +55,40 @@ func (s *Server) handleNarinfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.metrics.narinfoHit.Add(1)
-	// LRU by last pull: bump accessed at most hourly (async, non-blocking).
-	go s.db.TouchPath(c.ID, storeHash, timeNow(), 3600)
+	s.touchPath(c.ID, storeHash)
 
-	refBases := make([]string, len(p.Refs))
-	for i, ref := range p.Refs {
-		refBases[i] = narinfo.BaseName(ref)
+	key := narinfoKey{cacheID: c.ID, storeHash: storeHash, narHash: p.NarHash, pubKey: c.PubKey}
+	body, cached := s.niCache.get(key)
+	if !cached {
+		refBases := make([]string, len(p.Refs))
+		for i, ref := range p.Refs {
+			refBases[i] = narinfo.BaseName(ref)
+		}
+		ni := &narinfo.NarInfo{
+			StorePath:   p.StorePath,
+			URL:         "nar/" + storeHash + ".nar",
+			Compression: "none",
+			FileHash:    p.NarHash,
+			FileSize:    p.NarSize,
+			NarHash:     p.NarHash,
+			NarSize:     p.NarSize,
+			References:  refBases,
+			Deriver:     p.Deriver,
+		}
+		fp := narinfo.Fingerprint(p.StorePath, p.NarHash, p.NarSize, p.Refs)
+		ni.Sig = []string{narinfo.Sign(c.Name, c.PrivKey, fp)}
+		body = ni.String()
+		s.niCache.put(key, body)
 	}
-	ni := &narinfo.NarInfo{
-		StorePath:   p.StorePath,
-		URL:         "nar/" + storeHash + ".nar",
-		Compression: "none",
-		FileHash:    p.NarHash,
-		FileSize:    p.NarSize,
-		NarHash:     p.NarHash,
-		NarSize:     p.NarSize,
-		References:  refBases,
-		Deriver:     p.Deriver,
-	}
-	fp := narinfo.Fingerprint(p.StorePath, p.NarHash, p.NarSize, p.Refs)
-	ni.Sig = []string{narinfo.Sign(c.Name, c.PrivKey, fp)}
 
 	w.Header().Set("Content-Type", "text/x-nix-narinfo")
-	// Content-addressed ⇒ immutable; let a CDN/proxy cache it hard.
+	// Cache hard, but key validators on CONTENT, not the store hash: a re-push
+	// can upsert different bytes under the same store hash, and the signature
+	// changes on key rotation — a CDN holding the old narinfo against a new
+	// NAR would hand clients a permanent hash mismatch.
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-	w.Header().Set("ETag", `"`+storeHash+`"`)
-	io.WriteString(w, ni.String())
+	w.Header().Set("ETag", contentETag(p.NarHash, c.PubKey))
+	io.WriteString(w, body)
 }
 
 func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
@@ -101,8 +111,8 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// LRU by last pull: a download starting now must not be the next eviction
-	// victim (same async bump as narinfo — nix fetches nar right after).
-	go s.db.TouchPath(c.ID, storeHash, timeNow(), 3600)
+	// victim (same bump as narinfo — nix fetches nar right after).
+	s.touchPath(c.ID, storeHash)
 
 	// Resolve all chunk keys up front — if any is missing we can still return a
 	// clean error before committing a 200 + Content-Length.
@@ -117,7 +127,7 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 	// transparently decodes — saves bandwidth without touching the NAR hash.
 	w.Header().Set("Content-Type", "application/x-nix-nar")
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-	w.Header().Set("ETag", `"`+storeHash+`"`)
+	w.Header().Set("ETag", contentETag(p.NarHash, "")) // NAR bytes ⇔ NarHash
 	s.metrics.narServed.Add(1)
 
 	// zstd clients get the stored frames verbatim: chunks are complete zstd
@@ -159,12 +169,43 @@ func (s *Server) narWriter(w http.ResponseWriter, r *http.Request, narSize uint6
 	switch negotiateEncoding(r.Header.Get("Accept-Encoding")) {
 	case "gzip":
 		w.Header().Set("Content-Encoding", "gzip")
-		gz := gzip.NewWriter(w)
-		return gz, func() { gz.Close() }
+		gz, _ := s.gzipPool.Get().(*gzip.Writer)
+		if gz == nil {
+			gz = gzip.NewWriter(w)
+		} else {
+			gz.Reset(w)
+		}
+		return gz, func() { gz.Close(); s.gzipPool.Put(gz) }
 	default:
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", narSize))
 		return w, func() {}
 	}
+}
+
+// touchPath bumps a path's LRU stamp at most hourly. The in-memory gate
+// means the hot path (mass narinfo queries on the same paths) costs one
+// sync.Map read instead of a DB read + goroutine per request; the DB write
+// still happens via store.TouchPath's own staleness check.
+func (s *Server) touchPath(cacheID int64, storeHash string) {
+	key := fmt.Sprintf("%d/%s", cacheID, storeHash)
+	now := timeNow()
+	if v, ok := s.touched.Load(key); ok && now-v.(int64) < 3600 {
+		return
+	}
+	s.touched.Store(key, now)
+	go s.db.TouchPath(cacheID, storeHash, now, 3600)
+}
+
+// contentETag derives an ETag from what the response actually contains: the
+// NAR hash, plus the signing pubkey for narinfo (whose body embeds the
+// signature). "sha256:<b32>" → a short quoted tag.
+func contentETag(narHash, pubKey string) string {
+	tag := strings.TrimPrefix(narHash, "sha256:")
+	if pubKey != "" {
+		sum := sha256.Sum256([]byte(narHash + "|" + pubKey))
+		tag = hex.EncodeToString(sum[:16])
+	}
+	return `"` + tag + `"`
 }
 
 // negotiateEncoding prefers zstd, then gzip, honoring q=0 (explicit refusal).

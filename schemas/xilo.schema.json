@@ -217,6 +217,22 @@
         "total"
       ],
       "description": "Server-wide storage limits."
+    },
+    "logging": {
+      "type": "string",
+      "enum": [
+        "full",
+        "quiet"
+      ],
+      "description": "Request logging: \"full\" logs every request (default), \"quiet\" logs only\nerrors (status \u003e= 400) and slow requests (\u003e 1s). At tens of thousands of\nrequests/second the synchronous log write is measurable — flip to quiet\non busy production instances."
+    },
+    "durability": {
+      "type": "string",
+      "enum": [
+        "normal",
+        "full"
+      ],
+      "description": "Commit durability: \"normal\" (default; no fsync per commit — power loss\ncan drop the last few acknowledged pushes, which heal on the next run)\nor \"full\" (fsync every commit; acknowledged pushes survive power loss\nat a per-write latency cost)."
     }
   },
   "additionalProperties": false,
@@ -233,7 +249,9 @@
     "parallelism",
     "upstream_keys",
     "security",
-    "limits"
+    "limits",
+    "logging",
+    "durability"
   ],
   "description": "Config is the root of xilo.yaml."
 }

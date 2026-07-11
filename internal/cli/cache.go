@@ -29,7 +29,7 @@ func openDB() (*config.Config, *store.DB, error) {
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 		return nil, nil, err
 	}
-	db, err := store.Open(cfg.DBPath())
+	db, err := openStore(cfg)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -254,4 +254,12 @@ func cacheDestroyCmd() *cobra.Command {
 	}
 	c.Flags().BoolVar(&yes, "yes", false, "confirm destruction")
 	return c
+}
+
+// openStore honors the configured commit durability.
+func openStore(cfg *config.Config) (*store.DB, error) {
+	if cfg.Durability == "full" {
+		return store.OpenDurable(cfg.DBPath())
+	}
+	return store.Open(cfg.DBPath())
 }

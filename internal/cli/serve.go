@@ -40,7 +40,7 @@ func serveCmd() *cobra.Command {
 			if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 				return err
 			}
-			db, err := store.Open(cfg.DBPath())
+			db, err := openStore(cfg)
 			if err != nil {
 				return err
 			}

@@ -35,6 +35,10 @@ type Server struct {
 	wan       *webauthn.WebAuthn
 	wanErr    error
 	uploadSem chan struct{} // bounds concurrent server-side chunk encode+store
+	logins    *loginLimiter // throttles bcrypt attempts per IP
+	niCache   *narinfoCache // rendered+signed narinfo bodies
+	gzipPool  sync.Pool     // *gzip.Writer for NAR wire compression
+	touched   sync.Map      // "<cacheID>/<storeHash>" → unix secs of last LRU bump
 	metrics   metrics
 	stat      statusRing
 	started   time.Time
@@ -54,6 +58,8 @@ func New(cfg *config.Config, db *store.DB, st storage.Storage) (*Server, error) 
 		sess:      newSessions(db),
 		started:   time.Now(),
 		uploadSem: make(chan struct{}, max(4, 2*runtime.NumCPU())),
+		logins:    newLoginLimiter(),
+		niCache:   newNarinfoCache(16384), // ~64B/key + body ~600B ⇒ ~10MB cap
 	}, nil
 }
 
@@ -154,7 +160,11 @@ func (s *Server) middleware(h http.Handler) http.Handler {
 				s.metrics.reqTotal.Add(1)
 				s.metrics.reqDurNs.Add(elapsed.Nanoseconds())
 			}
-			log.Printf("%s %s %d %s", r.Method, r.URL.Path, lw.status, elapsed.Round(time.Millisecond))
+			// logging=quiet: only errors and slow requests — the synchronous
+			// log write (global mutex + stderr) is measurable at 10k+ rps.
+			if s.cfg.Logging != "quiet" || lw.status >= 400 || elapsed > time.Second {
+				log.Printf("%s %s %d %s", r.Method, r.URL.Path, lw.status, elapsed.Round(time.Millisecond))
+			}
 		}()
 		h.ServeHTTP(lw, r)
 	})
