@@ -12,12 +12,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/term"
 
 	"github.com/stubbedev/xilo/internal/api"
 	"github.com/stubbedev/xilo/internal/chunk"
@@ -68,6 +72,27 @@ func (c *Client) logf(format string, a ...any) {
 	if !c.Quiet {
 		fmt.Printf(format, a...)
 	}
+}
+
+var (
+	barDone = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "35", Dark: "42"})
+	barTodo = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "250", Dark: "238"})
+)
+
+// progress redraws an in-place bar on a terminal, or falls back to the plain
+// counter (CI logs shouldn't fill with control characters).
+func (c *Client) progress(done, total int) {
+	if c.Quiet {
+		return
+	}
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		fmt.Printf("\rpushed %d/%d paths", done, total)
+		return
+	}
+	const width = 28
+	filled := done * width / max(total, 1)
+	bar := barDone.Render(strings.Repeat("█", filled)) + barTodo.Render(strings.Repeat("░", width-filled))
+	fmt.Printf("\r%s %d/%d paths", bar, done, total)
 }
 
 type pathInfo struct {
@@ -133,7 +158,7 @@ func (c *Client) Push(ctx context.Context, paths []string) error {
 		if err := c.pushOne(ctx, in, params); err != nil {
 			return fmt.Errorf("%s: %w", in.Path, err)
 		}
-		c.logf("\rpushed %d/%d paths", done.Add(1), len(missing))
+		c.progress(int(done.Add(1)), len(missing))
 		return nil
 	})
 	c.logf("\n")

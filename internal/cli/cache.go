@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -117,8 +118,8 @@ func cacheCreateCmd() *cobra.Command {
 }
 
 func printCacheCreated(baseURL, ref, pubkey string) {
-	fmt.Printf("created cache %q\n\n", ref)
-	fmt.Printf("Add to nix.conf:\n")
+	fmt.Printf("%s cache %s\n\n", styleOK("created"), styleAccent(ref))
+	fmt.Println(styleDim("Add to nix.conf:"))
 	fmt.Printf("  substituters = %s/%s\n", baseURL, ref)
 	fmt.Printf("  trusted-public-keys = %s\n", pubkey)
 }
@@ -148,9 +149,14 @@ func cacheListCmd() *cobra.Command {
 					rows = append(rows, apiCacheRow(&caches[i]))
 				}
 			}
+			trows := make([][]string, 0, len(rows))
 			for _, ca := range rows {
-				fmt.Printf("%-28s %-8s priority=%d  %s\n", ca.Namespace+"/"+ca.Name, visibility(ca.Public), ca.Priority, ca.PubKey)
+				trows = append(trows, []string{
+					ca.Namespace + "/" + ca.Name, visibility(ca.Public), ca.Storage,
+					strconv.Itoa(ca.Priority), ca.PubKey,
+				})
 			}
+			fmt.Println(renderTable([]string{"CACHE", "VISIBILITY", "STORAGE", "PRIO", "PUBLIC KEY"}, trows))
 			return nil
 		},
 	}

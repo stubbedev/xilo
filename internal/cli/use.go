@@ -22,7 +22,7 @@ const (
 
 func useCmd() *cobra.Command {
 	var url, token string
-	var remove bool
+	var remove, makeDefault bool
 	c := &cobra.Command{
 		Use:   "use <ns/cache>",
 		Short: "Configure local Nix to use a cache (nix.conf + netrc)",
@@ -62,12 +62,40 @@ func useCmd() *cobra.Command {
 					fmt.Println("added pull token to ~/.netrc")
 				}
 			}
+			if makeDefault {
+				cc := loadClientConfig()
+				name := profileFlag
+				if name == "" {
+					name = cc.Default
+				}
+				if name == "" {
+					name = "default"
+				}
+				if cc.Servers == nil {
+					cc.Servers = map[string]serverProfile{}
+				}
+				p := cc.Servers[name]
+				if p.URL == "" {
+					p.URL = strings.TrimRight(url, "/")
+				}
+				p.Cache = cache
+				cc.Servers[name] = p
+				if cc.Default == "" {
+					cc.Default = name
+				}
+				if err := saveClientConfig(cc); err != nil {
+					return err
+				}
+				fmt.Printf("%s %s is now the default push target\n", styleOK("saved:"), cache)
+			}
 			return nil
 		},
 	}
 	c.Flags().StringVar(&url, "url", "", "server base URL (env XILO_URL / saved login)")
 	c.Flags().StringVar(&token, "token", "", "pull token (env XILO_TOKEN / saved login)")
 	c.Flags().BoolVar(&remove, "remove", false, "remove the cache from nix.conf instead of adding it")
+	c.Flags().BoolVar(&makeDefault, "default", false, "also save as the default push target for `xilo push <paths>`")
+	c.Flags().StringVarP(&profileFlag, "profile", "p", "", "saved server profile to use")
 	return c
 }
 

@@ -74,7 +74,7 @@ func TestCacheLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, `created cache "default/foo"`) || !strings.Contains(out, "trusted-public-keys = foo:") {
+	if !strings.Contains(out, "created cache default/foo") || !strings.Contains(out, "trusted-public-keys = foo:") {
 		t.Fatalf("create output: %q", out)
 	}
 	pubkey := ""
@@ -88,7 +88,7 @@ func TestCacheLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "foo") || !strings.Contains(out, "public") || !strings.Contains(out, "priority=40") {
+	if !strings.Contains(out, "foo") || !strings.Contains(out, "public") || !strings.Contains(out, "40") {
 		t.Fatalf("list output: %q", out)
 	}
 
@@ -149,7 +149,7 @@ func TestTokenLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, `token "t1" (id=1) perms=push,pull scope=default/foo`) || !strings.Contains(out, "Store it now") {
+	if !strings.Contains(out, "created token t1 (id=1) perms=push,pull scope=default/foo") || !strings.Contains(out, "Store it now") {
 		t.Fatalf("create output: %q", out)
 	}
 
@@ -157,7 +157,7 @@ func TestTokenLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "t1") || !strings.Contains(out, "active") || !strings.Contains(out, "scope=default/foo") {
+	if !strings.Contains(out, "t1") || !strings.Contains(out, "active") || !strings.Contains(out, "default/foo") {
 		t.Fatalf("list output: %q", out)
 	}
 
@@ -172,7 +172,7 @@ func TestTokenLifecycle(t *testing.T) {
 		t.Fatalf("revoke output: %q", out)
 	}
 	out, _ = runRoot(t, "--config", cfg, "token", "list")
-	if !strings.Contains(out, "REVOKED") {
+	if !strings.Contains(out, "revoked") {
 		t.Fatalf("list after revoke: %q", out)
 	}
 }
@@ -238,11 +238,12 @@ func TestLoginSavesClientConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "saved http://srv:8080 to ") {
+	if !strings.Contains(out, "http://srv:8080") {
 		t.Fatalf("login output: %q", out)
 	}
 	cc := loadClientConfig()
-	if cc.URL != "http://srv:8080" || cc.Token != "tok123" {
+	p := cc.Servers[cc.Default]
+	if p.URL != "http://srv:8080" || p.Token != "tok123" {
 		t.Fatalf("saved config = %+v", cc)
 	}
 	fi, err := os.Stat(clientConfigPath())
@@ -266,8 +267,8 @@ func TestLoginTokenFromEnv(t *testing.T) {
 	if _, err := runRoot(t, "login", "http://srv"); err != nil {
 		t.Fatal(err)
 	}
-	if cc := loadClientConfig(); cc.Token != "envtok" {
-		t.Fatalf("token = %q, want envtok", cc.Token)
+	if cc := loadClientConfig(); cc.Servers[cc.Default].Token != "envtok" {
+		t.Fatalf("token = %q, want envtok", cc.Servers[cc.Default].Token)
 	}
 }
 

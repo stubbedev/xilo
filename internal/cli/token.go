@@ -76,9 +76,9 @@ func tokenCreateCmd() *cobra.Command {
 			if len(t.Caches) > 0 && t.Caches[0] != "*" {
 				scope = strings.Join(t.Caches, ",")
 			}
-			fmt.Printf("token %q (id=%d) perms=%s scope=%s\n\n", t.Name, t.ID, strings.Join(perms, ","), scope)
-			fmt.Printf("  %s\n\n", secret)
-			fmt.Println("Store it now — it is not recoverable.")
+			fmt.Printf("%s token %s (id=%d) perms=%s scope=%s\n\n", styleOK("created"), styleAccent(t.Name), t.ID, strings.Join(perms, ","), scope)
+			fmt.Printf("  %s\n\n", styleAccent(secret))
+			fmt.Println(styleDim("Store it now — it is not recoverable."))
 			fmt.Println("Push:  export XILO_TOKEN=<secret>")
 			fmt.Println("Pull:  add to ~/.netrc:  machine <host> login xilo password <secret>")
 			return nil
@@ -114,26 +114,34 @@ func tokenListCmd() *cobra.Command {
 					return err
 				}
 				for _, t := range list {
-					toks = append(toks, api.Token{ID: t.ID, Name: t.Name, Caches: t.Caches,
+					toks = append(toks, api.Token{ID: t.ID, Namespace: t.Namespace, Name: t.Name, Caches: t.Caches,
 						Perms: t.Perms, Revoked: t.Revoked, Expires: t.Expires, Created: t.Created})
 				}
 			}
 			now := time.Now().Unix()
+			trows := make([][]string, 0, len(toks))
 			for _, t := range toks {
-				state := "active"
+				state := styleOK("active")
 				switch {
 				case t.Revoked:
-					state = "REVOKED"
+					state = styleWarn("revoked")
 				case t.Expires != 0 && now >= t.Expires:
-					state = "EXPIRED"
+					state = styleDim("expired")
 				}
 				exp := "never"
 				if t.Expires != 0 {
 					exp = time.Unix(t.Expires, 0).Format("2006-01-02")
 				}
-				fmt.Printf("%-4d %-16s %-8s perms=%s scope=%s expires=%s\n",
-					t.ID, t.Name, state, strings.Join(t.Perms, ","), strings.Join(t.Caches, ","), exp)
+				scope := strings.Join(t.Caches, ",")
+				if t.Namespace != "" {
+					scope = t.Namespace + ": " + scope
+				}
+				trows = append(trows, []string{
+					strconv.FormatInt(t.ID, 10), t.Name, state,
+					strings.Join(t.Perms, ","), scope, exp,
+				})
 			}
+			fmt.Println(renderTable([]string{"ID", "NAME", "STATUS", "PERMS", "SCOPE", "EXPIRES"}, trows))
 			return nil
 		},
 	}
