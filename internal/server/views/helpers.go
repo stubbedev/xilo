@@ -81,29 +81,6 @@ func statusVariant(status string) badge.Variant {
 	}
 }
 
-// contextLabel is the current context-switcher label ("All accounts" or slug).
-func contextLabel(nav Nav) string {
-	if nav.Active == "" {
-		return "All accounts"
-	}
-	return nav.Active
-}
-
-// initials derives up to two uppercase initials from a display name for avatars.
-func initials(name string) string {
-	fields := strings.Fields(name)
-	if len(fields) == 0 {
-		return "?"
-	}
-	first := []rune(fields[0])
-	out := strings.ToUpper(string(first[0]))
-	if len(fields) > 1 {
-		last := []rune(fields[len(fields)-1])
-		out += strings.ToUpper(string(last[0]))
-	}
-	return out
-}
-
 // copyID is a stable DOM id for a copy target, derived from its value.
 func copyID(value string) string {
 	sum := sha1.Sum([]byte(value))

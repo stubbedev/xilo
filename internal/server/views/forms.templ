@@ -115,7 +115,7 @@ templ DurationInput(name string, secs int64) {
 				@selectbox.Trigger(selectbox.TriggerProps{Name: name + "_unit"}) {
 					@selectbox.Value(selectbox.ValueProps{})
 				}
-				@selectbox.Content(selectbox.ContentProps{NoSearch: true}) {
+				@selectbox.Content() {
 					@unitItem(name, "h", "Hours", secs)
 					@unitItem(name, "d", "Days", secs)
 					@unitItem(name, "mo", "Months", secs)
@@ -145,7 +145,7 @@ templ SizeInput(name string, bytes int64) {
 				@selectbox.Trigger(selectbox.TriggerProps{Name: name + "_unit"}) {
 					@selectbox.Value(selectbox.ValueProps{})
 				}
-				@selectbox.Content(selectbox.ContentProps{NoSearch: true}) {
+				@selectbox.Content() {
 					@sizeUnitItem(name, "MiB", bytes)
 					@sizeUnitItem(name, "GiB", bytes)
 					@sizeUnitItem(name, "TiB", bytes)

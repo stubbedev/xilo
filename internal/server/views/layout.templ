@@ -3,14 +3,12 @@ package views
 import (
 	"github.com/stubbedev/xilo/internal/store"
 
-	"github.com/templui/templui/components/avatar"
 	"github.com/templui/templui/components/button"
 	"github.com/templui/templui/components/chart"
 	"github.com/templui/templui/components/checkbox"
 	"github.com/templui/templui/components/copybutton"
 	"github.com/templui/templui/components/datepicker"
 	"github.com/templui/templui/components/dialog"
-	"github.com/templui/templui/components/dropdown"
 	"github.com/templui/templui/components/input"
 	"github.com/templui/templui/components/inputotp"
 	"github.com/templui/templui/components/label"
@@ -79,14 +77,12 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 			@popover.Script()
 			@datepicker.Script()
 			@dialog.Script()
-			@dropdown.Script()
 			@tabs.Script()
 			@tooltip.Script()
 			@toast.Script()
 			@inputotp.Script()
 			@copybutton.Script()
 			@progress.Script()
-			@avatar.Script()
 			@chart.Script()
 			@sidebar.Script()
 			@webauthnScript()
@@ -149,7 +145,7 @@ templ appSidebar(section string, nav Nav) {
 			}
 		}
 		@sidebar.Footer() {
-			@userMenu(nav)
+			@userMenu()
 		}
 	}
 }
@@ -175,85 +171,48 @@ templ themeToggle() {
 	}
 }
 
-// contextSwitcher scopes the dashboard to one account (or all). Lives in the
-// sidebar; collapses to just the eye icon on the icon rail. The dropdown items
-// are the submit buttons of this out-of-tree form (via the form attribute) —
-// dropdown.Item renders a <button>, so an inline form would nest buttons.
+// contextSwitcher scopes the dashboard to one account (or all): a searchable
+// selectbox that posts on selection. The guard keeps the search field's own
+// change events (blur after typing) from re-submitting; only the hidden ctx
+// input submits. Hidden on the collapsed icon rail — no room for a select.
 templ contextSwitcher(nav Nav) {
-	<form id="ctx-form" method="post" action="/admin/context" class="hidden"></form>
-	@dropdown.Dropdown() {
-		@dropdown.Trigger(dropdown.TriggerProps{Class: "w-full"}) {
-			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Type: button.TypeButton, FullWidth: true, Class: "justify-between gap-2 group-data-[tui-sidebar-state=collapsed]:justify-center group-data-[tui-sidebar-state=collapsed]:px-0"}) {
-				<span class="flex min-w-0 items-center gap-2">
-					@Icon("eye")
-					<span class="truncate group-data-[tui-sidebar-state=collapsed]:hidden">{ contextLabel(nav) }</span>
-				</span>
-				<span class="group-data-[tui-sidebar-state=collapsed]:hidden">
-					@Icon("chevrons-up-down")
-				</span>
+	<form
+		method="post"
+		action="/admin/context"
+		class="group-data-[tui-sidebar-state=collapsed]:hidden"
+		onchange="if (event.target.name === 'ctx') this.submit()"
+	>
+		@selectbox.SelectBox() {
+			@selectbox.Trigger(selectbox.TriggerProps{Name: "ctx", Attributes: templ.Attributes{"aria-label": "Viewing account"}}) {
+				@selectbox.Value(selectbox.ValueProps{Placeholder: "All accounts"})
 			}
-		}
-		@dropdown.Content(dropdown.ContentProps{Class: "w-56"}) {
-			@dropdown.Label() {
-				Viewing
-			}
-			@ctxItem("", "All accounts", nav.Active == "")
-			@dropdown.Separator()
-			for _, c := range nav.Contexts {
-				@ctxItem(c.Slug, c.Slug, nav.Active == c.Slug)
-			}
-		}
-	}
-}
-
-// ctxItem is one context choice: the item's own <button> submits #ctx-form,
-// carrying the slug as its name/value pair.
-templ ctxItem(slug, label string, active bool) {
-	@dropdown.Item(dropdown.ItemProps{Attributes: templ.Attributes{"type": "submit", "form": "ctx-form", "name": "ctx", "value": slug}}) {
-		<span class="truncate">{ label }</span>
-		if active {
-			@Icon("check")
-		}
-	}
-}
-
-// userMenu is the signed-in user's account dropdown, styled for the sidebar
-// footer (avatar + name expanded, avatar-only when collapsed to icons). The
-// log-out item submits this out-of-tree form via the form attribute.
-templ userMenu(nav Nav) {
-	<form id="logout-form" method="post" action="/admin/logout" class="hidden"></form>
-	@dropdown.Dropdown() {
-		@dropdown.Trigger() {
-			@button.Button(button.Props{Variant: button.VariantGhost, Type: button.TypeButton, FullWidth: true, Class: "h-12 justify-start gap-2 px-2 group-data-[tui-sidebar-state=collapsed]:justify-center group-data-[tui-sidebar-state=collapsed]:px-0"}) {
-				@avatar.Avatar(avatar.Props{Class: "size-8 shrink-0"}) {
-					@avatar.Fallback() {
-						{ initials(nav.UserName) }
+			@selectbox.Content() {
+				@selectbox.Item(selectbox.ItemProps{Value: "", Selected: nav.Active == ""}) {
+					All accounts
+				}
+				for _, c := range nav.Contexts {
+					@selectbox.Item(selectbox.ItemProps{Value: c.Slug, Selected: nav.Active == c.Slug}) {
+						{ c.Slug }
 					}
 				}
-				<span class="flex min-w-0 flex-col items-start group-data-[tui-sidebar-state=collapsed]:hidden">
-					<span class="truncate text-sm font-medium">{ nav.UserName }</span>
-					if nav.IsAdmin {
-						<span class="text-xs text-muted-foreground">Instance admin</span>
-					}
-				</span>
 			}
 		}
-		@dropdown.Content(dropdown.ContentProps{Class: "w-56", Placement: dropdown.PlacementRightEnd}) {
-			@dropdown.Label() {
-				<div class="flex flex-col">
-					<span class="text-sm font-medium">{ nav.UserName }</span>
-					if nav.IsAdmin {
-						<span class="text-xs text-muted-foreground">Instance admin</span>
-					}
-				</div>
-			}
-			@dropdown.Separator()
-			@dropdown.Item(dropdown.ItemProps{Class: "justify-start gap-2 text-destructive", Attributes: templ.Attributes{"type": "submit", "form": "logout-form"}}) {
-				@Icon("log-out")
-				<span>Log out</span>
-			}
+	</form>
+}
+
+// userMenu is the sidebar footer: just the log-out button (icon-only on the
+// collapsed rail).
+templ userMenu() {
+	<form method="post" action="/admin/logout">
+		@button.Button(button.Props{
+			Variant: button.VariantOutline, Type: button.TypeSubmit, FullWidth: true, Size: button.SizeSm,
+			Class:      "gap-2 text-destructive hover:text-destructive group-data-[tui-sidebar-state=collapsed]:px-0",
+			Attributes: templ.Attributes{"aria-label": "Log out", "title": "Log out"},
+		}) {
+			@Icon("log-out")
+			<span class="group-data-[tui-sidebar-state=collapsed]:hidden">Log out</span>
 		}
-	}
+	</form>
 }
 
 templ footer() {

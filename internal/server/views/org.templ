@@ -174,7 +174,7 @@ templ roleSelect(name, value string) {
 		@selectbox.Trigger(selectbox.TriggerProps{Name: name}) {
 			@selectbox.Value(selectbox.ValueProps{})
 		}
-		@selectbox.Content(selectbox.ContentProps{NoSearch: true}) {
+		@selectbox.Content() {
 			@selectbox.Item(selectbox.ItemProps{Value: "member", Selected: value == "member"}) {
 				Member
 			}
