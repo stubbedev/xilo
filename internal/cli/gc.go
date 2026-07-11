@@ -2,10 +2,12 @@ package cli
 
 import (
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/stubbedev/xilo/internal/api"
 	"github.com/stubbedev/xilo/internal/storage"
 )
 
@@ -16,9 +18,21 @@ func gcCmd() *cobra.Command {
 		Short: "Garbage-collect unreferenced chunks",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, db, err := openDB()
+			apic, cfg, db, err := adminTarget(adminServer, adminToken)
 			if err != nil {
 				return err
+			}
+			if apic != nil {
+				var resp api.GCResp
+				req := api.GCReq{EvictOlderThan: int64(olderThan.Seconds())}
+				if err := apic.do(http.MethodPost, "/api/v1/gc", req, &resp); err != nil {
+					return err
+				}
+				if olderThan > 0 {
+					fmt.Printf("evicted %d paths older than %s\n", resp.Evicted, olderThan)
+				}
+				fmt.Printf("removed %d chunks, freed %d bytes\n", resp.Deleted, resp.FreedBytes)
+				return nil
 			}
 			defer db.Close()
 
@@ -56,5 +70,5 @@ func gcCmd() *cobra.Command {
 	}
 	c.Flags().DurationVar(&olderThan, "older-than", 0,
 		"also evict store paths not pulled within this window (e.g. 720h)")
-	return c
+	return addAdminFlags(c)
 }

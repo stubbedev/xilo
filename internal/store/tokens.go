@@ -147,3 +147,18 @@ func (db *DB) Authorize(secret, cache, perm string, now int64) bool {
 func scopeAllows(scoped []string, cache string) bool {
 	return slices.Contains(scoped, "*") || slices.Contains(scoped, cache)
 }
+
+// AuthorizeAdmin reports whether the secret is a live token carrying the
+// "admin" perm — the gate for the management API, independent of cache scope.
+func (db *DB) AuthorizeAdmin(secret string, now int64) bool {
+	row := db.r.QueryRow(`SELECT perms,revoked,expires FROM tokens WHERE hash=?`, HashToken(secret))
+	var perms string
+	var revoked, expires int64
+	if err := row.Scan(&perms, &revoked, &expires); err != nil {
+		return false
+	}
+	if revoked != 0 || (expires != 0 && now >= expires) {
+		return false
+	}
+	return slices.Contains(strings.Split(perms, ","), "admin")
+}

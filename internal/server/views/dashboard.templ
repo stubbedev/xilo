@@ -169,6 +169,7 @@ templ tokenForm(action string, t *store.Token, caches []CacheUsage, submitIcon, 
 			<div class="switch-row">
 				<label><input type="checkbox" role="switch" name="push" checked?={ t != nil && hasPerm(*t, "push") }/> { T("tokens.push") }</label>
 				<label><input type="checkbox" role="switch" name="pull" checked?={ t == nil || hasPerm(*t, "pull") }/> { T("tokens.pull") }</label>
+				<label><input type="checkbox" role="switch" name="admin" checked?={ t != nil && hasPerm(*t, "admin") }/> { T("tokens.admin") }</label>
 			</div>
 		</fieldset>
 		<fieldset class="switch-group">
@@ -194,6 +195,8 @@ templ permBadges(perms []string) {
 				@IconBadge("priv", T("tokens.push"), "database-arrow-up")
 			case "pull":
 				@IconBadge("pub", T("tokens.pull"), "database-arrow-down")
+			case "admin":
+				@IconBadge("rev", T("tokens.admin"), "shield-check")
 		}
 	}
 }

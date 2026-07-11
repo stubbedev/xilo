@@ -837,13 +837,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 	if c := r.FormValue("cache"); c != "" && c != "*" {
 		caches = []string{c}
 	}
-	var perms []string
-	if r.FormValue("push") != "" {
-		perms = append(perms, "push")
-	}
-	if r.FormValue("pull") != "" {
-		perms = append(perms, "pull")
-	}
+	perms := formPerms(r)
 	if len(perms) == 0 {
 		perms = []string{"pull"}
 	}
@@ -887,13 +881,7 @@ func (s *Server) handleEditToken(w http.ResponseWriter, r *http.Request) {
 	if c := r.FormValue("cache"); c != "" && c != "*" {
 		caches = []string{c}
 	}
-	var perms []string
-	if r.FormValue("push") != "" {
-		perms = append(perms, "push")
-	}
-	if r.FormValue("pull") != "" {
-		perms = append(perms, "pull")
-	}
+	perms := formPerms(r)
 	expires := t.Expires
 	if r.FormValue("permanent") != "" {
 		expires = 0
@@ -929,6 +917,18 @@ func (s *Server) handleGC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.renderDashboard(w, r, views.Flash{Msg: fmt.Sprintf("GC done: removed %d chunks, freed %s", deleted, humanBytes(freed))})
+}
+
+// formPerms reads the token permission checkboxes shared by the create and
+// edit forms.
+func formPerms(r *http.Request) []string {
+	var perms []string
+	for _, p := range []string{"push", "pull", "admin"} {
+		if r.FormValue(p) != "" {
+			perms = append(perms, p)
+		}
+	}
+	return perms
 }
 
 func hostOf(baseURL string) string {

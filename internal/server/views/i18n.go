@@ -91,6 +91,7 @@ var en = map[string]string{
 	"tokens.all":     "all caches",
 	"tokens.push":    "Push",
 	"tokens.pull":    "Pull",
+	"tokens.admin":   "Admin",
 	"tokens.create":  "Create",
 	"tokens.revoke":  "Revoke",
 	"tok.active":     "Active",

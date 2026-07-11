@@ -2,20 +2,33 @@ package cli
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/stubbedev/xilo/internal/api"
 	"github.com/stubbedev/xilo/internal/config"
 	"github.com/stubbedev/xilo/internal/store"
 )
+
+// adminServer/adminToken are the shared --server/--token flags for admin
+// commands (cache, token, gc). --server forces remote API mode.
+var adminServer, adminToken string
+
+// addAdminFlags registers the remote-mode flags on an admin command.
+func addAdminFlags(c *cobra.Command) *cobra.Command {
+	c.PersistentFlags().StringVar(&adminServer, "server", "", "manage a remote server via its API (default: local DB if present)")
+	c.PersistentFlags().StringVar(&adminToken, "token", "", "admin token for --server (env XILO_TOKEN)")
+	return c
+}
 
 func cacheCmd() *cobra.Command {
 	c := &cobra.Command{Use: "cache", Short: "Manage caches"}
 	c.AddCommand(cacheCreateCmd(), cacheListCmd(), cacheInfoCmd(),
 		cacheConfigureCmd(), cacheRotateCmd(), cacheDestroyCmd())
-	return c
+	return addAdminFlags(c)
 }
 
 // openDB opens the metadata DB directly for one-shot admin commands.
@@ -44,19 +57,25 @@ func cacheCreateCmd() *cobra.Command {
 		Short: "Create a cache (generates its signing key)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, db, err := openDB()
+			apic, cfg, db, err := adminTarget(adminServer, adminToken)
 			if err != nil {
 				return err
+			}
+			if apic != nil {
+				var ca api.Cache
+				if err := apic.do(http.MethodPost, "/api/v1/caches",
+					api.CreateCacheReq{Name: args[0], Public: !private, Priority: priority}, &ca); err != nil {
+					return err
+				}
+				printCacheCreated(apic.base, ca.Name, ca.PubKey)
+				return nil
 			}
 			defer db.Close()
 			ca, err := db.CreateCache(args[0], !private, priority)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("created cache %q\n\n", ca.Name)
-			fmt.Printf("Add to nix.conf:\n")
-			fmt.Printf("  substituters = %s/%s\n", cfg.BaseURL, ca.Name)
-			fmt.Printf("  trusted-public-keys = %s\n", ca.PubKey)
+			printCacheCreated(cfg.BaseURL, ca.Name, ca.PubKey)
 			return nil
 		},
 	}
@@ -65,26 +84,51 @@ func cacheCreateCmd() *cobra.Command {
 	return c
 }
 
+func printCacheCreated(baseURL, name, pubkey string) {
+	fmt.Printf("created cache %q\n\n", name)
+	fmt.Printf("Add to nix.conf:\n")
+	fmt.Printf("  substituters = %s/%s\n", baseURL, name)
+	fmt.Printf("  trusted-public-keys = %s\n", pubkey)
+}
+
 func cacheListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List caches",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, db, err := openDB()
+			apic, _, db, err := adminTarget(adminServer, adminToken)
 			if err != nil {
 				return err
 			}
-			defer db.Close()
-			caches, err := db.ListCaches()
-			if err != nil {
-				return err
+			var rows []api.Cache
+			if apic != nil {
+				if err := apic.do(http.MethodGet, "/api/v1/caches", nil, &rows); err != nil {
+					return err
+				}
+			} else {
+				defer db.Close()
+				caches, err := db.ListCaches()
+				if err != nil {
+					return err
+				}
+				for i := range caches {
+					rows = append(rows, apiCacheRow(&caches[i]))
+				}
 			}
-			for _, ca := range caches {
+			for _, ca := range rows {
 				fmt.Printf("%-20s %-8s priority=%d  %s\n", ca.Name, visibility(ca.Public), ca.Priority, ca.PubKey)
 			}
 			return nil
 		},
+	}
+}
+
+// apiCacheRow converts a store cache to the wire shape for shared printing.
+func apiCacheRow(c *store.Cache) api.Cache {
+	return api.Cache{
+		Name: c.Name, Public: c.Public, Priority: c.Priority,
+		Retention: c.Retention, MaxBytes: c.MaxBytes, PubKey: c.PubKey, Created: c.Created,
 	}
 }
 
@@ -101,30 +145,41 @@ func cacheInfoCmd() *cobra.Command {
 		Short: "Show a cache's settings and stats",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, db, err := openDB()
+			apic, cfg, db, err := adminTarget(adminServer, adminToken)
 			if err != nil {
 				return err
 			}
-			defer db.Close()
-			ca, err := db.GetCache(args[0])
-			if err != nil {
-				return err
+			var d api.CacheDetail
+			base := cfg.BaseURL
+			if apic != nil {
+				if err := apic.do(http.MethodGet, "/api/v1/caches/"+args[0], nil, &d); err != nil {
+					return err
+				}
+				base = apic.base
+			} else {
+				defer db.Close()
+				ca, err := db.GetCache(args[0])
+				if err != nil {
+					return err
+				}
+				st, err := db.CacheStats(ca.ID)
+				if err != nil {
+					return err
+				}
+				d = api.CacheDetail{Cache: apiCacheRow(ca), Paths: st.Paths, Chunks: st.Chunks,
+					LogicalBytes: st.LogicalBytes, PhysicalBytes: st.PhysicalBytes}
 			}
-			st, err := db.CacheStats(ca.ID)
-			if err != nil {
-				return err
-			}
-			fmt.Printf("name:        %s\n", ca.Name)
-			fmt.Printf("visibility:  %s\n", visibility(ca.Public))
-			fmt.Printf("priority:    %d\n", ca.Priority)
-			fmt.Printf("retention:   %s\n", retentionStr(ca.Retention))
-			fmt.Printf("max size:    %s\n", capStr(ca.MaxBytes))
-			fmt.Printf("public key:  %s\n", ca.PubKey)
-			fmt.Printf("substituter: %s/%s\n", cfg.BaseURL, ca.Name)
-			fmt.Printf("paths:       %d\n", st.Paths)
-			fmt.Printf("chunks:      %d\n", st.Chunks)
-			fmt.Printf("logical:     %d bytes\n", st.LogicalBytes)
-			fmt.Printf("physical:    %d bytes (compressed, deduped)\n", st.PhysicalBytes)
+			fmt.Printf("name:        %s\n", d.Name)
+			fmt.Printf("visibility:  %s\n", visibility(d.Public))
+			fmt.Printf("priority:    %d\n", d.Priority)
+			fmt.Printf("retention:   %s\n", retentionStr(d.Retention))
+			fmt.Printf("max size:    %s\n", capStr(d.MaxBytes))
+			fmt.Printf("public key:  %s\n", d.PubKey)
+			fmt.Printf("substituter: %s/%s\n", base, d.Name)
+			fmt.Printf("paths:       %d\n", d.Paths)
+			fmt.Printf("chunks:      %d\n", d.Chunks)
+			fmt.Printf("logical:     %d bytes\n", d.LogicalBytes)
+			fmt.Printf("physical:    %d bytes (compressed, deduped)\n", d.PhysicalBytes)
 			return nil
 		},
 	}
@@ -147,42 +202,64 @@ func cacheConfigureCmd() *cobra.Command {
 		Short: "Change a cache's visibility, priority, retention, or storage cap",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, db, err := openDB()
+			apic, _, db, err := adminTarget(adminServer, adminToken)
 			if err != nil {
 				return err
 			}
-			defer db.Close()
-			ca, err := db.GetCache(args[0])
-			if err != nil {
-				return err
-			}
-			vis := ca.Public
+			// Build the partial update from the flags actually given.
+			var req api.ConfigureCacheReq
 			if public {
-				vis = true
+				t := true
+				req.Public = &t
 			}
 			if private {
-				vis = false
+				f := false
+				req.Public = &f
 			}
-			prio := ca.Priority
 			if cmd.Flags().Changed("priority") {
-				prio = priority
+				req.Priority = &priority
 			}
-			ret := ca.Retention
 			if cmd.Flags().Changed("retention") {
-				ret = int64(retention.Seconds())
+				secs := int64(retention.Seconds())
+				req.Retention = &secs
 			}
-			maxBytes := ca.MaxBytes
 			if cmd.Flags().Changed("max-size") {
-				maxBytes, err = config.ParseBytes(maxSize)
+				b, err := config.ParseBytes(maxSize)
 				if err != nil {
 					return err
 				}
+				req.MaxBytes = &b
 			}
-			if err := db.UpdateCache(ca.ID, vis, prio, ret, maxBytes); err != nil {
-				return err
+			var ca api.Cache
+			if apic != nil {
+				if err := apic.do(http.MethodPatch, "/api/v1/caches/"+args[0], req, &ca); err != nil {
+					return err
+				}
+			} else {
+				defer db.Close()
+				cur, err := db.GetCache(args[0])
+				if err != nil {
+					return err
+				}
+				ca = apiCacheRow(cur)
+				if req.Public != nil {
+					ca.Public = *req.Public
+				}
+				if req.Priority != nil {
+					ca.Priority = *req.Priority
+				}
+				if req.Retention != nil {
+					ca.Retention = *req.Retention
+				}
+				if req.MaxBytes != nil {
+					ca.MaxBytes = *req.MaxBytes
+				}
+				if err := db.UpdateCache(cur.ID, ca.Public, ca.Priority, ca.Retention, ca.MaxBytes); err != nil {
+					return err
+				}
 			}
 			fmt.Printf("updated %s: %s priority=%d retention=%s max=%s\n",
-				ca.Name, visibility(vis), prio, retentionStr(ret), capStr(maxBytes))
+				ca.Name, visibility(ca.Public), ca.Priority, retentionStr(ca.Retention), capStr(ca.MaxBytes))
 			return nil
 		},
 	}
@@ -207,20 +284,30 @@ func cacheRotateCmd() *cobra.Command {
 		Short: "Generate a fresh signing key (invalidates the old trusted-public-key)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, db, err := openDB()
+			apic, _, db, err := adminTarget(adminServer, adminToken)
 			if err != nil {
 				return err
 			}
-			defer db.Close()
-			ca, err := db.GetCache(args[0])
-			if err != nil {
-				return err
+			var name, pubkey string
+			if apic != nil {
+				var ca api.Cache
+				if err := apic.do(http.MethodPost, "/api/v1/caches/"+args[0]+"/rotate", nil, &ca); err != nil {
+					return err
+				}
+				name, pubkey = ca.Name, ca.PubKey
+			} else {
+				defer db.Close()
+				ca, err := db.GetCache(args[0])
+				if err != nil {
+					return err
+				}
+				nc, err := db.RotateKey(ca.ID, ca.Name)
+				if err != nil {
+					return err
+				}
+				name, pubkey = nc.Name, nc.PubKey
 			}
-			nc, err := db.RotateKey(ca.ID, ca.Name)
-			if err != nil {
-				return err
-			}
-			fmt.Printf("rotated key for %s. Update trusted-public-keys everywhere:\n  %s\n", nc.Name, nc.PubKey)
+			fmt.Printf("rotated key for %s. Update trusted-public-keys everywhere:\n  %s\n", name, pubkey)
 			return nil
 		},
 	}
@@ -236,19 +323,25 @@ func cacheDestroyCmd() *cobra.Command {
 			if !yes {
 				return fmt.Errorf("refusing to destroy %q without --yes", args[0])
 			}
-			_, db, err := openDB()
+			apic, _, db, err := adminTarget(adminServer, adminToken)
 			if err != nil {
 				return err
 			}
-			defer db.Close()
-			ca, err := db.GetCache(args[0])
-			if err != nil {
-				return err
+			if apic != nil {
+				if err := apic.do(http.MethodDelete, "/api/v1/caches/"+args[0], nil, nil); err != nil {
+					return err
+				}
+			} else {
+				defer db.Close()
+				ca, err := db.GetCache(args[0])
+				if err != nil {
+					return err
+				}
+				if err := db.DeleteCache(ca.ID); err != nil {
+					return err
+				}
 			}
-			if err := db.DeleteCache(ca.ID); err != nil {
-				return err
-			}
-			fmt.Printf("destroyed cache %s\n", ca.Name)
+			fmt.Printf("destroyed cache %s\n", args[0])
 			return nil
 		},
 	}

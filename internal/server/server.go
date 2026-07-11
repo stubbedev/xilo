@@ -93,6 +93,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /{cache}/api/path", s.handlePutPath)
 
 	s.registerAdmin(mux)
+	s.registerAdminAPI(mux)
 	s.registerPasskeyRoutes(mux)
 	s.registerStatic(mux)
 
@@ -176,6 +177,7 @@ func (s *Server) middleware(h http.Handler) http.Handler {
 func isCacheTraffic(path string) bool {
 	return path != "/" &&
 		!strings.HasPrefix(path, "/admin") &&
+		!strings.HasPrefix(path, "/api/v1/") &&
 		!strings.HasPrefix(path, "/static/") &&
 		path != "/healthz" && path != "/metrics" &&
 		path != "/favicon.ico"
