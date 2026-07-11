@@ -4,12 +4,12 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-cmd = "templ generate && go build -o ./tmp/xilo ./cmd/xilo"
+cmd = "templ generate && just css && go build -o ./tmp/xilo ./cmd/xilo"
 bin = "./tmp/xilo"
 args_bin = ["--config", "./xilo.yaml", "serve"]
 include_ext = ["go", "templ", "css", "yaml"]
 exclude_dir = ["tmp", "bin", "data", ".git", ".direnv"]
-exclude_regex = ["_templ.go$", "_test.go"]
+exclude_regex = ["_templ.go$", "_test.go", "xilo-tw.css$", "sources.generated.css$"]
 stop_on_error = true
 delay = 300
 

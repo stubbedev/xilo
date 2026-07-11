@@ -32,6 +32,11 @@ build: css generate
 # Live-reload dev server (air): rebuilds on .go/.templ/.css change.
 # Copy xilo.example.yaml to xilo.yaml first.
 dev:
+    #!/usr/bin/env sh
+    # Open the admin UI once the server is accepting; air runs in the
+    # foreground, so its hot-reload restarts never re-trigger this.
+    url="http://localhost$(awk -F'"' '/^listen:/{print $2}' xilo.yaml)"
+    (until curl -sf -o /dev/null "$url"; do sleep 0.3; done; xdg-open "$url") &
     air
 
 # Install into $GOBIN (or $GOPATH/bin).
