@@ -5,8 +5,8 @@ import (
 
 	"github.com/templui/templui/components/avatar"
 	"github.com/templui/templui/components/button"
-	"github.com/templui/templui/components/checkbox"
 	"github.com/templui/templui/components/chart"
+	"github.com/templui/templui/components/checkbox"
 	"github.com/templui/templui/components/copybutton"
 	"github.com/templui/templui/components/dialog"
 	"github.com/templui/templui/components/dropdown"
@@ -42,7 +42,7 @@ type Nav struct {
 // Layout is the signed-in app shell: top navigation bar, flash banner, and the
 // page body. `section` marks the active nav item ("caches"/"account"/"settings").
 templ Layout(title, section string, nav Nav, flash Flash) {
-	<!doctype html>
+	<!DOCTYPE html>
 	<html lang="en" class="h-full">
 		<head>
 			<meta charset="utf-8"/>
@@ -52,8 +52,23 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 			<link rel="stylesheet" href={ Asset("xilo-tw.css") }/>
 			<script src={ Asset("htmx.min.js") }></script>
 			<script>
-				(function(){var t=localStorage.getItem('theme');if(!t){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}if(t==='dark'){document.documentElement.classList.add('dark');}})();
-				function xiloTheme(){var d=document.documentElement.classList.toggle('dark');localStorage.setItem('theme',d?'dark':'light');}
+				(function () {
+					var t = localStorage.getItem('theme');
+					if (!t) {
+						t =
+							window.matchMedia &&
+							window.matchMedia('(prefers-color-scheme: dark)').matches
+								? 'dark'
+								: 'light';
+					}
+					if (t === 'dark') {
+						document.documentElement.classList.add('dark');
+					}
+				})();
+				function xiloTheme() {
+					var d = document.documentElement.classList.toggle('dark');
+					localStorage.setItem('theme', d ? 'dark' : 'light');
+				}
 			</script>
 			@input.Script()
 			@label.Script()
@@ -83,9 +98,6 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 							<header class="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur">
 								@sidebar.Trigger(sidebar.TriggerProps{Target: "app-sidebar", Class: "-ml-1"})
 								<div class="ml-auto flex items-center gap-2">
-									if len(nav.Contexts) > 1 {
-										@contextSwitcher(nav)
-									}
 									@themeToggle()
 								</div>
 							</header>
@@ -112,11 +124,17 @@ templ appSidebar(section string, nav Nav) {
 	@sidebar.Sidebar(sidebar.Props{ID: "app-sidebar", Collapsible: sidebar.CollapsibleIcon}) {
 		@sidebar.Header() {
 			<a href="/admin" class="flex items-center gap-2 px-2 py-1 font-semibold tracking-tight">
-				<span class="text-primary">@Icon("box")</span>
+				<span class="text-primary">@Icon("box")
+</span>
 				<span class="group-data-[tui-sidebar-state=collapsed]:hidden">Xilo</span>
 			</a>
 		}
 		@sidebar.Content() {
+			if len(nav.Contexts) > 1 {
+				@sidebar.Group() {
+					@contextSwitcher(nav)
+				}
+			}
 			@sidebar.Group() {
 				@sidebar.Menu() {
 					@navItem("/admin", "Caches", "database", section == "caches")
@@ -148,19 +166,26 @@ templ themeToggle() {
 		Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton,
 		Attributes: templ.Attributes{"onclick": "xiloTheme()", "aria-label": "Toggle theme", "title": "Toggle theme"},
 	}) {
-		<span class="hidden dark:block">@Icon("sun")</span>
-		<span class="block dark:hidden">@Icon("moon")</span>
+		<span class="hidden dark:block">@Icon("sun")
+</span>
+		<span class="block dark:hidden">@Icon("moon")
+</span>
 	}
 }
 
-// contextSwitcher scopes the dashboard to one account (or all).
+// contextSwitcher scopes the dashboard to one account (or all). Lives in the
+// sidebar; collapses to just the eye icon on the icon rail.
 templ contextSwitcher(nav Nav) {
 	@dropdown.Dropdown() {
-		@dropdown.Trigger() {
-			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Type: button.TypeButton}) {
-				@Icon("eye")
-				<span class="max-w-32 truncate">{ contextLabel(nav) }</span>
-				@Icon("chevrons-up-down")
+		@dropdown.Trigger(dropdown.TriggerProps{Class: "w-full"}) {
+			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Type: button.TypeButton, FullWidth: true, Class: "justify-between gap-2 group-data-[tui-sidebar-state=collapsed]:justify-center group-data-[tui-sidebar-state=collapsed]:px-0"}) {
+				<span class="flex min-w-0 items-center gap-2">
+					@Icon("eye")
+					<span class="truncate group-data-[tui-sidebar-state=collapsed]:hidden">{ contextLabel(nav) }</span>
+				</span>
+				<span class="group-data-[tui-sidebar-state=collapsed]:hidden">
+					@Icon("chevrons-up-down")
+				</span>
 			}
 		}
 		@dropdown.Content(dropdown.ContentProps{Class: "w-56"}) {
@@ -176,16 +201,18 @@ templ contextSwitcher(nav Nav) {
 	}
 }
 
+// ctxItem is one context choice: a plain full-width submit button inside the
+// item (a nested styled Button renders as a button-in-button mess).
 templ ctxItem(slug, label string, active bool) {
-	@dropdown.Item(dropdown.ItemProps{PreventClose: false}) {
+	@dropdown.Item(dropdown.ItemProps{Class: "p-0"}) {
 		<form method="post" action="/admin/context" class="w-full">
 			<input type="hidden" name="ctx" value={ slug }/>
-			@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantGhost, FullWidth: true, Class: "h-8 justify-between gap-2 px-2"}) {
+			<button type="submit" class="flex w-full cursor-default items-center justify-between gap-2 px-2 py-1.5 text-left text-sm">
 				<span class="truncate">{ label }</span>
 				if active {
 					@Icon("check")
 				}
-			}
+			</button>
 		</form>
 	}
 }
@@ -219,21 +246,12 @@ templ userMenu(nav Nav) {
 				</div>
 			}
 			@dropdown.Separator()
-			@dropdown.Item(dropdown.ItemProps{Href: "/admin/account", Class: "justify-start gap-2"}) {
-				@Icon("user")
-				<span>Account</span>
-			}
-			@dropdown.Item(dropdown.ItemProps{Href: "/admin/status", Class: "justify-start gap-2"}) {
-				@Icon("activity")
-				<span>Status</span>
-			}
-			@dropdown.Separator()
-			@dropdown.Item(dropdown.ItemProps{PreventClose: false}) {
+			@dropdown.Item(dropdown.ItemProps{Class: "p-0"}) {
 				<form method="post" action="/admin/logout" class="w-full">
-					@button.Button(button.Props{Type: button.TypeSubmit, Variant: button.VariantGhost, FullWidth: true, Class: "h-8 justify-start gap-2 px-2 text-destructive hover:text-destructive"}) {
+					<button type="submit" class="flex w-full cursor-default items-center gap-2 px-2 py-1.5 text-left text-sm text-destructive">
 						@Icon("log-out")
 						<span>Log out</span>
-					}
+					</button>
 				</form>
 			}
 		}
@@ -260,7 +278,8 @@ templ CopyField(value string) {
 templ NotFound(nav Nav) {
 	@Layout("Not found", "", nav, Flash{}) {
 		<div class="flex flex-col items-center gap-4 py-24 text-center">
-			<span class="text-muted-foreground">@IconClass("compass", 48, "")</span>
+			<span class="text-muted-foreground">@IconClass("compass", 48, "")
+</span>
 			<h1 class="text-2xl font-semibold">Page not found</h1>
 			<p class="text-muted-foreground">That page does not exist, or you cannot access it.</p>
 			@button.Button(button.Props{Href: "/admin", Variant: button.VariantOutline}) {
