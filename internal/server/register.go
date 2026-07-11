@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	netmail "net/mail"
 	"strconv"
 	"strings"
 
@@ -32,6 +33,16 @@ func (s *Server) registerTenancy(mux *http.ServeMux) {
 // registrationOpen reports whether self-registration is currently possible.
 func (s *Server) registrationOpen() bool {
 	return s.cfg.MultiTenant && s.db.SettingBool("allow_registrations", false)
+}
+
+// validEmail is a light structural check (net/mail) — good enough to reject
+// typos and empties; real proof is a verification link (future work).
+func validEmail(email string) bool {
+	if email == "" {
+		return false
+	}
+	addr, err := netmail.ParseAddress(email)
+	return err == nil && addr.Address == email && strings.Contains(email, "@")
 }
 
 // requireApproval reports whether new registrations start pending.
@@ -77,6 +88,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	password := r.FormValue("password")
 	if !store.ValidSlug(username) {
 		fail("Invalid username: lowercase letters, digits, - and _.")
+		return
+	}
+	// Multi-tenant registration always requires a valid, verifiable email —
+	// it is the account-recovery and notification channel.
+	if !validEmail(email) {
+		fail("A valid email address is required.")
 		return
 	}
 	if len(password) < 8 {

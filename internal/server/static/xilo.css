@@ -667,3 +667,55 @@ pre { padding: var(--x-3) var(--x-4); }
    to primary on <a>, and visited links differ — inherit dodges both). */
 .usage .name a, .usage .name a:visited { color: inherit; text-decoration: none; }
 .usage .name a:hover { text-decoration: underline; }
+
+/* ---- Combobox (rich searchable select; replaces native <select>) ---- */
+.combo { position: relative; display: inline-flex; width: 100%; }
+.combo-btn {
+  display: inline-flex; align-items: center; justify-content: space-between; gap: var(--x-2);
+  width: 100%; margin: 0; padding: var(--x-2) var(--x-3);
+  font-size: var(--x-fs-sm); text-align: left; line-height: 1.4;
+  color: var(--pico-color);
+  background: var(--pico-form-element-background-color, var(--pico-card-background-color));
+  border: 1px solid var(--pico-form-element-border-color, var(--pico-muted-border-color));
+  border-radius: var(--x-radius); cursor: pointer;
+}
+.combo-btn:hover { border-color: var(--pico-primary); }
+.combo-btn:focus-visible { outline: 2px solid var(--pico-primary); outline-offset: 1px; }
+.combo-btn.combo-empty > span:first-child { color: var(--pico-muted-color); }
+.combo-btn > span:first-child { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-btn { flex-wrap: nowrap; }
+.combo-btn .combo-chev { width: 14px; height: 14px; flex: 0 0 auto; color: var(--pico-muted-color); }
+/* Attached-to-a-number-input variant (unit pickers in role=group). */
+[role="group"] .combo { width: auto; }
+[role="group"] .combo .combo-btn { margin-left: -1px; border-radius: 0 var(--x-radius) var(--x-radius) 0; white-space: nowrap; }
+.combo-pop {
+  position: absolute; left: 0; top: calc(100% + 6px); z-index: 40;
+  display: flex; flex-direction: column; min-width: 100%;
+  background: var(--pico-card-background-color);
+  border: 1px solid var(--pico-muted-border-color); border-radius: var(--x-radius);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 30%); overflow: hidden;
+}
+.combo-search {
+  margin: 0; border: 0; border-bottom: 1px solid var(--pico-muted-border-color);
+  border-radius: 0; padding: var(--x-2) var(--x-3); font-size: var(--x-fs-sm);
+  background: var(--pico-card-sectioning-background-color);
+}
+.combo-search:focus { outline: none; box-shadow: none; }
+.combo-pop ul.combo-list { display: block; list-style: none; margin: 0; padding: var(--x-1); max-height: 15rem; overflow-y: auto; }
+.combo-pop ul.combo-list > li {
+  display: flex; align-items: baseline; gap: var(--x-2); width: auto; margin: 0;
+  padding: var(--x-2) var(--x-3); border-radius: calc(var(--x-radius) - 3px); cursor: pointer;
+}
+.combo-pop ul.combo-list > li.active { background: var(--pico-primary); color: var(--pico-primary-inverse); }
+.combo-pop ul.combo-list > li.sel .combo-lbl { font-weight: 600; }
+.combo-pop ul.combo-list > li.active .combo-sub { color: var(--pico-primary-inverse); opacity: .85; }
+.combo-lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.combo-sub { font-size: var(--x-fs-label); color: var(--pico-muted-color); flex: none; }
+.combo-none { padding: var(--x-2) var(--x-3); color: var(--pico-muted-color); font-size: var(--x-fs-sm); }
+
+/* Header account-context switcher */
+.ctx-switch { display: inline-flex; align-items: center; gap: var(--x-2); color: var(--pico-muted-color); }
+.ctx-switch .ctx-form { margin: 0; }
+.ctx-switch .combo { min-width: 12rem; }
+.ctx-switch .combo { min-width: 12rem; width: 12rem; }
+.ctx-switch .combo-btn { width: 100%; padding-block: var(--x-1); min-height: 0; }

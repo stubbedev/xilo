@@ -85,22 +85,14 @@ templ plansSection(plans []store.Plan) {
 						{ T("plan.maxstorage") }
 						<fieldset role="group">
 							<input type="number" name="plan_storage_value" min="0" placeholder="unlimited"/>
-							<select name="plan_storage_unit">
-								<option value="GiB" selected>GiB</option>
-								<option value="MiB">MiB</option>
-								<option value="TiB">TiB</option>
-							</select>
+							@Combobox(Combo{Name: "plan_storage_unit", Value: "GiB", Search: boolPtr(false), Options: sizeUnitOptions()})
 						</fieldset>
 					</label>
 					<label>
 						{ T("plan.maxretention") }
 						<fieldset role="group">
 							<input type="number" name="plan_retention_value" min="0" placeholder="unlimited"/>
-							<select name="plan_retention_unit">
-								<option value="d" selected>{ T("unit.days") }</option>
-								<option value="mo">{ T("unit.months") }</option>
-								<option value="y">{ T("unit.years") }</option>
-							</select>
+							@Combobox(Combo{Name: "plan_retention_unit", Value: "d", Search: boolPtr(false), Options: durUnitOptions()})
 						</fieldset>
 					</label>
 					<fieldset class="switch-group">

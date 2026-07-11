@@ -104,6 +104,31 @@ templ Layout(title string, nav Nav, flash Flash) {
 				addEventListener('DOMContentLoaded',xiloMarkNav);
 				document.addEventListener('htmx:afterSettle',xiloMarkNav);
 				document.addEventListener('htmx:historyRestore',xiloMarkNav);
+				// xcombo: a searchable, keyboard-navigable combobox backed by a
+				// hidden input — the rich replacement for native <select>. Config:
+				// {value, options:[{value,label,sub,group}], search, auto, placeholder}.
+				// auto=true submits the enclosing form on pick (context switcher).
+				document.addEventListener('alpine:init',function(){
+					Alpine.data('xcombo',function(cfg){return{
+						open:false, q:'', active:0,
+						value:cfg.value||'', options:cfg.options||[],
+						auto:!!cfg.auto, placeholder:cfg.placeholder||'',
+						get searchable(){return cfg.search===true||(cfg.search!==false&&this.options.length>7)},
+						label(){var self=this;var o=this.options.find(function(x){return x.value===self.value});return o?o.label:''},
+						filtered(){var q=this.q.trim().toLowerCase();if(!q)return this.options;
+							return this.options.filter(function(o){return (o.label+' '+(o.sub||'')+' '+o.value).toLowerCase().indexOf(q)>=0})},
+						toggle(){this.open?this.close():this.openMenu()},
+						openMenu(){var self=this;this.open=true;this.q='';var f=this.filtered();
+							this.active=Math.max(0,f.findIndex(function(o){return o.value===self.value}));
+							this.$nextTick(function(){if(self.$refs.search)self.$refs.search.focus();self.scrollActive()})},
+						close(){this.open=false},
+						move(d){var n=this.filtered().length;if(!n)return;this.active=(this.active+d+n)%n;this.scrollActive()},
+						scrollActive(){var self=this;this.$nextTick(function(){var el=self.$refs.list&&self.$refs.list.children[self.active];if(el&&el.scrollIntoView)el.scrollIntoView({block:'nearest'})})},
+						pick(i){var self=this;var o=this.filtered()[i];if(!o)return;this.value=o.value;this.close();
+							this.$nextTick(function(){self.$refs.input.dispatchEvent(new Event('input',{bubbles:true}));self.$refs.input.dispatchEvent(new Event('change',{bubbles:true}));
+								if(self.auto){var fm=self.$refs.input.closest('form');if(fm)fm.requestSubmit()}})},
+					}})
+				});
 			</script>
 		</head>
 		<body hx-boost="true">
@@ -115,20 +140,16 @@ templ Layout(title string, nav Nav, flash Flash) {
 					<ul>
 						if nav.LoggedIn {
 							if len(nav.Contexts) > 1 {
-								<li>
+								<li class="ctx-switch" data-tooltip={ T("nav.contexthint") }>
+									@Icon("eye")
 									<form method="post" action="/admin/context" class="ctx-form">
-										<select name="ctx" aria-label={ T("nav.context") } onchange="this.form.requestSubmit()">
-											<option value="" selected?={ nav.Active == "" }>{ T("nav.allaccounts") }</option>
-											for _, a := range nav.Contexts {
-												<option value={ a.Slug } selected?={ nav.Active == a.Slug }>
-													if a.Kind == "user" {
-														{ a.Slug } { T("nav.personal") }
-													} else {
-														{ a.Slug }
-													}
-												</option>
-											}
-										</select>
+										@Combobox(Combo{
+											Name:      "ctx",
+											Value:     nav.Active,
+											Auto:      true,
+											AriaLabel: T("nav.context"),
+											Options:   contextOptions(nav.Contexts),
+										})
 									</form>
 								</li>
 							}

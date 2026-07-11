@@ -40,6 +40,17 @@ func TestRegistrationFlow(t *testing.T) {
 		t.Fatalf("register form → %d", resp.StatusCode)
 	}
 
+	// Email is required in multi-tenant mode.
+	resp, _ = http.PostForm(ts.URL+"/register", url.Values{
+		"username": {"noemail"}, "password": {"password12"}, "plan": {strconv.FormatInt(plan.ID, 10)},
+	})
+	if b := body(t, resp); !contains(b, "valid email address is required") {
+		t.Fatalf("missing email should be rejected: %.120q", b)
+	}
+	if _, err := db.GetUserByName("noemail"); err == nil {
+		t.Fatal("user created without required email")
+	}
+
 	// Register with org; approval required by default → pending, no session.
 	form := url.Values{
 		"username": {"carol"}, "email": {"carol@example.com"}, "password": {"carolpass1"},
@@ -110,7 +121,7 @@ func TestRegistrationFlow(t *testing.T) {
 
 	// Duplicate slug across users and orgs is refused.
 	resp, _ = http.PostForm(ts.URL+"/register", url.Values{
-		"username": {"carols-org"}, "password": {"whatever123"}, "plan": {strconv.FormatInt(plan.ID, 10)},
+		"username": {"carols-org"}, "email": {"z@example.com"}, "password": {"whatever123"}, "plan": {strconv.FormatInt(plan.ID, 10)},
 	})
 	if b := body(t, resp); !contains(b, "taken") {
 		t.Fatalf("slug collision: %.120q", b)

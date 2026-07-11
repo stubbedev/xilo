@@ -1416,10 +1416,15 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("username"))
+	email := strings.TrimSpace(r.FormValue("email"))
 	pw := r.FormValue("password")
 	role := formRole(r)
 	if name == "" {
 		s.instanceFlash(w, r, "Username is required")
+		return
+	}
+	if s.cfg.MultiTenant && !validEmail(email) {
+		s.instanceFlash(w, r, "A valid email address is required for accounts on this instance.")
 		return
 	}
 	if len(pw) < 8 {
@@ -1431,7 +1436,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if _, err := s.db.CreateUser(name, strings.TrimSpace(r.FormValue("email")), string(hash), role); err != nil {
+	if _, err := s.db.CreateUser(name, email, string(hash), role); err != nil {
 		s.instanceFlash(w, r, "Could not create user: "+err.Error())
 		return
 	}

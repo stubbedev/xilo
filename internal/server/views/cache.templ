@@ -111,12 +111,7 @@ templ durInput(name string, secs int64) {
 	{{ v, u := durParts(secs) }}
 	<div role="group">
 		<input type="number" name={ name + "_value" } min="0" step="1" value={ v } placeholder="30"/>
-		<select name={ name + "_unit" } aria-label="unit">
-			<option value="h" selected?={ u == "h" }>{ T("unit.hours") }</option>
-			<option value="d" selected?={ u == "d" }>{ T("unit.days") }</option>
-			<option value="mo" selected?={ u == "mo" }>{ T("unit.months") }</option>
-			<option value="y" selected?={ u == "y" }>{ T("unit.years") }</option>
-		</select>
+		@Combobox(Combo{Name: name + "_unit", Value: u, AriaLabel: "unit", Search: boolPtr(false), Options: durUnitOptions()})
 	</div>
 }
 
@@ -125,11 +120,7 @@ templ sizeInput(name string, bytes int64) {
 	{{ v, u := sizeParts(bytes) }}
 	<div role="group">
 		<input type="number" name={ name + "_value" } min="0" step="1" value={ v } placeholder="50"/>
-		<select name={ name + "_unit" } aria-label="unit">
-			<option value="MiB" selected?={ u == "MiB" }>MiB</option>
-			<option value="GiB" selected?={ u == "GiB" }>GiB</option>
-			<option value="TiB" selected?={ u == "TiB" }>TiB</option>
-		</select>
+		@Combobox(Combo{Name: name + "_unit", Value: u, AriaLabel: "unit", Search: boolPtr(false), Options: sizeUnitOptions()})
 	</div>
 }
 

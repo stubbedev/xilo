@@ -1,0 +1,244 @@
+package views
+
+import (
+	"encoding/json"
+	"strconv"
+
+	"github.com/stubbedev/xilo/internal/store"
+)
+
+// ComboOption is one entry in a Combobox. Sub renders as dimmed secondary text.
+type ComboOption struct {
+	Value string
+	Label string
+	Sub   string
+}
+
+// Combo configures a Combobox render.
+type Combo struct {
+	Name        string        // hidden input name (server contract)
+	Value       string        // selected value
+	Placeholder string        // shown when nothing selected
+	Options     []ComboOption //
+	Auto        bool          // submit the enclosing form on pick
+	Search      *bool         // force search box on/off; nil = auto (>7 options)
+	AriaLabel   string        //
+}
+
+// comboInit serializes the Alpine component config for x-data.
+func comboInit(c Combo) string {
+	type opt struct {
+		Value string `json:"value"`
+		Label string `json:"label"`
+		Sub   string `json:"sub,omitempty"`
+	}
+	cfg := struct {
+		Value       string `json:"value"`
+		Options     []opt  `json:"options"`
+		Auto        bool   `json:"auto"`
+		Search      *bool  `json:"search,omitempty"`
+		Placeholder string `json:"placeholder"`
+	}{Value: c.Value, Auto: c.Auto, Search: c.Search, Placeholder: c.Placeholder}
+	for _, o := range c.Options {
+		cfg.Options = append(cfg.Options, opt{o.Value, o.Label, o.Sub})
+	}
+	b, _ := json.Marshal(cfg)
+	return "xcombo(" + string(b) + ")"
+}
+
+// selectedLabel is the initial button text (before Alpine hydrates), so the
+// control reads correctly without JS.
+func selectedLabel(c Combo) string {
+	for _, o := range c.Options {
+		if o.Value == c.Value {
+			return o.Label
+		}
+	}
+	return c.Placeholder
+}
+
+// Combobox is a searchable, keyboard-navigable replacement for <select>. It
+// posts the same hidden input `Name`, so server handlers are unchanged.
+templ Combobox(c Combo) {
+	<div class="combo" x-data={ comboInit(c) } @keydown.escape="close()">
+		<input type="hidden" name={ c.Name } x-model="value" x-ref="input" value={ c.Value }/>
+		<button
+			type="button"
+			class="combo-btn"
+			if c.AriaLabel != "" {
+				aria-label={ c.AriaLabel }
+			}
+			@click="toggle()"
+			:aria-expanded="open"
+			:class="{'combo-empty': !value}"
+		>
+			<span x-text="label() || placeholder">{ selectedLabel(c) }</span>
+			@IconClass("chevrons-up-down", 14, "combo-chev")
+		</button>
+		<div class="combo-pop" x-show="open" x-cloak @click.outside="close()">
+			<template x-if="searchable">
+				<input
+					class="combo-search"
+					type="text"
+					x-model="q"
+					x-ref="search"
+					placeholder={ T("combo.search") }
+					@keydown.down.prevent="move(1)"
+					@keydown.up.prevent="move(-1)"
+					@keydown.enter.prevent="pick(active)"
+				/>
+			</template>
+			<ul class="combo-list" role="listbox" x-ref="list">
+				<template x-for="(o,i) in filtered()" :key="o.value">
+					<li
+						role="option"
+						:class="{active: i===active, sel: o.value===value}"
+						@click="pick(i)"
+						@mousemove="active=i"
+					>
+						<span class="combo-lbl" x-text="o.label"></span>
+						<small class="combo-sub" x-show="o.sub" x-text="o.sub"></small>
+					</li>
+				</template>
+				<li class="combo-none" x-show="filtered().length===0">{ T("combo.none") }</li>
+			</ul>
+		</div>
+	</div>
+}
+
+// accountOptions builds combobox options from accounts, tagging personal
+// accounts. When includeInstance, prepends an "instance-wide" ("") option.
+func accountOptions(accts []store.Account, includeInstance bool) []ComboOption {
+	var out []ComboOption
+	if includeInstance {
+		out = append(out, ComboOption{Value: "", Label: T("tokens.instance")})
+	}
+	for _, a := range accts {
+		o := ComboOption{Value: a.Slug, Label: a.Slug}
+		if a.Kind == "user" {
+			o.Sub = T("nav.personal")
+		} else {
+			o.Sub = T("acct.org")
+		}
+		out = append(out, o)
+	}
+	return out
+}
+
+// contextOptions builds the header switcher options: an "All accounts" entry
+// (viewing everything you can) plus each account you belong to.
+func contextOptions(accts []store.Account) []ComboOption {
+	out := []ComboOption{{Value: "", Label: T("nav.allaccounts"), Sub: T("nav.allhint")}}
+	for _, a := range accts {
+		o := ComboOption{Value: a.Slug, Label: a.Slug}
+		if a.Kind == "user" {
+			o.Sub = T("nav.personal")
+		} else {
+			o.Sub = T("acct.org")
+		}
+		out = append(out, o)
+	}
+	return out
+}
+
+// boolPtr is a small helper for the optional Combo.Search flag.
+func boolPtr(b bool) *bool { return &b }
+
+// durUnitOptions is the shared duration unit list.
+func durUnitOptions() []ComboOption {
+	return []ComboOption{
+		{Value: "h", Label: T("unit.hours")},
+		{Value: "d", Label: T("unit.days")},
+		{Value: "mo", Label: T("unit.months")},
+		{Value: "y", Label: T("unit.years")},
+	}
+}
+
+func sizeUnitOptions() []ComboOption {
+	return []ComboOption{
+		{Value: "MiB", Label: "MiB"},
+		{Value: "GiB", Label: "GiB"},
+		{Value: "TiB", Label: "TiB"},
+	}
+}
+
+// storageOptions builds combobox options from storage-backend names.
+func storageOptions(names []string) []ComboOption {
+	out := make([]ComboOption, 0, len(names))
+	for _, n := range names {
+		out = append(out, ComboOption{Value: n, Label: n})
+	}
+	return out
+}
+
+// firstStr returns the first string or "".
+func firstStr(ss []string) string {
+	if len(ss) > 0 {
+		return ss[0]
+	}
+	return ""
+}
+
+// defaultAccount picks "default" when present, else the first account slug —
+// the initial selection for the new-cache account picker.
+func defaultAccount(accts []store.Account) string {
+	for _, a := range accts {
+		if a.Slug == "default" {
+			return "default"
+		}
+	}
+	if len(accts) > 0 {
+		return accts[0].Slug
+	}
+	return ""
+}
+
+// roleOptions is the org-member role list.
+func roleOptions() []ComboOption {
+	return []ComboOption{
+		{Value: "member", Label: T("org.member")},
+		{Value: "admin", Label: T("org.admin")},
+	}
+}
+
+// userOptions builds a searchable list of users (id → name + email).
+func userOptions(users []store.User) []ComboOption {
+	out := make([]ComboOption, 0, len(users))
+	for _, u := range users {
+		out = append(out, ComboOption{Value: itoa64(u.ID), Label: u.Name, Sub: u.Email})
+	}
+	return out
+}
+
+// tokenScopeOptions builds the token cache-scope list ("*" + each cache ref).
+func tokenScopeOptions(caches []CacheUsage) []ComboOption {
+	out := []ComboOption{{Value: "*", Label: T("tokens.all")}}
+	for _, u := range caches {
+		out = append(out, ComboOption{Value: u.Cache.Ref(), Label: u.Cache.Ref()})
+	}
+	return out
+}
+
+// tokenScopeValue resolves the initial scope selection for a token form.
+func tokenScopeValue(t *store.Token) string {
+	if t != nil && len(t.Caches) == 1 && t.Caches[0] != "*" {
+		if t.AccountID != 0 {
+			return t.Account + "/" + t.Caches[0]
+		}
+		return t.Caches[0]
+	}
+	return "*"
+}
+
+// tokenAccountLabel is the immutable owning-account label on token edit.
+func tokenAccountLabel(t *store.Token) string {
+	if t == nil || t.AccountID == 0 {
+		return T("tokens.instance")
+	}
+	return t.Account
+}
+
+// itoa64 stringifies an int64.
+func itoa64(n int64) string { return strconv.FormatInt(n, 10) }
+
+

@@ -123,21 +123,8 @@ templ Dashboard(d DashboardData) {
 		@Modal("dlg-cache", T("caches.new")) {
 			<form method="post" action="/admin/caches">
 				<label>
-					{ T("caches.namespace") }
-					if d.IsAdmin {
-						<input name="namespace" list="ns-list" value="default" required pattern="[-a-zA-Z0-9_]+"/>
-						<datalist id="ns-list">
-							for _, acct := range d.Accounts {
-								<option value={ acct.Slug }></option>
-							}
-						</datalist>
-					} else {
-						<select name="namespace">
-							for _, acct := range d.Accounts {
-								<option value={ acct.Slug }>{ acct.Slug }</option>
-							}
-						</select>
-					}
+					{ T("caches.account") }
+					@Combobox(Combo{Name: "namespace", Value: defaultAccount(d.Accounts), Placeholder: T("caches.pickaccount"), Options: accountOptions(d.Accounts, false)})
 				</label>
 				<label>
 					{ T("caches.name") }
@@ -146,11 +133,7 @@ templ Dashboard(d DashboardData) {
 				if d.IsAdmin && len(d.Storages) > 1 {
 					<label>
 						{ T("caches.storage") }
-						<select name="storage">
-							for _, st := range d.Storages {
-								<option value={ st }>{ st }</option>
-							}
-						</select>
+						@Combobox(Combo{Name: "storage", Value: firstStr(d.Storages), Options: storageOptions(d.Storages)})
 					</label>
 				}
 				<div class="switch-row vis-row">
@@ -174,17 +157,6 @@ templ tokenEditModal(t store.Token, caches []CacheUsage, orgs []store.Account, i
 	}
 }
 
-// tokenScopeSelected reports whether a cache ref is the token's single scope.
-func tokenScopeSelected(t *store.Token, c store.Cache) bool {
-	if t == nil || len(t.Caches) != 1 {
-		return false
-	}
-	if t.AccountID != 0 {
-		return t.Account == c.Account && t.Caches[0] == c.Name
-	}
-	return t.Caches[0] == c.Ref()
-}
-
 // tokenForm is the shared create/edit token dialog body; t is nil on create.
 // The owning namespace is chosen at creation and immutable afterwards.
 templ tokenForm(action string, t *store.Token, caches []CacheUsage, orgs []store.Account, isAdmin bool, submitIcon, submitLabel string) {
@@ -200,32 +172,15 @@ templ tokenForm(action string, t *store.Token, caches []CacheUsage, orgs []store
 		<label>
 			{ T("tokens.namespace") }
 			if t != nil {
-				<select disabled>
-					if t.AccountID == 0 {
-						<option selected>{ T("tokens.instance") }</option>
-					} else {
-						<option selected>{ t.Account }</option>
-					}
-				</select>
+				// Owning account is fixed after creation.
+				<input value={ tokenAccountLabel(t) } disabled/>
 			} else {
-				<select name="namespace">
-					if isAdmin {
-						<option value="">{ T("tokens.instance") }</option>
-					}
-					for _, acct := range orgs {
-						<option value={ acct.Slug }>{ acct.Slug }</option>
-					}
-				</select>
+				@Combobox(Combo{Name: "namespace", Value: "", Placeholder: T("tokens.pickaccount"), Options: accountOptions(orgs, isAdmin)})
 			}
 		</label>
 		<label>
 			{ T("tokens.scope") }
-			<select name="cache">
-				<option value="*">{ T("tokens.all") }</option>
-				for _, u := range caches {
-					<option value={ u.Cache.Ref() } selected?={ tokenScopeSelected(t, u.Cache) }>{ u.Cache.Ref() }</option>
-				}
-			</select>
+			@Combobox(Combo{Name: "cache", Value: tokenScopeValue(t), Options: tokenScopeOptions(caches)})
 		</label>
 		<fieldset class="switch-group">
 			<legend>{ T("tokens.perms") }</legend>

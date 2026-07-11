@@ -60,19 +60,10 @@ templ Org(d OrgPageData) {
 				<div class={ "row-split", templ.KV("rule-above", len(d.Info.Members) > 0) }>
 					<p>{ T("org.addhint") }</p>
 					if len(d.AllUsers) > 0 {
-						<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") } class="member-add">
-							<fieldset role="group">
-								<select name="user_id" aria-label={ T("ns.username") }>
-									for _, u := range d.AllUsers {
-										<option value={ strconv.FormatInt(u.ID, 10) }>{ u.Name }</option>
-									}
-								</select>
-								<select name="role" aria-label={ T("users.role") }>
-									<option value="member">{ T("org.member") }</option>
-									<option value="admin">{ T("org.admin") }</option>
-								</select>
-								<button type="submit">@Icon("user-plus") <span>{ T("ns.addmember") }</span></button>
-							</fieldset>
+						<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") } class="member-add member-add-combo">
+							@Combobox(Combo{Name: "user_id", Placeholder: T("org.pickuser"), AriaLabel: T("ns.username"), Search: boolPtr(true), Options: userOptions(d.AllUsers)})
+							@Combobox(Combo{Name: "role", Value: "member", AriaLabel: T("users.role"), Options: roleOptions()})
+							<button type="submit">@Icon("user-plus") <span>{ T("ns.addmember") }</span></button>
 						</form>
 					} else {
 						<p><small>{ T("org.nocandidates") }</small></p>
