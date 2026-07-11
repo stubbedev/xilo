@@ -1,5 +1,11 @@
 # xilo
 
+[![CI](https://github.com/stubbedev/xilo/actions/workflows/ci.yml/badge.svg)](https://github.com/stubbedev/xilo/actions/workflows/ci.yml)
+[![Perf](https://github.com/stubbedev/xilo/actions/workflows/perf.yml/badge.svg)](https://github.com/stubbedev/xilo/actions/workflows/perf.yml)
+[![Docker](https://github.com/stubbedev/xilo/actions/workflows/docker.yml/badge.svg)](https://github.com/stubbedev/xilo/actions/workflows/docker.yml)
+[![coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fstubbedev%2Fxilo%2Fmaster%2F.github%2Fbadges%2Fcoverage.json)](https://github.com/stubbedev/xilo/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/stubbedev/xilo)](https://github.com/stubbedev/xilo/releases/latest)
+
 Self-hosted [Nix binary cache](https://nix.dev/manual/nix/latest/store/types/http-binary-cache-store) — a single Go binary, no external services. An alternative to [attic](https://github.com/zhaofengli/attic) that:
 
 - **never stalls on concurrent pushes** — pure-Go SQLite (WAL) with a single writer goroutine; chunk bytes live in the storage backend, never the DB, so pushes take no long-held lock

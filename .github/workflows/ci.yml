@@ -53,7 +53,7 @@ jobs:
         run: docker compose -f tests/k6/compose.yaml down -v
 
   schema:
-    name: JSON schema in sync
+    name: schema + coverage badge in sync
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -75,7 +75,24 @@ jobs:
           mkdir -p schemas
           go run ./cmd/xilo schema dump --out schemas/xilo.schema.json
 
-      # On PRs: fail if stale so the author regenerates + commits.
+      # Coverage badge (shields.io endpoint JSON, served raw from master).
+      # Generated *_templ.go views are excluded — the badge tracks the code
+      # humans maintain.
+      - name: regenerate coverage badge
+        run: |
+          go test -count=1 -coverprofile=cover.out ./internal/... > /dev/null
+          grep -v "_templ.go:" cover.out > cover-filtered.out
+          pct=$(go tool cover -func=cover-filtered.out | tail -1 | grep -oE '[0-9.]+%' | tr -d '%')
+          color=orange
+          awk -v p="$pct" 'BEGIN{exit !(p>=70)}' && color=yellowgreen
+          awk -v p="$pct" 'BEGIN{exit !(p>=80)}' && color=green
+          awk -v p="$pct" 'BEGIN{exit !(p>=90)}' && color=brightgreen
+          mkdir -p .github/badges
+          printf '{"schemaVersion":1,"label":"coverage","message":"%s%%","color":"%s"}\n' "$pct" "$color" > .github/badges/coverage.json
+          rm cover.out cover-filtered.out
+          cat .github/badges/coverage.json
+
+      # On PRs: fail if the schema is stale so the author regenerates + commits.
       - name: assert in sync (PR)
         if: github.event_name == 'pull_request'
         run: |
@@ -85,15 +102,15 @@ jobs:
             exit 1
           fi
 
-      # On master/main pushes: auto-commit any drift.
+      # On master/main pushes: auto-commit any drift (schema + badge).
       - name: auto-commit (push)
         if: github.event_name == 'push'
         run: |
-          if [ -z "$(git status --porcelain schemas/xilo.schema.json)" ]; then
-            echo "schema already in sync"; exit 0
+          if [ -z "$(git status --porcelain schemas/xilo.schema.json .github/badges/coverage.json)" ]; then
+            echo "schema + badge already in sync"; exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add schemas/xilo.schema.json
-          git commit -m 'chore: auto-bump JSON schema [skip ci]'
+          git add schemas/xilo.schema.json .github/badges/coverage.json
+          git commit -m 'chore: auto-bump schema + coverage badge [skip ci]'
           git push
