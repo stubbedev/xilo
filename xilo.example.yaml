@@ -17,6 +17,11 @@ admin:
   # ignored (a stale env var can't reset the account).
   password: ""
 
+# Metadata database. Empty = zero-config SQLite in data_dir; point at
+# PostgreSQL (or set XILO_DATABASE_URL) to run at larger scale.
+database:
+  url: "" # e.g. "postgres://xilo:secret@db.internal/xilo"
+
 storage:
   backend: local # local | s3
   local:
@@ -28,6 +33,14 @@ storage:
   #   access_key: "" # or XILO_S3_ACCESS_KEY
   #   secret_key: "" # or XILO_S3_SECRET_KEY
   #   insecure: false # true for a local Garage over plain HTTP
+
+# Additional named blob backends next to the primary (named "default").
+# Each cache is pinned to one backend at creation; dedup is per-backend.
+# storages:
+#   fast:
+#     backend: local
+#     local: { root: /nvme/xilo }
+# default_storage: fast # backend for new caches when none is chosen
 
 # Content-defined chunking (server-dictated; clients fetch these so dedup is
 # consistent). Smaller average = better dedup, more overhead.

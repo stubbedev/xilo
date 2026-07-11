@@ -9,10 +9,13 @@
 Self-hosted [Nix binary cache](https://nix.dev/manual/nix/latest/store/types/http-binary-cache-store) — a single Go binary, no external services. An alternative to [attic](https://github.com/zhaofengli/attic) that:
 
 - **never stalls on concurrent pushes** — pure-Go SQLite (WAL) with a single writer goroutine; chunk bytes live in the storage backend, never the DB, so pushes take no long-held lock
-- ships a **cachix-style admin dashboard** to manage caches and tokens
+- is **multi-tenant**: caches live in namespaces (`/{ns}/{cache}`), users join
+  namespaces as owners or members, and tokens can be confined to one namespace
+- ships a **cachix-style admin dashboard** to manage caches, tokens, users and namespaces
 - can **revoke push/pull tokens** instantly
-- does **content-addressed chunked dedup** (FastCDC) across all caches
-- stores chunks on **local disk or any S3-compatible bucket** (AWS, [Garage](https://garagehq.deuxfleurs.fr/), R2, …)
+- does **content-addressed chunked dedup** (FastCDC) per storage backend
+- stores chunks on **local disk or any S3-compatible bucket** (AWS, [Garage](https://garagehq.deuxfleurs.fr/), R2, …) — several named backends at once, assignable per cache
+- scales past a personal cache by pointing `database.url` at **PostgreSQL** (SQLite stays the zero-config default)
 - ships a **9 MB distroless Docker image** and serves zstd pulls straight from
   stored frames (zero compression CPU on the hot path)
 
@@ -32,6 +35,25 @@ chunking, sqlite + local storage both sides — reproduce with
 
 (attic's per-NAR p95 was ~50 ms better in this run — it was serving a third
 of the bytes. Numbers from 2026-07; rerun the script for your hardware.)
+
+Feature parity, and where xilo goes further:
+
+| | xilo | attic |
+|---|---|---|
+| chunked dedup (FastCDC) | ✓ | ✓ |
+| SQLite / PostgreSQL | ✓ / ✓ | ✓ / ✓ |
+| local / S3 storage | ✓ (+ several named backends, per cache) | ✓ (one) |
+| namespaces / multi-tenancy | ✓ first-class, with users + roles | per-cache only |
+| server-managed signing keys | ✓ (+ rotation) | ✓ |
+| token revocation | ✓ instant (DB-backed) | ✗ (stateless JWT) |
+| token scopes | `*`, `ns/*`, `ns/cache` + mgmt perms | JWT cache patterns |
+| retention / GC | time **and size caps** (per cache + global LRU) | time only |
+| missing data | fails closed (clean error) | can serve truncated 200s |
+| web dashboard | ✓ (users, namespaces, tokens, live status) | ✗ |
+| Prometheus metrics | ✓ | ✗ |
+| store-watch auto-push | ✓ | ✓ |
+| integrity fsck + repair | ✓ | ✗ |
+| tagged releases | ✓ | none yet |
 
 ## Quick start
 
@@ -109,9 +131,12 @@ Dependency bumps and the flake's `vendorHash` are managed by `just update`
 Add to `nix.conf` (the cache page in the dashboard shows this filled in):
 
 ```
-extra-substituters = http://localhost:8080/mycache
+extra-substituters = http://localhost:8080/default/mycache
 extra-trusted-public-keys = mycache:<public-key>
 ```
+
+Cache URLs are always `/{namespace}/{cache}`; bare names in the CLI mean the
+`default` namespace.
 
 ### Push
 
@@ -125,7 +150,8 @@ XILO_URL=http://localhost:8080 XILO_TOKEN=<secret> xilo push mycache ./result
 
 Parallelism is automatic (the server advertises its capacity; override with `--jobs`).
 Paths already signed by a configured `upstream_keys` entry (e.g. `cache.nixos.org-1`) are skipped.
-Add `--dry-run` to preview, `--quiet` for hooks.
+Add `--dry-run` to preview, `--quiet` for hooks. With a saved default target
+(`xilo use mycache --default`) the cache argument is optional: `xilo push ./result`.
 
 ### Automatic push
 
@@ -161,9 +187,11 @@ Full workflow in [`examples/github-actions.yml`](./examples/github-actions.yml).
 ### Convenience
 
 ```sh
-xilo login https://cache.example.com --token <secret>   # save URL+token
-xilo use mycache                                         # write nix.conf (+ netrc if private)
-xilo use mycache --remove                                # undo
+xilo login https://cache.example.com --token <secret>   # save a server profile
+xilo login https://other.example.com --name work        # more servers: named profiles (-p work)
+xilo use mycache --default                               # write nix.conf (+ netrc) and make it the default push target
+xilo push ./result                                       # no cache argument needed anymore
+xilo use mycache --remove                                # undo nix.conf
 ```
 
 ## Behind a reverse proxy (TLS)
@@ -198,7 +226,12 @@ S3 backend only the DB needs backing up.
 
 ## Tokens & private caches
 
-- Tokens are opaque secrets, stored hashed, scoped to caches + `push`/`pull`, **revocable** from the dashboard or `xilo token revoke <id>`.
+- Tokens are opaque secrets, stored hashed, **revocable** from the dashboard or `xilo token revoke <id>`.
+- Scopes are patterns: `*`, `ns/*` or `ns/cache`. A token minted inside a
+  namespace can never reach outside it.
+- Perms: `pull`, `push`, plus management bits for the HTTP API —
+  `create-cache`, `configure-cache`, `destroy-cache` (scoped like pull/push)
+  and `admin` (instance-wide; drives remote `xilo cache|token|gc --server …`).
 - Public caches are open to pull. Private caches need a `pull` token, supplied by Nix via `~/.netrc`:
 
   ```
@@ -226,7 +259,47 @@ storage:
 Or entirely from env — setting `XILO_S3_BUCKET` selects the s3 backend, so a
 Docker deployment needs no config file (`XILO_S3_ENDPOINT`, `XILO_S3_BUCKET`,
 `XILO_S3_REGION`, `XILO_S3_ACCESS_KEY`, `XILO_S3_SECRET_KEY`,
-`XILO_S3_INSECURE`). The SQLite database stays in `data_dir`.
+`XILO_S3_INSECURE`). The database stays in `data_dir`.
+
+Additional **named backends** can sit next to the primary (which is named
+`default`), and each cache is pinned to one at creation (`xilo cache create
+foo --storage fast`, or the select in the dashboard). Chunk dedup is
+per-backend, and GC/fsck sweep each backend independently:
+
+```yaml
+storages:
+  fast:
+    backend: local
+    local: { root: /nvme/xilo }
+default_storage: fast   # backend for new caches when none is chosen
+```
+
+## Multi-tenancy
+
+Caches live in **namespaces** — the tenancy unit. `default` always exists;
+admins create more from the dashboard (Settings → Namespaces) or the API.
+Users join a namespace as **owner** (creates and manages its caches and
+namespace-scoped tokens) or **member** (visibility). Instance **admins** see
+and manage everything, including dashboard accounts (Settings → Users).
+
+Two caches may share a name in different namespaces; each has its own signing
+key. A tenant's dashboard shows only their namespaces, foreign caches 404,
+and namespace tokens cannot cross the boundary.
+
+## PostgreSQL
+
+SQLite (the default) needs zero configuration and comfortably serves a
+personal or small-team cache. For larger deployments point xilo at Postgres:
+
+```yaml
+database:
+  url: "postgres://xilo:secret@db.internal/xilo"   # or XILO_DATABASE_URL
+```
+
+The schema is created and migrated automatically; blob storage is unaffected.
+Note the admin CLI on a different machine can't open the database directly —
+use `--server https://cache.example.com --token <admin token>` (an `admin`-perm
+token) and the same commands work over the HTTP API.
 
 ## Garbage collection
 
@@ -256,6 +329,23 @@ YAML (see [`xilo.example.yaml`](./xilo.example.yaml)). A JSON schema is publishe
 `yaml-language-server` modeline for editor autocompletion. Secrets can come from env
 (`XILO_ADMIN_PASSWORD`, `XILO_S3_ACCESS_KEY`, `XILO_S3_SECRET_KEY`).
 
+## Upgrading to 1.0
+
+The 1.0 schema migrations run automatically on first start — SQLite databases
+from any earlier version come forward in place. Two changes need action:
+
+- **Cache URLs move** from `/{cache}` to `/{namespace}/{cache}`. Existing
+  caches land in the `default` namespace, so every substituter, netrc-adjacent
+  URL and CI config changes `…/mycache` → `…/default/mycache`. Signing keys
+  and tokens keep working (token scopes are rewritten to `default/…`
+  automatically); pull/push against the old URLs 404s until updated.
+- **Dashboard login now asks for a username.** The old admin password belongs
+  to the migrated `admin` account; its passkeys move along, and everyone is
+  signed out once.
+
+The CLI accepts both `mycache` (meaning `default/mycache`) and `ns/cache`
+everywhere.
+
 ## Development
 
 ```sh
@@ -272,6 +362,6 @@ The admin UI is [templ](https://templ.guide/) components styled with [Pico CSS](
 
 A push runs `nix path-info` for the closure, chunks each NAR client-side (FastCDC),
 uploads only the chunks the server lacks, then registers the path metadata. Serving
-speaks the standard Nix binary-cache protocol: `/{cache}/nix-cache-info`,
-`/{cache}/{hash}.narinfo` (signed on the fly with the cache's ed25519 key so pushers
+speaks the standard Nix binary-cache protocol: `/{ns}/{cache}/nix-cache-info`,
+`/{ns}/{cache}/{hash}.narinfo` (signed on the fly with the cache's ed25519 key so pushers
 never hold the signing key), and `/{cache}/nar/{hash}.nar` (reassembled from chunks).

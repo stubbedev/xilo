@@ -22,12 +22,12 @@ import (
 func watchCmd() *cobra.Command {
 	var url, token, storeDir string
 	c := &cobra.Command{
-		Use:   "watch <cache>",
+		Use:   "watch <ns/cache>",
 		Short: "Watch the Nix store and auto-push newly-built paths (Linux)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			url, token = resolveServer(url, token)
-			cl := push.NewClient(url, args[0], token, 0)
+			cl := push.NewClient(url, normRef(args[0]), token, 0)
 			cl.Quiet = true
 			fmt.Printf("watching %s → pushing to %s\n", storeDir, args[0])
 
