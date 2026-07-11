@@ -16,16 +16,17 @@ type User struct {
 	Email       string // optional; unique when set; usable for sign-in
 	PassHash    string
 	Role        string // "admin" | "member"
+	Status      string // "active" | "pending" (awaiting approval)
 	TOTPEnabled bool
 	Created     int64
 }
 
-const userCols = `id,username,COALESCE(email,''),password_hash,role,totp_enabled,created`
+const userCols = `id,username,COALESCE(email,''),password_hash,role,status,totp_enabled,created`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	var totp int
-	if err := row.Scan(&u.ID, &u.Name, &u.Email, &u.PassHash, &u.Role, &totp, &u.Created); err != nil {
+	if err := row.Scan(&u.ID, &u.Name, &u.Email, &u.PassHash, &u.Role, &u.Status, &totp, &u.Created); err != nil {
 		return nil, err
 	}
 	u.TOTPEnabled = totp != 0
@@ -36,10 +37,19 @@ func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 // personal account (kind "user", slug == username) with the user as its
 // admin. Usernames and account slugs share one global pool.
 func (db *DB) CreateUser(name, email, passHash, role string) (*User, error) {
+	return db.createUser(name, email, passHash, role, "active")
+}
+
+// CreatePendingUser is CreateUser for self-registration awaiting approval.
+func (db *DB) CreatePendingUser(name, email, passHash string) (*User, error) {
+	return db.createUser(name, email, passHash, "member", "pending")
+}
+
+func (db *DB) createUser(name, email, passHash, role, status string) (*User, error) {
 	if !ValidSlug(name) {
-		return nil, errors.New("invalid username (lowercase letters, digits, - and _; some names are reserved)")
+		return nil, errors.New("invalid username (lowercase letters, digits, - and _)")
 	}
-	u := &User{Name: name, Email: email, PassHash: passHash, Role: role, Created: time.Now().Unix()}
+	u := &User{Name: name, Email: email, PassHash: passHash, Role: role, Status: status, Created: time.Now().Unix()}
 	err := db.write(func(tx *sql.Tx) error {
 		var taken int
 		if err := tx.QueryRow(`SELECT 1 FROM accounts WHERE slug=?`, name).Scan(&taken); err == nil {
@@ -52,8 +62,8 @@ func (db *DB) CreateUser(name, email, passHash, role string) (*User, error) {
 			email = u.Email
 		}
 		if err := tx.QueryRow(
-			`INSERT INTO users (username,email,password_hash,role,created) VALUES (?,?,?,?,?) RETURNING id`,
-			u.Name, email, u.PassHash, u.Role, u.Created).Scan(&u.ID); err != nil {
+			`INSERT INTO users (username,email,password_hash,role,status,created) VALUES (?,?,?,?,?,?) RETURNING id`,
+			u.Name, email, u.PassHash, u.Role, u.Status, u.Created).Scan(&u.ID); err != nil {
 			return err
 		}
 		var accID int64
@@ -133,6 +143,14 @@ func (db *DB) CountAdmins() (int, error) {
 func (db *DB) SetUserPassword(id int64, passHash string) error {
 	return db.write(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`UPDATE users SET password_hash=? WHERE id=?`, passHash, id)
+		return err
+	})
+}
+
+// SetUserStatus flips approval state ("active" | "pending").
+func (db *DB) SetUserStatus(id int64, status string) error {
+	return db.write(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE users SET status=? WHERE id=?`, status, id)
 		return err
 	})
 }

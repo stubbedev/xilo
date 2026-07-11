@@ -280,6 +280,21 @@ func migrate(w *sql.DB, pg bool) error {
 			id      TEXT PRIMARY KEY,
 			expires INTEGER NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS plans (
+			id            INTEGER PRIMARY KEY,
+			name          TEXT UNIQUE NOT NULL,
+			max_caches    INTEGER NOT NULL DEFAULT 0,
+			max_members   INTEGER NOT NULL DEFAULT 0,
+			max_storage   INTEGER NOT NULL DEFAULT 0,
+			max_retention INTEGER NOT NULL DEFAULT 0,
+			orgs_allowed  INTEGER NOT NULL DEFAULT 0,
+			public        INTEGER NOT NULL DEFAULT 0,
+			created       INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE TABLE IF NOT EXISTS settings (
+			key   TEXT PRIMARY KEY,
+			value TEXT NOT NULL DEFAULT ''
+		)`,
 		`CREATE TABLE IF NOT EXISTS metrics_minutes (
 			ts     INTEGER PRIMARY KEY,
 			req    REAL NOT NULL,
@@ -311,6 +326,7 @@ func migrate(w *sql.DB, pg bool) error {
 		{"passkeys", "user_id", "INTEGER NOT NULL DEFAULT 0"},
 		{"sessions", "user_id", "INTEGER NOT NULL DEFAULT 0"},
 		{"users", "email", "TEXT"},
+		{"users", "status", "TEXT NOT NULL DEFAULT 'active'"},
 		{"accounts", "kind", "TEXT NOT NULL DEFAULT 'org'"},
 		{"accounts", "plan_id", "INTEGER NOT NULL DEFAULT 0"},
 	}

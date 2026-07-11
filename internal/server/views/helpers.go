@@ -160,3 +160,34 @@ func Ago(ts int64) string {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// planLimits summarizes a plan's caps in one line.
+func planLimits(p store.Plan) string {
+	part := func(label string, v int64, fmtv string) string {
+		if v == 0 {
+			return ""
+		}
+		return label + " " + fmtv + " · "
+	}
+	out := part("caches", p.MaxCaches, itoa(p.MaxCaches)) +
+		part("members", p.MaxMembers, itoa(p.MaxMembers)) +
+		part("storage", p.MaxStorage, humanBytesV(p.MaxStorage)) +
+		part("retention", p.MaxRetention, itoa(p.MaxRetention/86400)+"d")
+	if out == "" {
+		return T("plan.unlimited")
+	}
+	return strings.TrimSuffix(out, " · ")
+}
+
+// humanBytesV formats bytes without needing the injected formatter.
+func humanBytesV(b int64) string {
+	switch {
+	case b >= 1<<40:
+		return strconv.FormatInt(b>>40, 10) + " TiB"
+	case b >= 1<<30:
+		return strconv.FormatInt(b>>30, 10) + " GiB"
+	case b >= 1<<20:
+		return strconv.FormatInt(b>>20, 10) + " MiB"
+	}
+	return strconv.FormatInt(b, 10) + " B"
+}

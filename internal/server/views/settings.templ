@@ -6,19 +6,25 @@ import (
 	"github.com/stubbedev/xilo/internal/store"
 )
 
-templ Settings(user *store.User, totpEnabled bool, passkeys []store.Passkey, users []store.User, orgs []OrgInfo, flash Flash) {
-	@Layout(T("set.title"), true, flash) {
+templ Settings(d SettingsData) {
+	@Layout(T("set.title"), true, d.Flash) {
 		<hgroup>
 			<h1>{ T("set.title") }</h1>
-			<p>{ T("set.subtitle") } <small>· { user.Name } ({ user.Role })</small></p>
+			<p>{ T("set.subtitle") } <small>· { d.User.Name } ({ d.User.Role })</small></p>
 		</hgroup>
-		if user.Role == "admin" {
-			@usersSection(user, users)
-			@orgsSection(orgs)
+		if d.User.Role == "admin" && d.MultiTenant {
+			@instanceSection(d)
+			@plansSection(d.Plans)
+		}
+		if d.User.Role == "admin" {
+			@usersSection(d.User, d.Users)
+		}
+		if d.User.Role == "admin" || len(d.Orgs) > 0 || d.CanMakeOrg {
+			@orgsSection(d)
 		}
 		<h2>{ T("set.passkeys") }</h2>
 		<article>
-			for _, pk := range passkeys {
+			for _, pk := range d.Passkeys {
 				<div class="row-split">
 					<p>
 						@Icon("fingerprint")
@@ -30,14 +36,14 @@ templ Settings(user *store.User, totpEnabled bool, passkeys []store.Passkey, use
 					</form>
 				</div>
 			}
-			<div class={ "row-split" , templ.KV("rule-above", len(passkeys) > 0) }>
+			<div class={ "row-split" , templ.KV("rule-above", len(d.Passkeys) > 0) }>
 				<p>{ T("set.passkeys.hint") }</p>
 				<button type="button" onclick="xiloPasskeyRegister()">@Icon("fingerprint") <span>{ T("set.passkeys.add") }</span></button>
 			</div>
 		</article>
 		<h2>{ T("set.2fa") }</h2>
 		<article>
-			if totpEnabled {
+			if d.TOTPEnabled {
 				<div class="row-split">
 					<p>@Icon("shield-check") <span class="badge pub">{ T("set.2fa.on") }</span> { T("set.2fa.enabled") }</p>
 					<form method="post" action="/admin/settings/totp/disable" data-confirm={ T("confirm.2fa") }>
@@ -77,9 +83,17 @@ templ usersSection(acting *store.User, users []store.User) {
 					} else {
 						<span class="badge pub">{ T("users.member") }</span>
 					}
+					if u.Status == "pending" {
+						<span class="badge rev">{ T("users.pending") }</span>
+					}
 					<small>· { Ago(u.Created) }</small>
 				</p>
 				<div class="row-actions">
+					if u.Status == "pending" {
+						<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/approve") }>
+							<button class="iconbtn" aria-label={ T("users.approve") } data-tooltip={ T("users.approve") }>@IconClass("user-check", 16, "")</button>
+						</form>
+					}
 					@Modal("dlg-user-reset-"+strconv.FormatInt(u.ID, 10), T("users.reset")) {
 						<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/reset") }>
 							<label>{ T("users.newpw") } <input type="password" name="password" autocomplete="new-password" required minlength="8"/></label>
@@ -133,12 +147,94 @@ templ usersSection(acting *store.User, users []store.User) {
 	</article>
 }
 
-// orgsSection is the admin-only tenancy block: accounts, their members, and
-// membership management.
-templ orgsSection(orgs []OrgInfo) {
+// instanceSection is the super-admin policy panel (multi-tenant only).
+templ instanceSection(d SettingsData) {
+	<h2>{ T("set.instance") }</h2>
+	<article>
+		<form method="post" action="/admin/settings/instance">
+			<fieldset class="switch-group">
+				<div class="switch-row">
+					<label><input type="checkbox" role="switch" name="allow_registrations" checked?={ d.AllowRegs }/> { T("inst.regs") }</label>
+					<label><input type="checkbox" role="switch" name="require_approval" checked?={ d.RequireOK }/> { T("inst.approve") }</label>
+				</div>
+			</fieldset>
+			<div class="fields-foot"><span></span><button type="submit">@Icon("check") <span>{ T("cd.save") }</span></button></div>
+		</form>
+	</article>
+}
+
+// plansSection is the super-admin plan CRUD (multi-tenant only).
+templ plansSection(plans []store.Plan) {
+	<h2>{ T("set.plans") }</h2>
+	<article>
+		for _, p := range plans {
+			<div class="row-split">
+				<p>
+					{ p.Name }
+					if p.Public {
+						<span class="badge pub">{ T("plan.public") }</span>
+					}
+					if p.OrgsAllowed {
+						<span class="badge priv">{ T("plan.orgs") }</span>
+					}
+					<small>· { planLimits(p) }</small>
+				</p>
+				<div class="row-actions">
+					<form method="post" action={ templ.SafeURL("/admin/plans/" + strconv.FormatInt(p.ID, 10) + "/delete") } data-confirm={ T("confirm.plan") }>
+						<button class="iconbtn danger" aria-label={ T("plan.delete") } data-tooltip={ T("plan.delete") }>@IconClass("trash-2", 16, "")</button>
+					</form>
+				</div>
+			</div>
+		}
+		<div class={ "row-split", templ.KV("rule-above", len(plans) > 0) }>
+			<p>{ T("plan.hint") }</p>
+			<button type="button" data-dlg="dlg-plan-new" onclick="document.getElementById(this.dataset.dlg).showModal()">@Icon("plus") <span>{ T("plan.new") }</span></button>
+			@Modal("dlg-plan-new", T("plan.new")) {
+				<form method="post" action="/admin/plans">
+					<label>{ T("plan.name") } <input name="name" placeholder="free" required/></label>
+					<label>{ T("plan.maxcaches") } <input type="number" name="max_caches" min="0" placeholder="0 = unlimited"/></label>
+					<label>{ T("plan.maxmembers") } <input type="number" name="max_members" min="0" placeholder="0 = unlimited"/></label>
+					<label>
+						{ T("plan.maxstorage") }
+						<fieldset role="group">
+							<input type="number" name="plan_storage_value" min="0" placeholder="unlimited"/>
+							<select name="plan_storage_unit">
+								<option value="GiB" selected>GiB</option>
+								<option value="MiB">MiB</option>
+								<option value="TiB">TiB</option>
+							</select>
+						</fieldset>
+					</label>
+					<label>
+						{ T("plan.maxretention") }
+						<fieldset role="group">
+							<input type="number" name="plan_retention_value" min="0" placeholder="unlimited"/>
+							<select name="plan_retention_unit">
+								<option value="d" selected>{ T("unit.days") }</option>
+								<option value="mo">{ T("unit.months") }</option>
+								<option value="y">{ T("unit.years") }</option>
+							</select>
+						</fieldset>
+					</label>
+					<fieldset class="switch-group">
+						<div class="switch-row">
+							<label><input type="checkbox" role="switch" name="orgs_allowed"/> { T("plan.orgs") }</label>
+							<label><input type="checkbox" role="switch" name="public" checked/> { T("plan.public") }</label>
+						</div>
+					</fieldset>
+					@ModalFoot("plus", T("plan.create"))
+				</form>
+			}
+		</div>
+	</article>
+}
+
+// orgsSection lists accounts with membership management. Admins see all and
+// manage; members see their organizations and can create one when entitled.
+templ orgsSection(d SettingsData) {
 	<h2>{ T("set.orgs") }</h2>
 	<article>
-		for _, info := range orgs {
+		for _, info := range d.Orgs {
 			<div class="row-split">
 				<p>
 					@Icon("folder")
@@ -160,26 +256,37 @@ templ orgsSection(orgs []OrgInfo) {
 						</form>
 					</div>
 				}
-				<form method="post" action={ templ.SafeURL("/admin/orgs/" + info.Account.Slug + "/members") } class="member-add">
-					<fieldset role="group">
-						<input name="username" placeholder={ T("ns.username") } required/>
-						<select name="role">
-							<option value="member">{ T("ns.member") }</option>
-							<option value="admin">{ T("ns.owner") }</option>
-						</select>
-						<button type="submit">@Icon("user-plus") <span>{ T("ns.addmember") }</span></button>
-					</fieldset>
-				</form>
+				if d.User.Role == "admin" {
+					<form method="post" action={ templ.SafeURL("/admin/orgs/" + info.Account.Slug + "/members") } class="member-add">
+						<fieldset role="group">
+							<input name="username" placeholder={ T("ns.username") } required/>
+							<select name="role">
+								<option value="member">{ T("ns.member") }</option>
+								<option value="admin">{ T("ns.owner") }</option>
+							</select>
+							<button type="submit">@Icon("user-plus") <span>{ T("ns.addmember") }</span></button>
+						</fieldset>
+					</form>
+				}
 			</div>
 		}
-		<div class={ "row-split", templ.KV("rule-above", len(orgs) > 0) }>
+		<div class={ "row-split", templ.KV("rule-above", len(d.Orgs) > 0) }>
 			<p>{ T("ns.hint") }</p>
-			<form method="post" action="/admin/orgs" class="member-add">
-				<fieldset role="group">
-					<input name="name" placeholder="team-a" required pattern="[-a-zA-Z0-9_]+"/>
-					<button type="submit">@Icon("folder-plus") <span>{ T("ns.new") }</span></button>
-				</fieldset>
-			</form>
+			if d.User.Role == "admin" {
+				<form method="post" action="/admin/orgs" class="member-add">
+					<fieldset role="group">
+						<input name="name" placeholder="team-a" required pattern="[-a-zA-Z0-9_]+"/>
+						<button type="submit">@Icon("folder-plus") <span>{ T("ns.new") }</span></button>
+					</fieldset>
+				</form>
+			} else if d.CanMakeOrg {
+				<form method="post" action="/admin/neworg" class="member-add">
+					<fieldset role="group">
+						<input name="name" placeholder="team-a" required pattern="[-a-zA-Z0-9_]+"/>
+						<button type="submit">@Icon("folder-plus") <span>{ T("ns.new") }</span></button>
+					</fieldset>
+				</form>
+			}
 		</div>
 	</article>
 }

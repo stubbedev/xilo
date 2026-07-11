@@ -29,6 +29,11 @@ type Config struct {
 	// Metadata database settings. Defaults to a zero-config SQLite file in
 	// data_dir; point at PostgreSQL for large multi-writer deployments.
 	Database Database `yaml:"database" json:"database"`
+	// Multi-tenant mode: enables self-registration (governed by the instance
+	// settings in the dashboard), plans, and organization creation by users.
+	// Off (default) = single-tenant: no signup surface at all, everything is
+	// managed by the bootstrap admin.
+	MultiTenant bool `yaml:"multi_tenant" json:"multi_tenant"`
 	// Admin dashboard settings.
 	Admin Admin `yaml:"admin" json:"admin"`
 	// Where chunk bytes are stored (the backend named "default").

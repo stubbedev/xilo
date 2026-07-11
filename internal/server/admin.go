@@ -212,7 +212,7 @@ func (s *Server) hasPasskeys() bool {
 
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	if !s.loggedIn(r) {
-		views.Login(!s.db.UsersExist(), s.hasPasskeys(), views.Flash{}).Render(r.Context(), w)
+		views.Login(!s.db.UsersExist(), s.hasPasskeys(), s.registrationOpen(), views.Flash{}).Render(r.Context(), w)
 		return
 	}
 	s.renderDashboard(w, r, views.Flash{})
@@ -389,13 +389,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	u, err := s.db.GetUserByLogin(strings.TrimSpace(r.FormValue("username")))
 	if errors.Is(err, store.ErrNotFound) {
 		if !s.db.UsersExist() {
-			views.Login(true, s.hasPasskeys(), views.Flash{}).Render(r.Context(), w)
+			views.Login(true, s.hasPasskeys(), s.registrationOpen(), views.Flash{}).Render(r.Context(), w)
 			return
 		}
 		// Burn a bcrypt anyway so unknown usernames cost the same as wrong
 		// passwords (no user-enumeration timing signal).
 		bcrypt.CompareHashAndPassword([]byte("$2a$10$0000000000000000000000000000000000000000000000000000"), []byte(r.FormValue("password")))
-		views.Login(false, s.hasPasskeys(), views.Flash{Msg: "Invalid username or password"}).Render(r.Context(), w)
+		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: "Invalid username or password"}).Render(r.Context(), w)
 		return
 	}
 	if err != nil {
@@ -403,7 +403,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(u.PassHash), []byte(r.FormValue("password"))) != nil {
-		views.Login(false, s.hasPasskeys(), views.Flash{Msg: "Invalid username or password"}).Render(r.Context(), w)
+		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: "Invalid username or password"}).Render(r.Context(), w)
+		return
+	}
+	if u.Status == "pending" {
+		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: "Your account is awaiting approval."}).Render(r.Context(), w)
 		return
 	}
 	// Password accepted. With 2FA on, the code is a second step gated by a
@@ -431,7 +435,7 @@ func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
 	pid := r.FormValue("pending")
 	uid, ok := s.sess.pendingUser(pid)
 	if !ok {
-		views.Login(false, s.hasPasskeys(), views.Flash{Msg: "That sign-in attempt expired — enter your password again."}).Render(r.Context(), w)
+		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: "That sign-in attempt expired — enter your password again."}).Render(r.Context(), w)
 		return
 	}
 	secret, on, _ := s.db.UserTOTP(uid)
@@ -477,35 +481,53 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 // renderSettings gathers the settings page inputs (2FA state, the user's
-// passkeys, and — for admins — the user management section).
+// passkeys, tenancy sections, and — for admins — user/plan/instance
+// management).
 func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, u *store.User, flash views.Flash) {
 	pks, err := s.db.ListUserPasskeys(u.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	var users []store.User
-	var nss []views.OrgInfo
+	d := views.SettingsData{
+		User: u, TOTPEnabled: u.TOTPEnabled, Passkeys: pks, Flash: flash,
+		MultiTenant: s.cfg.MultiTenant,
+		CanMakeOrg:  s.userCanCreateOrg(u),
+	}
+	var accountList []store.Account
 	if u.Role == "admin" {
-		if users, err = s.db.ListUsers(); err != nil {
+		if d.Users, err = s.db.ListUsers(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		list, err := s.db.ListAccounts()
+		if accountList, err = s.db.ListAccounts(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if s.cfg.MultiTenant {
+			if d.Plans, err = s.db.ListPlans(); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			d.AllowRegs = s.db.SettingBool("allow_registrations", false)
+			d.RequireOK = s.db.SettingBool("require_approval", true)
+		}
+	} else {
+		// Members see the organizations they belong to.
+		if accountList, err = s.db.UserAccounts(u.ID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	for _, acct := range accountList {
+		members, err := s.db.ListMembers(acct.ID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		for _, acct := range list {
-			members, err := s.db.ListMembers(acct.ID)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			nss = append(nss, views.OrgInfo{Account: acct, Members: members})
-		}
+		d.Orgs = append(d.Orgs, views.OrgInfo{Account: acct, Members: members})
 	}
-	views.Settings(u, u.TOTPEnabled, pks, users, nss, flash).Render(r.Context(), w)
+	views.Settings(d).Render(r.Context(), w)
 }
 
 func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
@@ -850,12 +872,17 @@ func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "names cannot contain '/'", http.StatusBadRequest)
 		return
 	}
-	// Admins may create caches anywhere (minting the namespace on the fly);
-	// owners only inside namespaces they already own.
+	// Instance admins may create caches anywhere (minting the account on the
+	// fly); everyone else only inside accounts they administer, within plan
+	// quota.
 	if u.Role != "admin" {
-		nsRow, err := s.db.GetAccount(ns)
-		if err != nil || s.db.MemberRole(nsRow.ID, u.ID) != "admin" {
-			http.Error(w, "you do not own this namespace", http.StatusForbidden)
+		acc, err := s.db.GetAccount(ns)
+		if err != nil || s.db.MemberRole(acc.ID, u.ID) != "admin" {
+			http.Error(w, "you do not administer this account", http.StatusForbidden)
+			return
+		}
+		if err := s.checkCacheQuota(acc); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
 	}
@@ -1397,6 +1424,12 @@ func (s *Server) handleSetMember(w http.ResponseWriter, r *http.Request) {
 	role := "member"
 	if r.FormValue("role") == "admin" || r.FormValue("role") == "owner" {
 		role = "admin"
+	}
+	if s.db.MemberRole(ns.ID, u.ID) == "" { // adding, not editing
+		if err := s.checkMemberQuota(ns); err != nil {
+			s.settingsFlash(w, r, err.Error())
+			return
+		}
 	}
 	if err := s.db.SetMember(ns.ID, u.ID, role); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

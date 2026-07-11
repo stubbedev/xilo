@@ -183,6 +183,21 @@ type DashboardData struct {
 	TokenQuery string
 }
 
+// SettingsData is everything the settings page renders.
+type SettingsData struct {
+	User        *store.User
+	TOTPEnabled bool
+	Passkeys    []store.Passkey
+	Users       []store.User // admin only
+	Orgs        []OrgInfo    // admin: all; member: their orgs
+	Plans       []store.Plan // admin + multi-tenant only
+	MultiTenant bool
+	AllowRegs   bool
+	RequireOK   bool // require approval for signups
+	CanMakeOrg  bool // viewer may create an organization
+	Flash       Flash
+}
+
 // OrgInfo is one account with its membership, for the settings page.
 type OrgInfo struct {
 	Account store.Account

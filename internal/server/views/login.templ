@@ -1,6 +1,6 @@
 package views
 
-templ Login(noPassword, hasPasskeys bool, flash Flash) {
+templ Login(noPassword, hasPasskeys, canRegister bool, flash Flash) {
 	@Layout(T("login.title"), false, flash) {
 		<article class="auth">
 			<div class="ic-lg">@Icon("lock")</div>
@@ -15,6 +15,9 @@ templ Login(noPassword, hasPasskeys bool, flash Flash) {
 			</form>
 			if hasPasskeys {
 				<button type="button" class="outline" onclick="xiloPasskeyLogin()">@Icon("fingerprint") <span>{ T("login.passkey") }</span></button>
+			}
+			if canRegister {
+				<p><small><a href="/register">{ T("login.register") }</a></small></p>
 			}
 			if noPassword {
 				<p><small>{ T("login.nopassword") }</small></p>

@@ -100,6 +100,9 @@ func (s *Server) Handler() http.Handler {
 
 	s.registerAdmin(mux)
 	s.registerAdminAPI(mux)
+	if s.cfg.MultiTenant {
+		s.registerTenancy(mux)
+	}
 	s.registerPasskeyRoutes(mux)
 	s.registerStatic(mux)
 	mux.HandleFunc("GET /healthz", s.handleHealth)

@@ -28,6 +28,10 @@
       ],
       "description": "Metadata database settings. Defaults to a zero-config SQLite file in\ndata_dir; point at PostgreSQL for large multi-writer deployments."
     },
+    "multi_tenant": {
+      "type": "boolean",
+      "description": "Multi-tenant mode: enables self-registration (governed by the instance\nsettings in the dashboard), plans, and organization creation by users.\nOff (default) = single-tenant: no signup surface at all, everything is\nmanaged by the bootstrap admin."
+    },
     "admin": {
       "properties": {
         "password": {
@@ -337,6 +341,7 @@
     "base_url",
     "data_dir",
     "database",
+    "multi_tenant",
     "admin",
     "storage",
     "storages",
