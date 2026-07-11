@@ -7,6 +7,7 @@ import (
 	"github.com/templui/templui/components/card"
 	"github.com/templui/templui/components/copybutton"
 	"github.com/templui/templui/components/progress"
+	"github.com/templui/templui/components/separator"
 	"github.com/templui/templui/components/table"
 	"github.com/templui/templui/components/tabs"
 )
@@ -155,7 +156,8 @@ templ CacheView(d CacheData) {
 							TriggerVariant: button.VariantSecondary,
 						})
 					</div>
-					<div class="flex items-center justify-between gap-3 border-t pt-4">
+					@separator.Separator()
+					<div class="flex items-center justify-between gap-3">
 						<p class="text-sm text-muted-foreground">Delete this cache and all of its paths.</p>
 						@ConfirmForm(Confirm{
 							ID:           "delete-cache",

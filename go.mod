@@ -13,7 +13,6 @@ require (
 	github.com/invopop/jsonschema v0.14.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jotfs/fastcdc-go v0.2.0
-	github.com/kaugesaar/lucide-go v0.21.0
 	github.com/klauspost/compress v1.19.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/spf13/cobra v1.10.2

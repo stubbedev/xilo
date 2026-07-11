@@ -142,15 +142,23 @@ templ Org(d OrgPageData) {
 					if len(d.Caches) == 0 {
 						@EmptyState("database", "No caches in this organization yet.")
 					} else {
-						@card.Card(card.Props{Class: "divide-y p-0"}) {
-							for _, u := range d.Caches {
-								<div class="flex items-center justify-between p-4">
-									<div class="flex items-center gap-2">
-										<a href={ templ.SafeURL("/admin/cache/" + u.Cache.Ref()) } class="font-medium hover:underline">{ u.Cache.Name }</a>
-										@VisBadge(u.Cache.Public)
-									</div>
-									<span class="text-xs text-muted-foreground tabular-nums">{ d.Bytes(u.Bytes) } · { Count(u.Paths) } paths</span>
-								</div>
+						@card.Card(card.Props{Class: "p-0"}) {
+							@table.Table() {
+								@table.Body() {
+									for _, u := range d.Caches {
+										@table.Row() {
+											@table.Cell() {
+												<div class="flex items-center gap-2">
+													<a href={ templ.SafeURL("/admin/cache/" + u.Cache.Ref()) } class="font-medium hover:underline">{ u.Cache.Name }</a>
+													@VisBadge(u.Cache.Public)
+												</div>
+											}
+											@table.Cell(table.CellProps{Class: "text-right text-xs text-muted-foreground tabular-nums"}) {
+												{ d.Bytes(u.Bytes) } · { Count(u.Paths) } paths
+											}
+										}
+									}
+								}
 							}
 						}
 					}

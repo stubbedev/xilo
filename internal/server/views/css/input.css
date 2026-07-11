@@ -6,6 +6,8 @@
 
 /* Scan our templ views for utility classes. */
 @source "../*.templ";
+/* icon.go holds the size-* classes for IconClass. */
+@source "../icon.go";
 
 @custom-variant dark (&:where(.dark, .dark *));
 

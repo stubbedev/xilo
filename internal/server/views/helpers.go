@@ -127,6 +127,12 @@ func pathParts(p string) (hash, name string) {
 	return hash, name
 }
 
+// parseDate parses a yyyy-mm-dd query value; zero time when empty/invalid.
+func parseDate(s string) time.Time {
+	t, _ := time.ParseInLocation("2006-01-02", s, time.Local)
+	return t
+}
+
 // TokenStatus is the display state of a token.
 func TokenStatus(t store.Token) string {
 	switch {

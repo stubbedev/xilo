@@ -7,6 +7,7 @@ import (
 	"github.com/templui/templui/components/copybutton"
 	"github.com/templui/templui/components/dialog"
 	"github.com/templui/templui/components/input"
+	"github.com/templui/templui/components/pagination"
 	"github.com/templui/templui/components/table"
 	"github.com/templui/templui/components/toast"
 )
@@ -109,33 +110,31 @@ templ StatTile(icon, value, label, id, tone string) {
 
 // EmptyState is the shared empty-list block: icon, message, optional action.
 templ EmptyState(icon, msg string) {
-	<div class="flex flex-col items-center gap-3 rounded-lg border border-dashed py-12 text-center">
+	@card.Card(card.Props{Class: "flex flex-col items-center gap-3 border-dashed bg-transparent py-12 text-center shadow-none"}) {
 		<span class="text-muted-foreground">@IconClass(icon, 32, "")</span>
 		<p class="text-sm text-muted-foreground">{ msg }</p>
 		<div class="flex items-center gap-2">
 			{ children... }
 		</div>
-	</div>
+	}
 }
 
 // PagerNav renders prev/next controls; nothing when there is a single page.
 templ PagerNav(p Pager) {
 	if p.Pages > 1 {
-		<nav class="mt-4 flex items-center justify-center gap-3" aria-label="Pagination">
-			if p.Prev != "" {
-				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Href: p.Prev, Attributes: hxSwapAttrs(p.Target)}) {
-					@Icon("chevron-left")
-					<span>Prev</span>
+		@pagination.Pagination(pagination.Props{Class: "mt-4"}) {
+			@pagination.Content() {
+				@pagination.Item() {
+					@pagination.Previous(pagination.PreviousProps{Href: p.Prev, Disabled: p.Prev == "", Label: "Prev", Attributes: hxSwapAttrs(p.Target)})
+				}
+				@pagination.Item() {
+					<span class="px-2 text-sm text-muted-foreground tabular-nums">{ itoa(int64(p.Page)) } / { itoa(int64(p.Pages)) }</span>
+				}
+				@pagination.Item() {
+					@pagination.Next(pagination.NextProps{Href: p.Next, Disabled: p.Next == "", Label: "Next", Attributes: hxSwapAttrs(p.Target)})
 				}
 			}
-			<span class="text-sm text-muted-foreground tabular-nums">{ itoa(int64(p.Page)) } / { itoa(int64(p.Pages)) }</span>
-			if p.Next != "" {
-				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Href: p.Next, Attributes: hxSwapAttrs(p.Target)}) {
-					<span>Next</span>
-					@Icon("chevron-right")
-				}
-			}
-		</nav>
+		}
 	}
 }
 

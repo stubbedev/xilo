@@ -9,9 +9,10 @@ import (
 
 	"github.com/templui/templui/components/badge"
 	"github.com/templui/templui/components/button"
+	"github.com/templui/templui/components/calendar"
 	"github.com/templui/templui/components/card"
 	"github.com/templui/templui/components/chart"
-	"github.com/templui/templui/components/input"
+	"github.com/templui/templui/components/datepicker"
 )
 
 // StatusData is the status page view model. The page is fully server-rendered
@@ -90,11 +91,12 @@ templ StatusPage(d StatusData) {
 			</div>
 			<form method="get" action="/admin/status" class="ml-auto flex items-end gap-2">
 				<input type="hidden" name="rate" value={ strconv.Itoa(d.Rate) }/>
-				<div class="w-40">
-					@input.Input(input.Props{Name: "from", Type: input.TypeDate, Value: d.From})
-				</div>
-				<div class="w-40">
-					@input.Input(input.Props{Name: "to", Type: input.TypeDate, Value: d.To})
+				<div class="w-72">
+					@datepicker.DatePicker(datepicker.Props{
+						Name: "from", EndName: "to", Mode: calendar.SelectionModeRange,
+						Value: parseDate(d.From), EndValue: parseDate(d.To),
+						Placeholder: "Start date", EndPlaceholder: "End date",
+					})
 				</div>
 				@button.Button(button.Props{Type: button.TypeSubmit, Size: button.SizeSm, Variant: segVariant(d.Window == 0)}) {
 					@Icon("calendar")

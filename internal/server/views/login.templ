@@ -119,7 +119,7 @@ templ Login(noPassword, hasPasskeys, canRegister bool, flash Flash) {
 				</form>
 				if hasPasskeys {
 					@button.Button(button.Props{Variant: button.VariantOutline, FullWidth: true, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": "xiloPasskeyLogin()"}}) {
-						@Icon("fingerprint")
+						@Icon("fingerprint-pattern")
 						<span>Use a passkey</span>
 					}
 				}
@@ -210,13 +210,13 @@ templ Register(plans []store.Plan, flash Flash) {
 							}
 							<div class="space-y-2" onchange="document.getElementById('org-field').hidden = document.querySelector('input[name=plan]:checked').dataset.orgs !== 'true'">
 								for i, p := range plans {
-									<label class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:bg-accent/40">
+									@label.Label(label.Props{Class: "flex cursor-pointer items-start gap-3 rounded-lg border p-3 font-normal hover:bg-accent/40"}) {
 										@radio.Radio(radio.Props{Name: "plan", Value: strconv.FormatInt(p.ID, 10), Checked: i == 0, Attributes: templ.Attributes{"data-orgs": strconv.FormatBool(p.OrgsAllowed)}})
 										<span class="space-y-0.5">
 											<span class="block text-sm font-medium">{ p.Name }</span>
 											<span class="block text-xs text-muted-foreground">{ planLimits(p) }</span>
 										</span>
-									</label>
+									}
 								}
 							</div>
 							<div id="org-field" hidden?={ !(len(plans) > 0 && plans[0].OrgsAllowed) }>

@@ -8,6 +8,7 @@ import (
 	"github.com/templui/templui/components/chart"
 	"github.com/templui/templui/components/checkbox"
 	"github.com/templui/templui/components/copybutton"
+	"github.com/templui/templui/components/datepicker"
 	"github.com/templui/templui/components/dialog"
 	"github.com/templui/templui/components/dropdown"
 	"github.com/templui/templui/components/input"
@@ -76,6 +77,7 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 			@selectbox.Script()
 			@textarea.Script()
 			@popover.Script()
+			@datepicker.Script()
 			@dialog.Script()
 			@dropdown.Script()
 			@tabs.Script()
@@ -174,8 +176,11 @@ templ themeToggle() {
 }
 
 // contextSwitcher scopes the dashboard to one account (or all). Lives in the
-// sidebar; collapses to just the eye icon on the icon rail.
+// sidebar; collapses to just the eye icon on the icon rail. The dropdown items
+// are the submit buttons of this out-of-tree form (via the form attribute) —
+// dropdown.Item renders a <button>, so an inline form would nest buttons.
 templ contextSwitcher(nav Nav) {
+	<form id="ctx-form" method="post" action="/admin/context" class="hidden"></form>
 	@dropdown.Dropdown() {
 		@dropdown.Trigger(dropdown.TriggerProps{Class: "w-full"}) {
 			@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeSm, Type: button.TypeButton, FullWidth: true, Class: "justify-between gap-2 group-data-[tui-sidebar-state=collapsed]:justify-center group-data-[tui-sidebar-state=collapsed]:px-0"}) {
@@ -201,25 +206,22 @@ templ contextSwitcher(nav Nav) {
 	}
 }
 
-// ctxItem is one context choice: a plain full-width submit button inside the
-// item (a nested styled Button renders as a button-in-button mess).
+// ctxItem is one context choice: the item's own <button> submits #ctx-form,
+// carrying the slug as its name/value pair.
 templ ctxItem(slug, label string, active bool) {
-	@dropdown.Item(dropdown.ItemProps{Class: "p-0"}) {
-		<form method="post" action="/admin/context" class="w-full">
-			<input type="hidden" name="ctx" value={ slug }/>
-			<button type="submit" class="flex w-full cursor-default items-center justify-between gap-2 px-2 py-1.5 text-left text-sm">
-				<span class="truncate">{ label }</span>
-				if active {
-					@Icon("check")
-				}
-			</button>
-		</form>
+	@dropdown.Item(dropdown.ItemProps{Attributes: templ.Attributes{"type": "submit", "form": "ctx-form", "name": "ctx", "value": slug}}) {
+		<span class="truncate">{ label }</span>
+		if active {
+			@Icon("check")
+		}
 	}
 }
 
 // userMenu is the signed-in user's account dropdown, styled for the sidebar
-// footer (avatar + name expanded, avatar-only when collapsed to icons).
+// footer (avatar + name expanded, avatar-only when collapsed to icons). The
+// log-out item submits this out-of-tree form via the form attribute.
 templ userMenu(nav Nav) {
+	<form id="logout-form" method="post" action="/admin/logout" class="hidden"></form>
 	@dropdown.Dropdown() {
 		@dropdown.Trigger() {
 			@button.Button(button.Props{Variant: button.VariantGhost, Type: button.TypeButton, FullWidth: true, Class: "h-12 justify-start gap-2 px-2 group-data-[tui-sidebar-state=collapsed]:justify-center group-data-[tui-sidebar-state=collapsed]:px-0"}) {
@@ -246,13 +248,9 @@ templ userMenu(nav Nav) {
 				</div>
 			}
 			@dropdown.Separator()
-			@dropdown.Item(dropdown.ItemProps{Class: "p-0"}) {
-				<form method="post" action="/admin/logout" class="w-full">
-					<button type="submit" class="flex w-full cursor-default items-center gap-2 px-2 py-1.5 text-left text-sm text-destructive">
-						@Icon("log-out")
-						<span>Log out</span>
-					</button>
-				</form>
+			@dropdown.Item(dropdown.ItemProps{Class: "justify-start gap-2 text-destructive", Attributes: templ.Attributes{"type": "submit", "form": "logout-form"}}) {
+				@Icon("log-out")
+				<span>Log out</span>
 			}
 		}
 	}

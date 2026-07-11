@@ -11,6 +11,7 @@ import (
 	"github.com/templui/templui/components/form"
 	"github.com/templui/templui/components/input"
 	"github.com/templui/templui/components/inputotp"
+	"github.com/templui/templui/components/table"
 )
 
 // AccountData is everything the personal account page renders.
@@ -61,30 +62,42 @@ templ Account(d AccountData) {
 					}
 				}
 				@card.Content(card.ContentProps{Class: "space-y-3"}) {
-					for _, pk := range d.Passkeys {
-						<div class="flex items-center justify-between rounded-lg border p-3">
-							<div class="flex items-center gap-2 text-sm">
-								@Icon("fingerprint")
-								<span class="font-medium">{ pk.Name }</span>
-								<span class="text-muted-foreground">· { Ago(pk.Created) }</span>
-							</div>
-							@ConfirmForm(Confirm{
-								ID:             "pk-" + strconv.FormatInt(pk.ID, 10),
-								Action:         "/admin/passkeys/" + strconv.FormatInt(pk.ID, 10) + "/delete",
-								Title:          "Remove passkey?",
-								Message:        "“" + pk.Name + "” will no longer be able to sign in.",
-								ConfirmLabel:   "Remove",
-								ConfirmIcon:    "trash-2",
-								Danger:         true,
-								TriggerIcon:    "trash-2",
-								IconOnly:       true,
-								TriggerTooltip: "Remove passkey",
-								TriggerVariant: button.VariantGhost,
-							})
-						</div>
+					if len(d.Passkeys) > 0 {
+						@card.Card(card.Props{Class: "p-0"}) {
+							@table.Table() {
+								@table.Body() {
+									for _, pk := range d.Passkeys {
+										@table.Row() {
+											@table.Cell() {
+												<div class="flex items-center gap-2 text-sm">
+													@Icon("fingerprint-pattern")
+													<span class="font-medium">{ pk.Name }</span>
+													<span class="text-muted-foreground">· { Ago(pk.Created) }</span>
+												</div>
+											}
+											@table.Cell(table.CellProps{Class: "text-right"}) {
+												@ConfirmForm(Confirm{
+													ID:             "pk-" + strconv.FormatInt(pk.ID, 10),
+													Action:         "/admin/passkeys/" + strconv.FormatInt(pk.ID, 10) + "/delete",
+													Title:          "Remove passkey?",
+													Message:        "“" + pk.Name + "” will no longer be able to sign in.",
+													ConfirmLabel:   "Remove",
+													ConfirmIcon:    "trash-2",
+													Danger:         true,
+													TriggerIcon:    "trash-2",
+													IconOnly:       true,
+													TriggerTooltip: "Remove passkey",
+													TriggerVariant: button.VariantGhost,
+												})
+											}
+										}
+									}
+								}
+							}
+						}
 					}
 					@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": "xiloPasskeyRegister()"}}) {
-						@Icon("fingerprint")
+						@Icon("fingerprint-pattern")
 						<span>Add a passkey</span>
 					}
 				}
