@@ -26,6 +26,31 @@ jobs:
       - run: go build ./...
       - run: go test -race ./...
 
+  postgres:
+    name: store suite against PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: x
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: run store tests against postgres
+        env:
+          XILO_PG_TEST_DSN: postgres://postgres:x@localhost:5432/postgres
+        run: go test ./internal/store/ -run TestPostgres -count=1 -v
+
   e2e:
     name: CLI end-to-end (real nix + containerized server)
     runs-on: ubuntu-latest

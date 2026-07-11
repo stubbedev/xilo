@@ -44,14 +44,9 @@ func (db *DB) CreateToken(name string, caches, perms []string, expires int64) (s
 	}
 	t = &Token{Name: name, Caches: caches, Perms: perms, Expires: expires, Created: time.Now().Unix()}
 	err = db.write(func(tx *sql.Tx) error {
-		res, e := tx.Exec(
-			`INSERT INTO tokens (name,hash,caches,perms,revoked,expires,created) VALUES (?,?,?,?,0,?,?)`,
-			t.Name, HashToken(secret), strings.Join(caches, ","), strings.Join(perms, ","), t.Expires, t.Created)
-		if e != nil {
-			return e
-		}
-		t.ID, e = res.LastInsertId()
-		return e
+		return tx.QueryRow(
+			`INSERT INTO tokens (name,hash,caches,perms,revoked,expires,created) VALUES (?,?,?,?,0,?,?) RETURNING id`,
+			t.Name, HashToken(secret), strings.Join(caches, ","), strings.Join(perms, ","), t.Expires, t.Created).Scan(&t.ID)
 	})
 	if err != nil {
 		return "", nil, err

@@ -718,7 +718,7 @@ func TestMigrateIndexError(t *testing.T) {
 	if _, err := raw.Exec(`CREATE TABLE idx_paths_accessed (x)`); err != nil {
 		t.Fatal(err)
 	}
-	if err := migrate(raw); err == nil {
+	if err := migrate(raw, false); err == nil {
 		t.Fatal("migrate should fail when the index name is taken by a table")
 	}
 }

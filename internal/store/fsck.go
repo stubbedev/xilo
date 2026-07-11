@@ -2,7 +2,6 @@ package store
 
 import (
 	"database/sql"
-	"fmt"
 )
 
 // BrokenPath identifies a path row for fsck reporting/repair.
@@ -63,13 +62,9 @@ func (db *DB) DeletePaths(ids []int64) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	strs := make([]string, len(ids))
-	for i, id := range ids {
-		strs[i] = fmt.Sprint(id)
-	}
-	return db.eachBatch(strs, func(batch []string) error {
+	return db.eachIDBatch(ids, func(args []any) error {
 		return db.write(func(tx *sql.Tx) error {
-			_, err := tx.Exec(`DELETE FROM paths WHERE id IN (`+placeholders(len(batch))+`)`, toArgs(batch)...)
+			_, err := tx.Exec(`DELETE FROM paths WHERE id IN (`+placeholders(len(args))+`)`, args...)
 			return err
 		})
 	})

@@ -145,12 +145,12 @@ func TestAddColumnIfMissingAlterError(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer raw.Close()
-	if err := addColumnIfMissing(raw, "nonexistent", "col", "INTEGER"); err == nil {
+	if err := addColumnIfMissing(raw, false, "nonexistent", "col", "INTEGER"); err == nil {
 		t.Fatal("ALTER on a missing table should error")
 	}
 	// query error path: closed handle
 	raw.Close()
-	if err := addColumnIfMissing(raw, "t", "col", "INTEGER"); err == nil {
+	if err := addColumnIfMissing(raw, false, "t", "col", "INTEGER"); err == nil {
 		t.Fatal("pragma query on closed db should error")
 	}
 }
@@ -166,7 +166,7 @@ func TestMigrateAlterError(t *testing.T) {
 	if _, err := raw.Exec(`CREATE VIEW chunks AS SELECT 'h' AS hash, 1 AS size, 'k' AS storage_key`); err != nil {
 		t.Fatal(err)
 	}
-	if err := migrate(raw); err == nil {
+	if err := migrate(raw, false); err == nil {
 		t.Fatal("migrate over a chunks view should error")
 	}
 }

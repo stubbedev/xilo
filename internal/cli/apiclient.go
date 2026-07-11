@@ -92,6 +92,12 @@ func adminTarget(serverFlag, tokenFlag string) (apic *apiClient, cfg *config.Con
 		remoteURL = loadClientConfig().URL
 	}
 	if serverFlag == "" {
+		// A configured Postgres URL or an existing SQLite file means we're on
+		// the server — operate on the DB directly.
+		if cfg.Database.URL != "" {
+			db, err = openStore(cfg)
+			return nil, cfg, db, err
+		}
 		if _, statErr := os.Stat(cfg.DBPath()); statErr == nil {
 			db, err = openStore(cfg)
 			return nil, cfg, db, err

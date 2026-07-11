@@ -26,6 +26,9 @@ type Config struct {
 	// Directory for the metadata database (and local storage, unless
 	// storage.local.root is set). Created if missing.
 	DataDir string `yaml:"data_dir" json:"data_dir"`
+	// Metadata database settings. Defaults to a zero-config SQLite file in
+	// data_dir; point at PostgreSQL for large multi-writer deployments.
+	Database Database `yaml:"database" json:"database"`
 	// Admin dashboard settings.
 	Admin Admin `yaml:"admin" json:"admin"`
 	// Where chunk bytes are stored.
@@ -58,6 +61,20 @@ type Config struct {
 	// or "full" (fsync every commit; acknowledged pushes survive power loss
 	// at a per-write latency cost).
 	Durability string `yaml:"durability" json:"durability" jsonschema:"enum=normal,enum=full"`
+}
+
+// Database selects the metadata store.
+type Database struct {
+	// Connection URL. Empty (default) = SQLite at <data_dir>/xilo.db.
+	// "postgres://user:pass@host/db" switches to PostgreSQL — recommended when
+	// running at larger scale than a personal cache. Overridable with
+	// XILO_DATABASE_URL (preferred for credentials).
+	URL string `yaml:"url" json:"url"`
+}
+
+// Postgres reports whether the configured database is PostgreSQL.
+func (d Database) Postgres() bool {
+	return strings.HasPrefix(d.URL, "postgres://") || strings.HasPrefix(d.URL, "postgresql://")
 }
 
 // Limits caps total storage. Per-cache caps are set per cache in the dashboard.
@@ -300,6 +317,9 @@ func (c *Config) applyEnv() {
 	if v := os.Getenv("XILO_DATA_DIR"); v != "" {
 		c.DataDir = v
 	}
+	if v := os.Getenv("XILO_DATABASE_URL"); v != "" {
+		c.Database.URL = v
+	}
 }
 
 func (c *Config) validate() error {
@@ -307,6 +327,9 @@ func (c *Config) validate() error {
 	case "local", "s3":
 	default:
 		return fmt.Errorf("storage.backend %q invalid (want local|s3)", c.Storage.Backend)
+	}
+	if c.Database.URL != "" && !c.Database.Postgres() {
+		return fmt.Errorf("database.url %q invalid (want postgres://… or empty for SQLite)", c.Database.URL)
 	}
 	switch c.Logging {
 	case "full", "quiet":

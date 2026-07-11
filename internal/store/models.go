@@ -53,14 +53,11 @@ func (db *DB) CreateCache(name string, public bool, priority int) (*Cache, error
 		Created:  time.Now().Unix(),
 	}
 	err = db.write(func(tx *sql.Tx) error {
-		res, err := tx.Exec(
-			`INSERT INTO caches (name, public, priority, pubkey, privkey, created) VALUES (?,?,?,?,?,?)`,
-			c.Name, b2i(c.Public), c.Priority, c.PubKey, []byte(c.PrivKey), c.Created)
-		if err != nil {
-			return err
-		}
-		c.ID, err = res.LastInsertId()
-		return err
+		// RETURNING instead of LastInsertId — works on both SQLite and
+		// Postgres (pgx does not implement LastInsertId).
+		return tx.QueryRow(
+			`INSERT INTO caches (name, public, priority, pubkey, privkey, created) VALUES (?,?,?,?,?,?) RETURNING id`,
+			c.Name, b2i(c.Public), c.Priority, c.PubKey, []byte(c.PrivKey), c.Created).Scan(&c.ID)
 	})
 	if err != nil {
 		return nil, err
@@ -283,11 +280,12 @@ type PathInfo struct {
 
 // fuzzyPattern turns a search term into a LIKE pattern that matches its
 // characters in order with anything between ("ffx" → %f%f%x%). LIKE wildcards
-// in the term are escaped.
+// in the term are escaped. Lowercased so `lower(col) LIKE pattern` is
+// case-insensitive on both SQLite and Postgres.
 func fuzzyPattern(term string) string {
 	var b strings.Builder
 	b.WriteByte('%')
-	for _, r := range term {
+	for _, r := range strings.ToLower(term) {
 		if r == '%' || r == '_' || r == '\\' {
 			b.WriteByte('\\')
 		}
@@ -295,6 +293,14 @@ func fuzzyPattern(term string) string {
 		b.WriteByte('%')
 	}
 	return b.String()
+}
+
+// substrPattern is fuzzyPattern's contiguous cousin: %term% with wildcards
+// escaped, lowercased.
+func substrPattern(term string) string {
+	term = strings.ToLower(term)
+	esc := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
+	return "%" + esc + "%"
 }
 
 // SearchPaths lists a page of a cache's paths. The query is split on
@@ -309,10 +315,11 @@ func (db *DB) SearchPaths(cacheID int64, q string, limit, offset int, sortKey, s
 	rank := `0`
 	var rankArgs []any
 	for _, term := range strings.Fields(q) {
-		where += ` AND store_path LIKE ? ESCAPE '\'`
+		where += ` AND lower(store_path) LIKE ? ESCAPE '\'`
 		args = append(args, fuzzyPattern(term))
-		rank += ` + (instr(lower(store_path), lower(?)) > 0)`
-		rankArgs = append(rankArgs, term)
+		// Portable substring test (instr() is SQLite-only).
+		rank += ` + (CASE WHEN lower(store_path) LIKE ? ESCAPE '\' THEN 1 ELSE 0 END)`
+		rankArgs = append(rankArgs, substrPattern(term))
 	}
 	// Explicit column sort wins; otherwise fuzzy rank (when searching) then
 	// recency. Column and direction come from a whitelist — never the query.
@@ -325,7 +332,7 @@ func (db *DB) SearchPaths(cacheID int64, q string, limit, offset int, sortKey, s
 	case "path":
 		// Order by the name after "/nix/store/<32-char-hash>-" (char 45) so
 		// the column sorts by package name, not by hash noise.
-		order = `substr(store_path, 45) COLLATE NOCASE` + dir
+		order = `lower(substr(store_path, 45))` + dir
 		rankArgs = nil
 	case "size":
 		order = `nar_size` + dir + `, accessed DESC`
@@ -429,6 +436,22 @@ func (db *DB) eachBatch(items []string, fn func([]string) error) error {
 	for i := 0; i < len(items); i += batchVars {
 		end := min(i+batchVars, len(items))
 		if err := fn(items[i:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// eachIDBatch is eachBatch for int64 ids, keeping them native args —
+// Postgres won't compare BIGINT columns against text parameters.
+func (db *DB) eachIDBatch(ids []int64, fn func(args []any) error) error {
+	for i := 0; i < len(ids); i += batchVars {
+		batch := ids[i:min(i+batchVars, len(ids))]
+		args := make([]any, len(batch))
+		for j, id := range batch {
+			args[j] = id
+		}
+		if err := fn(args); err != nil {
 			return err
 		}
 	}

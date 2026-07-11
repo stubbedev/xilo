@@ -28,7 +28,8 @@ func (db *DB) AddMetricMinute(m MetricMinute) error {
 			time.Now().Add(-metricsRetention).Unix()); err != nil {
 			return err
 		}
-		_, err := tx.Exec(`INSERT OR REPLACE INTO metrics_minutes (ts, req, lat, bps, stored) VALUES (?,?,?,?,?)`,
+		_, err := tx.Exec(`INSERT INTO metrics_minutes (ts, req, lat, bps, stored) VALUES (?,?,?,?,?)
+			 ON CONFLICT (ts) DO UPDATE SET req=excluded.req, lat=excluded.lat, bps=excluded.bps, stored=excluded.stored`,
 			m.TS, m.Req, m.Lat, m.Bps, m.Stored)
 		return err
 	})

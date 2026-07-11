@@ -349,8 +349,12 @@ func cacheDestroyCmd() *cobra.Command {
 	return c
 }
 
-// openStore honors the configured commit durability.
+// openStore opens the configured metadata DB: PostgreSQL when database.url is
+// set, else the SQLite file (honoring commit durability).
 func openStore(cfg *config.Config) (*store.DB, error) {
+	if cfg.Database.URL != "" {
+		return store.OpenPostgres(cfg.Database.URL)
+	}
 	if cfg.Durability == "full" {
 		return store.OpenDurable(cfg.DBPath())
 	}

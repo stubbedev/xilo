@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"sort"
 
 	"github.com/stubbedev/xilo/internal/storage"
@@ -231,13 +230,9 @@ func (db *DB) enforceCap(cap int64, query string, args ...any) (int, error) {
 	if len(evict) == 0 {
 		return 0, nil
 	}
-	ids := make([]string, len(evict))
-	for i, id := range evict {
-		ids[i] = fmt.Sprint(id)
-	}
-	err = db.eachBatch(ids, func(batch []string) error {
+	err = db.eachIDBatch(evict, func(args []any) error {
 		return db.write(func(tx *sql.Tx) error {
-			_, err := tx.Exec(`DELETE FROM paths WHERE id IN (`+placeholders(len(batch))+`)`, toArgs(batch)...)
+			_, err := tx.Exec(`DELETE FROM paths WHERE id IN (`+placeholders(len(args))+`)`, args...)
 			return err
 		})
 	})

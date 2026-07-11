@@ -14,6 +14,20 @@
       "type": "string",
       "description": "Directory for the metadata database (and local storage, unless\nstorage.local.root is set). Created if missing."
     },
+    "database": {
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "Connection URL. Empty (default) = SQLite at \u003cdata_dir\u003e/xilo.db.\n\"postgres://user:pass@host/db\" switches to PostgreSQL — recommended when\nrunning at larger scale than a personal cache. Overridable with\nXILO_DATABASE_URL (preferred for credentials)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "url"
+      ],
+      "description": "Metadata database settings. Defaults to a zero-config SQLite file in\ndata_dir; point at PostgreSQL for large multi-writer deployments."
+    },
     "admin": {
       "properties": {
         "password": {
@@ -241,6 +255,7 @@
     "listen",
     "base_url",
     "data_dir",
+    "database",
     "admin",
     "storage",
     "chunking",

@@ -31,7 +31,7 @@ func TestMigrateUpgradesOldSchema(t *testing.T) {
 		}
 	}
 
-	if err := migrate(raw); err != nil {
+	if err := migrate(raw, false); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	// New columns must now be queryable, and the old row preserved.
@@ -50,7 +50,7 @@ func TestMigrateUpgradesOldSchema(t *testing.T) {
 		t.Fatalf("old data lost: name=%q err=%v", name, err)
 	}
 	// Idempotent: running again is a no-op.
-	if err := migrate(raw); err != nil {
+	if err := migrate(raw, false); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
 }

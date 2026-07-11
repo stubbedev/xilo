@@ -15,7 +15,7 @@ func (db *DB) AdminExists() bool {
 // exists yet. No-op once an admin exists.
 func (db *DB) BootstrapAdmin(passwordHash string) error {
 	return db.write(func(tx *sql.Tx) error {
-		_, err := tx.Exec(`INSERT OR IGNORE INTO admin (id, password_hash) VALUES (1, ?)`, passwordHash)
+		_, err := tx.Exec(`INSERT INTO admin (id, password_hash) VALUES (1, ?) ON CONFLICT (id) DO NOTHING`, passwordHash)
 		return err
 	})
 }
