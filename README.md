@@ -9,8 +9,9 @@
 Self-hosted [Nix binary cache](https://nix.dev/manual/nix/latest/store/types/http-binary-cache-store) — a single Go binary, no external services. An alternative to [attic](https://github.com/zhaofengli/attic) that:
 
 - **never stalls on concurrent pushes** — pure-Go SQLite (WAL) with a single writer goroutine; chunk bytes live in the storage backend, never the DB, so pushes take no long-held lock
-- is **multi-tenant**: caches live in namespaces (`/{ns}/{cache}`), users join
-  namespaces as owners or members, and tokens can be confined to one namespace
+- is **multi-tenant**: every user gets a personal account, organizations group
+  teams (`/c/{account}/{cache}`), and optional self-registration offers
+  super-admin-defined plans with storage/cache/member quotas
 - ships a **cachix-style admin dashboard** to manage caches, tokens, users and namespaces
 - can **revoke push/pull tokens** instantly
 - does **content-addressed chunked dedup** (FastCDC) per storage backend
@@ -131,12 +132,13 @@ Dependency bumps and the flake's `vendorHash` are managed by `just update`
 Add to `nix.conf` (the cache page in the dashboard shows this filled in):
 
 ```
-extra-substituters = http://localhost:8080/default/mycache
+extra-substituters = http://localhost:8080/c/default/mycache
 extra-trusted-public-keys = mycache:<public-key>
 ```
 
-Cache URLs are always `/{namespace}/{cache}`; bare names in the CLI mean the
-`default` namespace.
+Cache URLs are always `/c/{account}/{cache}` — the `/c/` mount means account
+names can never collide with application routes. Bare names in the CLI mean
+the `default` account.
 
 ### Push
 
@@ -276,15 +278,33 @@ default_storage: fast   # backend for new caches when none is chosen
 
 ## Multi-tenancy
 
-Caches live in **namespaces** — the tenancy unit. `default` always exists;
-admins create more from the dashboard (Settings → Namespaces) or the API.
-Users join a namespace as **owner** (creates and manages its caches and
-namespace-scoped tokens) or **member** (visibility). Instance **admins** see
-and manage everything, including dashboard accounts (Settings → Users).
+Caches live in **accounts** — either a **personal account** (created
+automatically with every user, slug = username) or an **organization**.
+Usernames and org names share one global pool, so `/c/{account}/{cache}` is
+always unambiguous and you can sign in with username or email. Users join
+orgs as **admin** (manages the org's caches, tokens, members) or **member**
+(visibility); instance admins manage everything.
 
-Two caches may share a name in different namespaces; each has its own signing
-key. A tenant's dashboard shows only their namespaces, foreign caches 404,
-and namespace tokens cannot cross the boundary.
+Two caches may share a name in different accounts; each has its own signing
+key. A tenant's dashboard shows only their accounts, foreign caches 404, and
+account tokens cannot cross the boundary.
+
+Setting `multi_tenant: true` unlocks the signup surface, all governed from
+Settings by the instance admin:
+
+- **Instance** toggles: allow registrations (off by default), require
+  approval for new accounts (on by default — no email infrastructure needed).
+- **Plans**: quota bundles (max caches, org members, storage, retention
+  ceiling, organizations allowed) offered at `/register`. No plan = no
+  limits. Over storage quota an account goes **read-only for pushes** — pulls
+  keep working, data is never auto-deleted. Retention ceilings clamp per-cache
+  retention in the GC sweep. Per-account egress is metered and shown in
+  Settings (not yet enforced).
+- Registration can create an organization on the spot when the chosen plan
+  allows it; entitled users can also create orgs later from Settings.
+
+Leave `multi_tenant` off (the default) and none of this surface exists — a
+single admin manages a private instance exactly as before.
 
 ## PostgreSQL
 

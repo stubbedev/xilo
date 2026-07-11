@@ -22,6 +22,11 @@ admin:
 database:
   url: "" # e.g. "postgres://xilo:secret@db.internal/xilo"
 
+# Multi-tenant mode: unlocks self-registration, plans and user-created
+# organizations (all governed from the dashboard Settings). Off = private
+# single-admin instance with no signup surface at all.
+multi_tenant: false
+
 storage:
   backend: local # local | s3
   local:
