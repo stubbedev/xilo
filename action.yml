@@ -10,8 +10,10 @@
 # uploads results (the token is saved via `xilo login`, no env needed).
 # Run your Nix installer step before this one — `xilo use` writes
 # ~/.config/nix/nix.conf, which Nix reads on the next invocation.
-name: xilo
-description: Install the xilo CLI and configure Nix to pull from (and push to) a xilo cache
+# Marketplace display name — must be globally unique across actions, users,
+# and orgs ("xilo" collides). The `uses: stubbedev/xilo@v0` path is unaffected.
+name: xilo-nix-cache
+description: Install the xilo CLI and configure Nix to pull from (and push to) a xilo binary cache
 branding:
   icon: package
   color: blue
