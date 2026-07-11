@@ -363,6 +363,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 		Caches:     pagedCaches,
 		Tokens:     pagedTokens,
 		Namespaces: owned,
+		Storages:   s.storageNames(),
 		IsAdmin:    u.Role == "admin",
 		Flash:      flash,
 		ServerCap:  s.cfg.Limits.TotalBytes(),
@@ -860,8 +861,18 @@ func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
 	}
 	priority := clampPriority(r.FormValue("priority"), 40)
 	public := r.FormValue("private") == ""
-	if _, err := s.db.CreateCache(ns, name, public, priority); err != nil {
+	stName, err := s.resolveStorage(r.FormValue("storage"))
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	c, err := s.db.CreateCache(ns, name, public, priority)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.assignStorage(c, stName); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)

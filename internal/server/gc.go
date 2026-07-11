@@ -39,5 +39,13 @@ func (s *Server) runGC(ctx context.Context) (deleted int, freed int64, err error
 
 	grace := parseDurSafe(s.cfg.GC.Grace, time.Hour)
 	graceCutoff := now.Add(-grace).Unix()
-	return s.db.GC(ctx, s.st, graceCutoff)
+	for name, st := range s.sts {
+		d, f, err := s.db.GC(ctx, st, name, graceCutoff)
+		deleted += d
+		freed += f
+		if err != nil {
+			return deleted, freed, err
+		}
+	}
+	return deleted, freed, nil
 }

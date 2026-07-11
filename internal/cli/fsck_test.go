@@ -38,7 +38,7 @@ func fsckWorld(t *testing.T) (*store.DB, storage.Storage, string, func(hash stri
 		if err := st.Put(context.Background(), key, bytes.NewReader(enc.EncodeAll(data, nil))); err != nil {
 			t.Fatal(err)
 		}
-		if err := db.PutChunk(hash, int64(len(data)), 0, key, 100); err != nil {
+		if err := db.PutChunk("default", hash, int64(len(data)), 0, key, 100); err != nil {
 			t.Fatal(err)
 		}
 		c, err := db.GetCache("default", "c")
@@ -67,7 +67,7 @@ func fsckRun(t *testing.T, db *store.DB, st storage.Storage, content, repair boo
 	c := fsckCmd() // for the cobra plumbing; call runFsck directly with a buffer
 	var buf bytes.Buffer
 	c.SetOut(&buf)
-	err := runFsck(context.Background(), c, db, st, content, repair)
+	err := runFsck(context.Background(), c, db, map[string]storage.Storage{"default": st}, content, repair)
 	return buf.String(), err
 }
 
@@ -130,7 +130,7 @@ func TestFsckRepairHeals(t *testing.T) {
 	}
 	// Healed: victim row + its path gone (dedup will re-accept an upload),
 	// good path untouched, second run is clean.
-	if db.HasChunk(victim) {
+	if db.HasChunk("default", victim) {
 		t.Fatal("bad chunk row survived repair")
 	}
 	if _, err := db.GetPath(mustCache(t, db), strings.Repeat("v", 32)); err == nil {

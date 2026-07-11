@@ -36,7 +36,7 @@ func TestSingleWriterConcurrency(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < per; i++ {
 				h := fmt.Sprintf("chunk-%03d-%03d", g, i)
-				if err := db.PutChunk(h, 10, 5, "k/"+h, 1); err != nil {
+				if err := db.PutChunk("default", h, 10, 5, "k/"+h, 1); err != nil {
 					errc <- err
 				}
 			}
@@ -47,7 +47,7 @@ func TestSingleWriterConcurrency(t *testing.T) {
 	for err := range errc {
 		t.Fatalf("concurrent write failed: %v", err)
 	}
-	all, err := db.AllChunks()
+	all, err := db.AllChunks("default")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,8 +148,8 @@ func TestMissingPathsAndChunksDedup(t *testing.T) {
 		}
 	}
 
-	db.PutChunk("c1", 1, 1, "k", 1)
-	mc, _ := db.MissingChunks([]string{"c1", "c2", "c2"})
+	db.PutChunk("default", "c1", 1, 1, "k", 1)
+	mc, _ := db.MissingChunks("default", []string{"c1", "c2", "c2"})
 	if len(mc) != 1 || mc[0] != "c2" {
 		t.Fatalf("MissingChunks=%v", mc)
 	}
@@ -202,9 +202,9 @@ func TestGCGraceAndMarkSweep(t *testing.T) {
 	ctx := context.Background()
 
 	// live chunk (referenced), old orphan, and a fresh orphan inside grace.
-	db.PutChunk("live", 100, 50, storage.ChunkKey("live"), 100)
-	db.PutChunk("oldorphan", 100, 40, storage.ChunkKey("oldorphan"), 100)
-	db.PutChunk("neworphan", 100, 30, storage.ChunkKey("neworphan"), 10_000)
+	db.PutChunk("default", "live", 100, 50, storage.ChunkKey("live"), 100)
+	db.PutChunk("default", "oldorphan", 100, 40, storage.ChunkKey("oldorphan"), 100)
+	db.PutChunk("default", "neworphan", 100, 30, storage.ChunkKey("neworphan"), 10_000)
 	for _, h := range []string{"live", "oldorphan", "neworphan"} {
 		st.Put(ctx, storage.ChunkKey(h), strings.NewReader(h))
 	}
@@ -212,7 +212,7 @@ func TestGCGraceAndMarkSweep(t *testing.T) {
 	putPath(t, db, c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"live"})
 
 	// graceCutoff = 5000: chunks created >= 5000 are protected (neworphan safe).
-	deleted, freed, err := db.GC(ctx, st, 5000)
+	deleted, freed, err := db.GC(ctx, st, "default", 5000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,9 +220,9 @@ func TestGCGraceAndMarkSweep(t *testing.T) {
 		t.Fatalf("GC deleted=%d freed=%d, want 1/40 (only oldorphan)", deleted, freed)
 	}
 	// live + neworphan survive
-	if !db.HasChunk("live") || !db.HasChunk("neworphan") || db.HasChunk("oldorphan") {
+	if !db.HasChunk("default", "live") || !db.HasChunk("default", "neworphan") || db.HasChunk("default", "oldorphan") {
 		t.Fatalf("wrong chunks survived: live=%v new=%v old=%v",
-			db.HasChunk("live"), db.HasChunk("neworphan"), db.HasChunk("oldorphan"))
+			db.HasChunk("default", "live"), db.HasChunk("default", "neworphan"), db.HasChunk("default", "oldorphan"))
 	}
 }
 
@@ -237,32 +237,32 @@ func TestGCSparesTouchedChunk(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	db.PutChunk("reused", 100, 40, storage.ChunkKey("reused"), 100) // old orphan
+	db.PutChunk("default", "reused", 100, 40, storage.ChunkKey("reused"), 100) // old orphan
 	st.Put(ctx, storage.ChunkKey("reused"), strings.NewReader("reused"))
 
 	// Simulate the push side of the race: the server promised presence and
 	// re-stamped created after GC would have snapshotted.
-	if err := db.TouchChunks([]string{"reused"}, 9_000); err != nil {
+	if err := db.TouchChunks("default", []string{"reused"}, 9_000); err != nil {
 		t.Fatal(err)
 	}
 	// deleteChunkRowIf re-checks created inside the tx — must refuse.
-	ok, err := db.deleteChunkRowIf("reused", 5_000)
+	ok, err := db.deleteChunkRowIf("default", "reused", 5_000)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if ok {
 		t.Fatal("deleteChunkRowIf removed a re-stamped chunk")
 	}
-	if !db.HasChunk("reused") {
+	if !db.HasChunk("default", "reused") {
 		t.Fatal("re-stamped chunk vanished")
 	}
 
 	// Full sweep honors the new stamp too.
-	deleted, _, err := db.GC(ctx, st, 5_000)
+	deleted, _, err := db.GC(ctx, st, "default", 5_000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if deleted != 0 || !db.HasChunk("reused") {
+	if deleted != 0 || !db.HasChunk("default", "reused") {
 		t.Fatalf("GC swept a re-stamped chunk (deleted=%d)", deleted)
 	}
 }
@@ -270,9 +270,9 @@ func TestGCSparesTouchedChunk(t *testing.T) {
 // A re-upload of an existing chunk must also restart its grace window.
 func TestPutChunkRestampsCreated(t *testing.T) {
 	db := openTest(t)
-	db.PutChunk("c", 100, 40, "k", 100)
-	db.PutChunk("c", 100, 40, "k", 9_000) // re-upload
-	ok, err := db.deleteChunkRowIf("c", 5_000)
+	db.PutChunk("default", "c", 100, 40, "k", 100)
+	db.PutChunk("default", "c", 100, 40, "k", 9_000) // re-upload
+	ok, err := db.deleteChunkRowIf("default", "c", 5_000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,8 +284,8 @@ func TestPutChunkRestampsCreated(t *testing.T) {
 func TestCacheStatsScoped(t *testing.T) {
 	db := openTest(t)
 	c, _ := db.CreateCache("default", "c", true, 40)
-	db.PutChunk("s1", 100, 30, "k1", 1)
-	db.PutChunk("s2", 100, 20, "k2", 1)
+	db.PutChunk("default", "s1", 100, 30, "k1", 1)
+	db.PutChunk("default", "s2", 100, 20, "k2", 1)
 	p := &Path{StorePath: "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-n", NarHash: "sha256:h", NarSize: 200, Chunks: []string{"s1", "s2"}}
 	db.PutPath(c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", p)
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/stubbedev/xilo/internal/api"
 	"github.com/stubbedev/xilo/internal/config"
+	"github.com/stubbedev/xilo/internal/storage"
 	"github.com/stubbedev/xilo/internal/store"
 )
 
@@ -68,6 +69,7 @@ func openDB() (*config.Config, *store.DB, error) {
 func cacheCreateCmd() *cobra.Command {
 	var private bool
 	var priority int
+	var storageName string
 	c := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Create a cache (generates its signing key)",
@@ -81,16 +83,28 @@ func cacheCreateCmd() *cobra.Command {
 			if apic != nil {
 				var ca api.Cache
 				if err := apic.do(http.MethodPost, "/api/v1/caches",
-					api.CreateCacheReq{Namespace: ns, Name: name, Public: !private, Priority: priority}, &ca); err != nil {
+					api.CreateCacheReq{Namespace: ns, Name: name, Storage: storageName, Public: !private, Priority: priority}, &ca); err != nil {
 					return err
 				}
 				printCacheCreated(apic.base, ca.Namespace+"/"+ca.Name, ca.PubKey)
 				return nil
 			}
 			defer db.Close()
+			st := storageName
+			if st == "" {
+				st = cfg.DefaultStorage
+			}
+			if _, ok := cfg.StorageMap()[st]; !ok {
+				return fmt.Errorf("unknown storage backend %q", st)
+			}
 			ca, err := db.CreateCache(ns, name, !private, priority)
 			if err != nil {
 				return err
+			}
+			if st != ca.Storage {
+				if err := db.SetCacheStorage(ca.ID, st); err != nil {
+					return err
+				}
 			}
 			printCacheCreated(cfg.BaseURL, ca.Ref(), ca.PubKey)
 			return nil
@@ -98,6 +112,7 @@ func cacheCreateCmd() *cobra.Command {
 	}
 	c.Flags().BoolVar(&private, "private", false, "require a token to pull")
 	c.Flags().IntVar(&priority, "priority", 40, "substituter priority (lower = preferred)")
+	c.Flags().StringVar(&storageName, "storage", "", "blob backend for this cache (default: server default_storage)")
 	return c
 }
 
@@ -144,7 +159,7 @@ func cacheListCmd() *cobra.Command {
 // apiCacheRow converts a store cache to the wire shape for shared printing.
 func apiCacheRow(c *store.Cache) api.Cache {
 	return api.Cache{
-		Namespace: c.NS, Name: c.Name, Public: c.Public, Priority: c.Priority,
+		Namespace: c.NS, Name: c.Name, Storage: c.Storage, Public: c.Public, Priority: c.Priority,
 		Retention: c.Retention, MaxBytes: c.MaxBytes, PubKey: c.PubKey, Created: c.Created,
 	}
 }
@@ -189,6 +204,7 @@ func cacheInfoCmd() *cobra.Command {
 			}
 			fmt.Printf("name:        %s/%s\n", d.Namespace, d.Name)
 			fmt.Printf("visibility:  %s\n", visibility(d.Public))
+			fmt.Printf("storage:     %s\n", d.Storage)
 			fmt.Printf("priority:    %d\n", d.Priority)
 			fmt.Printf("retention:   %s\n", retentionStr(d.Retention))
 			fmt.Printf("max size:    %s\n", capStr(d.MaxBytes))
@@ -368,6 +384,19 @@ func cacheDestroyCmd() *cobra.Command {
 	}
 	c.Flags().BoolVar(&yes, "yes", false, "confirm destruction")
 	return c
+}
+
+// openStorages builds every configured blob backend by name.
+func openStorages(cfg *config.Config) (map[string]storage.Storage, error) {
+	sts := map[string]storage.Storage{}
+	for name, sc := range cfg.StorageMap() {
+		st, err := storage.New(sc)
+		if err != nil {
+			return nil, fmt.Errorf("storage %s: %w", name, err)
+		}
+		sts[name] = st
+	}
+	return sts, nil
 }
 
 // openStore opens the configured metadata DB: PostgreSQL when database.url is

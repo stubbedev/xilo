@@ -129,23 +129,23 @@ func TestPostgres(t *testing.T) {
 	}
 
 	// --- chunks + paths ---
-	if err := db.PutChunk("aaa", 100, 50, "chunk/aa/aaa", now); err != nil {
+	if err := db.PutChunk("default", "aaa", 100, 50, "chunk/aa/aaa", now); err != nil {
 		t.Fatalf("PutChunk: %v", err)
 	}
-	if err := db.PutChunk("aaa", 100, 50, "chunk/aa/aaa", now+1); err != nil {
+	if err := db.PutChunk("default", "aaa", 100, 50, "chunk/aa/aaa", now+1); err != nil {
 		t.Fatalf("PutChunk upsert: %v", err)
 	}
-	if err := db.PutChunk("bbb", 200, 90, "chunk/bb/bbb", now); err != nil {
+	if err := db.PutChunk("default", "bbb", 200, 90, "chunk/bb/bbb", now); err != nil {
 		t.Fatalf("PutChunk bbb: %v", err)
 	}
-	if !db.HasChunk("aaa") || db.HasChunk("zzz") {
+	if !db.HasChunk("default", "aaa") || db.HasChunk("default", "zzz") {
 		t.Fatal("HasChunk wrong")
 	}
-	missing, err := db.MissingChunks([]string{"aaa", "zzz"})
+	missing, err := db.MissingChunks("default", []string{"aaa", "zzz"})
 	if err != nil || len(missing) != 1 || missing[0] != "zzz" {
 		t.Fatalf("MissingChunks: %v %v", missing, err)
 	}
-	if err := db.TouchChunks([]string{"aaa", "bbb"}, now+100); err != nil {
+	if err := db.TouchChunks("default", []string{"aaa", "bbb"}, now+100); err != nil {
 		t.Fatalf("TouchChunks: %v", err)
 	}
 
@@ -169,7 +169,7 @@ func TestPostgres(t *testing.T) {
 	if err != nil || len(mp) != 1 {
 		t.Fatalf("MissingPaths: %v %v", mp, err)
 	}
-	keys, err := db.ChunkKeys([]string{"aaa", "bbb"})
+	keys, err := db.ChunkKeys("default", []string{"aaa", "bbb"})
 	if err != nil || keys[0].Key != "chunk/aa/aaa" {
 		t.Fatalf("ChunkKeys: %v %v", keys, err)
 	}
@@ -275,7 +275,7 @@ func TestPostgres(t *testing.T) {
 	if n, err := db.EvictCachePathsOlderThan(c.ID, now+9999); err != nil || n != 1 {
 		t.Fatalf("EvictCachePathsOlderThan: %d %v", n, err)
 	}
-	deleted, freed, err := db.GC(ctx, blob, now+99999)
+	deleted, freed, err := db.GC(ctx, blob, "default", now+99999)
 	if err != nil || deleted != 2 || freed != 140 {
 		t.Fatalf("GC: deleted=%d freed=%d %v", deleted, freed, err)
 	}
@@ -287,7 +287,7 @@ func TestPostgres(t *testing.T) {
 	if err := db.DeletePaths([]int64{999999}); err != nil {
 		t.Fatalf("DeletePaths: %v", err)
 	}
-	if err := db.DeleteChunkRows([]string{"nonexistent"}); err != nil {
+	if err := db.DeleteChunkRows("default", []string{"nonexistent"}); err != nil {
 		t.Fatalf("DeleteChunkRows: %v", err)
 	}
 

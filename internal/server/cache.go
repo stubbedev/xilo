@@ -116,7 +116,7 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve all chunk keys up front — if any is missing we can still return a
 	// clean error before committing a 200 + Content-Length.
-	refs, err := s.db.ChunkKeys(p.Chunks)
+	refs, err := s.db.ChunkKeys(c.Storage, p.Chunks)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

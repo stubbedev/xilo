@@ -9,7 +9,6 @@ import (
 
 	"github.com/stubbedev/xilo/internal/config"
 	"github.com/stubbedev/xilo/internal/server"
-	"github.com/stubbedev/xilo/internal/storage"
 	"github.com/stubbedev/xilo/internal/store"
 )
 
@@ -49,11 +48,11 @@ func serveCmd() *cobra.Command {
 			if err := bootstrapAdmin(db, cfg.Admin.Password); err != nil {
 				return err
 			}
-			st, err := storage.New(cfg.Storage)
+			sts, err := openStorages(cfg)
 			if err != nil {
 				return err
 			}
-			srv, err := server.New(cfg, db, st)
+			srv, err := server.New(cfg, db, sts)
 			if err != nil {
 				return err
 			}

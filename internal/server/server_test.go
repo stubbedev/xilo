@@ -43,7 +43,7 @@ func newTestServer(t *testing.T, openBootstrap bool) (*Server, *store.DB, *httpt
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := New(cfg, db, st)
+	s, err := New(cfg, db, map[string]storage.Storage{"default": st})
 	if err != nil {
 		t.Fatal(err)
 	}

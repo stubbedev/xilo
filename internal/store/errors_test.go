@@ -52,10 +52,10 @@ func TestScanErrorBranches(t *testing.T) {
 	if _, err := db.MetricRange(0, 100); err == nil {
 		t.Error("MetricRange should fail on poison row")
 	}
-	if _, err := db.AllChunks(); err == nil {
+	if _, err := db.AllChunks("default"); err == nil {
 		t.Error("AllChunks should fail on poison row")
 	}
-	if _, err := db.ChunkKeys([]string{"bad"}); err == nil {
+	if _, err := db.ChunkKeys("default", []string{"bad"}); err == nil {
 		t.Error("ChunkKeys should fail on poison row")
 	}
 	if _, err := db.chunkSizes(); err == nil {
@@ -93,17 +93,17 @@ func TestDroppedTableErrorBranches(t *testing.T) {
 			t.Error("CacheStats should fail without chunks table")
 		}
 		// GC: LiveChunkSet (paths) succeeds, AllChunks fails.
-		if _, _, err := db.GC(context.Background(), failDelete{}, 1); err == nil {
+		if _, _, err := db.GC(context.Background(), failDelete{}, "default", 1); err == nil {
 			t.Error("GC should fail without chunks table")
 		}
 		// enforceCap: paths scan succeeds, chunkSizes fails.
 		if _, err := db.EnforceGlobalCap(1); err == nil {
 			t.Error("EnforceGlobalCap should fail without chunks table")
 		}
-		if _, err := db.deleteChunkRowIf("x", 1); err == nil {
+		if _, err := db.deleteChunkRowIf("default", "x", 1); err == nil {
 			t.Error("deleteChunkRowIf should fail without chunks table")
 		}
-		if err := db.TouchChunks([]string{"x"}, 1); err == nil {
+		if err := db.TouchChunks("default", []string{"x"}, 1); err == nil {
 			t.Error("TouchChunks should fail without chunks table")
 		}
 	})
@@ -183,7 +183,7 @@ func (s touchOnDelete) Get(context.Context, string) (io.ReadCloser, error) { ret
 func (s touchOnDelete) Has(context.Context, string) (bool, error)          { return false, nil }
 func (s touchOnDelete) Delete(_ context.Context, key string) error {
 	if o, ok := s.other[key]; ok {
-		return s.db.TouchChunks([]string{o}, 1<<62)
+		return s.db.TouchChunks("default", []string{o}, 1<<62)
 	}
 	return nil
 }
@@ -215,11 +215,11 @@ func setGCBatch(t *testing.T, n int) {
 func TestGCRowDeleteErrorMidSweep(t *testing.T) {
 	db := openTest(t)
 	setGCBatch(t, 1)
-	db.PutChunk("a", 10, 5, "ka", 100)
-	db.PutChunk("b", 10, 7, "kb", 100)
+	db.PutChunk("default", "a", 10, 5, "ka", 100)
+	db.PutChunk("default", "b", 10, 7, "kb", 100)
 	// First orphan sweeps fine; its blob delete drops the table, so the second
 	// orphan's row delete errors and GC must surface it.
-	deleted, _, err := db.GC(context.Background(), dropOnDelete{t: t, db: db}, 5000)
+	deleted, _, err := db.GC(context.Background(), dropOnDelete{t: t, db: db}, "default", 5000)
 	if err == nil {
 		t.Fatal("GC should surface the row-delete error")
 	}
@@ -231,20 +231,20 @@ func TestGCRowDeleteErrorMidSweep(t *testing.T) {
 func TestGCSkipsChunkRestampedMidSweep(t *testing.T) {
 	db := openTest(t)
 	setGCBatch(t, 1)
-	db.PutChunk("a", 10, 5, "ka", 100)
-	db.PutChunk("b", 10, 7, "kb", 100)
+	db.PutChunk("default", "a", 10, 5, "ka", 100)
+	db.PutChunk("default", "b", 10, 7, "kb", 100)
 	st := touchOnDelete{db: db, other: map[string]string{"ka": "b", "kb": "a"}}
 
 	// Whichever chunk the sweep deletes first, its blob delete re-stamps the
 	// other; the second deleteChunkRowIf then refuses (ok=false → continue).
-	deleted, _, err := db.GC(context.Background(), st, 5000)
+	deleted, _, err := db.GC(context.Background(), st, "default", 5000)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if deleted != 1 {
 		t.Fatalf("deleted=%d, want 1 (second chunk spared by re-stamp)", deleted)
 	}
-	if !db.HasChunk("a") && !db.HasChunk("b") {
+	if !db.HasChunk("default", "a") && !db.HasChunk("default", "b") {
 		t.Fatal("re-stamped chunk was swept")
 	}
 }

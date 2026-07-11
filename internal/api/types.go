@@ -31,6 +31,7 @@ type MissingResp struct {
 type Cache struct {
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
+	Storage   string `json:"storage,omitempty"` // named blob backend
 	Public    bool   `json:"public"`
 	Priority  int    `json:"priority"`
 	Retention int64  `json:"retention"` // seconds; 0 = global default
@@ -52,6 +53,7 @@ type CacheDetail struct {
 type CreateCacheReq struct {
 	Namespace string `json:"namespace"` // "" = default
 	Name      string `json:"name"`
+	Storage   string `json:"storage"` // "" = the server's default_storage
 	Public    bool   `json:"public"`
 	Priority  int    `json:"priority"` // 0 = default 40
 }

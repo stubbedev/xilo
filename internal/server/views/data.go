@@ -171,6 +171,7 @@ type DashboardData struct {
 	Caches     []CacheUsage
 	Tokens     []store.Token
 	Namespaces []store.Namespace // namespaces the viewer can create caches/tokens in
+	Storages   []string          // configured blob backends, default first
 	IsAdmin    bool
 	Flash      Flash
 	ServerCap  int64 // global storage cap bytes, 0 = unlimited

@@ -93,7 +93,7 @@ func (s *Server) handleMissingChunks(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	missing, err := s.db.MissingChunks(req.Hashes)
+	missing, err := s.db.MissingChunks(c.Storage, req.Hashes)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -101,7 +101,7 @@ func (s *Server) handleMissingChunks(w http.ResponseWriter, r *http.Request) {
 	// Everything we just promised as present will be skipped by the pusher —
 	// re-stamp created so the GC grace window covers the rest of its push.
 	if len(missing) < len(req.Hashes) {
-		if err := s.db.TouchChunks(present(req.Hashes, missing), timeNow()); err != nil {
+		if err := s.db.TouchChunks(c.Storage, present(req.Hashes, missing), timeNow()); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -151,8 +151,8 @@ func (s *Server) handlePutChunk(w http.ResponseWriter, r *http.Request) {
 	// Skip a chunk already recorded (row+blob present) — idempotent, saves the
 	// compress+write. Checking the DB row (not just the blob) keeps them
 	// consistent. Re-stamp created: this client will rely on the chunk staying.
-	if s.db.HasChunk(want) {
-		_ = s.db.TouchChunks([]string{want}, timeNow())
+	if s.db.HasChunk(c.Storage, want) {
+		_ = s.db.TouchChunks(c.Storage, []string{want}, timeNow())
 		s.metrics.chunksDedup.Add(1)
 		w.WriteHeader(http.StatusOK)
 		return
@@ -165,11 +165,11 @@ func (s *Server) handlePutChunk(w http.ResponseWriter, r *http.Request) {
 
 	key := storage.ChunkKey(want)
 	compressed := s.enc.EncodeAll(raw, nil)
-	if err := s.st.Put(r.Context(), key, bytes.NewReader(compressed)); err != nil {
+	if err := s.stOf(c.Storage).Put(r.Context(), key, bytes.NewReader(compressed)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := s.db.PutChunk(want, int64(len(raw)), int64(len(compressed)), key, timeNow()); err != nil {
+	if err := s.db.PutChunk(c.Storage, want, int64(len(raw)), int64(len(compressed)), key, timeNow()); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -195,11 +195,11 @@ func (s *Server) handlePutPath(w http.ResponseWriter, r *http.Request) {
 	// PutPath commit the GC grace window must cover them, and the stamp-then-
 	// check order means a chunk the sweeper deletes in between is reported
 	// missing (client re-uploads) instead of registered dangling.
-	if err := s.db.TouchChunks(req.Chunks, timeNow()); err != nil {
+	if err := s.db.TouchChunks(c.Storage, req.Chunks, timeNow()); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	missing, err := s.db.MissingChunks(req.Chunks)
+	missing, err := s.db.MissingChunks(c.Storage, req.Chunks)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -219,7 +219,7 @@ func (s *Server) handlePutPath(w http.ResponseWriter, r *http.Request) {
 	// claimed NarHash. A client without the real NAR cannot produce a chunk
 	// list that hashes correctly, so it cannot claim someone else's path.
 	if !s.cfg.Security.SkipUploadVerify {
-		if err := s.verifyReassembly(r, req.Chunks, narHash, req.NarSize); err != nil {
+		if err := s.verifyReassembly(r, c.Storage, req.Chunks, narHash, req.NarSize); err != nil {
 			http.Error(w, "upload verification failed: "+err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -244,8 +244,8 @@ func (s *Server) handlePutPath(w http.ResponseWriter, r *http.Request) {
 // verifyReassembly streams the referenced chunks through sha256 (fetched with
 // bounded look-ahead) and checks the digest + total size against the claimed
 // NarHash/NarSize.
-func (s *Server) verifyReassembly(r *http.Request, chunkHashes []string, narHash string, narSize uint64) error {
-	refs, err := s.db.ChunkKeys(chunkHashes)
+func (s *Server) verifyReassembly(r *http.Request, storageName string, chunkHashes []string, narHash string, narSize uint64) error {
+	refs, err := s.db.ChunkKeys(storageName, chunkHashes)
 	if err != nil {
 		return err
 	}

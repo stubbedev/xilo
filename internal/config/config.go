@@ -31,8 +31,14 @@ type Config struct {
 	Database Database `yaml:"database" json:"database"`
 	// Admin dashboard settings.
 	Admin Admin `yaml:"admin" json:"admin"`
-	// Where chunk bytes are stored.
+	// Where chunk bytes are stored (the backend named "default").
 	Storage Storage `yaml:"storage" json:"storage"`
+	// Additional named blob backends. Each cache is pinned to one backend at
+	// creation; chunk dedup is per-backend.
+	Storages map[string]Storage `yaml:"storages" json:"storages,omitempty"`
+	// Which backend newly created caches use when none is specified.
+	// Defaults to "default" (the storage: block above).
+	DefaultStorage string `yaml:"default_storage" json:"default_storage,omitempty"`
 	// Content-defined chunking parameters (server-dictated; push clients fetch
 	// these so every client chunks identically and dedup stays global).
 	Chunking Chunking `yaml:"chunking" json:"chunking"`
@@ -212,6 +218,16 @@ type S3 struct {
 	Insecure bool `yaml:"insecure" json:"insecure"`
 }
 
+// StorageMap returns every configured blob backend by name: "default" (the
+// storage: block) plus the storages: entries.
+func (c *Config) StorageMap() map[string]Storage {
+	m := map[string]Storage{"default": c.Storage}
+	for name, s := range c.Storages {
+		m[name] = s
+	}
+	return m
+}
+
 // DBPath is the sqlite file path derived from DataDir.
 func (c *Config) DBPath() string { return filepath.Join(c.DataDir, "xilo.db") }
 
@@ -273,6 +289,20 @@ func (c *Config) applyDefaults() {
 	if c.GC.Grace == "" {
 		c.GC.Grace = "1h"
 	}
+	if c.DefaultStorage == "" {
+		c.DefaultStorage = "default"
+	}
+	// Named local backends need explicit roots — deriving them all from
+	// data_dir would silently share one directory.
+	for name, s := range c.Storages {
+		if s.Backend == "" {
+			s.Backend = "local"
+		}
+		if s.Backend == "local" && s.Local.Root == "" {
+			s.Local.Root = filepath.Join(c.DataDir, "storage-"+name)
+		}
+		c.Storages[name] = s
+	}
 	if c.Logging == "" {
 		c.Logging = "full"
 	}
@@ -330,6 +360,19 @@ func (c *Config) validate() error {
 	}
 	if c.Database.URL != "" && !c.Database.Postgres() {
 		return fmt.Errorf("database.url %q invalid (want postgres://… or empty for SQLite)", c.Database.URL)
+	}
+	for name, s := range c.Storages {
+		if name == "" || strings.ContainsAny(name, "/ ") {
+			return fmt.Errorf("storages: invalid backend name %q", name)
+		}
+		switch s.Backend {
+		case "local", "s3":
+		default:
+			return fmt.Errorf("storages.%s.backend %q invalid (want local|s3)", name, s.Backend)
+		}
+	}
+	if _, ok := c.StorageMap()[c.DefaultStorage]; !ok {
+		return fmt.Errorf("default_storage %q is not a configured storage", c.DefaultStorage)
 	}
 	switch c.Logging {
 	case "full", "quiet":

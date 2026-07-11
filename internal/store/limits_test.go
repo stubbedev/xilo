@@ -10,9 +10,9 @@ func TestEnforceCacheCapLRU(t *testing.T) {
 	c, _ := db.CreateCache("default", "c", true, 40)
 
 	// three chunks, 100 bytes compressed each; three paths each referencing one.
-	db.PutChunk("c1", 100, 100, "k1", 1)
-	db.PutChunk("c2", 100, 100, "k2", 1)
-	db.PutChunk("c3", 100, 100, "k3", 1)
+	db.PutChunk("default", "c1", 100, 100, "k1", 1)
+	db.PutChunk("default", "c2", 100, 100, "k2", 1)
+	db.PutChunk("default", "c3", 100, 100, "k3", 1)
 	// distinct accessed times so LRU order is deterministic
 	putPathAt(t, db, c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"c1"}, 10)
 	putPathAt(t, db, c.ID, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", []string{"c2"}, 20)
@@ -42,8 +42,8 @@ func TestEnforceCacheCapLRU(t *testing.T) {
 func TestEnforceCapSharedChunk(t *testing.T) {
 	db := openTest(t)
 	c, _ := db.CreateCache("default", "c", true, 40)
-	db.PutChunk("shared", 100, 100, "k", 1)
-	db.PutChunk("solo", 100, 100, "k2", 1)
+	db.PutChunk("default", "shared", 100, 100, "k", 1)
+	db.PutChunk("default", "solo", 100, 100, "k2", 1)
 	putPathAt(t, db, c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"shared"}, 10)
 	putPathAt(t, db, c.ID, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", []string{"shared", "solo"}, 20)
 	// distinct size = shared(100)+solo(100)=200. Cap 100 → evict oldest (accessed=10),
@@ -62,8 +62,8 @@ func TestEnforceGlobalCap(t *testing.T) {
 	db := openTest(t)
 	a, _ := db.CreateCache("default", "a", true, 40)
 	b, _ := db.CreateCache("default", "b", true, 40)
-	db.PutChunk("x", 100, 100, "kx", 1)
-	db.PutChunk("y", 100, 100, "ky", 1)
+	db.PutChunk("default", "x", 100, 100, "kx", 1)
+	db.PutChunk("default", "y", 100, 100, "ky", 1)
 	putPathAt(t, db, a.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"x"}, 10)
 	putPathAt(t, db, b.ID, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", []string{"y"}, 20)
 	n, err := db.EnforceGlobalCap(100) // 200 → evict oldest across caches → 100

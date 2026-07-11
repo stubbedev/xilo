@@ -38,7 +38,7 @@ func TestClosedDBErrorPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := New(cfg, db, st)
+	s, err := New(cfg, db, map[string]storage.Storage{"default": st})
 	if err != nil {
 		t.Fatal(err)
 	}

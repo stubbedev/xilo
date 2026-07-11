@@ -7,9 +7,9 @@ import (
 func TestPathsWithMissingChunks(t *testing.T) {
 	db := openTest(t)
 	c, _ := db.CreateCache("default", "c", true, 40)
-	db.PutChunk("ok1", 10, 5, "k1", 100)
-	db.PutChunk("ok2", 10, 5, "k2", 100)
-	db.PutChunk("bad", 10, 5, "k3", 100)
+	db.PutChunk("default", "ok1", 10, 5, "k1", 100)
+	db.PutChunk("default", "ok2", 10, 5, "k2", 100)
+	db.PutChunk("default", "bad", 10, 5, "k3", 100)
 
 	putPath(t, db, c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"ok1", "ok2"})
 	putPath(t, db, c.ID, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", []string{"ok1", "bad"})
@@ -25,7 +25,7 @@ func TestPathsWithMissingChunks(t *testing.T) {
 	}
 
 	// Marking "bad" as bad breaks the second path too.
-	got, err = db.PathsWithMissingChunks([]string{"bad"})
+	got, err = db.PathsWithMissingChunks([]string{"default/bad"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,20 +37,20 @@ func TestPathsWithMissingChunks(t *testing.T) {
 func TestDeletePathsAndChunkRows(t *testing.T) {
 	db := openTest(t)
 	c, _ := db.CreateCache("default", "c", true, 40)
-	db.PutChunk("h1", 10, 5, "k1", 100)
+	db.PutChunk("default", "h1", 10, 5, "k1", 100)
 	putPath(t, db, c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"h1"})
 
-	broken, err := db.PathsWithMissingChunks([]string{"h1"})
+	broken, err := db.PathsWithMissingChunks([]string{"default/h1"})
 	if err != nil || len(broken) != 1 {
 		t.Fatalf("setup: %v %v", broken, err)
 	}
 	if err := db.DeletePaths([]int64{broken[0].ID}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.DeleteChunkRows([]string{"h1"}); err != nil {
+	if err := db.DeleteChunkRows("default", []string{"h1"}); err != nil {
 		t.Fatal(err)
 	}
-	if db.HasChunk("h1") {
+	if db.HasChunk("default", "h1") {
 		t.Fatal("chunk row survived")
 	}
 	if _, err := db.GetPath(c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); err == nil {
@@ -60,7 +60,7 @@ func TestDeletePathsAndChunkRows(t *testing.T) {
 	if err := db.DeletePaths(nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.DeleteChunkRows(nil); err != nil {
+	if err := db.DeleteChunkRows("default", nil); err != nil {
 		t.Fatal(err)
 	}
 }

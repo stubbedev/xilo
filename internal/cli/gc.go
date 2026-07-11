@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/stubbedev/xilo/internal/api"
-	"github.com/stubbedev/xilo/internal/storage"
 )
 
 func gcCmd() *cobra.Command {
@@ -47,7 +46,7 @@ func gcCmd() *cobra.Command {
 				fmt.Printf("evicted %d paths older than %s\n", n, olderThan)
 			}
 
-			st, err := storage.New(cfg.Storage)
+			sts, err := openStorages(cfg)
 			if err != nil {
 				return err
 			}
@@ -60,9 +59,15 @@ func gcCmd() *cobra.Command {
 				grace = time.Hour
 			}
 			graceCutoff := time.Now().Add(-grace).Unix()
-			deleted, freed, err := db.GC(cmd.Context(), st, graceCutoff)
-			if err != nil {
-				return err
+			var deleted int
+			var freed int64
+			for name, st := range sts {
+				d, f, err := db.GC(cmd.Context(), st, name, graceCutoff)
+				deleted += d
+				freed += f
+				if err != nil {
+					return err
+				}
 			}
 			fmt.Printf("removed %d chunks, freed %d bytes\n", deleted, freed)
 			return nil

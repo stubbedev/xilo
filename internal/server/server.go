@@ -5,11 +5,13 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -26,9 +28,9 @@ import (
 type Server struct {
 	cfg       *config.Config
 	db        *store.DB
-	st        storage.Storage
-	enc       *zstd.Encoder // EncodeAll — safe for concurrent use
-	dec       *zstd.Decoder // DecodeAll — safe for concurrent use
+	sts       map[string]storage.Storage // named blob backends
+	enc       *zstd.Encoder              // EncodeAll — safe for concurrent use
+	dec       *zstd.Decoder              // DecodeAll — safe for concurrent use
 	sess      *sessions
 	ceremony  ceremonies // in-flight WebAuthn challenges
 	wanOnce   sync.Once
@@ -44,7 +46,7 @@ type Server struct {
 	started   time.Time
 }
 
-func New(cfg *config.Config, db *store.DB, st storage.Storage) (*Server, error) {
+func New(cfg *config.Config, db *store.DB, sts map[string]storage.Storage) (*Server, error) {
 	enc, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstdLevel(cfg.Compression.Level)))
 	if err != nil {
 		return nil, err
@@ -54,7 +56,7 @@ func New(cfg *config.Config, db *store.DB, st storage.Storage) (*Server, error) 
 		return nil, err
 	}
 	return &Server{
-		cfg: cfg, db: db, st: st, enc: enc, dec: dec,
+		cfg: cfg, db: db, sts: sts, enc: enc, dec: dec,
 		sess:      newSessions(db),
 		started:   time.Now(),
 		uploadSem: make(chan struct{}, max(4, 2*runtime.NumCPU())),
@@ -296,6 +298,53 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write([]byte("ok\n"))
+}
+
+// stOf resolves a named storage backend, falling back to "default" so a row
+// naming a since-removed backend degrades to the primary instead of a panic.
+func (s *Server) stOf(name string) storage.Storage {
+	if st, ok := s.sts[name]; ok {
+		return st
+	}
+	return s.sts["default"]
+}
+
+// storageNames lists configured backends, default first, rest sorted.
+func (s *Server) storageNames() []string {
+	names := make([]string, 0, len(s.sts))
+	for n := range s.sts {
+		if n != s.cfg.DefaultStorage {
+			names = append(names, n)
+		}
+	}
+	sort.Strings(names)
+	return append([]string{s.cfg.DefaultStorage}, names...)
+}
+
+// resolveStorage validates a requested backend name ("" = the configured
+// default) against the configured set.
+func (s *Server) resolveStorage(name string) (string, error) {
+	if name == "" {
+		name = s.cfg.DefaultStorage
+	}
+	if _, ok := s.sts[name]; !ok {
+		return "", fmt.Errorf("unknown storage backend %q", name)
+	}
+	return name, nil
+}
+
+// assignStorage pins a just-created cache to a backend. ponytail: two-step
+// insert-then-set — a push racing this window would land chunks in 'default';
+// harmless (fsck heals) and only possible in the same instant the cache is born.
+func (s *Server) assignStorage(c *store.Cache, stName string) error {
+	if stName == c.Storage {
+		return nil
+	}
+	if err := s.db.SetCacheStorage(c.ID, stName); err != nil {
+		return err
+	}
+	c.Storage = stName
+	return nil
 }
 
 // cache resolves the {ns}/{cache} path segments, writing 404 if unknown.

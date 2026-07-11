@@ -33,11 +33,11 @@ func fsckCmd() *cobra.Command {
 				return err
 			}
 			defer db.Close()
-			st, err := storage.New(cfg.Storage)
+			sts, err := openStorages(cfg)
 			if err != nil {
 				return err
 			}
-			return runFsck(cmd.Context(), cmd, db, st, content, repair)
+			return runFsck(cmd.Context(), cmd, db, sts, content, repair)
 		},
 	}
 	c.Flags().BoolVar(&content, "content", false, "re-hash every blob against its chunk hash (reads all data)")
@@ -45,41 +45,51 @@ func fsckCmd() *cobra.Command {
 	return c
 }
 
-func runFsck(ctx context.Context, cmd *cobra.Command, db *store.DB, st storage.Storage, content, repair bool) error {
+func runFsck(ctx context.Context, cmd *cobra.Command, db *store.DB, sts map[string]storage.Storage, content, repair bool) error {
 	out := cmd.OutOrStdout()
-	chunks, err := db.AllChunks()
-	if err != nil {
-		return err
-	}
 	var dec *zstd.Decoder
 	if content {
+		var err error
 		if dec, err = zstd.NewReader(nil); err != nil {
 			return err
 		}
 		defer dec.Close()
 	}
 
-	var bad []string
-	for _, c := range chunks {
-		ok, err := st.Has(ctx, c.Key)
+	// badKeys collects "storage/hash" keys; badByStorage feeds per-backend
+	// row repair.
+	var badKeys []string
+	badByStorage := map[string][]string{}
+	total := 0
+	for name, st := range sts {
+		chunks, err := db.AllChunks(name)
 		if err != nil {
-			return fmt.Errorf("stat %s: %w", c.Key, err)
+			return err
 		}
-		if !ok {
-			fmt.Fprintf(out, "MISSING BLOB %s (%s)\n", c.Hash, c.Key)
-			bad = append(bad, c.Hash)
-			continue
-		}
-		if content {
-			if err := verifyChunkContent(ctx, st, dec, c); err != nil {
-				fmt.Fprintf(out, "CORRUPT BLOB %s: %v\n", c.Hash, err)
-				bad = append(bad, c.Hash)
+		total += len(chunks)
+		for _, c := range chunks {
+			ok, err := st.Has(ctx, c.Key)
+			if err != nil {
+				return fmt.Errorf("stat %s: %w", c.Key, err)
+			}
+			if !ok {
+				fmt.Fprintf(out, "MISSING BLOB %s (%s in %s)\n", c.Hash, c.Key, name)
+				badKeys = append(badKeys, name+"/"+c.Hash)
+				badByStorage[name] = append(badByStorage[name], c.Hash)
+				continue
+			}
+			if content {
+				if err := verifyChunkContent(ctx, st, dec, c); err != nil {
+					fmt.Fprintf(out, "CORRUPT BLOB %s: %v\n", c.Hash, err)
+					badKeys = append(badKeys, name+"/"+c.Hash)
+					badByStorage[name] = append(badByStorage[name], c.Hash)
+				}
 			}
 		}
 	}
 
 	// Paths whose chunk list references a bad or absent chunk row.
-	danglers, err := db.PathsWithMissingChunks(bad)
+	danglers, err := db.PathsWithMissingChunks(badKeys)
 	if err != nil {
 		return err
 	}
@@ -87,12 +97,12 @@ func runFsck(ctx context.Context, cmd *cobra.Command, db *store.DB, st storage.S
 		fmt.Fprintf(out, "BROKEN PATH %s (references missing/corrupt chunks)\n", p.StorePath)
 	}
 
-	if len(bad) == 0 && len(danglers) == 0 {
-		fmt.Fprintf(out, "fsck: %d chunks OK, all path references intact\n", len(chunks))
+	if len(badKeys) == 0 && len(danglers) == 0 {
+		fmt.Fprintf(out, "fsck: %d chunks OK, all path references intact\n", total)
 		return nil
 	}
 	if !repair {
-		return fmt.Errorf("fsck: %d bad chunks, %d broken paths (run with --repair to heal)", len(bad), len(danglers))
+		return fmt.Errorf("fsck: %d bad chunks, %d broken paths (run with --repair to heal)", len(badKeys), len(danglers))
 	}
 
 	// Heal: drop broken paths first (nothing may reference the rows we are
@@ -104,10 +114,12 @@ func runFsck(ctx context.Context, cmd *cobra.Command, db *store.DB, st storage.S
 	if err := db.DeletePaths(ids); err != nil {
 		return err
 	}
-	if err := db.DeleteChunkRows(bad); err != nil {
-		return err
+	for name, hashes := range badByStorage {
+		if err := db.DeleteChunkRows(name, hashes); err != nil {
+			return err
+		}
 	}
-	fmt.Fprintf(out, "fsck: repaired — dropped %d chunk rows and %d paths (re-push to restore)\n", len(bad), len(danglers))
+	fmt.Fprintf(out, "fsck: repaired — dropped %d chunk rows and %d paths (re-push to restore)\n", len(badKeys), len(danglers))
 	return nil
 }
 

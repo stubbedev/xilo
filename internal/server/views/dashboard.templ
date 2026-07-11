@@ -125,7 +125,7 @@ templ Dashboard(d DashboardData) {
 				<label>
 					{ T("caches.namespace") }
 					if d.IsAdmin {
-						<input name="namespace" list="ns-list" value="default" required pattern="[a-zA-Z0-9_-]+"/>
+						<input name="namespace" list="ns-list" value="default" required pattern="[-a-zA-Z0-9_]+"/>
 						<datalist id="ns-list">
 							for _, ns := range d.Namespaces {
 								<option value={ ns.Name }></option>
@@ -141,8 +141,18 @@ templ Dashboard(d DashboardData) {
 				</label>
 				<label>
 					{ T("caches.name") }
-					<input name="name" placeholder="nixpkgs" required pattern="[a-zA-Z0-9_-]+" autofocus/>
+					<input name="name" placeholder="nixpkgs" required pattern="[-a-zA-Z0-9_]+" autofocus/>
 				</label>
+				if d.IsAdmin && len(d.Storages) > 1 {
+					<label>
+						{ T("caches.storage") }
+						<select name="storage">
+							for _, st := range d.Storages {
+								<option value={ st }>{ st }</option>
+							}
+						</select>
+					</label>
+				}
 				<div class="switch-row vis-row">
 					<span>{ T("caches.visibility") }</span>
 					@visToggle(false)

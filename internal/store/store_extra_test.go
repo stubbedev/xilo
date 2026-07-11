@@ -255,8 +255,8 @@ func TestGlobalStats(t *testing.T) {
 		t.Fatalf("empty stats: %+v err=%v", g, err)
 	}
 	c, _ := db.CreateCache("default", "c", true, 40)
-	db.PutChunk("g1", 100, 60, "k1", 1)
-	db.PutChunk("g2", 100, 40, "k2", 1)
+	db.PutChunk("default", "g1", 100, 60, "k1", 1)
+	db.PutChunk("default", "g2", 100, 40, "k2", 1)
 	db.PutPath(c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		&Path{StorePath: "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-n", NarHash: "sha256:h", NarSize: 200, Chunks: []string{"g1"}})
 	g, err = db.GlobalStats()
@@ -301,10 +301,10 @@ func TestGetPathNotFound(t *testing.T) {
 
 func TestChunkKeysOrderAndMissing(t *testing.T) {
 	db := openTest(t)
-	db.PutChunk("h1", 10, 5, "k1", 1)
-	db.PutChunk("h2", 20, 15, "k2", 1)
+	db.PutChunk("default", "h1", 10, 5, "k1", 1)
+	db.PutChunk("default", "h2", 20, 15, "k2", 1)
 
-	refs, err := db.ChunkKeys([]string{"h2", "h1"}) // request order != insert order
+	refs, err := db.ChunkKeys("default", []string{"h2", "h1"}) // request order != insert order
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,11 +312,11 @@ func TestChunkKeysOrderAndMissing(t *testing.T) {
 		refs[1].Hash != "h1" || refs[1].Key != "k1" {
 		t.Fatalf("ChunkKeys order/fields: %+v", refs)
 	}
-	if _, err := db.ChunkKeys([]string{"h1", "gone"}); !errors.Is(err, ErrNotFound) {
+	if _, err := db.ChunkKeys("default", []string{"h1", "gone"}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("ChunkKeys(missing) = %v, want ErrNotFound", err)
 	}
 	// empty input
-	refs, err = db.ChunkKeys(nil)
+	refs, err = db.ChunkKeys("default", nil)
 	if err != nil || len(refs) != 0 {
 		t.Fatalf("ChunkKeys(nil) = %v err=%v", refs, err)
 	}
@@ -330,18 +330,18 @@ func TestBatchingOverBatchVars(t *testing.T) {
 	hashes := make([]string, n)
 	for i := range hashes {
 		hashes[i] = fmt.Sprintf("h%04d", i)
-		if err := db.PutChunk(hashes[i], 1, 1, "k", 1); err != nil {
+		if err := db.PutChunk("default", hashes[i], 1, 1, "k", 1); err != nil {
 			t.Fatal(err)
 		}
 	}
-	miss, err := db.MissingChunks(append(hashes, "extra1", "extra2"))
+	miss, err := db.MissingChunks("default", append(hashes, "extra1", "extra2"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(miss) != 2 {
 		t.Fatalf("missing = %d, want 2", len(miss))
 	}
-	if err := db.TouchChunks(hashes, 12345); err != nil {
+	if err := db.TouchChunks("default", hashes, 12345); err != nil {
 		t.Fatal(err)
 	}
 	var minCreated int64
@@ -349,7 +349,7 @@ func TestBatchingOverBatchVars(t *testing.T) {
 	if minCreated != 12345 {
 		t.Fatalf("TouchChunks batch missed rows: min created=%d", minCreated)
 	}
-	refs, err := db.ChunkKeys(hashes)
+	refs, err := db.ChunkKeys("default", hashes)
 	if err != nil || len(refs) != n {
 		t.Fatalf("ChunkKeys over batch: %d err=%v", len(refs), err)
 	}
@@ -363,7 +363,7 @@ func TestBatchingOverBatchVars(t *testing.T) {
 
 func TestTouchChunksEmpty(t *testing.T) {
 	db := openTest(t)
-	if err := db.TouchChunks(nil, 1); err != nil {
+	if err := db.TouchChunks("default", nil, 1); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -440,18 +440,18 @@ func TestSearchPathsSortAndPaging(t *testing.T) {
 
 func TestDeleteChunkRowIfBoundary(t *testing.T) {
 	db := openTest(t)
-	db.PutChunk("b", 10, 5, "k", 5000)
+	db.PutChunk("default", "b", 10, 5, "k", 5000)
 	// created == cutoff is protected (strict <)
-	ok, err := db.deleteChunkRowIf("b", 5000)
+	ok, err := db.deleteChunkRowIf("default", "b", 5000)
 	if err != nil || ok {
 		t.Fatalf("created==cutoff deleted=%v err=%v, want kept", ok, err)
 	}
-	ok, err = db.deleteChunkRowIf("b", 5001)
+	ok, err = db.deleteChunkRowIf("default", "b", 5001)
 	if err != nil || !ok {
 		t.Fatalf("created<cutoff deleted=%v err=%v, want deleted", ok, err)
 	}
 	// already gone → no rows affected
-	ok, _ = db.deleteChunkRowIf("b", 5001)
+	ok, _ = db.deleteChunkRowIf("default", "b", 5001)
 	if ok {
 		t.Fatal("second delete reported rows")
 	}
@@ -487,7 +487,7 @@ func TestEvictPathsOlderThan(t *testing.T) {
 func TestEnforceCapNoops(t *testing.T) {
 	db := openTest(t)
 	c, _ := db.CreateCache("default", "c", true, 40)
-	db.PutChunk("x", 100, 100, "k", 1)
+	db.PutChunk("default", "x", 100, 100, "k", 1)
 	putPathAt(t, db, c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"x"}, 10)
 
 	// cap 0 = unlimited
@@ -513,8 +513,8 @@ func (failDelete) Delete(context.Context, string) error               { return e
 
 func TestGCStorageDeleteError(t *testing.T) {
 	db := openTest(t)
-	db.PutChunk("orphan", 10, 5, "k", 100)
-	deleted, _, err := db.GC(context.Background(), failDelete{}, 5000)
+	db.PutChunk("default", "orphan", 10, 5, "k", 100)
+	deleted, _, err := db.GC(context.Background(), failDelete{}, "default", 5000)
 	if err == nil || !strings.Contains(err.Error(), "delete fail") {
 		t.Fatalf("GC should surface storage delete error, got %v", err)
 	}
@@ -579,20 +579,20 @@ func TestGCBatchSweep(t *testing.T) {
 	var wantFreed int64
 	for i := 0; i < orphans; i++ {
 		h := fmt.Sprintf("orph%04d", i)
-		if err := db.PutChunk(h, 10, int64(i%7+1), storage.ChunkKey(h), 100); err != nil {
+		if err := db.PutChunk("default", h, 10, int64(i%7+1), storage.ChunkKey(h), 100); err != nil {
 			t.Fatal(err)
 		}
 		m.Put(ctx, storage.ChunkKey(h), nil)
 		wantFreed += int64(i%7 + 1)
 	}
-	db.PutChunk("live", 10, 5, storage.ChunkKey("live"), 100)
-	db.PutChunk("fresh", 10, 5, storage.ChunkKey("fresh"), 9_000)
+	db.PutChunk("default", "live", 10, 5, storage.ChunkKey("live"), 100)
+	db.PutChunk("default", "fresh", 10, 5, storage.ChunkKey("fresh"), 9_000)
 	m.Put(ctx, storage.ChunkKey("live"), nil)
 	m.Put(ctx, storage.ChunkKey("fresh"), nil)
 	c, _ := db.CreateCache("default", "c", true, 40)
 	putPath(t, db, c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"live"})
 
-	deleted, freed, err := db.GC(ctx, m, 5_000)
+	deleted, freed, err := db.GC(ctx, m, "default", 5_000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -602,7 +602,7 @@ func TestGCBatchSweep(t *testing.T) {
 	if m.bulk != 3 { // ceil(1200/500)
 		t.Fatalf("DeleteMany calls=%d, want 3", m.bulk)
 	}
-	all, err := db.AllChunks()
+	all, err := db.AllChunks("default")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -619,20 +619,20 @@ func TestGCBatchSweep(t *testing.T) {
 // which). This is the batched form of the GC-vs-push race check.
 func TestDeleteChunkRowsIfSparesRestamped(t *testing.T) {
 	db := openTest(t)
-	db.PutChunk("a", 10, 1, "ka", 100)
-	db.PutChunk("b", 10, 1, "kb", 100)
-	db.PutChunk("c", 10, 1, "kc", 100)
-	if err := db.TouchChunks([]string{"b"}, 9_000); err != nil {
+	db.PutChunk("default", "a", 10, 1, "ka", 100)
+	db.PutChunk("default", "b", 10, 1, "kb", 100)
+	db.PutChunk("default", "c", 10, 1, "kc", 100)
+	if err := db.TouchChunks("default", []string{"b"}, 9_000); err != nil {
 		t.Fatal(err)
 	}
-	gone, err := db.deleteChunkRowsIf([]string{"a", "b", "c"}, 5_000)
+	gone, err := db.deleteChunkRowsIf("default", []string{"a", "b", "c"}, 5_000)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(gone) != 2 || gone[0] != "a" || gone[1] != "c" {
 		t.Fatalf("gone=%v, want [a c]", gone)
 	}
-	if !db.HasChunk("b") || db.HasChunk("a") || db.HasChunk("c") {
+	if !db.HasChunk("default", "b") || db.HasChunk("default", "a") || db.HasChunk("default", "c") {
 		t.Fatal("wrong rows survived")
 	}
 }
@@ -644,23 +644,23 @@ func TestGCRestampedInBatchSurvives(t *testing.T) {
 	setGCBatch(t, 2)
 	ctx := context.Background()
 	for _, h := range []string{"a", "b", "c", "d"} {
-		db.PutChunk(h, 10, 1, "k"+h, 100)
+		db.PutChunk("default", h, 10, 1, "k"+h, 100)
 	}
 	m := &memStore{objs: map[string]bool{"ka": true, "kb": true, "kc": true, "kd": true}}
 	m.onBulk = func(call int, _ []string) error {
 		if call == 1 { // push races in while batch [a b] deletes blobs
-			return db.TouchChunks([]string{"c"}, 1<<62)
+			return db.TouchChunks("default", []string{"c"}, 1<<62)
 		}
 		return nil
 	}
-	deleted, freed, err := db.GC(ctx, m, 5_000)
+	deleted, freed, err := db.GC(ctx, m, "default", 5_000)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if deleted != 3 || freed != 3 {
 		t.Fatalf("deleted=%d freed=%d, want 3/3 (c spared)", deleted, freed)
 	}
-	if !db.HasChunk("c") || db.HasChunk("a") || db.HasChunk("b") || db.HasChunk("d") {
+	if !db.HasChunk("default", "c") || db.HasChunk("default", "a") || db.HasChunk("default", "b") || db.HasChunk("default", "d") {
 		t.Fatal("re-stamped chunk swept or batch-mate spared")
 	}
 	if !m.objs["kc"] {
@@ -674,7 +674,7 @@ func TestGCMidBatchStorageError(t *testing.T) {
 	db := openTest(t)
 	setGCBatch(t, 2)
 	for _, h := range []string{"a", "b", "c", "d"} {
-		db.PutChunk(h, 10, 1, "k"+h, 100)
+		db.PutChunk("default", h, 10, 1, "k"+h, 100)
 	}
 	m := &memStore{objs: map[string]bool{"ka": true, "kb": true, "kc": true, "kd": true}}
 	m.onBulk = func(call int, _ []string) error {
@@ -683,14 +683,14 @@ func TestGCMidBatchStorageError(t *testing.T) {
 		}
 		return nil
 	}
-	deleted, freed, err := db.GC(context.Background(), m, 5_000)
+	deleted, freed, err := db.GC(context.Background(), m, "default", 5_000)
 	if err == nil || !strings.Contains(err.Error(), "bulk fail") {
 		t.Fatalf("GC should surface bulk delete error, got %v", err)
 	}
 	if deleted != 2 || freed != 2 {
 		t.Fatalf("deleted=%d freed=%d, want 2/2 (first batch only)", deleted, freed)
 	}
-	all, _ := db.AllChunks()
+	all, _ := db.AllChunks("default")
 	if len(all) != 0 {
 		t.Fatalf("%d rows remain, want 0 — rows go before blobs", len(all))
 	}
@@ -736,7 +736,7 @@ func TestUseAfterClose(t *testing.T) {
 	}
 
 	// writes: closed-channel send recovers into an error
-	if err := db.PutChunk("h", 1, 1, "k", 1); err == nil || err.Error() != "store: closed" {
+	if err := db.PutChunk("default", "h", 1, 1, "k", 1); err == nil || err.Error() != "store: closed" {
 		t.Fatalf("write after close = %v, want store: closed", err)
 	}
 	if _, err := db.CreateCache("default", "x", true, 40); err == nil {
@@ -783,31 +783,31 @@ func TestUseAfterClose(t *testing.T) {
 	if _, err := db.GetPath(c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); err == nil {
 		t.Fatal("GetPath after close should error")
 	}
-	if _, err := db.MissingChunks([]string{"h"}); err == nil {
+	if _, err := db.MissingChunks("default", []string{"h"}); err == nil {
 		t.Fatal("MissingChunks after close should error")
 	}
 	if _, err := db.MissingPaths(c.ID, []string{"h"}); err == nil {
 		t.Fatal("MissingPaths after close should error")
 	}
-	if _, err := db.ChunkKeys([]string{"h"}); err == nil {
+	if _, err := db.ChunkKeys("default", []string{"h"}); err == nil {
 		t.Fatal("ChunkKeys after close should error")
 	}
-	if _, err := db.AllChunks(); err == nil {
+	if _, err := db.AllChunks("default"); err == nil {
 		t.Fatal("AllChunks after close should error")
 	}
-	if _, err := db.LiveChunkSet(); err == nil {
+	if _, err := db.LiveChunkSet("default"); err == nil {
 		t.Fatal("LiveChunkSet after close should error")
 	}
 	if _, err := db.chunkSizes(); err == nil {
 		t.Fatal("chunkSizes after close should error")
 	}
-	if _, _, err := db.GC(context.Background(), failDelete{}, 1); err == nil {
+	if _, _, err := db.GC(context.Background(), failDelete{}, "default", 1); err == nil {
 		t.Fatal("GC after close should error")
 	}
 	if _, err := db.EnforceGlobalCap(1); err == nil {
 		t.Fatal("EnforceGlobalCap after close should error")
 	}
-	if db.HasChunk("h") {
+	if db.HasChunk("default", "h") {
 		t.Fatal("HasChunk after close should be false")
 	}
 	if _, ok := db.SessionUser("s"); ok {

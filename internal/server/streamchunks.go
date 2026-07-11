@@ -48,7 +48,7 @@ func (s *Server) fetchChunk(ctx context.Context, ref store.ChunkRef) ([]byte, er
 // fetchChunkRaw gets one chunk from storage as stored (a complete zstd frame).
 // The returned buffer is pool-owned (see fetchChunk).
 func (s *Server) fetchChunkRaw(ctx context.Context, ref store.ChunkRef) ([]byte, error) {
-	rc, err := s.st.Get(ctx, ref.Key)
+	rc, err := s.stOf(ref.Storage).Get(ctx, ref.Key)
 	if err != nil {
 		return nil, err
 	}

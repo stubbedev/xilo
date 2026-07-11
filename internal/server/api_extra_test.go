@@ -47,7 +47,7 @@ func newTestServerCfg(t *testing.T, mut func(*config.Config)) (*Server, *store.D
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := New(cfg, db, st)
+	s, err := New(cfg, db, map[string]storage.Storage{"default": st})
 	if err != nil {
 		t.Fatal(err)
 	}

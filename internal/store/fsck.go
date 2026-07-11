@@ -11,31 +11,32 @@ type BrokenPath struct {
 }
 
 // PathsWithMissingChunks returns every path whose chunk list references a
-// hash that is in extraBad or has no chunks row — the state fsck exists to
-// find (a registered path that can never serve).
+// hash that is in extraBad or has no chunks row in the path's cache's storage
+// backend — the state fsck exists to find (a registered path that can never
+// serve). extraBad entries are "storage/hash" keys.
 func (db *DB) PathsWithMissingChunks(extraBad []string) ([]BrokenPath, error) {
 	present := map[string]bool{}
-	rows, err := db.r.Query(`SELECT hash FROM chunks`)
+	rows, err := db.r.Query(`SELECT storage, hash FROM chunks`)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
-		var h string
-		if err := rows.Scan(&h); err != nil {
+		var st, h string
+		if err := rows.Scan(&st, &h); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		present[h] = true
+		present[st+"/"+h] = true
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	for _, h := range extraBad {
-		delete(present, h)
+	for _, k := range extraBad {
+		delete(present, k)
 	}
 
-	prows, err := db.r.Query(`SELECT id, store_path, chunks FROM paths`)
+	prows, err := db.r.Query(`SELECT p.id, p.store_path, p.chunks, c.storage FROM paths p JOIN caches c ON c.id = p.cache_id`)
 	if err != nil {
 		return nil, err
 	}
@@ -43,12 +44,12 @@ func (db *DB) PathsWithMissingChunks(extraBad []string) ([]BrokenPath, error) {
 	var out []BrokenPath
 	for prows.Next() {
 		var p BrokenPath
-		var chunks string
-		if err := prows.Scan(&p.ID, &p.StorePath, &chunks); err != nil {
+		var chunks, st string
+		if err := prows.Scan(&p.ID, &p.StorePath, &chunks, &st); err != nil {
 			return nil, err
 		}
 		for _, h := range splitLines(chunks) {
-			if !present[h] {
+			if !present[st+"/"+h] {
 				out = append(out, p)
 				break
 			}
@@ -70,17 +71,18 @@ func (db *DB) DeletePaths(ids []int64) error {
 	})
 }
 
-// DeleteChunkRows unconditionally removes chunk rows by hash. fsck repair
-// only: unlike the GC sweep there is no grace re-check, because the blob is
-// already known missing/corrupt — keeping the row would just keep dedup
-// trusting it. Don't run repair concurrently with pushes.
-func (db *DB) DeleteChunkRows(hashes []string) error {
+// DeleteChunkRows unconditionally removes chunk rows by hash within a storage
+// backend. fsck repair only: unlike the GC sweep there is no grace re-check,
+// because the blob is already known missing/corrupt — keeping the row would
+// just keep dedup trusting it. Don't run repair concurrently with pushes.
+func (db *DB) DeleteChunkRows(storageName string, hashes []string) error {
 	if len(hashes) == 0 {
 		return nil
 	}
 	return db.eachBatch(hashes, func(batch []string) error {
 		return db.write(func(tx *sql.Tx) error {
-			_, err := tx.Exec(`DELETE FROM chunks WHERE hash IN (`+placeholders(len(batch))+`)`, toArgs(batch)...)
+			args := append([]any{storageName}, toArgs(batch)...)
+			_, err := tx.Exec(`DELETE FROM chunks WHERE storage=? AND hash IN (`+placeholders(len(batch))+`)`, args...)
 			return err
 		})
 	})

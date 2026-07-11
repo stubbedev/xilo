@@ -19,12 +19,12 @@ import (
 // Once the row is gone the chunk is invisible to dedup — a concurrent push
 // re-uploads it — and the worst crash outcome is an orphaned blob (leaked,
 // never a registered path pointing at missing data).
-func (db *DB) GC(ctx context.Context, st storage.Storage, graceCutoff int64) (deleted int, freed int64, err error) {
-	live, err := db.LiveChunkSet()
+func (db *DB) GC(ctx context.Context, st storage.Storage, storageName string, graceCutoff int64) (deleted int, freed int64, err error) {
+	live, err := db.LiveChunkSet(storageName)
 	if err != nil {
 		return 0, 0, err
 	}
-	all, err := db.AllChunks()
+	all, err := db.AllChunks(storageName)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -41,7 +41,7 @@ func (db *DB) GC(ctx context.Context, st storage.Storage, graceCutoff int64) (de
 		batch := cand[i:min(i+gcBatchSize, len(cand))]
 		// One tx per batch: rows not returned were re-stamped by a
 		// concurrent push since the snapshot and stay.
-		gone, err := db.deleteChunkRowsIf(batch, graceCutoff)
+		gone, err := db.deleteChunkRowsIf(storageName, batch, graceCutoff)
 		if err != nil {
 			return deleted, freed, err
 		}
@@ -82,6 +82,7 @@ func deleteBlobs(ctx context.Context, st storage.Storage, keys []string) error {
 
 // ChunkRef is a stored chunk's identity for GC.
 type ChunkRef struct {
+	Storage string
 	Hash    string
 	Key     string
 	Size    int64
@@ -89,9 +90,10 @@ type ChunkRef struct {
 	Created int64
 }
 
-// LiveChunkSet returns every chunk hash referenced by at least one path.
-func (db *DB) LiveChunkSet() (map[string]bool, error) {
-	rows, err := db.r.Query(`SELECT chunks FROM paths`)
+// LiveChunkSet returns every chunk hash referenced by at least one path of a
+// cache living on the given storage backend.
+func (db *DB) LiveChunkSet(storageName string) (map[string]bool, error) {
+	rows, err := db.r.Query(`SELECT p.chunks FROM paths p JOIN caches c ON c.id = p.cache_id WHERE c.storage=?`, storageName)
 	if err != nil {
 		return nil, err
 	}
@@ -109,9 +111,9 @@ func (db *DB) LiveChunkSet() (map[string]bool, error) {
 	return live, rows.Err()
 }
 
-// AllChunks lists every stored chunk.
-func (db *DB) AllChunks() ([]ChunkRef, error) {
-	rows, err := db.r.Query(`SELECT hash, storage_key, size, csize, created FROM chunks`)
+// AllChunks lists every chunk stored in a backend.
+func (db *DB) AllChunks(storageName string) ([]ChunkRef, error) {
+	rows, err := db.r.Query(`SELECT storage, hash, storage_key, size, csize, created FROM chunks WHERE storage=?`, storageName)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +121,7 @@ func (db *DB) AllChunks() ([]ChunkRef, error) {
 	var out []ChunkRef
 	for rows.Next() {
 		var c ChunkRef
-		if err := rows.Scan(&c.Hash, &c.Key, &c.Size, &c.CSize, &c.Created); err != nil {
+		if err := rows.Scan(&c.Storage, &c.Hash, &c.Key, &c.Size, &c.CSize, &c.Created); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -132,12 +134,12 @@ func (db *DB) AllChunks() ([]ChunkRef, error) {
 // returns the hashes actually deleted (DELETE ... RETURNING). The
 // transactional re-check is what closes the GC-vs-push race: a push that
 // re-stamped a chunk after the sweep snapshot keeps it.
-func (db *DB) deleteChunkRowsIf(hashes []string, graceCutoff int64) ([]string, error) {
+func (db *DB) deleteChunkRowsIf(storageName string, hashes []string, graceCutoff int64) ([]string, error) {
 	var gone []string
 	err := db.write(func(tx *sql.Tx) error {
 		rows, err := tx.Query(
-			`DELETE FROM chunks WHERE hash IN (`+placeholders(len(hashes))+`) AND created<? RETURNING hash`,
-			append(toArgs(hashes), graceCutoff)...)
+			`DELETE FROM chunks WHERE storage=? AND hash IN (`+placeholders(len(hashes))+`) AND created<? RETURNING hash`,
+			append(append([]any{storageName}, toArgs(hashes)...), graceCutoff)...)
 		if err != nil {
 			return err
 		}
@@ -158,8 +160,8 @@ func (db *DB) deleteChunkRowsIf(hashes []string, graceCutoff int64) ([]string, e
 }
 
 // deleteChunkRowIf is the single-row form, reporting whether it deleted.
-func (db *DB) deleteChunkRowIf(hash string, graceCutoff int64) (bool, error) {
-	gone, err := db.deleteChunkRowsIf([]string{hash}, graceCutoff)
+func (db *DB) deleteChunkRowIf(storageName, hash string, graceCutoff int64) (bool, error) {
+	gone, err := db.deleteChunkRowsIf(storageName, []string{hash}, graceCutoff)
 	return len(gone) > 0, err
 }
 

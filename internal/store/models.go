@@ -17,6 +17,7 @@ type Cache struct {
 	NSID      int64
 	NS        string // namespace name; substituter URL is /<NS>/<Name>
 	Name      string
+	Storage   string // named blob backend holding this cache's chunks
 	Public    bool
 	Priority  int
 	Retention int64  // per-cache retention seconds; 0 = use global
@@ -30,7 +31,7 @@ type Cache struct {
 // token scopes and the CLI.
 func (c *Cache) Ref() string { return c.NS + "/" + c.Name }
 
-const cacheCols = `c.id,c.namespace_id,n.name,c.name,c.public,c.priority,c.retention,c.max_bytes,c.pubkey,c.privkey,c.created`
+const cacheCols = `c.id,c.namespace_id,n.name,c.name,c.storage,c.public,c.priority,c.retention,c.max_bytes,c.pubkey,c.privkey,c.created`
 const cacheFrom = ` FROM caches c JOIN namespaces n ON n.id = c.namespace_id `
 
 type Path struct {
@@ -83,7 +84,7 @@ func scanCache(row interface{ Scan(...any) error }) (*Cache, error) {
 	var c Cache
 	var pub int
 	var priv []byte
-	if err := row.Scan(&c.ID, &c.NSID, &c.NS, &c.Name, &pub, &c.Priority, &c.Retention, &c.MaxBytes, &c.PubKey, &priv, &c.Created); err != nil {
+	if err := row.Scan(&c.ID, &c.NSID, &c.NS, &c.Name, &c.Storage, &pub, &c.Priority, &c.Retention, &c.MaxBytes, &c.PubKey, &priv, &c.Created); err != nil {
 		return nil, err
 	}
 	c.Public = pub != 0
@@ -137,6 +138,15 @@ func (db *DB) UpdateCache(id int64, public bool, priority int, retention, maxByt
 	})
 }
 
+// SetCacheStorage assigns a cache's blob backend. Create-time only: moving an
+// existing cache between storages would strand its chunks.
+func (db *DB) SetCacheStorage(id int64, storage string) error {
+	return db.write(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE caches SET storage=? WHERE id=?`, storage, id)
+		return err
+	})
+}
+
 // GetCacheByID fetches a cache by row id.
 func (db *DB) GetCacheByID(id int64) (*Cache, error) {
 	row := db.r.QueryRow(`SELECT `+cacheCols+cacheFrom+`WHERE c.id=?`, id)
@@ -176,14 +186,15 @@ func (db *DB) DeleteCache(id int64) error {
 
 // ---- chunks ----
 
-// PutChunk records a stored chunk (uncompressed + compressed sizes).
-// Idempotent; a re-upload re-stamps created so the GC grace window restarts.
-func (db *DB) PutChunk(hash string, size, csize int64, storageKey string, now int64) error {
+// PutChunk records a stored chunk (uncompressed + compressed sizes) in a
+// named storage backend. Idempotent; a re-upload re-stamps created so the GC
+// grace window restarts.
+func (db *DB) PutChunk(storage, hash string, size, csize int64, storageKey string, now int64) error {
 	return db.write(func(tx *sql.Tx) error {
 		_, err := tx.Exec(
-			`INSERT INTO chunks (hash,size,csize,storage_key,created) VALUES (?,?,?,?,?)
-			 ON CONFLICT(hash) DO UPDATE SET created=excluded.created`,
-			hash, size, csize, storageKey, now)
+			`INSERT INTO chunks (storage,hash,size,csize,storage_key,created) VALUES (?,?,?,?,?,?)
+			 ON CONFLICT(storage,hash) DO UPDATE SET created=excluded.created`,
+			storage, hash, size, csize, storageKey, now)
 		return err
 	})
 }
@@ -192,14 +203,14 @@ func (db *DB) PutChunk(hash string, size, csize int64, storageKey string, now in
 // promises a pusher that these chunks are present (so it will skip uploading
 // them) — the restarted grace window guarantees GC can't sweep them before the
 // push registers its path.
-func (db *DB) TouchChunks(hashes []string, now int64) error {
+func (db *DB) TouchChunks(storage string, hashes []string, now int64) error {
 	if len(hashes) == 0 {
 		return nil
 	}
 	return db.eachBatch(hashes, func(batch []string) error {
 		return db.write(func(tx *sql.Tx) error {
-			args := append([]any{now}, toArgs(batch)...)
-			_, err := tx.Exec(`UPDATE chunks SET created=? WHERE hash IN (`+placeholders(len(batch))+`)`, args...)
+			args := append([]any{now, storage}, toArgs(batch)...)
+			_, err := tx.Exec(`UPDATE chunks SET created=? WHERE storage=? AND hash IN (`+placeholders(len(batch))+`)`, args...)
 			return err
 		})
 	})
@@ -223,16 +234,35 @@ func (db *DB) TouchPath(cacheID int64, storeHash string, now, minAge int64) {
 	})
 }
 
-// HasChunk reports whether a chunk row exists.
-func (db *DB) HasChunk(hash string) bool {
+// HasChunk reports whether a chunk row exists in a storage backend.
+func (db *DB) HasChunk(storage, hash string) bool {
 	var one int
-	err := db.r.QueryRow(`SELECT 1 FROM chunks WHERE hash=?`, hash).Scan(&one)
+	err := db.r.QueryRow(`SELECT 1 FROM chunks WHERE storage=? AND hash=?`, storage, hash).Scan(&one)
 	return err == nil
 }
 
-// MissingChunks returns the subset of hashes not yet present.
-func (db *DB) MissingChunks(hashes []string) ([]string, error) {
-	present, err := db.presentSet("chunks", "hash", hashes)
+// MissingChunks returns the subset of hashes not yet present in a storage
+// backend (dedup is per-backend: a chunk in one storage cannot serve a cache
+// on another).
+func (db *DB) MissingChunks(storage string, hashes []string) ([]string, error) {
+	present := map[string]bool{}
+	err := db.eachBatch(hashes, func(batch []string) error {
+		q := `SELECT hash FROM chunks WHERE storage=? AND hash IN (` + placeholders(len(batch)) + `)`
+		args := append([]any{storage}, toArgs(batch)...)
+		rows, err := db.r.Query(q, args...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var h string
+			if err := rows.Scan(&h); err != nil {
+				return err
+			}
+			present[h] = true
+		}
+		return rows.Err()
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -404,20 +434,21 @@ func (db *DB) SearchPaths(cacheID int64, q string, limit, offset int, sortKey, s
 	return paths, total, rows.Err()
 }
 
-// ChunkKeys returns the storage keys for chunk hashes, preserving order. Batched
-// (one query per ~batchVars hashes) instead of N+1 point lookups.
-func (db *DB) ChunkKeys(hashes []string) ([]ChunkRef, error) {
+// ChunkKeys returns the storage keys for chunk hashes in a backend,
+// preserving order. Batched (one query per ~batchVars hashes) instead of N+1
+// point lookups.
+func (db *DB) ChunkKeys(storage string, hashes []string) ([]ChunkRef, error) {
 	byHash := make(map[string]ChunkRef, len(hashes))
 	err := db.eachBatch(hashes, func(batch []string) error {
-		q := `SELECT hash, storage_key, size, csize FROM chunks WHERE hash IN (` + placeholders(len(batch)) + `)`
-		rows, err := db.r.Query(q, toArgs(batch)...)
+		q := `SELECT storage, hash, storage_key, size, csize FROM chunks WHERE storage=? AND hash IN (` + placeholders(len(batch)) + `)`
+		rows, err := db.r.Query(q, append([]any{storage}, toArgs(batch)...)...)
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var c ChunkRef
-			if err := rows.Scan(&c.Hash, &c.Key, &c.Size, &c.CSize); err != nil {
+			if err := rows.Scan(&c.Storage, &c.Hash, &c.Key, &c.Size, &c.CSize); err != nil {
 				return err
 			}
 			byHash[c.Hash] = c

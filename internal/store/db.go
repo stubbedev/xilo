@@ -218,11 +218,13 @@ func migrate(w *sql.DB, pg bool) error {
 			created       INTEGER NOT NULL DEFAULT 0
 		)`,
 		`CREATE TABLE IF NOT EXISTS chunks (
-			hash        TEXT PRIMARY KEY,
+			storage     TEXT NOT NULL DEFAULT 'default',
+			hash        TEXT NOT NULL,
 			size        INTEGER NOT NULL,
 			csize       INTEGER NOT NULL DEFAULT 0,
 			storage_key TEXT NOT NULL,
-			created     INTEGER NOT NULL DEFAULT 0
+			created     INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (storage, hash)
 		)`,
 		`CREATE TABLE IF NOT EXISTS paths (
 			id         INTEGER PRIMARY KEY,
@@ -280,6 +282,7 @@ func migrate(w *sql.DB, pg bool) error {
 	adds := []struct{ table, col, def string }{
 		{"caches", "retention", "INTEGER NOT NULL DEFAULT 0"},
 		{"caches", "max_bytes", "INTEGER NOT NULL DEFAULT 0"},
+		{"caches", "storage", "TEXT NOT NULL DEFAULT 'default'"},
 		{"chunks", "csize", "INTEGER NOT NULL DEFAULT 0"},
 		{"chunks", "created", "INTEGER NOT NULL DEFAULT 0"},
 		{"tokens", "expires", "INTEGER NOT NULL DEFAULT 0"},
@@ -298,6 +301,9 @@ func migrate(w *sql.DB, pg bool) error {
 	}
 	if err := migrateNamespaces(w, pg); err != nil {
 		return fmt.Errorf("migrate namespaces: %w", err)
+	}
+	if err := migrateChunkStorage(w, pg); err != nil {
+		return fmt.Errorf("migrate chunk storage: %w", err)
 	}
 
 	// Indexes last — they may reference columns the ALTERs just added.
@@ -467,6 +473,74 @@ func migrateNamespaces(w *sql.DB, pg bool) error {
 			continue
 		}
 		if _, err := w.Exec(`UPDATE tokens SET caches=? WHERE id=?`, strings.Join(parts, ","), t.id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// migrateChunkStorage brings a pre-multi-storage chunks table (hash PRIMARY
+// KEY) to the composite (storage, hash) key, rehoming rows into 'default'.
+func migrateChunkStorage(w *sql.DB, pg bool) error {
+	if pg {
+		if _, err := w.Exec(`ALTER TABLE chunks ADD COLUMN IF NOT EXISTS storage TEXT NOT NULL DEFAULT 'default'`); err != nil {
+			return err
+		}
+		// Swap the PK only when it is still the single-column one.
+		var cols int
+		err := w.QueryRow(`SELECT COUNT(*) FROM information_schema.key_column_usage
+			WHERE table_name='chunks' AND constraint_name='chunks_pkey' AND table_schema=current_schema()`).Scan(&cols)
+		if err != nil {
+			return err
+		}
+		if cols == 1 {
+			if _, err := w.Exec(`ALTER TABLE chunks DROP CONSTRAINT chunks_pkey`); err != nil {
+				return err
+			}
+			if _, err := w.Exec(`ALTER TABLE chunks ADD PRIMARY KEY (storage, hash)`); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	var hasStorage bool
+	rows, err := w.Query(`SELECT name FROM pragma_table_info('chunks')`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "storage" {
+			hasStorage = true
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if hasStorage {
+		return nil
+	}
+	for _, s := range []string{
+		`CREATE TABLE chunks_new (
+			storage     TEXT NOT NULL DEFAULT 'default',
+			hash        TEXT NOT NULL,
+			size        INTEGER NOT NULL,
+			csize       INTEGER NOT NULL DEFAULT 0,
+			storage_key TEXT NOT NULL,
+			created     INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (storage, hash)
+		)`,
+		`INSERT INTO chunks_new (storage, hash, size, csize, storage_key, created)
+			SELECT 'default', hash, size, csize, storage_key, created FROM chunks`,
+		`DROP TABLE chunks`,
+		`ALTER TABLE chunks_new RENAME TO chunks`,
+	} {
+		if _, err := w.Exec(s); err != nil {
 			return err
 		}
 	}

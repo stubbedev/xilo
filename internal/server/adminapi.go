@@ -70,7 +70,7 @@ func jsonStatus(w http.ResponseWriter, code int, v any) {
 
 func apiCache(c *store.Cache) api.Cache {
 	return api.Cache{
-		Namespace: c.NS, Name: c.Name, Public: c.Public, Priority: c.Priority,
+		Namespace: c.NS, Name: c.Name, Storage: c.Storage, Public: c.Public, Priority: c.Priority,
 		Retention: c.Retention, MaxBytes: c.MaxBytes,
 		PubKey: c.PubKey, Created: c.Created,
 	}
@@ -133,9 +133,18 @@ func (s *Server) apiCreateCache(w http.ResponseWriter, r *http.Request) {
 	if req.Priority == 0 {
 		req.Priority = 40
 	}
+	stName, err := s.resolveStorage(req.Storage)
+	if err != nil {
+		apiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	c, err := s.db.CreateCache(req.Namespace, req.Name, req.Public, req.Priority)
 	if err != nil {
 		apiError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.assignStorage(c, stName); err != nil {
+		apiError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	jsonStatus(w, http.StatusCreated, apiCache(c))

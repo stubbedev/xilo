@@ -193,6 +193,7 @@ var en = map[string]string{
 	// namespaces
 	"set.namespaces":    "Namespaces",
 	"caches.namespace":  "Namespace",
+	"caches.storage":    "Storage backend",
 	"tokens.namespace":  "Namespace",
 	"tokens.instance":   "Instance-wide",
 	"ns.new":            "Create",

@@ -175,7 +175,7 @@ templ namespacesSection(namespaces []NamespaceInfo) {
 			<p>{ T("ns.hint") }</p>
 			<form method="post" action="/admin/namespaces" class="member-add">
 				<fieldset role="group">
-					<input name="name" placeholder="team-a" required pattern="[a-zA-Z0-9_-]+"/>
+					<input name="name" placeholder="team-a" required pattern="[-a-zA-Z0-9_]+"/>
 					<button type="submit">@Icon("folder-plus") <span>{ T("ns.new") }</span></button>
 				</fieldset>
 			</form>
