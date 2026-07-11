@@ -60,13 +60,13 @@ func TokenActive(t store.Token) bool {
 // text handling verbatim, and the <pre> and copy button always match.
 
 func snippetNixConf(d CacheData) string {
-	return "extra-substituters = " + d.BaseURL + "/" + d.Cache.Ref() +
+	return "extra-substituters = " + d.BaseURL + "/c/" + d.Cache.Ref() +
 		"\nextra-trusted-public-keys = " + d.Cache.PubKey
 }
 
 func snippetFlake(d CacheData) string {
 	return "nixConfig = {\n" +
-		"  extra-substituters = [ \"" + d.BaseURL + "/" + d.Cache.Ref() + "\" ];\n" +
+		"  extra-substituters = [ \"" + d.BaseURL + "/c/" + d.Cache.Ref() + "\" ];\n" +
 		"  extra-trusted-public-keys = [ \"" + d.Cache.PubKey + "\" ];\n" +
 		"};"
 }

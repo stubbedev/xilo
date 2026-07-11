@@ -183,30 +183,51 @@ func pgDDL(s string) string {
 }
 
 func migrate(w *sql.DB, pg bool) error {
+	// Table renames must run before CREATE TABLE IF NOT EXISTS below would
+	// mint fresh empty tables under the new names and block the rename.
+	if err := migrateNamespacesToAccounts(w, pg); err != nil {
+		return fmt.Errorf("migrate namespaces→accounts: %w", err)
+	}
+	// Column renames re-run unguarded: a partially-migrated database may have
+	// the tables renamed but old column names (or both columns) left behind.
+	for _, tbl := range []struct{ table, from, to string }{
+		{"accounts", "name", "slug"},
+		{"account_members", "namespace_id", "account_id"},
+		{"caches", "namespace_id", "account_id"},
+		{"tokens", "namespace_id", "account_id"},
+	} {
+		if tableExists(w, pg, tbl.table) {
+			if err := renameColumnIfPresent(w, pg, tbl.table, tbl.from, tbl.to); err != nil {
+				return fmt.Errorf("migrate %s.%s: %w", tbl.table, tbl.from, err)
+			}
+		}
+	}
 	stmts := []string{
-		`CREATE TABLE IF NOT EXISTS namespaces (
+		`CREATE TABLE IF NOT EXISTS accounts (
 			id      INTEGER PRIMARY KEY,
-			name    TEXT UNIQUE NOT NULL,
+			slug    TEXT UNIQUE NOT NULL,
+			kind    TEXT NOT NULL DEFAULT 'org',
+			plan_id INTEGER NOT NULL DEFAULT 0,
 			created INTEGER NOT NULL DEFAULT 0
 		)`,
-		`CREATE TABLE IF NOT EXISTS namespace_members (
-			namespace_id INTEGER NOT NULL REFERENCES namespaces(id) ON DELETE CASCADE,
-			user_id      INTEGER NOT NULL,
-			role         TEXT NOT NULL DEFAULT 'member',
-			UNIQUE(namespace_id, user_id)
+		`CREATE TABLE IF NOT EXISTS account_members (
+			account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+			user_id    INTEGER NOT NULL,
+			role       TEXT NOT NULL DEFAULT 'member',
+			UNIQUE(account_id, user_id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS caches (
-			id           INTEGER PRIMARY KEY,
-			namespace_id INTEGER NOT NULL DEFAULT 0,
-			name         TEXT NOT NULL,
-			public       INTEGER NOT NULL DEFAULT 1,
-			priority     INTEGER NOT NULL DEFAULT 40,
-			retention    INTEGER NOT NULL DEFAULT 0,
-			max_bytes    INTEGER NOT NULL DEFAULT 0,
-			pubkey       TEXT NOT NULL,
-			privkey      BLOB NOT NULL,
-			created      INTEGER NOT NULL,
-			UNIQUE(namespace_id, name)
+			id         INTEGER PRIMARY KEY,
+			account_id INTEGER NOT NULL DEFAULT 0,
+			name       TEXT NOT NULL,
+			public     INTEGER NOT NULL DEFAULT 1,
+			priority   INTEGER NOT NULL DEFAULT 40,
+			retention  INTEGER NOT NULL DEFAULT 0,
+			max_bytes  INTEGER NOT NULL DEFAULT 0,
+			pubkey     TEXT NOT NULL,
+			privkey    BLOB NOT NULL,
+			created    INTEGER NOT NULL,
+			UNIQUE(account_id, name)
 		)`,
 		`CREATE TABLE IF NOT EXISTS users (
 			id            INTEGER PRIMARY KEY,
@@ -286,9 +307,12 @@ func migrate(w *sql.DB, pg bool) error {
 		{"chunks", "csize", "INTEGER NOT NULL DEFAULT 0"},
 		{"chunks", "created", "INTEGER NOT NULL DEFAULT 0"},
 		{"tokens", "expires", "INTEGER NOT NULL DEFAULT 0"},
-		{"tokens", "namespace_id", "INTEGER NOT NULL DEFAULT 0"},
+		{"tokens", "account_id", "INTEGER NOT NULL DEFAULT 0"},
 		{"passkeys", "user_id", "INTEGER NOT NULL DEFAULT 0"},
 		{"sessions", "user_id", "INTEGER NOT NULL DEFAULT 0"},
+		{"users", "email", "TEXT"},
+		{"accounts", "kind", "TEXT NOT NULL DEFAULT 'org'"},
+		{"accounts", "plan_id", "INTEGER NOT NULL DEFAULT 0"},
 	}
 	for _, a := range adds {
 		if err := addColumnIfMissing(w, pg, a.table, a.col, a.def); err != nil {
@@ -305,6 +329,9 @@ func migrate(w *sql.DB, pg bool) error {
 	if err := migrateChunkStorage(w, pg); err != nil {
 		return fmt.Errorf("migrate chunk storage: %w", err)
 	}
+	if err := migratePersonalAccounts(w); err != nil {
+		return fmt.Errorf("migrate personal accounts: %w", err)
+	}
 	// Heal databases hurt by an earlier ordering bug: the namespace rebuild
 	// used to recreate caches without the storage column added moments before.
 	// No-op everywhere else.
@@ -316,6 +343,7 @@ func migrate(w *sql.DB, pg bool) error {
 	for _, s := range []string{
 		`CREATE INDEX IF NOT EXISTS idx_paths_accessed ON paths(accessed)`,
 		`CREATE INDEX IF NOT EXISTS idx_chunks_created ON chunks(created)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL`,
 	} {
 		if _, err := w.Exec(s); err != nil {
 			return fmt.Errorf("migrate index: %w", err)
@@ -369,22 +397,150 @@ func migrateAdminToUsers(w *sql.DB, pg bool) error {
 	return err
 }
 
-// migrateNamespaces makes 'default' exist, rehomes pre-namespace caches into
-// it, rebuilds a pre-namespace caches table (SQLite can't alter its UNIQUE
-// from name to (namespace_id, name)), and prefixes existing token cache
-// scopes with "default/" to match the new pattern grammar.
+// migrateNamespacesToAccounts renames the 0.x namespaces tables/columns to
+// the accounts shape (accounts got kinds, plans and a slug). Rename-only —
+// data stays put; role values move owner→admin.
+func migrateNamespacesToAccounts(w *sql.DB, pg bool) error {
+	exists := `SELECT 1 FROM sqlite_master WHERE type='table' AND name='namespaces'`
+	if pg {
+		exists = `SELECT 1 FROM information_schema.tables WHERE table_name='namespaces' AND table_schema=current_schema()`
+	}
+	var one int
+	if err := w.QueryRow(exists).Scan(&one); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil // fresh database (or already migrated)
+		}
+		return err
+	}
+	// A crashed earlier attempt (or the DDL-ordering bug this replaced) may
+	// have left EMPTY accounts tables next to the namespaces ones; drop them
+	// so the rename can land. Non-empty accounts tables mean the migration
+	// already ran — with a stale namespaces table that shouldn't exist.
+	var n int
+	if err := w.QueryRow(`SELECT COUNT(*) FROM accounts`).Scan(&n); err == nil {
+		if n > 0 {
+			return errors.New("both namespaces and non-empty accounts tables exist — manual repair needed")
+		}
+		for _, st := range []string{`DROP TABLE IF EXISTS account_members`, `DROP TABLE accounts`} {
+			if _, err := w.Exec(st); err != nil {
+				return err
+			}
+		}
+	}
+	stmts := []string{
+		`ALTER TABLE namespaces RENAME TO accounts`,
+		`ALTER TABLE namespace_members RENAME TO account_members`,
+		`UPDATE account_members SET role='admin' WHERE role='owner'`,
+	}
+	for _, st := range stmts {
+		if _, err := w.Exec(st); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// tableExists reports table presence for either dialect.
+func tableExists(w *sql.DB, pg bool, table string) bool {
+	q := `SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`
+	if pg {
+		q = `SELECT 1 FROM information_schema.tables WHERE table_name=? AND table_schema=current_schema()`
+	}
+	var one int
+	return w.QueryRow(q, table).Scan(&one) == nil
+}
+
+// renameColumnIfPresent renames a column when it exists (both dialects).
+func renameColumnIfPresent(w *sql.DB, pg bool, table, from, to string) error {
+	has := false
+	if pg {
+		var one int
+		err := w.QueryRow(`SELECT 1 FROM information_schema.columns WHERE table_name=? AND column_name=? AND table_schema=current_schema()`, table, from).Scan(&one)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		has = err == nil
+	} else {
+		rows, err := w.Query(`SELECT name FROM pragma_table_info(?)`, table)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				rows.Close()
+				return err
+			}
+			if name == from {
+				has = true
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+	if !has {
+		return nil
+	}
+	// A crashed earlier migration can leave BOTH columns (the additive step
+	// minted the new one before the rename ran). Merge: carry the old values
+	// over, then drop the old column.
+	hasTo := false
+	if pg {
+		var one int
+		err := w.QueryRow(`SELECT 1 FROM information_schema.columns WHERE table_name=? AND column_name=? AND table_schema=current_schema()`, table, to).Scan(&one)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		hasTo = err == nil
+	} else {
+		rows, err := w.Query(`SELECT name FROM pragma_table_info(?)`, table)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				rows.Close()
+				return err
+			}
+			if name == to {
+				hasTo = true
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+	if hasTo {
+		if _, err := w.Exec(`UPDATE ` + table + ` SET ` + to + `=` + from + ` WHERE ` + to + `=0`); err != nil {
+			return err
+		}
+		_, err := w.Exec(`ALTER TABLE ` + table + ` DROP COLUMN ` + from)
+		return err
+	}
+	_, err := w.Exec(`ALTER TABLE ` + table + ` RENAME COLUMN ` + from + ` TO ` + to)
+	return err
+}
+
+// migrateNamespaces makes the 'default' account exist, rehomes pre-account
+// caches into it, rebuilds a pre-account caches table (SQLite can't alter its
+// UNIQUE from name to (account_id, name)), and prefixes existing token cache
+// scopes with "default/" to match the pattern grammar.
 func migrateNamespaces(w *sql.DB, pg bool) error {
-	if _, err := w.Exec(`INSERT INTO namespaces (name, created) VALUES ('default', ?) ON CONFLICT (name) DO NOTHING`,
+	if _, err := w.Exec(`INSERT INTO accounts (slug, kind, created) VALUES ('default', 'org', ?) ON CONFLICT (slug) DO NOTHING`,
 		time.Now().Unix()); err != nil {
 		return err
 	}
 	var defID int64
-	if err := w.QueryRow(`SELECT id FROM namespaces WHERE name='default'`).Scan(&defID); err != nil {
+	if err := w.QueryRow(`SELECT id FROM accounts WHERE slug='default'`).Scan(&defID); err != nil {
 		return err
 	}
 
-	// A pre-namespace SQLite table still carries UNIQUE(name); rebuild it.
-	// (Postgres never shipped without namespaces, so only SQLite needs this.)
+	// A pre-account SQLite table still carries UNIQUE(name); rebuild it.
+	// (Postgres never shipped without accounts, so only SQLite needs this.)
 	if !pg {
 		var hasNS bool
 		rows, err := w.Query(`SELECT name FROM pragma_table_info('caches')`)
@@ -397,7 +553,7 @@ func migrateNamespaces(w *sql.DB, pg bool) error {
 				rows.Close()
 				return err
 			}
-			if name == "namespace_id" {
+			if name == "account_id" {
 				hasNS = true
 			}
 		}
@@ -412,20 +568,21 @@ func migrateNamespaces(w *sql.DB, pg bool) error {
 			}
 			for _, s := range []string{
 				`CREATE TABLE caches_new (
-					id           INTEGER PRIMARY KEY,
-					namespace_id INTEGER NOT NULL DEFAULT 0,
-					name         TEXT NOT NULL,
-					public       INTEGER NOT NULL DEFAULT 1,
-					priority     INTEGER NOT NULL DEFAULT 40,
-					retention    INTEGER NOT NULL DEFAULT 0,
-					max_bytes    INTEGER NOT NULL DEFAULT 0,
-					pubkey       TEXT NOT NULL,
-					privkey      BLOB NOT NULL,
-					created      INTEGER NOT NULL,
-					UNIQUE(namespace_id, name)
+					id         INTEGER PRIMARY KEY,
+					account_id INTEGER NOT NULL DEFAULT 0,
+					name       TEXT NOT NULL,
+					storage    TEXT NOT NULL DEFAULT 'default',
+					public     INTEGER NOT NULL DEFAULT 1,
+					priority   INTEGER NOT NULL DEFAULT 40,
+					retention  INTEGER NOT NULL DEFAULT 0,
+					max_bytes  INTEGER NOT NULL DEFAULT 0,
+					pubkey     TEXT NOT NULL,
+					privkey    BLOB NOT NULL,
+					created    INTEGER NOT NULL,
+					UNIQUE(account_id, name)
 				)`,
-				`INSERT INTO caches_new (id, namespace_id, name, public, priority, retention, max_bytes, pubkey, privkey, created)
-					SELECT id, 0, name, public, priority, retention, max_bytes, pubkey, privkey, created FROM caches`,
+				`INSERT INTO caches_new (id, account_id, name, storage, public, priority, retention, max_bytes, pubkey, privkey, created)
+					SELECT id, 0, name, storage, public, priority, retention, max_bytes, pubkey, privkey, created FROM caches`,
 				`DROP TABLE caches`,
 				`ALTER TABLE caches_new RENAME TO caches`,
 				`PRAGMA foreign_keys=ON`,
@@ -437,15 +594,15 @@ func migrateNamespaces(w *sql.DB, pg bool) error {
 		}
 	}
 
-	// Rehome caches that predate namespaces.
-	if _, err := w.Exec(`UPDATE caches SET namespace_id=? WHERE namespace_id=0`, defID); err != nil {
+	// Rehome caches that predate accounts.
+	if _, err := w.Exec(`UPDATE caches SET account_id=? WHERE account_id=0`, defID); err != nil {
 		return err
 	}
 
 	// Global-token scope grammar is *, ns/* or ns/cache — a bare "mycache"
 	// entry is pre-namespace and means default/mycache. Idempotent: rewritten
 	// entries contain '/'.
-	rows, err := w.Query(`SELECT id, caches FROM tokens WHERE namespace_id=0 AND caches <> '*'`)
+	rows, err := w.Query(`SELECT id, caches FROM tokens WHERE account_id=0 AND caches <> '*'`)
 	if err != nil {
 		return err
 	}
@@ -547,6 +704,57 @@ func migrateChunkStorage(w *sql.DB, pg bool) error {
 		`ALTER TABLE chunks_new RENAME TO chunks`,
 	} {
 		if _, err := w.Exec(s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// migratePersonalAccounts gives every pre-accounts user a personal account
+// (slug == username) with themselves as admin. A username shadowed by an
+// existing org slug is skipped with the org left in place — the super admin
+// untangles that manually. Idempotent.
+func migratePersonalAccounts(w *sql.DB) error {
+	rows, err := w.Query(`SELECT u.id, u.username, u.created FROM users u
+		WHERE NOT EXISTS (SELECT 1 FROM accounts a JOIN account_members m ON m.account_id=a.id
+			WHERE a.slug = u.username AND a.kind='user' AND m.user_id = u.id)`)
+	if err != nil {
+		return err
+	}
+	type row struct {
+		id      int64
+		name    string
+		created int64
+	}
+	var todo []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.name, &r.created); err != nil {
+			rows.Close()
+			return err
+		}
+		todo = append(todo, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, r := range todo {
+		var taken int
+		err := w.QueryRow(`SELECT 1 FROM accounts WHERE slug=?`, r.name).Scan(&taken)
+		if err == nil {
+			continue // slug shadowed by an org
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		var accID int64
+		if err := w.QueryRow(`INSERT INTO accounts (slug, kind, created) VALUES (?,?,?) RETURNING id`,
+			r.name, "user", r.created).Scan(&accID); err != nil {
+			return err
+		}
+		if _, err := w.Exec(`INSERT INTO account_members (account_id, user_id, role) VALUES (?,?,'admin')
+			ON CONFLICT (account_id, user_id) DO NOTHING`, accID, r.id); err != nil {
 			return err
 		}
 	}

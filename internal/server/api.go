@@ -43,7 +43,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	if !c.Public {
 		tok := extractToken(r)
 		now := timeNow()
-		if !s.db.Authorize(tok, c.NS, c.Name, "pull", now) && !s.db.Authorize(tok, c.NS, c.Name, "push", now) {
+		if !s.db.Authorize(tok, c.Account, c.Name, "pull", now) && !s.db.Authorize(tok, c.Account, c.Name, "push", now) {
 			unauthorized(w)
 			s.metrics.authFailures.Add(1)
 			return

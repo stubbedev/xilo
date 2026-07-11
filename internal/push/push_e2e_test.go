@@ -110,7 +110,7 @@ func (f *fakeServer) handle(w http.ResponseWriter, r *http.Request) {
 	f.auths[r.Header.Get("Authorization")] = true
 	f.mu.Unlock()
 
-	rest, ok := strings.CutPrefix(r.URL.Path, "/c/api/")
+	rest, ok := strings.CutPrefix(r.URL.Path, "/c/c/api/")
 	if !ok {
 		http.Error(w, "bad path "+r.URL.Path, http.StatusNotFound)
 		return
@@ -531,7 +531,7 @@ func TestLoadConfigBadJSON(t *testing.T) {
 
 func TestURLBuilding(t *testing.T) {
 	c := NewClient("http://host:1234///", "mycache", "", 0)
-	if got := c.url("api", "chunk", "abc"); got != "http://host:1234/mycache/api/chunk/abc" {
+	if got := c.url("api", "chunk", "abc"); got != "http://host:1234/c/mycache/api/chunk/abc" {
 		t.Fatalf("url = %q", got)
 	}
 }

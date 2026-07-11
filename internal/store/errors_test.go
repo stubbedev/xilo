@@ -27,8 +27,8 @@ func TestScanErrorBranches(t *testing.T) {
 	db := openTest(t)
 	c, _ := db.CreateCache("default", "c", true, 40)
 
-	exec(t, db, `INSERT INTO caches (namespace_id,name,public,priority,retention,max_bytes,pubkey,privkey,created)
-		VALUES (?,'bad',1,40,0,0,'k',x'00','notanint')`, c.NSID)
+	exec(t, db, `INSERT INTO caches (account_id,name,public,priority,retention,max_bytes,pubkey,privkey,created)
+		VALUES (?,'bad',1,40,0,0,'k',x'00','notanint')`, c.AccountID)
 	exec(t, db, `INSERT INTO tokens (name,hash,caches,perms,revoked,expires,created)
 		VALUES ('bad','h','*','pull',0,0,'notanint')`)
 	exec(t, db, `INSERT INTO passkeys (user_id,name,credential,created) VALUES (1,'bad',x'00','notanint')`)

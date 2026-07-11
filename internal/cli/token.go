@@ -114,7 +114,7 @@ func tokenListCmd() *cobra.Command {
 					return err
 				}
 				for _, t := range list {
-					toks = append(toks, api.Token{ID: t.ID, Namespace: t.Namespace, Name: t.Name, Caches: t.Caches,
+					toks = append(toks, api.Token{ID: t.ID, Account: t.Account, Name: t.Name, Caches: t.Caches,
 						Perms: t.Perms, Revoked: t.Revoked, Expires: t.Expires, Created: t.Created})
 				}
 			}
@@ -133,8 +133,8 @@ func tokenListCmd() *cobra.Command {
 					exp = time.Unix(t.Expires, 0).Format("2006-01-02")
 				}
 				scope := strings.Join(t.Caches, ",")
-				if t.Namespace != "" {
-					scope = t.Namespace + ": " + scope
+				if t.Account != "" {
+					scope = t.Account + ": " + scope
 				}
 				trows = append(trows, []string{
 					strconv.FormatInt(t.ID, 10), t.Name, state,

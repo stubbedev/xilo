@@ -6,7 +6,7 @@ import (
 	"github.com/stubbedev/xilo/internal/store"
 )
 
-templ Settings(user *store.User, totpEnabled bool, passkeys []store.Passkey, users []store.User, namespaces []NamespaceInfo, flash Flash) {
+templ Settings(user *store.User, totpEnabled bool, passkeys []store.Passkey, users []store.User, orgs []OrgInfo, flash Flash) {
 	@Layout(T("set.title"), true, flash) {
 		<hgroup>
 			<h1>{ T("set.title") }</h1>
@@ -14,7 +14,7 @@ templ Settings(user *store.User, totpEnabled bool, passkeys []store.Passkey, use
 		</hgroup>
 		if user.Role == "admin" {
 			@usersSection(user, users)
-			@namespacesSection(namespaces)
+			@orgsSection(orgs)
 		}
 		<h2>{ T("set.passkeys") }</h2>
 		<article>
@@ -118,6 +118,7 @@ templ usersSection(acting *store.User, users []store.User) {
 			@Modal("dlg-user-new", T("users.new")) {
 				<form method="post" action="/admin/users">
 					<label>{ T("users.name") } <input name="username" placeholder="alice" required autofocus/></label>
+					<label>{ T("users.email") } <input type="email" name="email" placeholder="alice@example.com"/></label>
 					<label>{ T("users.newpw") } <input type="password" name="password" autocomplete="new-password" required minlength="8"/></label>
 					<fieldset class="switch-group">
 						<legend>{ T("users.role") }</legend>
@@ -132,20 +133,20 @@ templ usersSection(acting *store.User, users []store.User) {
 	</article>
 }
 
-// namespacesSection is the admin-only tenancy block: namespaces, their
-// members, and membership management.
-templ namespacesSection(namespaces []NamespaceInfo) {
-	<h2>{ T("set.namespaces") }</h2>
+// orgsSection is the admin-only tenancy block: accounts, their members, and
+// membership management.
+templ orgsSection(orgs []OrgInfo) {
+	<h2>{ T("set.orgs") }</h2>
 	<article>
-		for _, info := range namespaces {
+		for _, info := range orgs {
 			<div class="row-split">
 				<p>
 					@Icon("folder")
-					{ info.Namespace.Name }
-					<small>· { Ago(info.Namespace.Created) }</small>
+					{ info.Account.Slug }
+					<small>· { Ago(info.Account.Created) }</small>
 				</p>
 				<div class="row-actions">
-					<form method="post" action={ templ.SafeURL("/admin/namespaces/" + info.Namespace.Name + "/delete") } data-confirm={ T("confirm.namespace") }>
+					<form method="post" action={ templ.SafeURL("/admin/orgs/" + info.Account.Slug + "/delete") } data-confirm={ T("confirm.namespace") }>
 						<button class="iconbtn danger" aria-label={ T("ns.delete") } data-tooltip={ T("ns.delete") }>@IconClass("trash-2", 16, "")</button>
 					</form>
 				</div>
@@ -153,27 +154,27 @@ templ namespacesSection(namespaces []NamespaceInfo) {
 			<div class="ns-members">
 				for _, m := range info.Members {
 					<div class="row-split">
-						<p><small>@Icon("user") { m.UserName } — { m.Role }</small></p>
-						<form method="post" action={ templ.SafeURL("/admin/namespaces/" + info.Namespace.Name + "/members/" + strconv.FormatInt(m.UserID, 10) + "/remove") }>
+						<p><small>{ m.UserName } — { m.Role }</small></p>
+						<form method="post" action={ templ.SafeURL("/admin/orgs/" + info.Account.Slug + "/members/" + strconv.FormatInt(m.UserID, 10) + "/remove") }>
 							<button class="iconbtn" aria-label={ T("ns.removemember") } data-tooltip={ T("ns.removemember") }>@IconClass("user-minus", 16, "")</button>
 						</form>
 					</div>
 				}
-				<form method="post" action={ templ.SafeURL("/admin/namespaces/" + info.Namespace.Name + "/members") } class="member-add">
+				<form method="post" action={ templ.SafeURL("/admin/orgs/" + info.Account.Slug + "/members") } class="member-add">
 					<fieldset role="group">
 						<input name="username" placeholder={ T("ns.username") } required/>
 						<select name="role">
 							<option value="member">{ T("ns.member") }</option>
-							<option value="owner">{ T("ns.owner") }</option>
+							<option value="admin">{ T("ns.owner") }</option>
 						</select>
 						<button type="submit">@Icon("user-plus") <span>{ T("ns.addmember") }</span></button>
 					</fieldset>
 				</form>
 			</div>
 		}
-		<div class={ "row-split", templ.KV("rule-above", len(namespaces) > 0) }>
+		<div class={ "row-split", templ.KV("rule-above", len(orgs) > 0) }>
 			<p>{ T("ns.hint") }</p>
-			<form method="post" action="/admin/namespaces" class="member-add">
+			<form method="post" action="/admin/orgs" class="member-add">
 				<fieldset role="group">
 					<input name="name" placeholder="team-a" required pattern="[-a-zA-Z0-9_]+"/>
 					<button type="submit">@Icon("folder-plus") <span>{ T("ns.new") }</span></button>

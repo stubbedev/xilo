@@ -253,15 +253,15 @@ func TestSmallHelpers(t *testing.T) {
 	}
 	// isCacheTraffic
 	for path, want := range map[string]bool{
-		"/":                      false,
-		"/admin":                 false,
-		"/admin/status":          false,
-		"/static/x.css":          false,
-		"/healthz":               false,
-		"/metrics":               false,
-		"/favicon.ico":           false,
-		"/default/c/nar/abc.nar": true,
-		"/default/c/api/config":  true,
+		"/":                        false,
+		"/admin":                   false,
+		"/admin/status":            false,
+		"/static/x.css":            false,
+		"/healthz":                 false,
+		"/metrics":                 false,
+		"/favicon.ico":             false,
+		"/c/default/c/nar/abc.nar": true,
+		"/c/default/c/api/config":  true,
 	} {
 		if got := isCacheTraffic(path); got != want {
 			t.Errorf("isCacheTraffic(%q) = %v want %v", path, got, want)
@@ -277,7 +277,7 @@ func TestMiddlewarePanicAndLogging(t *testing.T) {
 		panic("boom")
 	}))
 	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest("GET", "/default/c/nar/x.nar", nil))
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/c/default/c/nar/x.nar", nil))
 	if rr.Code != 500 {
 		t.Fatalf("panic → %d want 500", rr.Code)
 	}
@@ -289,7 +289,7 @@ func TestMiddlewarePanicAndLogging(t *testing.T) {
 		panic("late boom")
 	}))
 	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest("GET", "/default/c/nar/x.nar", nil))
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/c/default/c/nar/x.nar", nil))
 	if rr.Code != 201 || rr.Body.String() != "partial" {
 		t.Fatalf("late panic → %d %q", rr.Code, rr.Body.String())
 	}
@@ -297,7 +297,7 @@ func TestMiddlewarePanicAndLogging(t *testing.T) {
 	// cache traffic counts toward metrics, admin traffic doesn't
 	before := s.metrics.reqTotal.Load()
 	ok := s.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("hi")) }))
-	ok.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/default/c/nix-cache-info", nil))
+	ok.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/c/default/c/nix-cache-info", nil))
 	ok.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/admin", nil))
 	if got := s.metrics.reqTotal.Load(); got != before+1 {
 		t.Fatalf("reqTotal delta = %d want 1", got-before)

@@ -72,7 +72,7 @@ assert "cache create private" exec_srv cache create e2e-priv --private
 assert "cache list shows both" bash -c "exec_srv cache list | grep -q e2e-priv"
 assert "cache info" bash -c "exec_srv cache info e2e | grep -q 'public key'"
 assert "cache configure" exec_srv cache configure e2e --priority 30
-assert "configure applied" bash -c "curl -fs $URL/default/e2e/nix-cache-info | grep -q 'Priority: 30'"
+assert "configure applied" bash -c "curl -fs $URL/c/default/e2e/nix-cache-info | grep -q 'Priority: 30'"
 KEY_BEFORE=$(exec_srv cache info e2e | grep 'public key')
 assert "cache rotate" exec_srv cache rotate e2e
 KEY_AFTER=$(exec_srv cache info e2e | grep 'public key')
@@ -102,24 +102,24 @@ assert "push from stdin" bash -c "echo \"$CLOSURE_ROOT\" | \"$XILO\" push e2e - 
 
 echo "== pull (nix verifies hashes itself) =="
 H=${CLOSURE_ROOT#/nix/store/}; H=${H%%-*}
-curl -fs "$URL/default/e2e/$H.narinfo" | grep -q "Sig: e2e:" && pass "narinfo signed" || fail "narinfo signed"
-nix copy --no-check-sigs --from "$URL/default/e2e" --to "local?root=$WORK/nixroot" "$CLOSURE_ROOT" >/dev/null 2>&1 \
+curl -fs "$URL/c/default/e2e/$H.narinfo" | grep -q "Sig: e2e:" && pass "narinfo signed" || fail "narinfo signed"
+nix copy --no-check-sigs --from "$URL/c/default/e2e" --to "local?root=$WORK/nixroot" "$CLOSURE_ROOT" >/dev/null 2>&1 \
   && pass "nix copy substitutes from cache" || fail "nix copy substitutes from cache"
 [ -e "$WORK/nixroot$CLOSURE_ROOT" ] && pass "copied path materialized" || fail "copied path materialized"
 
 echo "== use (nix.conf managed block) =="
 assert "use adds substituter" "$XILO" use e2e
-grep -q "$URL/default/e2e" "$XDG_CONFIG_HOME/nix/nix.conf" && pass "nix.conf contains substituter" || fail "nix.conf contains substituter"
+grep -q "$URL/c/default/e2e" "$XDG_CONFIG_HOME/nix/nix.conf" && pass "nix.conf contains substituter" || fail "nix.conf contains substituter"
 grep -q "e2e:" "$XDG_CONFIG_HOME/nix/nix.conf" && pass "nix.conf contains trusted key" || fail "nix.conf contains trusted key"
 assert "use second cache accumulates" "$XILO" use e2e-priv
 grep -q "machine 127.0.0.1:18080" "$HOME/.netrc" && pass "netrc entry for private cache" || fail "netrc entry for private cache"
 assert "use --remove" "$XILO" use e2e --remove
-grep -q "$URL/default/e2e " "$XDG_CONFIG_HOME/nix/nix.conf" && fail "substituter removed" || pass "substituter removed"
-grep -q "$URL/default/e2e-priv" "$XDG_CONFIG_HOME/nix/nix.conf" && pass "sibling substituter kept" || fail "sibling substituter kept"
+grep -q "$URL/c/default/e2e " "$XDG_CONFIG_HOME/nix/nix.conf" && fail "substituter removed" || pass "substituter removed"
+grep -q "$URL/c/default/e2e-priv" "$XDG_CONFIG_HOME/nix/nix.conf" && pass "sibling substituter kept" || fail "sibling substituter kept"
 
 echo "== private cache pull auth =="
-curl -fs -o /dev/null "$URL/default/e2e-priv/nix-cache-info" && fail "private anonymous rejected" || pass "private anonymous rejected"
-curl -fs -o /dev/null -H "Authorization: Bearer $TOK" "$URL/default/e2e-priv/nix-cache-info" && pass "private token accepted" || fail "private token accepted"
+curl -fs -o /dev/null "$URL/c/default/e2e-priv/nix-cache-info" && fail "private anonymous rejected" || pass "private anonymous rejected"
+curl -fs -o /dev/null -H "Authorization: Bearer $TOK" "$URL/c/default/e2e-priv/nix-cache-info" && pass "private token accepted" || fail "private token accepted"
 
 echo "== watch (inotify auto-push) =="
 if [ "$(uname -s)" = "Linux" ]; then
@@ -131,7 +131,7 @@ if [ "$(uname -s)" = "Linux" ]; then
   WH=${WPATH#/nix/store/}; WH=${WH%%-*}
   ok=""
   for i in $(seq 1 30); do
-    curl -fs -o /dev/null "$URL/default/e2e/$WH.narinfo" && ok=1 && break
+    curl -fs -o /dev/null "$URL/c/default/e2e/$WH.narinfo" && ok=1 && break
     sleep 1
   done
   kill $WATCH_PID 2>/dev/null
@@ -146,7 +146,7 @@ assert "cache destroy" exec_srv cache destroy e2e-priv --yes
 GC_OUT=$(exec_srv gc 2>&1)
 echo "$GC_OUT" | grep -qE "removed [0-9]+ chunks" && pass "gc reports sweep" || fail "gc reports sweep"
 # everything still pullable after gc
-nix copy --no-check-sigs --from "$URL/default/e2e" --to "local?root=$WORK/nixroot2" "$CLOSURE_ROOT" >/dev/null 2>&1 \
+nix copy --no-check-sigs --from "$URL/c/default/e2e" --to "local?root=$WORK/nixroot2" "$CLOSURE_ROOT" >/dev/null 2>&1 \
   && pass "cache intact after gc" || fail "cache intact after gc"
 
 echo

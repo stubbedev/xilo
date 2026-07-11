@@ -23,8 +23,8 @@ type CacheData struct {
 templ CacheView(d CacheData) {
 	@Layout(d.Cache.Ref(), true, Flash{}) {
 		<hgroup id="cache-head">
-			<h1><small class="muted-row">{ d.Cache.NS }/</small>{ d.Cache.Name } @visBadge(d.Cache.Public)</h1>
-			<p>{ d.BaseURL }/{ d.Cache.Ref() }</p>
+			<h1><small class="muted-row">{ d.Cache.Account }/</small>{ d.Cache.Name } @visBadge(d.Cache.Public)</h1>
+			<p>{ d.BaseURL }/c/{ d.Cache.Ref() }</p>
 		</hgroup>
 		<h2>{ T("cd.stats") }</h2>
 		<article>

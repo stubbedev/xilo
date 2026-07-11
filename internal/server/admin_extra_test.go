@@ -29,7 +29,7 @@ func bootstrapAdmin(t *testing.T, db *store.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.CreateUser("admin", string(hash), "admin"); err != nil {
+	if _, err := db.CreateUser("admin", "", string(hash), "admin"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -294,7 +294,7 @@ func TestAdminGC(t *testing.T) {
 	if b := body(t, resp); !strings.Contains(b, "GC done") {
 		t.Fatalf("gc response: %q", b)
 	}
-	if resp, _ := http.Get(ts.URL + "/default/c/" + h32 + ".narinfo"); resp.StatusCode != 404 {
+	if resp, _ := http.Get(ts.URL + "/c/default/c/" + h32 + ".narinfo"); resp.StatusCode != 404 {
 		t.Fatalf("path survived GC: %d", resp.StatusCode)
 	}
 	g, _ := db.GlobalStats()
@@ -533,7 +533,7 @@ func TestStatusPagesAndData(t *testing.T) {
 	bootstrapAdmin(t, db)
 	db.CreateCache("default", "c", true, 40)
 	pushFake(t, ts, "c", h32, []byte("status traffic"), "")
-	getNar(t, ts, "/default/c/nar/"+h32+".nar", "")
+	getNar(t, ts, "/c/default/c/nar/"+h32+".nar", "")
 	s.sampleStatus()
 	s.sampleStatus()
 

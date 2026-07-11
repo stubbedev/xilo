@@ -13,7 +13,7 @@ import (
 )
 
 func (c *Client) url(parts ...string) string {
-	u := c.base + "/" + c.cache
+	u := c.base + "/c/" + c.cache
 	for _, p := range parts {
 		u += "/" + p
 	}

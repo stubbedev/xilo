@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -12,31 +13,56 @@ import (
 type User struct {
 	ID          int64
 	Name        string
+	Email       string // optional; unique when set; usable for sign-in
 	PassHash    string
 	Role        string // "admin" | "member"
 	TOTPEnabled bool
 	Created     int64
 }
 
-const userCols = `id,username,password_hash,role,totp_enabled,created`
+const userCols = `id,username,COALESCE(email,''),password_hash,role,totp_enabled,created`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	var totp int
-	if err := row.Scan(&u.ID, &u.Name, &u.PassHash, &u.Role, &totp, &u.Created); err != nil {
+	if err := row.Scan(&u.ID, &u.Name, &u.Email, &u.PassHash, &u.Role, &totp, &u.Created); err != nil {
 		return nil, err
 	}
 	u.TOTPEnabled = totp != 0
 	return &u, nil
 }
 
-// CreateUser inserts a dashboard account with a bcrypt password hash.
-func (db *DB) CreateUser(name, passHash, role string) (*User, error) {
-	u := &User{Name: name, PassHash: passHash, Role: role, Created: time.Now().Unix()}
+// CreateUser inserts a dashboard user with a bcrypt password hash, plus their
+// personal account (kind "user", slug == username) with the user as its
+// admin. Usernames and account slugs share one global pool.
+func (db *DB) CreateUser(name, email, passHash, role string) (*User, error) {
+	if !ValidSlug(name) {
+		return nil, errors.New("invalid username (lowercase letters, digits, - and _; some names are reserved)")
+	}
+	u := &User{Name: name, Email: email, PassHash: passHash, Role: role, Created: time.Now().Unix()}
 	err := db.write(func(tx *sql.Tx) error {
-		return tx.QueryRow(
-			`INSERT INTO users (username,password_hash,role,created) VALUES (?,?,?,?) RETURNING id`,
-			u.Name, u.PassHash, u.Role, u.Created).Scan(&u.ID)
+		var taken int
+		if err := tx.QueryRow(`SELECT 1 FROM accounts WHERE slug=?`, name).Scan(&taken); err == nil {
+			return errors.New("name already taken")
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		var email any
+		if u.Email != "" {
+			email = u.Email
+		}
+		if err := tx.QueryRow(
+			`INSERT INTO users (username,email,password_hash,role,created) VALUES (?,?,?,?,?) RETURNING id`,
+			u.Name, email, u.PassHash, u.Role, u.Created).Scan(&u.ID); err != nil {
+			return err
+		}
+		var accID int64
+		if err := tx.QueryRow(`INSERT INTO accounts (slug, kind, created) VALUES (?,?,?) RETURNING id`,
+			u.Name, "user", u.Created).Scan(&accID); err != nil {
+			return err
+		}
+		_, err := tx.Exec(`INSERT INTO account_members (account_id, user_id, role) VALUES (?,?,'admin')`, accID, u.ID)
+		return err
 	})
 	if err != nil {
 		return nil, err
@@ -58,6 +84,19 @@ func (db *DB) GetUserByName(name string) (*User, error) {
 		return nil, ErrNotFound
 	}
 	return u, err
+}
+
+// GetUserByLogin resolves a sign-in identifier: username, or email when it
+// contains an @.
+func (db *DB) GetUserByLogin(login string) (*User, error) {
+	if strings.Contains(login, "@") {
+		u, err := scanUser(db.r.QueryRow(`SELECT `+userCols+` FROM users WHERE email=?`, login))
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return u, err
+	}
+	return db.GetUserByName(login)
 }
 
 func (db *DB) ListUsers() ([]User, error) {
@@ -105,13 +144,26 @@ func (db *DB) SetUserRole(id int64, role string) error {
 	})
 }
 
-// DeleteUser removes an account along with its passkeys and sessions.
+// DeleteUser removes a user along with their passkeys, sessions and org
+// memberships. Their personal account is removed only when empty; with caches
+// it stays (orphaned, super-admin managed) rather than cascading data away.
 func (db *DB) DeleteUser(id int64) error {
 	return db.write(func(tx *sql.Tx) error {
 		if _, err := tx.Exec(`DELETE FROM passkeys WHERE user_id=?`, id); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(`DELETE FROM sessions WHERE user_id=?`, id); err != nil {
+			return err
+		}
+		var name string
+		if err := tx.QueryRow(`SELECT username FROM users WHERE id=?`, id).Scan(&name); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM account_members WHERE user_id=?`, id); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`DELETE FROM accounts WHERE slug=? AND kind='user'
+			AND NOT EXISTS (SELECT 1 FROM caches WHERE account_id = accounts.id)`, name); err != nil {
 			return err
 		}
 		_, err := tx.Exec(`DELETE FROM users WHERE id=?`, id)

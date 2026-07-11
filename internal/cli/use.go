@@ -32,7 +32,7 @@ func useCmd() *cobra.Command {
 			cache := normRef(args[0])
 
 			if remove {
-				sub := strings.TrimRight(url, "/") + "/" + cache
+				sub := strings.TrimRight(url, "/") + "/c/" + cache
 				// The trusted-key label is the bare cache name.
 				_, bare := splitRef(cache)
 				if err := removeFromNixConf(sub, bare); err != nil {
@@ -46,7 +46,7 @@ func useCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sub := strings.TrimRight(url, "/") + "/" + cache
+			sub := strings.TrimRight(url, "/") + "/c/" + cache
 
 			if err := updateNixConf(sub, cfg.PublicKey); err != nil {
 				return err
@@ -114,7 +114,7 @@ func removeFromNixConf(sub, cache string) error {
 }
 
 func fetchCacheConfig(ctx context.Context, url, cache, token string) (*api.ConfigResp, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(url, "/")+"/"+cache+"/api/config", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(url, "/")+"/c/"+cache+"/api/config", nil)
 	if err != nil {
 		return nil, err
 	}

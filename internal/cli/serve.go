@@ -24,7 +24,7 @@ func bootstrapAdmin(db *store.DB, password string) error {
 		return err
 	}
 	log.Printf("bootstrapping admin account from configured password")
-	_, err = db.CreateUser("admin", string(hash), "admin")
+	_, err = db.CreateUser("admin", "", string(hash), "admin")
 	return err
 }
 

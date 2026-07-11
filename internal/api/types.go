@@ -29,7 +29,7 @@ type MissingResp struct {
 
 // Cache is a cache's settings as returned by the admin API.
 type Cache struct {
-	Namespace string `json:"namespace"`
+	Account   string `json:"account"`
 	Name      string `json:"name"`
 	Storage   string `json:"storage,omitempty"` // named blob backend
 	Public    bool   `json:"public"`
@@ -51,21 +51,22 @@ type CacheDetail struct {
 
 // CreateCacheReq creates a cache (POST /api/v1/caches).
 type CreateCacheReq struct {
-	Namespace string `json:"namespace"` // "" = default
-	Name      string `json:"name"`
-	Storage   string `json:"storage"` // "" = the server's default_storage
-	Public    bool   `json:"public"`
-	Priority  int    `json:"priority"` // 0 = default 40
+	Account  string `json:"account"` // "" = default
+	Name     string `json:"name"`
+	Storage  string `json:"storage"` // "" = the server's default_storage
+	Public   bool   `json:"public"`
+	Priority int    `json:"priority"` // 0 = default 40
 }
 
-// NamespaceResp is one namespace (GET /api/v1/namespaces).
-type NamespaceResp struct {
+// AccountResp is one account (GET /api/v1/accounts).
+type AccountResp struct {
 	Name    string `json:"name"`
+	Kind    string `json:"kind"`
 	Created int64  `json:"created"`
 }
 
-// CreateNamespaceReq creates a namespace (POST /api/v1/namespaces).
-type CreateNamespaceReq struct {
+// CreateAccountReq creates an org account (POST /api/v1/accounts).
+type CreateAccountReq struct {
 	Name string `json:"name"`
 }
 
@@ -79,23 +80,23 @@ type ConfigureCacheReq struct {
 
 // Token is token metadata (never the secret).
 type Token struct {
-	ID        int64    `json:"id"`
-	Namespace string   `json:"namespace,omitempty"` // "" = instance-wide
-	Name      string   `json:"name"`
-	Caches    []string `json:"caches"`
-	Perms     []string `json:"perms"`
-	Revoked   bool     `json:"revoked"`
-	Expires   int64    `json:"expires"` // unix; 0 = never
-	Created   int64    `json:"created"`
+	ID      int64    `json:"id"`
+	Account string   `json:"account,omitempty"` // "" = instance-wide
+	Name    string   `json:"name"`
+	Caches  []string `json:"caches"`
+	Perms   []string `json:"perms"`
+	Revoked bool     `json:"revoked"`
+	Expires int64    `json:"expires"` // unix; 0 = never
+	Created int64    `json:"created"`
 }
 
 // CreateTokenReq mints a token (POST /api/v1/tokens).
 type CreateTokenReq struct {
-	Namespace string   `json:"namespace"` // "" = instance-wide token
-	Name      string   `json:"name"`
-	Caches    []string `json:"caches"` // empty = all; ns/cache patterns for instance tokens
-	Perms     []string `json:"perms"`
-	Expires   int64    `json:"expires"` // unix; 0 = never
+	Account string   `json:"account"` // "" = instance-wide token
+	Name    string   `json:"name"`
+	Caches  []string `json:"caches"` // empty = all; account/cache patterns for instance tokens
+	Perms   []string `json:"perms"`
+	Expires int64    `json:"expires"` // unix; 0 = never
 }
 
 // CreateTokenResp returns the one-time secret plus the stored metadata.

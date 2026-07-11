@@ -276,12 +276,12 @@ func cacheConfigServer(t *testing.T, public bool) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-		if len(parts) != 4 || parts[2] != "api" || parts[3] != "config" {
+		if len(parts) != 5 || parts[0] != "c" || parts[3] != "api" || parts[4] != "config" {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
 		}
 		json.NewEncoder(w).Encode(api.ConfigResp{
-			PublicKey: parts[1] + ":KEYDATA",
+			PublicKey: parts[2] + ":KEYDATA",
 			Public:    public,
 		})
 	}))
@@ -298,14 +298,14 @@ func TestUseAddAndRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "added "+srv.URL+"/default/c1 to nix.conf") {
+	if !strings.Contains(out, "added "+srv.URL+"/c/default/c1 to nix.conf") {
 		t.Fatalf("use output: %q", out)
 	}
 	body, err := os.ReadFile(nixConf)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "extra-substituters = "+srv.URL+"/default/c1") ||
+	if !strings.Contains(string(body), "extra-substituters = "+srv.URL+"/c/default/c1") ||
 		!strings.Contains(string(body), "extra-trusted-public-keys = c1:KEYDATA") {
 		t.Fatalf("nix.conf: %q", body)
 	}
@@ -315,7 +315,7 @@ func TestUseAddAndRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, _ = os.ReadFile(nixConf)
-	if !strings.Contains(string(body), srv.URL+"/default/c1 "+srv.URL+"/default/c2") ||
+	if !strings.Contains(string(body), srv.URL+"/c/default/c1 "+srv.URL+"/c/default/c2") ||
 		!strings.Contains(string(body), "c1:KEYDATA c2:KEYDATA") {
 		t.Fatalf("nix.conf after second use: %q", body)
 	}
@@ -325,15 +325,15 @@ func TestUseAddAndRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "removed "+srv.URL+"/default/c1 from nix.conf") {
+	if !strings.Contains(out, "removed "+srv.URL+"/c/default/c1 from nix.conf") {
 		t.Fatalf("remove output: %q", out)
 	}
 	body, _ = os.ReadFile(nixConf)
 	s := string(body)
-	if strings.Contains(s, srv.URL+"/default/c1") || strings.Contains(s, "c1:KEYDATA") {
+	if strings.Contains(s, srv.URL+"/c/default/c1") || strings.Contains(s, "c1:KEYDATA") {
 		t.Fatalf("c1 not removed: %q", s)
 	}
-	if !strings.Contains(s, srv.URL+"/default/c2") || !strings.Contains(s, "c2:KEYDATA") {
+	if !strings.Contains(s, srv.URL+"/c/default/c2") || !strings.Contains(s, "c2:KEYDATA") {
 		t.Fatalf("c2 lost during remove: %q", s)
 	}
 }

@@ -48,7 +48,7 @@ var en = map[string]string{
 	// login
 	"login.title":      "Sign in",
 	"login.subtitle":   "Manage caches and tokens.",
-	"login.username":   "Username",
+	"login.username":   "Username or email",
 	"login.password":   "Password",
 	"login.code":       "2FA code",
 	"login.submit":     "Sign in",
@@ -190,21 +190,21 @@ var en = map[string]string{
 	"confirm.2fa":    "Disable two-factor authentication?",
 	"confirm.user":   "Delete this user? Their passkeys and sessions go with them.",
 
-	// namespaces
-	"set.namespaces":    "Namespaces",
-	"caches.namespace":  "Namespace",
+	// accounts / organizations
+	"set.orgs":          "Organizations & accounts",
+	"caches.namespace":  "Account",
 	"caches.storage":    "Storage backend",
-	"tokens.namespace":  "Namespace",
+	"tokens.namespace":  "Account",
 	"tokens.instance":   "Instance-wide",
 	"ns.new":            "Create",
-	"ns.delete":         "Delete namespace",
+	"ns.delete":         "Delete account",
 	"ns.addmember":      "Add",
 	"ns.removemember":   "Remove member",
 	"ns.username":       "username",
 	"ns.member":         "member",
-	"ns.owner":          "owner",
-	"ns.hint":           "Namespaces group caches per team or tenant.",
-	"confirm.namespace": "Delete this namespace? It must be empty of caches; its tokens and memberships are removed.",
+	"ns.owner":          "admin",
+	"ns.hint":           "Organizations group caches per team; personal accounts belong to one user.",
+	"confirm.namespace": "Delete this account? It must be empty of caches; its tokens and memberships are removed.",
 
 	// user management
 	"set.users":     "Users",
@@ -212,6 +212,7 @@ var en = map[string]string{
 	"users.create":  "Create",
 	"users.name":    "Username",
 	"users.newpw":   "New password",
+	"users.email":   "Email (optional)",
 	"users.role":    "Role",
 	"users.admin":   "Admin",
 	"users.member":  "Member",

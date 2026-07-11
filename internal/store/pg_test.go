@@ -28,7 +28,7 @@ func TestPostgres(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	// Fresh slate: earlier runs against the same server leave rows behind.
-	for _, tbl := range []string{"paths", "chunks", "tokens", "caches", "passkeys", "sessions", "metrics_minutes", "users", "namespace_members", "namespaces"} {
+	for _, tbl := range []string{"paths", "chunks", "tokens", "caches", "passkeys", "sessions", "metrics_minutes", "users", "account_members", "accounts"} {
 		if err := db.write(func(tx *sql.Tx) error { _, err := tx.Exec(`DELETE FROM ` + tbl); return err }); err != nil {
 			t.Fatalf("clean %s: %v", tbl, err)
 		}
@@ -100,11 +100,11 @@ func TestPostgres(t *testing.T) {
 	}
 
 	// --- namespaces ---
-	ns2, err := db.EnsureNamespace("team")
+	ns2, err := db.EnsureAccount("team", "org")
 	if err != nil || ns2.ID == 0 {
 		t.Fatalf("EnsureNamespace: %+v %v", ns2, err)
 	}
-	if again, err := db.EnsureNamespace("team"); err != nil || again.ID != ns2.ID {
+	if again, err := db.EnsureAccount("team", "org"); err != nil || again.ID != ns2.ID {
 		t.Fatalf("EnsureNamespace idempotence: %+v %v", again, err)
 	}
 	tc, err := db.CreateCache("team", "pg-cache", true, 40)
@@ -124,7 +124,7 @@ func TestPostgres(t *testing.T) {
 	if err := db.DeleteCache(tc.ID); err != nil {
 		t.Fatalf("delete team cache: %v", err)
 	}
-	if err := db.DeleteNamespace(ns2.ID); err != nil {
+	if err := db.DeleteAccount(ns2.ID); err != nil {
 		t.Fatalf("DeleteNamespace: %v", err)
 	}
 
@@ -204,7 +204,7 @@ func TestPostgres(t *testing.T) {
 	if db.UsersExist() {
 		t.Fatal("no users should exist yet")
 	}
-	usr, err := db.CreateUser("admin", "hash1", "admin")
+	usr, err := db.CreateUser("admin", "", "hash1", "admin")
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}

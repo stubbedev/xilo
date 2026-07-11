@@ -84,10 +84,10 @@ func cacheCreateCmd() *cobra.Command {
 			if apic != nil {
 				var ca api.Cache
 				if err := apic.do(http.MethodPost, "/api/v1/caches",
-					api.CreateCacheReq{Namespace: ns, Name: name, Storage: storageName, Public: !private, Priority: priority}, &ca); err != nil {
+					api.CreateCacheReq{Account: ns, Name: name, Storage: storageName, Public: !private, Priority: priority}, &ca); err != nil {
 					return err
 				}
-				printCacheCreated(apic.base, ca.Namespace+"/"+ca.Name, ca.PubKey)
+				printCacheCreated(apic.base, ca.Account+"/"+ca.Name, ca.PubKey)
 				return nil
 			}
 			defer db.Close()
@@ -120,7 +120,7 @@ func cacheCreateCmd() *cobra.Command {
 func printCacheCreated(baseURL, ref, pubkey string) {
 	fmt.Printf("%s cache %s\n\n", styleOK("created"), styleAccent(ref))
 	fmt.Println(styleDim("Add to nix.conf:"))
-	fmt.Printf("  substituters = %s/%s\n", baseURL, ref)
+	fmt.Printf("  substituters = %s/c/%s\n", baseURL, ref)
 	fmt.Printf("  trusted-public-keys = %s\n", pubkey)
 }
 
@@ -152,7 +152,7 @@ func cacheListCmd() *cobra.Command {
 			trows := make([][]string, 0, len(rows))
 			for _, ca := range rows {
 				trows = append(trows, []string{
-					ca.Namespace + "/" + ca.Name, visibility(ca.Public), ca.Storage,
+					ca.Account + "/" + ca.Name, visibility(ca.Public), ca.Storage,
 					strconv.Itoa(ca.Priority), ca.PubKey,
 				})
 			}
@@ -165,7 +165,7 @@ func cacheListCmd() *cobra.Command {
 // apiCacheRow converts a store cache to the wire shape for shared printing.
 func apiCacheRow(c *store.Cache) api.Cache {
 	return api.Cache{
-		Namespace: c.NS, Name: c.Name, Storage: c.Storage, Public: c.Public, Priority: c.Priority,
+		Account: c.Account, Name: c.Name, Storage: c.Storage, Public: c.Public, Priority: c.Priority,
 		Retention: c.Retention, MaxBytes: c.MaxBytes, PubKey: c.PubKey, Created: c.Created,
 	}
 }
@@ -208,14 +208,14 @@ func cacheInfoCmd() *cobra.Command {
 				d = api.CacheDetail{Cache: apiCacheRow(ca), Paths: st.Paths, Chunks: st.Chunks,
 					LogicalBytes: st.LogicalBytes, PhysicalBytes: st.PhysicalBytes}
 			}
-			fmt.Printf("name:        %s/%s\n", d.Namespace, d.Name)
+			fmt.Printf("name:        %s/%s\n", d.Account, d.Name)
 			fmt.Printf("visibility:  %s\n", visibility(d.Public))
 			fmt.Printf("storage:     %s\n", d.Storage)
 			fmt.Printf("priority:    %d\n", d.Priority)
 			fmt.Printf("retention:   %s\n", retentionStr(d.Retention))
 			fmt.Printf("max size:    %s\n", capStr(d.MaxBytes))
 			fmt.Printf("public key:  %s\n", d.PubKey)
-			fmt.Printf("substituter: %s/%s/%s\n", base, d.Namespace, d.Name)
+			fmt.Printf("substituter: %s/c/%s/%s\n", base, d.Account, d.Name)
 			fmt.Printf("paths:       %d\n", d.Paths)
 			fmt.Printf("chunks:      %d\n", d.Chunks)
 			fmt.Printf("logical:     %d bytes\n", d.LogicalBytes)
@@ -336,7 +336,7 @@ func cacheRotateCmd() *cobra.Command {
 				if err := apic.do(http.MethodPost, "/api/v1/caches/"+ns+"/"+cname+"/rotate", nil, &ca); err != nil {
 					return err
 				}
-				name, pubkey = ca.Namespace+"/"+ca.Name, ca.PubKey
+				name, pubkey = ca.Account+"/"+ca.Name, ca.PubKey
 			} else {
 				defer db.Close()
 				ca, err := db.GetCache(ns, cname)

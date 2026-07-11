@@ -32,7 +32,7 @@ func TestNarFailsClosedOnMissingBlob(t *testing.T) {
 		t.Fatalf("remove blob: %v", err)
 	}
 
-	resp, err := http.Get(ts.URL + "/default/c/nar/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.nar")
+	resp, err := http.Get(ts.URL + "/c/default/c/nar/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.nar")
 	if err == nil {
 		body, rerr := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -46,7 +46,7 @@ func TestNarFailsClosedOnMissingBlob(t *testing.T) {
 	if err := db.DeleteChunkRows("default", []string{chunkHash}); err != nil {
 		t.Fatal(err)
 	}
-	resp2, err := http.Get(ts.URL + "/default/c/nar/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.nar")
+	resp2, err := http.Get(ts.URL + "/c/default/c/nar/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.nar")
 	if err != nil {
 		t.Fatalf("row-missing GET: %v", err)
 	}

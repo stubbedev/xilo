@@ -178,14 +178,14 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/login/code", s.handleLoginCode)
 	mux.HandleFunc("POST /admin/logout", s.handleLogout)
 	mux.HandleFunc("POST /admin/caches", s.handleCreateCache)
-	mux.HandleFunc("GET /admin/cache/{ns}/{name}", s.handleCacheDetail)
-	mux.HandleFunc("POST /admin/cache/{ns}/{name}/configure", s.handleConfigureCache)
-	mux.HandleFunc("POST /admin/cache/{ns}/{name}/rotate", s.handleRotateKey)
-	mux.HandleFunc("POST /admin/cache/{ns}/{name}/delete", s.handleDeleteCache)
-	mux.HandleFunc("POST /admin/namespaces", s.handleCreateNamespace)
-	mux.HandleFunc("POST /admin/namespaces/{ns}/delete", s.handleDeleteNamespace)
-	mux.HandleFunc("POST /admin/namespaces/{ns}/members", s.handleSetMember)
-	mux.HandleFunc("POST /admin/namespaces/{ns}/members/{uid}/remove", s.handleRemoveMember)
+	mux.HandleFunc("GET /admin/cache/{account}/{name}", s.handleCacheDetail)
+	mux.HandleFunc("POST /admin/cache/{account}/{name}/configure", s.handleConfigureCache)
+	mux.HandleFunc("POST /admin/cache/{account}/{name}/rotate", s.handleRotateKey)
+	mux.HandleFunc("POST /admin/cache/{account}/{name}/delete", s.handleDeleteCache)
+	mux.HandleFunc("POST /admin/orgs", s.handleCreateOrg)
+	mux.HandleFunc("POST /admin/orgs/{account}/delete", s.handleDeleteOrg)
+	mux.HandleFunc("POST /admin/orgs/{account}/members", s.handleSetMember)
+	mux.HandleFunc("POST /admin/orgs/{account}/members/{uid}/remove", s.handleRemoveMember)
 	mux.HandleFunc("POST /admin/tokens", s.handleCreateToken)
 	mux.HandleFunc("POST /admin/tokens/{id}/edit", s.handleEditToken)
 	mux.HandleFunc("POST /admin/tokens/{id}/revoke", s.handleRevokeToken)
@@ -221,7 +221,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 // canManage reports whether u may mutate resources in a namespace: instance
 // admins always, otherwise namespace owners.
 func (s *Server) canManage(u *store.User, nsID int64) bool {
-	return u != nil && (u.Role == "admin" || s.db.MemberRole(nsID, u.ID) == "owner")
+	return u != nil && (u.Role == "admin" || s.db.MemberRole(nsID, u.ID) == "admin")
 }
 
 // visibleCaches lists the caches u may see: all for admins, their namespaces'
@@ -230,13 +230,13 @@ func (s *Server) visibleCaches(u *store.User) ([]store.Cache, error) {
 	if u.Role == "admin" {
 		return s.db.ListCaches()
 	}
-	nss, err := s.db.UserNamespaces(u.ID)
+	nss, err := s.db.UserAccounts(u.ID)
 	if err != nil {
 		return nil, err
 	}
 	var out []store.Cache
 	for _, ns := range nss {
-		cs, err := s.db.ListNamespaceCaches(ns.ID)
+		cs, err := s.db.ListAccountCaches(ns.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -251,16 +251,16 @@ func (s *Server) visibleTokens(u *store.User) ([]store.Token, error) {
 	if u.Role == "admin" {
 		return s.db.ListTokens()
 	}
-	nss, err := s.db.UserNamespaces(u.ID)
+	nss, err := s.db.UserAccounts(u.ID)
 	if err != nil {
 		return nil, err
 	}
 	var out []store.Token
 	for _, ns := range nss {
-		if s.db.MemberRole(ns.ID, u.ID) != "owner" {
+		if s.db.MemberRole(ns.ID, u.ID) != "admin" {
 			continue
 		}
-		ts, err := s.db.ListNamespaceTokens(ns.ID)
+		ts, err := s.db.ListAccountTokens(ns.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -270,17 +270,17 @@ func (s *Server) visibleTokens(u *store.User) ([]store.Token, error) {
 }
 
 // ownedNamespaces returns the namespaces u may create caches/tokens in.
-func (s *Server) ownedNamespaces(u *store.User) ([]store.Namespace, error) {
+func (s *Server) ownedNamespaces(u *store.User) ([]store.Account, error) {
 	if u.Role == "admin" {
-		return s.db.ListNamespaces()
+		return s.db.ListAccounts()
 	}
-	nss, err := s.db.UserNamespaces(u.ID)
+	nss, err := s.db.UserAccounts(u.ID)
 	if err != nil {
 		return nil, err
 	}
-	var out []store.Namespace
+	var out []store.Account
 	for _, ns := range nss {
-		if s.db.MemberRole(ns.ID, u.ID) == "owner" {
+		if s.db.MemberRole(ns.ID, u.ID) == "admin" {
 			out = append(out, ns)
 		}
 	}
@@ -362,7 +362,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 		Global:     global,
 		Caches:     pagedCaches,
 		Tokens:     pagedTokens,
-		Namespaces: owned,
+		Accounts:   owned,
 		Storages:   s.storageNames(),
 		IsAdmin:    u.Role == "admin",
 		Flash:      flash,
@@ -386,7 +386,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "too many attempts — wait a moment", http.StatusTooManyRequests)
 		return
 	}
-	u, err := s.db.GetUserByName(strings.TrimSpace(r.FormValue("username")))
+	u, err := s.db.GetUserByLogin(strings.TrimSpace(r.FormValue("username")))
 	if errors.Is(err, store.ErrNotFound) {
 		if !s.db.UsersExist() {
 			views.Login(true, s.hasPasskeys(), views.Flash{}).Render(r.Context(), w)
@@ -485,24 +485,24 @@ func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, u *store
 		return
 	}
 	var users []store.User
-	var nss []views.NamespaceInfo
+	var nss []views.OrgInfo
 	if u.Role == "admin" {
 		if users, err = s.db.ListUsers(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		list, err := s.db.ListNamespaces()
+		list, err := s.db.ListAccounts()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		for _, ns := range list {
-			members, err := s.db.ListMembers(ns.ID)
+		for _, acct := range list {
+			members, err := s.db.ListMembers(acct.ID)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			nss = append(nss, views.NamespaceInfo{Namespace: ns, Members: members})
+			nss = append(nss, views.OrgInfo{Account: acct, Members: members})
 		}
 	}
 	views.Settings(u, u.TOTPEnabled, pks, users, nss, flash).Render(r.Context(), w)
@@ -853,8 +853,8 @@ func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
 	// Admins may create caches anywhere (minting the namespace on the fly);
 	// owners only inside namespaces they already own.
 	if u.Role != "admin" {
-		nsRow, err := s.db.GetNamespace(ns)
-		if err != nil || s.db.MemberRole(nsRow.ID, u.ID) != "owner" {
+		nsRow, err := s.db.GetAccount(ns)
+		if err != nil || s.db.MemberRole(nsRow.ID, u.ID) != "admin" {
 			http.Error(w, "you do not own this namespace", http.StatusForbidden)
 			return
 		}
@@ -889,7 +889,7 @@ func (s *Server) handleCacheDetail(w http.ResponseWriter, r *http.Request) {
 	if u == nil {
 		return
 	}
-	c, err := s.db.GetCache(r.PathValue("ns"), r.PathValue("name"))
+	c, err := s.db.GetCache(r.PathValue("account"), r.PathValue("name"))
 	if errors.Is(err, store.ErrNotFound) {
 		s.notFound(w, r)
 		return
@@ -900,7 +900,7 @@ func (s *Server) handleCacheDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	// Members see their namespaces' caches; outsiders get the same 404 as a
 	// nonexistent cache (no existence oracle).
-	if u.Role != "admin" && s.db.MemberRole(c.NSID, u.ID) == "" {
+	if u.Role != "admin" && s.db.MemberRole(c.AccountID, u.ID) == "" {
 		s.notFound(w, r)
 		return
 	}
@@ -960,7 +960,7 @@ func (s *Server) manageCache(w http.ResponseWriter, r *http.Request) (*store.Cac
 	if u == nil {
 		return nil, false
 	}
-	c, err := s.db.GetCache(r.PathValue("ns"), r.PathValue("name"))
+	c, err := s.db.GetCache(r.PathValue("account"), r.PathValue("name"))
 	if errors.Is(err, store.ErrNotFound) {
 		http.NotFound(w, r)
 		return nil, false
@@ -969,7 +969,7 @@ func (s *Server) manageCache(w http.ResponseWriter, r *http.Request) (*store.Cac
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil, false
 	}
-	if !s.canManage(u, c.NSID) {
+	if !s.canManage(u, c.AccountID) {
 		http.NotFound(w, r)
 		return nil, false
 	}
@@ -1037,7 +1037,7 @@ func (s *Server) tokenScope(u *store.User, r *http.Request) (nsID int64, nsName 
 			return 0, "", nil, errors.New("only admins can mint instance-wide tokens")
 		}
 	} else {
-		ns, gerr := s.db.GetNamespace(nsName)
+		ns, gerr := s.db.GetAccount(nsName)
 		if gerr != nil {
 			return 0, "", nil, errors.New("no such namespace")
 		}
@@ -1112,11 +1112,11 @@ func (s *Server) manageToken(w http.ResponseWriter, r *http.Request) (*store.Tok
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil, nil, false
 	}
-	if t.NamespaceID == 0 && u.Role != "admin" {
+	if t.AccountID == 0 && u.Role != "admin" {
 		s.notFound(w, r)
 		return nil, nil, false
 	}
-	if t.NamespaceID != 0 && !s.canManage(u, t.NamespaceID) {
+	if t.AccountID != 0 && !s.canManage(u, t.AccountID) {
 		s.notFound(w, r)
 		return nil, nil, false
 	}
@@ -1137,10 +1137,10 @@ func (s *Server) handleEditToken(w http.ResponseWriter, r *http.Request) {
 	}
 	var caches []string
 	if c := r.FormValue("cache"); c != "" && c != "*" {
-		if t.NamespaceID != 0 {
-			bare, cut := strings.CutPrefix(c, t.Namespace+"/")
+		if t.AccountID != 0 {
+			bare, cut := strings.CutPrefix(c, t.Account+"/")
 			if !cut {
-				http.Error(w, "scope must be a cache in "+t.Namespace, http.StatusBadRequest)
+				http.Error(w, "scope must be a cache in "+t.Account, http.StatusBadRequest)
 				return
 			}
 			caches = []string{bare}
@@ -1149,7 +1149,7 @@ func (s *Server) handleEditToken(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	perms := formPerms(r)
-	if slices.Contains(perms, "admin") && (t.NamespaceID != 0 || u.Role != "admin") {
+	if slices.Contains(perms, "admin") && (t.AccountID != 0 || u.Role != "admin") {
 		http.Error(w, "admin tokens are instance-wide and admin-only", http.StatusForbidden)
 		return
 	}
@@ -1222,7 +1222,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if _, err := s.db.CreateUser(name, string(hash), role); err != nil {
+	if _, err := s.db.CreateUser(name, strings.TrimSpace(r.FormValue("email")), string(hash), role); err != nil {
 		s.settingsFlash(w, r, "Could not create user: "+err.Error())
 		return
 	}
@@ -1332,7 +1332,7 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 
 // ---- namespace management ----
 
-func (s *Server) handleCreateNamespace(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleCreateOrg(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return
 	}
@@ -1341,7 +1341,7 @@ func (s *Server) handleCreateNamespace(w http.ResponseWriter, r *http.Request) {
 		s.settingsFlash(w, r, "Namespace names cannot be empty or contain '/' or spaces.")
 		return
 	}
-	if _, err := s.db.EnsureNamespace(name); err != nil {
+	if _, err := s.db.EnsureAccount(name, "org"); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1349,8 +1349,8 @@ func (s *Server) handleCreateNamespace(w http.ResponseWriter, r *http.Request) {
 }
 
 // namespaceByPath resolves the {ns} path value for the management handlers.
-func (s *Server) namespaceByPath(w http.ResponseWriter, r *http.Request) (*store.Namespace, bool) {
-	ns, err := s.db.GetNamespace(r.PathValue("ns"))
+func (s *Server) namespaceByPath(w http.ResponseWriter, r *http.Request) (*store.Account, bool) {
+	ns, err := s.db.GetAccount(r.PathValue("account"))
 	if errors.Is(err, store.ErrNotFound) {
 		s.notFound(w, r)
 		return nil, false
@@ -1362,7 +1362,7 @@ func (s *Server) namespaceByPath(w http.ResponseWriter, r *http.Request) (*store
 	return ns, true
 }
 
-func (s *Server) handleDeleteNamespace(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleDeleteOrg(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return
 	}
@@ -1370,11 +1370,11 @@ func (s *Server) handleDeleteNamespace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.db.DeleteNamespace(ns.ID); err != nil {
-		s.settingsFlash(w, r, "Could not delete namespace: "+err.Error())
+	if err := s.db.DeleteAccount(ns.ID); err != nil {
+		s.settingsFlash(w, r, "Could not delete: "+err.Error())
 		return
 	}
-	s.settingsFlash(w, r, fmt.Sprintf("Namespace %s deleted.", ns.Name))
+	s.settingsFlash(w, r, fmt.Sprintf("Organization %s deleted.", ns.Slug))
 }
 
 func (s *Server) handleSetMember(w http.ResponseWriter, r *http.Request) {
@@ -1395,14 +1395,14 @@ func (s *Server) handleSetMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	role := "member"
-	if r.FormValue("role") == "owner" {
-		role = "owner"
+	if r.FormValue("role") == "admin" || r.FormValue("role") == "owner" {
+		role = "admin"
 	}
 	if err := s.db.SetMember(ns.ID, u.ID, role); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.settingsFlash(w, r, fmt.Sprintf("%s is now a %s of %s.", u.Name, role, ns.Name))
+	s.settingsFlash(w, r, fmt.Sprintf("%s is now a %s of %s.", u.Name, role, ns.Slug))
 }
 
 func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {

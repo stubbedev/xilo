@@ -75,7 +75,7 @@ func put(t *testing.T, ts *httptest.Server, path string, body []byte, token stri
 func pushFake(t *testing.T, ts *httptest.Server, cache, storeHash string, data []byte, token string) {
 	t.Helper()
 	chunkHash, narHash, narSize := fakeNar(data)
-	if r := put(t, ts, "/default/"+cache+"/api/chunk/"+chunkHash, data, token); r.StatusCode != 200 {
+	if r := put(t, ts, "/c/default/"+cache+"/api/chunk/"+chunkHash, data, token); r.StatusCode != 200 {
 		b, _ := io.ReadAll(r.Body)
 		t.Fatalf("put chunk: %d %s", r.StatusCode, b)
 	}
@@ -84,7 +84,7 @@ func pushFake(t *testing.T, ts *httptest.Server, cache, storeHash string, data [
 		Chunks: []string{chunkHash},
 	}
 	body, _ := json.Marshal(pr)
-	if r := put(t, ts, "/default/"+cache+"/api/path", body, token); r.StatusCode != 200 {
+	if r := put(t, ts, "/c/default/"+cache+"/api/path", body, token); r.StatusCode != 200 {
 		b, _ := io.ReadAll(r.Body)
 		t.Fatalf("put path: %d %s", r.StatusCode, b)
 	}
@@ -101,7 +101,7 @@ func TestPushPullSignedFlow(t *testing.T) {
 	pushFake(t, ts, "c", h32, data, "")
 
 	// narinfo signature must verify with the cache's ed25519 pubkey.
-	resp, _ := http.Get(ts.URL + "/default/c/" + h32 + ".narinfo")
+	resp, _ := http.Get(ts.URL + "/c/default/c/" + h32 + ".narinfo")
 	if resp.StatusCode != 200 {
 		t.Fatalf("narinfo status %d", resp.StatusCode)
 	}
@@ -112,13 +112,13 @@ func TestPushPullSignedFlow(t *testing.T) {
 	verifyNarinfoSig(t, db, "c", string(body))
 
 	// identity NAR download → exact bytes + correct Content-Length.
-	got := getNar(t, ts, "/default/c/nar/"+h32+".nar", "")
+	got := getNar(t, ts, "/c/default/c/nar/"+h32+".nar", "")
 	if !bytes.Equal(got, data) {
 		t.Fatalf("identity NAR mismatch: %d vs %d bytes", len(got), len(data))
 	}
 
 	// zstd transfer → decodes to the same bytes.
-	zr := getNar(t, ts, "/default/c/nar/"+h32+".nar", "zstd")
+	zr := getNar(t, ts, "/c/default/c/nar/"+h32+".nar", "zstd")
 	if !bytes.Equal(zr, data) {
 		t.Fatalf("zstd NAR mismatch")
 	}
@@ -205,7 +205,7 @@ func TestChunkHashMismatchRejected(t *testing.T) {
 	_, db, ts := newTestServer(t, true)
 	db.CreateCache("default", "c", true, 40)
 	// upload body whose hash != the URL hash
-	r := put(t, ts, "/default/c/api/chunk/"+strings.Repeat("0", 64), []byte("not that content"), "")
+	r := put(t, ts, "/c/default/c/api/chunk/"+strings.Repeat("0", 64), []byte("not that content"), "")
 	if r.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", r.StatusCode)
 	}
@@ -216,7 +216,7 @@ func TestVerifyReassemblyRejectsForgedHash(t *testing.T) {
 	db.CreateCache("default", "c", true, 40)
 	data := []byte("real chunk content")
 	chunkHash, _, _ := fakeNar(data)
-	put(t, ts, "/default/c/api/chunk/"+chunkHash, data, "") // upload real chunk
+	put(t, ts, "/c/default/c/api/chunk/"+chunkHash, data, "") // upload real chunk
 
 	// Register a path claiming a bogus narHash → proof-of-possession fails.
 	pr := api.PathReq{
@@ -224,7 +224,7 @@ func TestVerifyReassemblyRejectsForgedHash(t *testing.T) {
 		NarSize: uint64(len(data)), Chunks: []string{chunkHash},
 	}
 	body, _ := json.Marshal(pr)
-	r := put(t, ts, "/default/c/api/path", body, "")
+	r := put(t, ts, "/c/default/c/api/path", body, "")
 	if r.StatusCode != http.StatusBadRequest {
 		t.Fatalf("forged narHash should 400, got %d", r.StatusCode)
 	}
@@ -242,27 +242,27 @@ func TestAuthGating(t *testing.T) {
 	ch, _, _ := fakeNar(data)
 
 	// push without token → 401 (bootstrap closed, tokens exist)
-	if r := put(t, ts, "/default/pub/api/chunk/"+ch, data, ""); r.StatusCode != 401 {
+	if r := put(t, ts, "/c/default/pub/api/chunk/"+ch, data, ""); r.StatusCode != 401 {
 		t.Fatalf("anon push want 401, got %d", r.StatusCode)
 	}
 	// push with push token → ok
-	if r := put(t, ts, "/default/pub/api/chunk/"+ch, data, pushTok); r.StatusCode != 200 {
+	if r := put(t, ts, "/c/default/pub/api/chunk/"+ch, data, pushTok); r.StatusCode != 200 {
 		t.Fatalf("push-token push want 200, got %d", r.StatusCode)
 	}
 	// private pull without token → 401
-	resp, _ := http.Get(ts.URL + "/default/priv/nix-cache-info")
+	resp, _ := http.Get(ts.URL + "/c/default/priv/nix-cache-info")
 	if resp.StatusCode != 401 {
 		t.Fatalf("anon private pull want 401, got %d", resp.StatusCode)
 	}
 	// private pull with pull token → 200
-	req, _ := http.NewRequest("GET", ts.URL+"/default/priv/nix-cache-info", nil)
+	req, _ := http.NewRequest("GET", ts.URL+"/c/default/priv/nix-cache-info", nil)
 	req.Header.Set("Authorization", "Bearer "+pullTok)
 	resp, _ = http.DefaultClient.Do(req)
 	if resp.StatusCode != 200 {
 		t.Fatalf("pull-token private pull want 200, got %d", resp.StatusCode)
 	}
 	// public pull open
-	resp, _ = http.Get(ts.URL + "/default/pub/nix-cache-info")
+	resp, _ = http.Get(ts.URL + "/c/default/pub/nix-cache-info")
 	if resp.StatusCode != 200 {
 		t.Fatalf("public pull want 200, got %d", resp.StatusCode)
 	}
@@ -277,9 +277,9 @@ func TestRoutingAndHealth(t *testing.T) {
 	}{
 		{"/healthz", 200},
 		{"/metrics", 200},
-		{"/default/c/nix-cache-info", 200},
-		{"/default/nope/nix-cache-info", 404},
-		{"/default/c/deadbeef.narinfo", 404}, // valid cache, missing path
+		{"/c/default/c/nix-cache-info", 200},
+		{"/c/default/nope/nix-cache-info", 404},
+		{"/c/default/c/deadbeef.narinfo", 404}, // valid cache, missing path
 		{"/c/notasuffix", 404},
 	}
 	for _, tc := range cases {

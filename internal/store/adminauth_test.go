@@ -11,14 +11,14 @@ func TestUsersLifecycle(t *testing.T) {
 	if db.UsersExist() {
 		t.Fatal("no users should exist yet")
 	}
-	u, err := db.CreateUser("admin", "hash-1", "admin")
+	u, err := db.CreateUser("admin", "", "hash-1", "admin")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !db.UsersExist() {
 		t.Fatal("users should exist after create")
 	}
-	if _, err := db.CreateUser("admin", "x", "member"); err == nil {
+	if _, err := db.CreateUser("admin", "", "x", "member"); err == nil {
 		t.Fatal("duplicate username should fail")
 	}
 	got, err := db.GetUserByName("admin")
@@ -35,7 +35,7 @@ func TestUsersLifecycle(t *testing.T) {
 		t.Fatalf("password not updated: %q", got.PassHash)
 	}
 
-	m, err := db.CreateUser("bob", "h", "member")
+	m, err := db.CreateUser("bob", "", "h", "member")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestUsersLifecycle(t *testing.T) {
 
 func TestTOTPLifecycle(t *testing.T) {
 	db := openTest(t)
-	u, err := db.CreateUser("admin", "h", "admin")
+	u, err := db.CreateUser("admin", "", "h", "admin")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,8 +14,8 @@ var ErrNotFound = errors.New("not found")
 
 type Cache struct {
 	ID        int64
-	NSID      int64
-	NS        string // namespace name; substituter URL is /<NS>/<Name>
+	AccountID int64
+	Account   string // account slug; substituter URL is /c/<Account>/<Name>
 	Name      string
 	Storage   string // named blob backend holding this cache's chunks
 	Public    bool
@@ -27,12 +27,12 @@ type Cache struct {
 	Created   int64
 }
 
-// Ref is the cache's namespaced name, "ns/cache" — the shape used in URLs,
-// token scopes and the CLI.
-func (c *Cache) Ref() string { return c.NS + "/" + c.Name }
+// Ref is the cache's qualified name, "account/cache" — the shape used in
+// URLs (under /c/), token scopes and the CLI.
+func (c *Cache) Ref() string { return c.Account + "/" + c.Name }
 
-const cacheCols = `c.id,c.namespace_id,n.name,c.name,c.storage,c.public,c.priority,c.retention,c.max_bytes,c.pubkey,c.privkey,c.created`
-const cacheFrom = ` FROM caches c JOIN namespaces n ON n.id = c.namespace_id `
+const cacheCols = `c.id,c.account_id,a.slug,c.name,c.storage,c.public,c.priority,c.retention,c.max_bytes,c.pubkey,c.privkey,c.created`
+const cacheFrom = ` FROM caches c JOIN accounts a ON a.id = c.account_id `
 
 type Path struct {
 	StorePath string
@@ -46,10 +46,10 @@ type Path struct {
 // ---- caches ----
 
 // CreateCache generates an ed25519 keypair (key name = cache name) and inserts
-// the cache into the named namespace, creating the namespace if missing. The
+// the cache into the named account, creating it (as an org) if missing. The
 // signing key never leaves the server.
-func (db *DB) CreateCache(ns, name string, public bool, priority int) (*Cache, error) {
-	nsRow, err := db.EnsureNamespace(ns)
+func (db *DB) CreateCache(account, name string, public bool, priority int) (*Cache, error) {
+	acc, err := db.EnsureAccount(account, "org")
 	if err != nil {
 		return nil, err
 	}
@@ -58,21 +58,21 @@ func (db *DB) CreateCache(ns, name string, public bool, priority int) (*Cache, e
 		return nil, err
 	}
 	c := &Cache{
-		NSID:     nsRow.ID,
-		NS:       nsRow.Name,
-		Name:     name,
-		Public:   public,
-		Priority: priority,
-		PubKey:   narinfo.PublicKeyString(name, pub),
-		PrivKey:  priv,
-		Created:  time.Now().Unix(),
+		AccountID: acc.ID,
+		Account:   acc.Slug,
+		Name:      name,
+		Public:    public,
+		Priority:  priority,
+		PubKey:    narinfo.PublicKeyString(name, pub),
+		PrivKey:   priv,
+		Created:   time.Now().Unix(),
 	}
 	err = db.write(func(tx *sql.Tx) error {
 		// RETURNING instead of LastInsertId — works on both SQLite and
 		// Postgres (pgx does not implement LastInsertId).
 		return tx.QueryRow(
-			`INSERT INTO caches (namespace_id, name, public, priority, pubkey, privkey, created) VALUES (?,?,?,?,?,?,?) RETURNING id`,
-			c.NSID, c.Name, b2i(c.Public), c.Priority, c.PubKey, []byte(c.PrivKey), c.Created).Scan(&c.ID)
+			`INSERT INTO caches (account_id, name, public, priority, pubkey, privkey, created) VALUES (?,?,?,?,?,?,?) RETURNING id`,
+			c.AccountID, c.Name, b2i(c.Public), c.Priority, c.PubKey, []byte(c.PrivKey), c.Created).Scan(&c.ID)
 	})
 	if err != nil {
 		return nil, err
@@ -84,7 +84,7 @@ func scanCache(row interface{ Scan(...any) error }) (*Cache, error) {
 	var c Cache
 	var pub int
 	var priv []byte
-	if err := row.Scan(&c.ID, &c.NSID, &c.NS, &c.Name, &c.Storage, &pub, &c.Priority, &c.Retention, &c.MaxBytes, &c.PubKey, &priv, &c.Created); err != nil {
+	if err := row.Scan(&c.ID, &c.AccountID, &c.Account, &c.Name, &c.Storage, &pub, &c.Priority, &c.Retention, &c.MaxBytes, &c.PubKey, &priv, &c.Created); err != nil {
 		return nil, err
 	}
 	c.Public = pub != 0
@@ -92,9 +92,9 @@ func scanCache(row interface{ Scan(...any) error }) (*Cache, error) {
 	return &c, nil
 }
 
-// GetCache resolves ns/name.
-func (db *DB) GetCache(ns, name string) (*Cache, error) {
-	row := db.r.QueryRow(`SELECT `+cacheCols+cacheFrom+`WHERE n.name=? AND c.name=?`, ns, name)
+// GetCache resolves account/name.
+func (db *DB) GetCache(account, name string) (*Cache, error) {
+	row := db.r.QueryRow(`SELECT `+cacheCols+cacheFrom+`WHERE a.slug=? AND c.name=?`, account, name)
 	c, err := scanCache(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -103,12 +103,12 @@ func (db *DB) GetCache(ns, name string) (*Cache, error) {
 }
 
 func (db *DB) ListCaches() ([]Cache, error) {
-	return db.listCaches(`SELECT ` + cacheCols + cacheFrom + `ORDER BY n.name, c.name`)
+	return db.listCaches(`SELECT ` + cacheCols + cacheFrom + `ORDER BY a.slug, c.name`)
 }
 
-// ListNamespaceCaches lists one namespace's caches.
-func (db *DB) ListNamespaceCaches(nsID int64) ([]Cache, error) {
-	return db.listCaches(`SELECT `+cacheCols+cacheFrom+`WHERE c.namespace_id=? ORDER BY c.name`, nsID)
+// ListAccountCaches lists one account's caches.
+func (db *DB) ListAccountCaches(accountID int64) ([]Cache, error) {
+	return db.listCaches(`SELECT `+cacheCols+cacheFrom+`WHERE c.account_id=? ORDER BY c.name`, accountID)
 }
 
 func (db *DB) listCaches(q string, args ...any) ([]Cache, error) {

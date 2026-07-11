@@ -84,27 +84,27 @@ func (s *Server) Handler() http.Handler {
 	// wildcards would otherwise conflict with /admin/cache/{ns}/{name}. The
 	// root mux's literal prefixes (admin, api, static, …) win; everything
 	// else falls through to the cache mux.
-	cacheMux := http.NewServeMux()
-	cacheMux.HandleFunc("GET /{ns}/{cache}/nix-cache-info", s.handleCacheInfo)
-	cacheMux.HandleFunc("GET /{ns}/{cache}/nar/{id}", s.handleNar)
-	cacheMux.HandleFunc("GET /{ns}/{cache}/{file}", s.handleNarinfo) // *.narinfo
+	// Caches mount under /c/{account}/{cache}/… so account slugs never fight
+	// top-level routes for names.
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /c/{account}/{cache}/nix-cache-info", s.handleCacheInfo)
+	mux.HandleFunc("GET /c/{account}/{cache}/nar/{id}", s.handleNar)
+	mux.HandleFunc("GET /c/{account}/{cache}/{file}", s.handleNarinfo) // *.narinfo
 
 	// Push API.
-	cacheMux.HandleFunc("GET /{ns}/{cache}/api/config", s.handleConfig)
-	cacheMux.HandleFunc("POST /{ns}/{cache}/api/get-missing-paths", s.handleMissingPaths)
-	cacheMux.HandleFunc("POST /{ns}/{cache}/api/get-missing-chunks", s.handleMissingChunks)
-	cacheMux.HandleFunc("PUT /{ns}/{cache}/api/chunk/{hash}", s.handlePutChunk)
-	cacheMux.HandleFunc("PUT /{ns}/{cache}/api/path", s.handlePutPath)
-	cacheMux.HandleFunc("GET /", s.handleIndex)
+	mux.HandleFunc("GET /c/{account}/{cache}/api/config", s.handleConfig)
+	mux.HandleFunc("POST /c/{account}/{cache}/api/get-missing-paths", s.handleMissingPaths)
+	mux.HandleFunc("POST /c/{account}/{cache}/api/get-missing-chunks", s.handleMissingChunks)
+	mux.HandleFunc("PUT /c/{account}/{cache}/api/chunk/{hash}", s.handlePutChunk)
+	mux.HandleFunc("PUT /c/{account}/{cache}/api/path", s.handlePutPath)
 
-	mux := http.NewServeMux()
 	s.registerAdmin(mux)
 	s.registerAdminAPI(mux)
 	s.registerPasskeyRoutes(mux)
 	s.registerStatic(mux)
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /metrics", s.handleMetrics)
-	mux.Handle("/", cacheMux)
+	mux.HandleFunc("GET /", s.handleIndex)
 	return mux
 }
 
@@ -182,6 +182,7 @@ func (s *Server) middleware(h http.Handler) http.Handler {
 func isCacheTraffic(path string) bool {
 	return path != "/" &&
 		!strings.HasPrefix(path, "/admin") &&
+		!strings.HasPrefix(path, "/register") &&
 		!strings.HasPrefix(path, "/api/v1/") &&
 		!strings.HasPrefix(path, "/static/") &&
 		path != "/healthz" && path != "/metrics" &&
@@ -347,9 +348,9 @@ func (s *Server) assignStorage(c *store.Cache, stName string) error {
 	return nil
 }
 
-// cache resolves the {ns}/{cache} path segments, writing 404 if unknown.
+// cache resolves the /c/{account}/{cache} path segments, writing 404 if unknown.
 func (s *Server) cache(w http.ResponseWriter, r *http.Request) (*store.Cache, bool) {
-	c, err := s.db.GetCache(r.PathValue("ns"), r.PathValue("cache"))
+	c, err := s.db.GetCache(r.PathValue("account"), r.PathValue("cache"))
 	if errors.Is(err, store.ErrNotFound) {
 		http.Error(w, "no such cache", http.StatusNotFound)
 		return nil, false

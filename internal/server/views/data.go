@@ -170,8 +170,8 @@ type DashboardData struct {
 	Global     store.Global
 	Caches     []CacheUsage
 	Tokens     []store.Token
-	Namespaces []store.Namespace // namespaces the viewer can create caches/tokens in
-	Storages   []string          // configured blob backends, default first
+	Accounts   []store.Account // accounts the viewer can create caches/tokens in
+	Storages   []string        // configured blob backends, default first
 	IsAdmin    bool
 	Flash      Flash
 	ServerCap  int64 // global storage cap bytes, 0 = unlimited
@@ -183,10 +183,10 @@ type DashboardData struct {
 	TokenQuery string
 }
 
-// NamespaceInfo is one namespace with its membership, for the settings page.
-type NamespaceInfo struct {
-	Namespace store.Namespace
-	Members   []store.NamespaceMember
+// OrgInfo is one account with its membership, for the settings page.
+type OrgInfo struct {
+	Account store.Account
+	Members []store.AccountMember
 }
 
 // CacheUsage is one cache plus its measured storage footprint.
