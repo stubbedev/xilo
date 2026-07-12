@@ -30,6 +30,12 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
         run: |
+          # Admin CSS is a generated artifact (git-ignored) embedded via
+          # go:embed — build it on the host first, else the binary ships an
+          # unstyled UI. Tailwind pinned (v4.3+ latest went dynamically linked).
+          curl -sSL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.2/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
+          chmod +x /usr/local/bin/tailwindcss
+          ./scripts/build-css.sh
           # templ must run as a host binary regardless of the target platform;
           # its version comes from go.mod so it can't drift.
           GOOS= GOARCH= go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
