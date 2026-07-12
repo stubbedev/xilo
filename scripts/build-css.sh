@@ -16,7 +16,7 @@ ver=$(go list -mod=mod -m github.com/templui/templui | awk '{print $2}')
 tp="$(go env GOMODCACHE)/github.com/templui/templui@${ver}"
 
 mkdir -p internal/server/views/css internal/server/static
-printf '@source "%s/components/**/*.templ";\n@source "%s/components/**/*.go";\n' "$tp" "$tp" \
+printf '@source "%s/components/**/*.templ";\n@source "%s/components/**/*.go";\n@source "%s/components/**/*.js";\n' "$tp" "$tp" "$tp" \
 	> internal/server/views/css/sources.generated.css
 
 : "${TAILWINDCSS:=tailwindcss}"
