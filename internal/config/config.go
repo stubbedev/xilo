@@ -107,6 +107,13 @@ type Database struct {
 	// running at larger scale than a personal cache. Overridable with
 	// XILO_DATABASE_URL (preferred for credentials).
 	URL string `yaml:"url" json:"url"`
+	// Salt is the stable secret behind all database encryption: cache signing
+	// keys and TOTP secrets are encrypted at rest with a key derived from it,
+	// and token hashes are keyed with it. Optional — empty stores them
+	// unencrypted. Once set it must never change: a different salt cannot
+	// decrypt existing rows and invalidates every issued token. Overridable
+	// with XILO_SALT (preferred for secrets).
+	Salt string `yaml:"salt" json:"salt,omitempty"`
 }
 
 // Postgres reports whether the configured database is PostgreSQL.
@@ -380,6 +387,9 @@ func (c *Config) applyEnv() {
 	}
 	if v := os.Getenv("XILO_DATABASE_URL"); v != "" {
 		c.Database.URL = v
+	}
+	if v := os.Getenv("XILO_SALT"); v != "" {
+		c.Database.Salt = v
 	}
 	if v := os.Getenv("XILO_SMTP_PASSWORD"); v != "" {
 		c.SMTP.Password = v

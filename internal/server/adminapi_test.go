@@ -45,7 +45,7 @@ func TestAdminAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pushSecret, _, err := db.CreateToken(0, "pleb", nil, []string{"push", "pull"}, 0)
+	pushSecret, _, err := db.CreateToken(0, "pleb", []string{"default/c"}, []string{"push", "pull"}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestAdminAPI(t *testing.T) {
 
 	t.Run("token lifecycle", func(t *testing.T) {
 		resp, body := apiReq(t, ts, http.MethodPost, "/api/v1/tokens", adminSecret,
-			api.CreateTokenReq{Name: "ci", Perms: []string{"push"}})
+			api.CreateTokenReq{Name: "ci", Caches: []string{"default/apicache"}, Perms: []string{"push"}})
 		if resp.StatusCode != http.StatusCreated {
 			t.Fatalf("create token: %d %s", resp.StatusCode, body)
 		}

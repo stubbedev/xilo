@@ -21,6 +21,9 @@ type DB struct {
 	// pg is set when backed by Postgres: r is a normal concurrent pool and
 	// writes run directly on it (MVCC — no single-writer funnel needed).
 	pg bool
+	// key encrypts sensitive columns and keys token hashes; nil = plaintext.
+	// Derived from the configured database.salt via SetSalt.
+	key []byte
 }
 
 type wtask struct {

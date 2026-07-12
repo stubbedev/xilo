@@ -1279,37 +1279,30 @@ func (s *Server) handleDeleteCache(w http.ResponseWriter, r *http.Request) {
 	s.flashRedirect(w, r, "/admin", fmt.Sprintf(views.T("flash.cachedeleted"), c.Ref()))
 }
 
-// tokenScope validates the form's namespace + cache-scope pair for the acting
-// user. Returns the owning namespace id (0 = instance token) and the scope
-// patterns to store.
+// tokenScope resolves the account a new token belongs to — always the acting
+// user's viewing context, falling back to their personal account — and
+// validates the cache scope within it. Instance-wide tokens are a CLI/API
+// concept, never minted from the dashboard.
 func (s *Server) tokenScope(u *store.User, r *http.Request) (nsID int64, nsName string, caches []string, err error) {
-	nsName = strings.TrimSpace(r.FormValue("namespace"))
+	nsName = s.activeContext(r, u)
 	if nsName == "" {
-		if u.Role != "owner" {
-			return 0, "", nil, errors.New("only admins can mint instance-wide tokens")
-		}
-	} else {
-		ns, gerr := s.db.GetAccount(nsName)
-		if gerr != nil {
-			return 0, "", nil, errors.New("no such namespace")
-		}
-		if !s.canManage(u, ns.ID) {
-			return 0, "", nil, errors.New("you do not own this namespace")
-		}
-		nsID = ns.ID
+		nsName = u.Name
 	}
-	if c := r.FormValue("cache"); c != "" && c != "*" {
-		if nsID != 0 {
-			// Namespace tokens store bare cache names within their namespace.
-			bare, ok := strings.CutPrefix(c, nsName+"/")
-			if !ok {
-				return 0, "", nil, errors.New("scope must be a cache in " + nsName)
-			}
-			caches = []string{bare}
-		} else {
-			caches = []string{c}
-		}
+	ns, gerr := s.db.GetAccount(nsName)
+	if gerr != nil {
+		return 0, "", nil, errors.New("no such account")
 	}
+	if !s.canManage(u, ns.ID) {
+		return 0, "", nil, errors.New("you do not administer this account")
+	}
+	nsID = ns.ID
+	// A token is valid for exactly one cache; account tokens store its bare
+	// name within their account.
+	bare, ok := strings.CutPrefix(r.FormValue("cache"), nsName+"/")
+	if !ok || bare == "" {
+		return 0, "", nil, errors.New("pick a cache in " + nsName)
+	}
+	caches = []string{bare}
 	return nsID, nsName, caches, nil
 }
 
@@ -1328,13 +1321,11 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 	if len(perms) == 0 {
 		perms = []string{"pull"}
 	}
-	if slices.Contains(perms, "admin") && (nsID != 0 || u.Role != "owner") {
-		http.Error(w, "admin tokens are instance-wide and admin-only", http.StatusForbidden)
-		return
-	}
 	var expires int64
-	if secs, ok := formSeconds(r, "ttl"); ok && secs > 0 {
-		expires = time.Now().Unix() + secs
+	if r.FormValue("permanent") == "" {
+		if secs, ok := formSeconds(r, "ttl"); ok && secs > 0 {
+			expires = time.Now().Unix() + secs
+		}
 	}
 	secret, t, err := s.db.CreateToken(nsID, name, caches, perms, expires)
 	if err != nil {
@@ -1379,7 +1370,7 @@ func (s *Server) manageToken(w http.ResponseWriter, r *http.Request) (*store.Tok
 // clears it, a TTL value re-sets it counting from now, and leaving the TTL
 // empty keeps the stored expiry.
 func (s *Server) handleEditToken(w http.ResponseWriter, r *http.Request) {
-	t, u, ok := s.manageToken(w, r)
+	t, _, ok := s.manageToken(w, r)
 	if !ok {
 		return
 	}
@@ -1400,10 +1391,14 @@ func (s *Server) handleEditToken(w http.ResponseWriter, r *http.Request) {
 			caches = []string{c}
 		}
 	}
+	// The single-cache scope rule itself is enforced in store.UpdateToken.
 	perms := formPerms(r)
-	if slices.Contains(perms, "admin") && (t.AccountID != 0 || u.Role != "owner") {
-		http.Error(w, "admin tokens are instance-wide and admin-only", http.StatusForbidden)
-		return
+	// The dashboard only edits push/pull; management perms on CLI/API-minted
+	// tokens survive an edit untouched.
+	for _, p := range t.Perms {
+		if p != "push" && p != "pull" && !slices.Contains(perms, p) {
+			perms = append(perms, p)
+		}
 	}
 	expires := t.Expires
 	if r.FormValue("permanent") != "" {
@@ -1761,7 +1756,7 @@ func (s *Server) notifyOrgMembership(u *store.User, org, role string) {
 // edit forms.
 func formPerms(r *http.Request) []string {
 	var perms []string
-	for _, p := range []string{"push", "pull", "admin"} {
+	for _, p := range []string{"push", "pull"} {
 		if r.FormValue(p) != "" {
 			perms = append(perms, p)
 		}

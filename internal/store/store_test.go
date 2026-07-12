@@ -84,10 +84,10 @@ func TestWriterSurvivesPanic(t *testing.T) {
 func TestAuthorizeMatrix(t *testing.T) {
 	db := openTest(t)
 	scoped, _, _ := mustToken(t, db, "scoped", []string{"default/a"}, []string{"pull"}, 0)
-	pushonly, _, _ := mustToken(t, db, "pushonly", nil, []string{"push"}, 0)
-	both, _, _ := mustToken(t, db, "both", []string{"default/a", "default/b"}, []string{"push", "pull"}, 0)
-	expired, _, _ := mustToken(t, db, "expired", nil, []string{"pull"}, 1) // expires at unix 1
-	revoked, rt, _ := mustToken(t, db, "revoked", nil, []string{"pull"}, 0)
+	pushonly, _, _ := mustToken(t, db, "pushonly", []string{"default/a"}, []string{"push"}, 0)
+	both, _, _ := mustToken(t, db, "both", []string{"default/b"}, []string{"push", "pull"}, 0)
+	expired, _, _ := mustToken(t, db, "expired", []string{"default/a"}, []string{"pull"}, 1) // expires at unix 1
+	revoked, rt, _ := mustToken(t, db, "revoked", []string{"default/a"}, []string{"pull"}, 0)
 	if err := db.RevokeToken(rt.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -100,9 +100,9 @@ func TestAuthorizeMatrix(t *testing.T) {
 		{scoped, "a", "pull", true},
 		{scoped, "b", "pull", false}, // out of scope
 		{scoped, "a", "push", false}, // wrong perm
-		{pushonly, "anything", "push", true},
-		{pushonly, "anything", "pull", false},
-		{both, "a", "push", true},
+		{pushonly, "a", "push", true},
+		{pushonly, "a", "pull", false},
+		{both, "b", "push", true},
 		{both, "b", "pull", true},
 		{both, "c", "pull", false},
 		{expired, "a", "pull", false}, // now(1000) >= expires(1)

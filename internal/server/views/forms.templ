@@ -44,20 +44,13 @@ templ FieldHint(id, text, hint string) {
 	}
 }
 
-// AccountSelect is a namespace picker. When instanceOption is set an
-// "Instance-wide" (empty value) choice leads the list — admins minting
-// instance tokens.
-templ AccountSelect(name, value, placeholder string, accounts []store.Account, instanceOption bool) {
+// AccountSelect is a namespace picker.
+templ AccountSelect(name, value, placeholder string, accounts []store.Account) {
 	@selectbox.SelectBox() {
 		@selectbox.Trigger(selectbox.TriggerProps{Name: name}) {
 			@selectbox.Value(selectbox.ValueProps{Placeholder: placeholder})
 		}
 		@selectbox.Content() {
-			if instanceOption {
-				@selectbox.Item(selectbox.ItemProps{Value: "", Selected: value == ""}) {
-					{ T("tokens.instance") }
-				}
-			}
 			for _, a := range accounts {
 				@selectbox.Item(selectbox.ItemProps{Value: a.Slug, Selected: a.Slug == value}) {
 					{ a.Slug }
@@ -67,16 +60,13 @@ templ AccountSelect(name, value, placeholder string, accounts []store.Account, i
 	}
 }
 
-// ScopeSelect chooses a token's cache scope ("*" = every cache).
+// ScopeSelect chooses the single cache a token is valid for.
 templ ScopeSelect(name, value string, caches []CacheUsage) {
 	@selectbox.SelectBox() {
 		@selectbox.Trigger(selectbox.TriggerProps{Name: name}) {
-			@selectbox.Value(selectbox.ValueProps{Placeholder: T("tokens.scopeall")})
+			@selectbox.Value(selectbox.ValueProps{Placeholder: T("tokens.pickcache")})
 		}
 		@selectbox.Content() {
-			@selectbox.Item(selectbox.ItemProps{Value: "*", Selected: value == "*"}) {
-				{ T("tokens.scopeall") }
-			}
 			for _, u := range caches {
 				@selectbox.Item(selectbox.ItemProps{Value: u.Cache.Ref(), Selected: u.Cache.Ref() == value}) {
 					{ u.Cache.Ref() }

@@ -226,11 +226,13 @@ func TestAdminCacheCRUD(t *testing.T) {
 func TestAdminTokenCRUD(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, nil)
 	bootstrapAdmin(t, db)
-	db.CreateCache("default", "c", true, 40)
+	// Tokens always belong to the acting user's account (viewing context or
+	// personal account) — here the admin's personal "admin" account.
+	db.CreateCache("admin", "c", true, 40)
 	c := adminClient(t, ts)
 
 	resp, _ := c.PostForm(ts.URL+"/admin/tokens", url.Values{
-		"name": {"ci"}, "cache": {"default/c"}, "push": {"on"}, "pull": {"on"},
+		"name": {"ci"}, "cache": {"admin/c"}, "push": {"on"}, "pull": {"on"},
 		"ttl_value": {"1"}, "ttl_unit": {"d"},
 	})
 	if b := body(t, resp); !strings.Contains(b, "created") {
@@ -242,9 +244,9 @@ func TestAdminTokenCRUD(t *testing.T) {
 	}
 	id := toks[0].ID
 
-	// edit: rename, all caches, pull only, permanent
+	// edit: rename, pull only, permanent
 	resp, _ = c.PostForm(ts.URL+"/admin/tokens/"+strconv.FormatInt(id, 10)+"/edit", url.Values{
-		"name": {"ci2"}, "cache": {"*"}, "pull": {"on"}, "permanent": {"on"},
+		"name": {"ci2"}, "cache": {"admin/c"}, "pull": {"on"}, "permanent": {"on"},
 	})
 	resp.Body.Close()
 	tok, _ := db.GetToken(id)

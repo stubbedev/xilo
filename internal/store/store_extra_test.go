@@ -80,16 +80,29 @@ func TestCacheCRUD(t *testing.T) {
 func TestTokenCRUD(t *testing.T) {
 	db := openTest(t)
 
-	// nil caches/perms default to */pull
-	secret, tok, err := db.CreateToken(0, "t1", nil, nil, 0)
+	// a cache-access token must name exactly one cache
+	if _, _, err := db.CreateToken(0, "bad", nil, nil, 0); err == nil {
+		t.Fatal("scope-less pull token should be refused")
+	}
+	if _, _, err := db.CreateToken(0, "bad", []string{"default/a", "default/b"}, nil, 0); err == nil {
+		t.Fatal("multi-cache token should be refused")
+	}
+	if _, _, err := db.CreateToken(0, "bad", []string{"*"}, nil, 0); err == nil {
+		t.Fatal("wildcard token should be refused")
+	}
+	// nil perms default to pull
+	secret, tok, err := db.CreateToken(0, "t1", []string{"default/a"}, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tok.Caches) != 1 || tok.Caches[0] != "*" || len(tok.Perms) != 1 || tok.Perms[0] != "pull" {
+	if len(tok.Perms) != 1 || tok.Perms[0] != "pull" {
 		t.Fatalf("defaults not applied: %+v", tok)
 	}
-	if !db.Authorize(secret, "default", "any", "pull", 100) {
-		t.Fatal("default token should pull anywhere")
+	if !db.Authorize(secret, "default", "a", "pull", 100) {
+		t.Fatal("token should pull its cache")
+	}
+	if db.Authorize(secret, "default", "b", "pull", 100) {
+		t.Fatal("token must not pull another cache")
 	}
 
 	got, err := db.GetToken(tok.ID)
@@ -106,20 +119,19 @@ func TestTokenCRUD(t *testing.T) {
 		t.Fatalf("ListTokens = %v err=%v", list, err)
 	}
 
-	// UpdateToken with explicit values, then with empty slices (defaults again)
-	if err := db.UpdateToken(tok.ID, "renamed", []string{"default/a", "default/b"}, []string{"push"}, 777); err != nil {
+	// UpdateToken keeps the single-cache rule
+	if err := db.UpdateToken(tok.ID, "renamed", []string{"default/b"}, []string{"push"}, 777); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = db.GetToken(tok.ID)
-	if got.Name != "renamed" || len(got.Caches) != 2 || got.Perms[0] != "push" || got.Expires != 777 {
+	if got.Name != "renamed" || len(got.Caches) != 1 || got.Caches[0] != "default/b" || got.Perms[0] != "push" || got.Expires != 777 {
 		t.Fatalf("after UpdateToken: %+v", got)
 	}
-	if err := db.UpdateToken(tok.ID, "renamed", nil, nil, 0); err != nil {
-		t.Fatal(err)
+	if err := db.UpdateToken(tok.ID, "renamed", nil, nil, 0); err == nil {
+		t.Fatal("UpdateToken without a cache should be refused")
 	}
-	got, _ = db.GetToken(tok.ID)
-	if got.Caches[0] != "*" || got.Perms[0] != "pull" || got.Expires != 0 {
-		t.Fatalf("UpdateToken defaults: %+v", got)
+	if err := db.UpdateToken(9999, "ghost", []string{"default/b"}, nil, 0); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UpdateToken(missing) = %v, want ErrNotFound", err)
 	}
 }
 

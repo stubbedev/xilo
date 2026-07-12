@@ -208,13 +208,21 @@ func (db *DB) UserTOTP(id int64) (secret []byte, enabled bool, err error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, ErrNotFound
 	}
+	if err != nil {
+		return nil, false, err
+	}
+	secret, err = db.unseal(secret)
 	return secret, e != 0, err
 }
 
 // SetUserTOTPSecret stores a freshly-generated secret (not yet enabled).
 func (db *DB) SetUserTOTPSecret(id int64, secret []byte) error {
+	sealed, err := db.seal(secret)
+	if err != nil {
+		return err
+	}
 	return db.write(func(tx *sql.Tx) error {
-		_, err := tx.Exec(`UPDATE users SET totp_secret=?, totp_enabled=0 WHERE id=?`, secret, id)
+		_, err := tx.Exec(`UPDATE users SET totp_secret=?, totp_enabled=0 WHERE id=?`, sealed, id)
 		return err
 	})
 }

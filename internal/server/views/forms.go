@@ -24,27 +24,6 @@ func activeOr(nav Nav, fallback string) string {
 	return fallback
 }
 
-// tokenNamespaceDefault preselects the viewing context for new tokens;
-// non-admins (who cannot mint instance-wide tokens) fall back to an account.
-func tokenNamespaceDefault(d DashboardData) string {
-	if d.Nav.Active != "" {
-		return d.Nav.Active
-	}
-	if !d.IsAdmin {
-		return defaultAccount(d.Accounts)
-	}
-	return ""
-}
-
-// tokenNamespacePlaceholder names the empty selection: instance-wide is an
-// admin-only concept.
-func tokenNamespacePlaceholder(d DashboardData) string {
-	if d.IsAdmin {
-		return T("tokens.pickaccount")
-	}
-	return T("caches.pickaccount")
-}
-
 // firstStr returns the first element or "".
 func firstStr(s []string) string {
 	if len(s) > 0 {
@@ -92,10 +71,11 @@ func planSecs(p *store.Plan) int64 {
 	return p.MaxRetention
 }
 
-// tokenScopeValue is the cache-scope select value for a token ("*" = all).
+// tokenScopeValue is the cache-scope select value for a token ("" = none
+// picked yet; admin-only tokens have no cache scope).
 func tokenScopeValue(t *store.Token) string {
 	if t == nil || scopeAll(t.Caches) {
-		return "*"
+		return ""
 	}
 	if t.AccountID != 0 {
 		return t.Account + "/" + t.Caches[0]
@@ -103,12 +83,32 @@ func tokenScopeValue(t *store.Token) string {
 	return t.Caches[0]
 }
 
-// tokenAccountLabel is the read-only owning-namespace label on token edit.
-func tokenAccountLabel(t *store.Token) string {
-	if t == nil || t.AccountID == 0 {
+// tokenAccount is the read-only owning-account label: the stored owner when
+// editing, the viewing context (falling back to the personal account) when
+// creating. Pre-existing instance-wide tokens (CLI/API-minted) show as such.
+func tokenAccount(t *store.Token, d DashboardData) string {
+	if t == nil {
+		return activeOr(d.Nav, d.Nav.UserName)
+	}
+	if t.AccountID == 0 {
 		return T("tokens.instance")
 	}
 	return t.Account
+}
+
+// tokenScopeCaches narrows the scope picker to the token's account.
+func tokenScopeCaches(t *store.Token, d DashboardData) []CacheUsage {
+	acct := tokenAccount(t, d)
+	if t != nil && t.AccountID == 0 {
+		return d.Caches
+	}
+	var out []CacheUsage
+	for _, u := range d.Caches {
+		if u.Cache.Account == acct {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 // tokenName is the token name preset ("" on create).
@@ -128,9 +128,10 @@ func tokenPerm(t *store.Token, perm string) bool {
 	return hasPerm(*t, perm)
 }
 
-// tokenPermanent reports whether a token's expiry switch defaults to permanent.
+// tokenPermanent reports whether a token's expiry switch defaults to
+// permanent; new tokens never expire unless a TTL is chosen.
 func tokenPermanent(t *store.Token) bool {
-	return t != nil && t.Expires == 0
+	return t == nil || t.Expires == 0
 }
 
 // tokenTTL is the prefilled TTL seconds for the duration input.

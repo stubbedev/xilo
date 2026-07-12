@@ -2,10 +2,8 @@ package store
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"slices"
 	"strings"
@@ -22,48 +20,34 @@ type Token struct {
 	AccountID int64  // 0 = instance-wide token
 	Account   string // resolved slug, "" for instance-wide
 	Name      string
-	Caches    []string // scope patterns; see scopeAllows
+	Caches    []string // single-cache scope; see allowsCache
 	Perms     []string
 	Revoked   bool
 	Expires   int64 // unix; 0 = never
 	Created   int64
 }
 
-// HashToken is the stored form of a secret token.
-func HashToken(secret string) string {
-	sum := sha256.Sum256([]byte(secret))
-	return hex.EncodeToString(sum[:])
-}
-
-// CreateToken generates a new secret (returned ONCE, only its hash is stored)
-// scoped to the given cache patterns and perms. accountID 0 = instance-wide
-// token whose patterns are "*", "account/*" or "account/cache"; an account
-// token's patterns are "*" or bare cache names within its account. caches
-// nil/empty = all.
+// CreateToken generates a new secret (returned ONCE, only its hash is
+// stored). A token is valid for exactly one cache: an instance token
+// (accountID 0) names it "account/cache", an account token by its bare name.
+// Admin-only (management) tokens carry no cache scope.
 func (db *DB) CreateToken(accountID int64, name string, caches, perms []string, expires int64) (secret string, t *Token, err error) {
 	raw := make([]byte, 32)
 	if _, err = rand.Read(raw); err != nil {
 		return "", nil, err
 	}
 	secret = base64.RawURLEncoding.EncodeToString(raw)
-	if len(caches) == 0 {
-		caches = []string{"*"}
-	}
 	if len(perms) == 0 {
 		perms = []string{"pull"}
 	}
-	if accountID == 0 {
-		for _, c := range caches {
-			if c != "*" && !strings.Contains(c, "/") {
-				return "", nil, errors.New("instance token scope must be *, account/* or account/cache: " + c)
-			}
-		}
+	if caches, err = scopeOne(accountID, caches, perms); err != nil {
+		return "", nil, err
 	}
 	t = &Token{AccountID: accountID, Name: name, Caches: caches, Perms: perms, Expires: expires, Created: time.Now().Unix()}
 	err = db.write(func(tx *sql.Tx) error {
 		return tx.QueryRow(
 			`INSERT INTO tokens (account_id,name,hash,caches,perms,revoked,expires,created) VALUES (?,?,?,?,?,0,?,?) RETURNING id`,
-			t.AccountID, t.Name, HashToken(secret), strings.Join(caches, ","), strings.Join(perms, ","), t.Expires, t.Created).Scan(&t.ID)
+			t.AccountID, t.Name, db.HashToken(secret), strings.Join(caches, ","), strings.Join(perms, ","), t.Expires, t.Created).Scan(&t.ID)
 	})
 	if err != nil {
 		return "", nil, err
@@ -129,11 +113,19 @@ func (db *DB) GetToken(id int64) (*Token, error) {
 // UpdateToken rewrites a token's metadata (name, scope, perms, expiry). The
 // secret itself is immutable — rotating credentials means a new token.
 func (db *DB) UpdateToken(id int64, name string, caches, perms []string, expires int64) error {
-	if len(caches) == 0 {
-		caches = []string{"*"}
-	}
 	if len(perms) == 0 {
 		perms = []string{"pull"}
+	}
+	var accountID int64
+	if err := db.r.QueryRow(`SELECT account_id FROM tokens WHERE id=?`, id).Scan(&accountID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	var err error
+	if caches, err = scopeOne(accountID, caches, perms); err != nil {
+		return err
 	}
 	return db.write(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`UPDATE tokens SET name=?, caches=?, perms=?, expires=? WHERE id=?`,
@@ -153,7 +145,7 @@ func (db *DB) RevokeToken(id int64) error {
 
 // lookupLive fetches a live (not revoked/expired) token by secret.
 func (db *DB) lookupLive(secret string, now int64) (*Token, bool) {
-	t, err := scanToken(db.r.QueryRow(`SELECT `+tokenCols+tokenFrom+`WHERE t.hash=?`, HashToken(secret)))
+	t, err := scanToken(db.r.QueryRow(`SELECT `+tokenCols+tokenFrom+`WHERE t.hash=?`, db.HashToken(secret)))
 	if err != nil || t.Revoked || t.Expired(now) {
 		return nil, false
 	}
@@ -171,23 +163,38 @@ func (db *DB) Authorize(secret, account, cache, perm string, now int64) bool {
 	return slices.Contains(t.Perms, perm) && t.allowsCache(account, cache)
 }
 
-// allowsCache reports whether the token's scope covers account/cache.
+// allowsCache reports whether the token's single-cache scope is
+// account/cache. Admin-only tokens store "*" but never reach here for cache
+// access — admin grants no pull/push.
 func (t *Token) allowsCache(account, cache string) bool {
+	if len(t.Caches) != 1 {
+		return false
+	}
 	if t.AccountID != 0 {
-		// Account token: only its own account, bare-name patterns.
-		return t.Account == account && scopeAllows(t.Caches, cache)
+		return t.Account == account && t.Caches[0] == cache
 	}
-	// Instance token: "*", "account/*" or "account/cache" patterns.
-	for _, p := range t.Caches {
-		if p == "*" || p == account+"/*" || p == account+"/"+cache {
-			return true
-		}
-	}
-	return false
+	return t.Caches[0] == account+"/"+cache
 }
 
-func scopeAllows(scoped []string, cache string) bool {
-	return slices.Contains(scoped, "*") || slices.Contains(scoped, cache)
+// scopeOne enforces the scope rule: a token is valid for exactly one cache.
+// Admin-only (management) tokens have no cache scope and store "*" — the
+// cache protocol never consults it.
+func scopeOne(accountID int64, caches, perms []string) ([]string, error) {
+	adminOnly := !slices.ContainsFunc(perms, func(p string) bool { return p != "admin" })
+	if adminOnly {
+		return []string{"*"}, nil
+	}
+	if len(caches) != 1 || caches[0] == "*" || strings.HasSuffix(caches[0], "/*") {
+		return nil, errors.New("token scope must name exactly one cache")
+	}
+	c := caches[0]
+	if accountID == 0 && !strings.Contains(c, "/") {
+		return nil, errors.New("instance token scope must be account/cache: " + c)
+	}
+	if accountID != 0 && strings.Contains(c, "/") {
+		return nil, errors.New("account token scope must be a bare cache name: " + c)
+	}
+	return caches, nil
 }
 
 // AuthorizeAdmin reports whether the secret is a live token carrying the

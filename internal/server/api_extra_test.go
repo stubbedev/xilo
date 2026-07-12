@@ -418,7 +418,7 @@ func TestBootstrapClosesAfterFirstToken(t *testing.T) {
 	if r := put(t, ts, "/c/default/c/api/chunk/"+ch, data, ""); r.StatusCode != 200 {
 		t.Fatalf("bootstrap push → %d want 200", r.StatusCode)
 	}
-	db.CreateToken(0, "first", nil, []string{"push"}, 0)
+	db.CreateToken(0, "first", []string{"default/priv"}, []string{"push"}, 0)
 	data2 := []byte("second")
 	ch2, _, _ := fakeNar(data2)
 	if r := put(t, ts, "/c/default/c/api/chunk/"+ch2, data2, ""); r.StatusCode != 401 {

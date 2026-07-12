@@ -94,7 +94,7 @@ type Token struct {
 type CreateTokenReq struct {
 	Account string   `json:"account"` // "" = instance-wide token
 	Name    string   `json:"name"`
-	Caches  []string `json:"caches"` // empty = all; account/cache patterns for instance tokens
+	Caches  []string `json:"caches"` // exactly one cache ("account/cache" for instance tokens); empty only for admin-only tokens
 	Perms   []string `json:"perms"`
 	Expires int64    `json:"expires"` // unix; 0 = never
 }

@@ -67,12 +67,16 @@ func (db *DB) CreateCache(account, name string, public bool, priority int) (*Cac
 		PrivKey:   priv,
 		Created:   time.Now().Unix(),
 	}
+	sealed, err := db.seal(c.PrivKey)
+	if err != nil {
+		return nil, err
+	}
 	err = db.write(func(tx *sql.Tx) error {
 		// RETURNING instead of LastInsertId — works on both SQLite and
 		// Postgres (pgx does not implement LastInsertId).
 		return tx.QueryRow(
 			`INSERT INTO caches (account_id, name, public, priority, pubkey, privkey, created) VALUES (?,?,?,?,?,?,?) RETURNING id`,
-			c.AccountID, c.Name, b2i(c.Public), c.Priority, c.PubKey, []byte(c.PrivKey), c.Created).Scan(&c.ID)
+			c.AccountID, c.Name, b2i(c.Public), c.Priority, c.PubKey, sealed, c.Created).Scan(&c.ID)
 	})
 	if err != nil {
 		return nil, err
@@ -80,11 +84,15 @@ func (db *DB) CreateCache(account, name string, public bool, priority int) (*Cac
 	return c, nil
 }
 
-func scanCache(row interface{ Scan(...any) error }) (*Cache, error) {
+func (db *DB) scanCache(row interface{ Scan(...any) error }) (*Cache, error) {
 	var c Cache
 	var pub int
 	var priv []byte
 	if err := row.Scan(&c.ID, &c.AccountID, &c.Account, &c.Name, &c.Storage, &pub, &c.Priority, &c.Retention, &c.MaxBytes, &c.PubKey, &priv, &c.Created); err != nil {
+		return nil, err
+	}
+	priv, err := db.unseal(priv)
+	if err != nil {
 		return nil, err
 	}
 	c.Public = pub != 0
@@ -95,7 +103,7 @@ func scanCache(row interface{ Scan(...any) error }) (*Cache, error) {
 // GetCache resolves account/name.
 func (db *DB) GetCache(account, name string) (*Cache, error) {
 	row := db.r.QueryRow(`SELECT `+cacheCols+cacheFrom+`WHERE a.slug=? AND c.name=?`, account, name)
-	c, err := scanCache(row)
+	c, err := db.scanCache(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -119,7 +127,7 @@ func (db *DB) listCaches(q string, args ...any) ([]Cache, error) {
 	defer rows.Close()
 	var out []Cache
 	for rows.Next() {
-		c, err := scanCache(rows)
+		c, err := db.scanCache(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -150,7 +158,7 @@ func (db *DB) SetCacheStorage(id int64, storage string) error {
 // GetCacheByID fetches a cache by row id.
 func (db *DB) GetCacheByID(id int64) (*Cache, error) {
 	row := db.r.QueryRow(`SELECT `+cacheCols+cacheFrom+`WHERE c.id=?`, id)
-	c, err := scanCache(row)
+	c, err := db.scanCache(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -165,8 +173,12 @@ func (db *DB) RotateKey(id int64, name string) (*Cache, error) {
 		return nil, err
 	}
 	pubStr := narinfo.PublicKeyString(name, pub)
+	sealed, err := db.seal(priv)
+	if err != nil {
+		return nil, err
+	}
 	err = db.write(func(tx *sql.Tx) error {
-		_, err := tx.Exec(`UPDATE caches SET pubkey=?, privkey=? WHERE id=?`, pubStr, []byte(priv), id)
+		_, err := tx.Exec(`UPDATE caches SET pubkey=?, privkey=? WHERE id=?`, pubStr, sealed, id)
 		return err
 	})
 	if err != nil {

@@ -50,7 +50,7 @@ mkdir -p "$XDG_CONFIG_HOME"
 
 echo "== provision =="
 docker exec bench-xilo /xilo cache create bench >/dev/null
-XILO_TOKEN=$(docker exec bench-xilo /xilo token create bench --push --pull | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
+XILO_TOKEN=$(docker exec bench-xilo /xilo token create bench --cache bench --push --pull | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
 export XILO_TOKEN XILO_URL
 ATTIC_TOKEN=$(docker exec bench-attic atticadm make-token --sub bench --validity 1y \
   --pull '*' --push '*' --create-cache '*' --configure-cache '*' \

@@ -218,22 +218,27 @@ func TestCreateAndEditTokenDefaults(t *testing.T) {
 	bootstrapAdmin(t, db)
 	c := adminClient(t, ts)
 
-	// no perms, no cache, no ttl → pull-only, all caches, never expires
-	resp, _ := c.PostForm(ts.URL+"/admin/tokens", url.Values{"name": {"minimal"}, "cache": {"*"}})
+	// no perms, no ttl → pull-only, never expires; the cache is mandatory
+	resp, _ := c.PostForm(ts.URL+"/admin/tokens", url.Values{"name": {"nocache"}})
+	resp.Body.Close()
+	if toks, _ := db.ListTokens(); len(toks) != 0 {
+		t.Fatalf("cache-less token was created: %+v", toks)
+	}
+	resp, _ = c.PostForm(ts.URL+"/admin/tokens", url.Values{"name": {"minimal"}, "cache": {"admin/somecache"}})
 	resp.Body.Close()
 	toks, _ := db.ListTokens()
 	if len(toks) != 1 {
 		t.Fatalf("tokens: %+v", toks)
 	}
 	tok := toks[0]
-	if len(tok.Perms) != 1 || tok.Perms[0] != "pull" || tok.Expires != 0 {
+	if len(tok.Perms) != 1 || tok.Perms[0] != "pull" || tok.Expires != 0 || len(tok.Caches) != 1 || tok.Caches[0] != "somecache" {
 		t.Fatalf("default token: %+v", tok)
 	}
 
 	// edit: blank name keeps old, push perm, fresh TTL
 	id := tok.ID
 	resp, _ = c.PostForm(ts.URL+"/admin/tokens/"+strconv.FormatInt(id, 10)+"/edit", url.Values{
-		"name": {""}, "cache": {"somecache"}, "push": {"on"},
+		"name": {""}, "cache": {"admin/somecache"}, "push": {"on"},
 		"ttl_value": {"1"}, "ttl_unit": {"h"},
 	})
 	resp.Body.Close()
@@ -333,7 +338,7 @@ func TestAPIUnknownCache404(t *testing.T) {
 func TestPrivateCachePullGates(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, func(cfg *config.Config) { cfg.Security.AllowOpenBootstrap = false })
 	db.CreateCache("default", "priv", false, 40)
-	db.CreateToken(0, "t", nil, []string{"push"}, 0)
+	db.CreateToken(0, "t", []string{"default/c"}, []string{"push"}, 0)
 	for _, p := range []string{"/c/default/priv/" + h32 + ".narinfo", "/c/default/priv/nar/" + h32 + ".nar"} {
 		resp, _ := http.Get(ts.URL + p)
 		if resp.StatusCode != 401 {
@@ -371,7 +376,7 @@ func TestStatusRingTrimAndFutureRange(t *testing.T) {
 func TestPushAPIAnonWhenClosed(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, func(cfg *config.Config) { cfg.Security.AllowOpenBootstrap = false })
 	db.CreateCache("default", "c", true, 40)
-	db.CreateToken(0, "exists", nil, []string{"push"}, 0)
+	db.CreateToken(0, "exists", []string{"default/c"}, []string{"push"}, 0)
 	for _, p := range []string{"/c/default/c/api/get-missing-paths", "/c/default/c/api/get-missing-chunks"} {
 		resp, _ := http.Post(ts.URL+p, "application/json", strings.NewReader(`{"hashes":[]}`))
 		if resp.StatusCode != 401 {

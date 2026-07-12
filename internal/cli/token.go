@@ -19,7 +19,7 @@ func tokenCmd() *cobra.Command {
 }
 
 func tokenCreateCmd() *cobra.Command {
-	var caches []string
+	var cache string
 	var push, pull, admin bool
 	var ttl time.Duration
 	c := &cobra.Command{
@@ -44,11 +44,10 @@ func tokenCreateCmd() *cobra.Command {
 			if ttl > 0 {
 				expires = time.Now().Add(ttl).Unix()
 			}
-			// Instance tokens use ns/cache patterns; bare names mean default/.
-			for i, c := range caches {
-				if c != "*" {
-					caches[i] = normRef(c)
-				}
+			// A token is valid for exactly one cache; bare names mean default/.
+			var caches []string
+			if cache != "" {
+				caches = []string{normRef(cache)}
 			}
 			apic, _, db, err := adminTarget(adminServer, adminToken)
 			if err != nil {
@@ -72,10 +71,7 @@ func tokenCreateCmd() *cobra.Command {
 				secret = sec
 				t = api.Token{ID: st.ID, Name: st.Name, Caches: st.Caches, Perms: st.Perms, Expires: st.Expires}
 			}
-			scope := "all caches"
-			if len(t.Caches) > 0 && t.Caches[0] != "*" {
-				scope = strings.Join(t.Caches, ",")
-			}
+			scope := strings.Join(t.Caches, ",")
 			fmt.Printf("%s token %s (id=%d) perms=%s scope=%s\n\n", styleOK("created"), styleAccent(t.Name), t.ID, strings.Join(perms, ","), scope)
 			fmt.Printf("  %s\n\n", styleAccent(secret))
 			fmt.Println(styleDim("Store it now — it is not recoverable."))
@@ -84,7 +80,7 @@ func tokenCreateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringSliceVar(&caches, "cache", nil, "restrict to these caches (default: all)")
+	c.Flags().StringVar(&cache, "cache", "", "the single cache this token is valid for (required unless --admin)")
 	c.Flags().BoolVar(&push, "push", false, "grant push")
 	c.Flags().BoolVar(&pull, "pull", false, "grant pull")
 	c.Flags().BoolVar(&admin, "admin", false, "grant management API access (remote cache/token/gc admin)")

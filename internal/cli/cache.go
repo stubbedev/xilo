@@ -408,11 +408,19 @@ func openStorages(cfg *config.Config) (map[string]storage.Storage, error) {
 // openStore opens the configured metadata DB: PostgreSQL when database.url is
 // set, else the SQLite file (honoring commit durability).
 func openStore(cfg *config.Config) (*store.DB, error) {
-	if cfg.Database.URL != "" {
-		return store.OpenPostgres(cfg.Database.URL)
+	var db *store.DB
+	var err error
+	switch {
+	case cfg.Database.URL != "":
+		db, err = store.OpenPostgres(cfg.Database.URL)
+	case cfg.Durability == "full":
+		db, err = store.OpenDurable(cfg.DBPath())
+	default:
+		db, err = store.Open(cfg.DBPath())
 	}
-	if cfg.Durability == "full" {
-		return store.OpenDurable(cfg.DBPath())
+	if err != nil {
+		return nil, err
 	}
-	return store.Open(cfg.DBPath())
+	db.SetSalt(cfg.Database.Salt)
+	return db, nil
 }

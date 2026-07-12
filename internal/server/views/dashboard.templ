@@ -203,7 +203,7 @@ templ newCacheDialog(d DashboardData) {
 			}
 			<form method="post" action="/admin/caches" class="mt-2 space-y-4">
 				@Field("", T("caches.account")) {
-					@AccountSelect("namespace", activeOr(d.Nav, defaultAccount(d.Accounts)), T("caches.pickaccount"), d.Accounts, false)
+					@AccountSelect("namespace", activeOr(d.Nav, defaultAccount(d.Accounts)), T("caches.pickaccount"), d.Accounts)
 				}
 				@Field("cache-name", T("caches.name")) {
 					@input.Input(input.Props{ID: "cache-name", Name: "name", Placeholder: T("ph.cachename"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-zA-Z0-9_]+"}})
@@ -285,25 +285,16 @@ templ tokenFormBody(action string, t *store.Token, d DashboardData, submitIcon, 
 		@Field(dlgID+"-name", T("tokens.name")) {
 			@input.Input(input.Props{ID: dlgID + "-name", Name: "name", Value: tokenName(t), Placeholder: T("ph.tokenname"), Required: true})
 		}
-		if t != nil {
-			@Field(dlgID+"-ns", T("caches.account")) {
-				@input.Input(input.Props{ID: dlgID + "-ns", Value: tokenAccountLabel(t), Disabled: true})
-			}
-		} else {
-			@Field("", T("caches.account")) {
-				@AccountSelect("namespace", tokenNamespaceDefault(d), tokenNamespacePlaceholder(d), d.Accounts, d.IsAdmin)
-			}
+		@Field(dlgID+"-ns", T("caches.account")) {
+			@input.Input(input.Props{ID: dlgID + "-ns", Value: tokenAccount(t, d), Disabled: true})
 		}
 		@Field("", T("tokens.scope")) {
-			@ScopeSelect("cache", tokenScopeValue(t), d.Caches)
+			@ScopeSelect("cache", tokenScopeValue(t), tokenScopeCaches(t, d))
 		}
 		@Field("", T("tokens.perms")) {
 			<div class="space-y-2">
 				@PermSwitchID(dlgID+"-push", "push", "on", T("tokens.push"), tokenPerm(t, "push"))
 				@PermSwitchID(dlgID+"-pull", "pull", "on", T("tokens.pull"), tokenPerm(t, "pull"))
-				if d.IsAdmin {
-					@PermSwitchID(dlgID+"-admin", "admin", "on", T("tokens.admin"), tokenPerm(t, "admin"))
-				}
 			</div>
 		}
 		@Field("", T("tokens.expiry")) {

@@ -79,10 +79,10 @@ KEY_AFTER=$(exec_srv cache info e2e | grep 'public key')
 [ "$KEY_BEFORE" != "$KEY_AFTER" ] && pass "rotate changed key" || fail "rotate changed key"
 
 echo "== tokens =="
-TOK=$(exec_srv token create e2e-full --push --pull 2>/dev/null | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
+TOK=$(exec_srv token create e2e-full --cache e2e --push --pull 2>/dev/null | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
 [ -n "$TOK" ] && pass "token create prints secret" || fail "token create prints secret"
 assert "token list" bash -c "exec_srv token list | grep -q e2e-full"
-DEAD=$(exec_srv token create e2e-dead --push 2>/dev/null | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
+DEAD=$(exec_srv token create e2e-dead --cache e2e --push 2>/dev/null | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
 DEAD_ID=$(exec_srv token list | grep e2e-dead | grep -oE '^[0-9 ]+' | tr -d ' ' | head -1)
 assert "token revoke" exec_srv token revoke "$DEAD_ID"
 export XILO_TOKEN=$TOK

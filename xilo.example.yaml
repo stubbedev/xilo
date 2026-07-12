@@ -21,6 +21,10 @@ admin:
 # PostgreSQL (or set XILO_DATABASE_URL) to run at larger scale.
 database:
   url: "" # e.g. "postgres://xilo:secret@db.internal/xilo"
+  # Stable secret behind all database encryption: cache signing keys and TOTP
+  # secrets are encrypted at rest, token hashes are keyed with it. Optional —
+  # empty stores them unencrypted. Never change it once set. Prefer XILO_SALT.
+  salt: ""
 
 # Multi-tenant mode: unlocks self-registration, plans and user-created
 # organizations (all governed from the dashboard Settings). Off = private

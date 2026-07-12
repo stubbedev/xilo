@@ -83,7 +83,7 @@ func TestPostgres(t *testing.T) {
 	if err != nil || !db.AuthorizeAdmin(adminSec, now) {
 		t.Fatalf("admin token: %v", err)
 	}
-	if err := db.UpdateToken(tok.ID, "renamed", nil, []string{"pull"}, 0); err != nil {
+	if err := db.UpdateToken(tok.ID, "renamed", []string{"default/pg-cache"}, []string{"pull"}, 0); err != nil {
 		t.Fatalf("UpdateToken: %v", err)
 	}
 	if db.Authorize(secret, "default", "pg-cache", "push", now) {
@@ -111,7 +111,7 @@ func TestPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("same cache name in second namespace: %v", err)
 	}
-	nsSec, _, err := db.CreateToken(ns2.ID, "team-tok", nil, []string{"pull"}, 0)
+	nsSec, _, err := db.CreateToken(ns2.ID, "team-tok", []string{"team-cache"}, []string{"pull"}, 0)
 	if err != nil {
 		t.Fatalf("ns token: %v", err)
 	}
