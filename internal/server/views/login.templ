@@ -233,7 +233,7 @@ templ LoginCode(pending string, flash Flash) {
 			@card.Content() {
 				<form method="post" action="/admin/login/code" class="space-y-4">
 					<input type="hidden" name="pending" value={ pending }/>
-					@inputotp.InputOTP(inputotp.Props{ID: "code", Name: "code"}) {
+					@inputotp.InputOTP(inputotp.Props{ID: "code", Name: "code", Class: "mx-auto"}) {
 						@inputotp.Group() {
 							@inputotp.Slot(inputotp.SlotProps{Index: 0})
 							@inputotp.Slot(inputotp.SlotProps{Index: 1})
