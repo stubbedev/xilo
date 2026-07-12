@@ -13,6 +13,7 @@ import (
 	"github.com/templui/templui/components/card"
 	"github.com/templui/templui/components/chart"
 	"github.com/templui/templui/components/datepicker"
+	"github.com/templui/templui/components/sheet"
 )
 
 // StatusData is the status page view model. The page is fully server-rendered
@@ -76,44 +77,8 @@ var statusWindows = []struct {
 templ StatusPage(d StatusData) {
 	@Layout(T("status.title"), "status", d.Nav, Flash{}) {
 		@PageHeader(T("status.title"), T("status.subtitle")) {
-			@button.Button(button.Props{Href: rateURL(d, d.Rate), Variant: button.VariantOutline, Size: button.SizeSm}) {
-				@Icon("refresh-cw")
-				<span>{ T("status.rate") }</span>
-			}
+			@statusSettings(d)
 		}
-		<div class="mb-6 flex flex-wrap items-center gap-2">
-			<div class="flex flex-wrap gap-1">
-				for _, wo := range statusWindows {
-					@button.Button(button.Props{Href: windowURL(d, wo.Min), Size: button.SizeSm, Variant: segVariant(wo.Min == d.Window)}) {
-						{ wo.Label }
-					}
-				}
-			</div>
-			<form method="get" action="/admin/status" class="ml-auto flex items-end gap-2">
-				<input type="hidden" name="rate" value={ strconv.Itoa(d.Rate) }/>
-				<div class="w-72">
-					@datepicker.DatePicker(datepicker.Props{
-						Name: "from", EndName: "to", Mode: calendar.SelectionModeRange,
-						Value: parseDate(d.From), EndValue: parseDate(d.To),
-						Placeholder: T("status.from"), EndPlaceholder: T("status.to"),
-					})
-				</div>
-				@button.Button(button.Props{Type: button.TypeSubmit, Size: button.SizeSm, Variant: segVariant(d.Window == 0)}) {
-					@Icon("calendar")
-					<span>{ T("status.apply") }</span>
-				}
-			</form>
-		</div>
-		<div class="mb-8 flex items-center gap-2 text-sm text-muted-foreground">
-			<span>{ T("status.autorefresh") }</span>
-			<div class="flex gap-1">
-				for _, rt := range statusRates {
-					@button.Button(button.Props{Href: rateURL(d, rt), Size: button.SizeSm, Variant: segVariant(rt == d.Rate)}) {
-						{ strconv.Itoa(rt) }s
-					}
-				}
-			</div>
-		</div>
 		<div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 			if d.Healthy {
 				@StatTile("activity", T("status.ok"), T("status.health"), "st-health", "text-green-500")
@@ -140,6 +105,63 @@ templ StatusPage(d StatusData) {
 			"updated": T("status.updated"), "peak": T("status.peak"),
 		})
 		@statusPollScript()
+	}
+}
+
+// statusSettings is the gear button + sheet holding every view control:
+// window presets, custom range, auto-refresh rate. Preset/rate choices are
+// links; navigation reloads the page with the new query.
+templ statusSettings(d StatusData) {
+	@sheet.Sheet(sheet.Props{ID: "status-settings"}) {
+		@sheet.Trigger(sheet.TriggerProps{For: "status-settings"}) {
+			@WithTooltip(T("status.settings")) {
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeIcon, Type: button.TypeButton, Attributes: templ.Attributes{"aria-label": T("status.settings")}}) {
+					@Icon("settings")
+				}
+			}
+		}
+		@sheet.Content() {
+			@sheet.Header() {
+				@sheet.Title() {
+					{ T("status.settings") }
+				}
+			}
+			<div class="space-y-6 p-4">
+				<div class="space-y-2">
+					<p class="text-sm font-medium">{ T("status.window") }</p>
+					<div class="flex flex-wrap gap-1">
+						for _, wo := range statusWindows {
+							@button.Button(button.Props{Href: windowURL(d, wo.Min), Size: button.SizeSm, Variant: segVariant(wo.Min == d.Window)}) {
+								{ wo.Label }
+							}
+						}
+					</div>
+				</div>
+				<form method="get" action="/admin/status" class="space-y-2">
+					<p class="text-sm font-medium">{ T("status.range") }</p>
+					<input type="hidden" name="rate" value={ strconv.Itoa(d.Rate) }/>
+					@datepicker.DatePicker(datepicker.Props{
+						Name: "from", EndName: "to", Mode: calendar.SelectionModeRange,
+						Value: parseDate(d.From), EndValue: parseDate(d.To),
+						Placeholder: T("status.from"), EndPlaceholder: T("status.to"),
+					})
+					@button.Button(button.Props{Type: button.TypeSubmit, Size: button.SizeSm, Variant: segVariant(d.Window == 0), Class: "w-full"}) {
+						@Icon("calendar")
+						<span>{ T("status.apply") }</span>
+					}
+				</form>
+				<div class="space-y-2">
+					<p class="text-sm font-medium">{ T("status.autorefresh") }</p>
+					<div class="flex flex-wrap gap-1">
+						for _, rt := range statusRates {
+							@button.Button(button.Props{Href: rateURL(d, rt), Size: button.SizeSm, Variant: segVariant(rt == d.Rate)}) {
+								{ strconv.Itoa(rt) }s
+							}
+						}
+					</div>
+				</div>
+			</div>
+		}
 	}
 }
 

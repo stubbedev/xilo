@@ -76,7 +76,9 @@ var en = map[string]string{
 	// status dashboard
 	"status.title":       "Status",
 	"status.subtitle":    "Live health, traffic and storage — instance-wide.",
-	"status.rate":        "Refresh",
+	"status.settings":    "View settings",
+	"status.window":      "Time window",
+	"status.range":       "Custom range",
 	"status.from":        "Start date",
 	"status.to":          "End date",
 	"status.apply":       "Apply",
