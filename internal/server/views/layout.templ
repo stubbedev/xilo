@@ -163,16 +163,18 @@ templ navItem(href, text, icon string, active bool) {
 }
 
 templ themeToggle() {
-	@button.Button(button.Props{
-		Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton,
-		Attributes: templ.Attributes{"onclick": "xiloTheme()", "aria-label": T("nav.theme"), "title": T("nav.theme")},
-	}) {
-		<span class="hidden dark:block">
-			@Icon("sun")
-		</span>
-		<span class="block dark:hidden">
-			@Icon("moon")
-		</span>
+	@WithTooltip(T("nav.theme")) {
+		@button.Button(button.Props{
+			Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton,
+			Attributes: templ.Attributes{"onclick": "xiloTheme()", "aria-label": T("nav.theme")},
+		}) {
+			<span class="hidden dark:block">
+				@Icon("sun")
+			</span>
+			<span class="block dark:hidden">
+				@Icon("moon")
+			</span>
+		}
 	}
 }
 
@@ -206,16 +208,18 @@ templ contextSwitcher(nav Nav) {
 }
 
 // userMenu is the sidebar footer: just the log-out button (icon-only on the
-// collapsed rail).
+// collapsed rail, where the tooltip names it).
 templ userMenu() {
 	<form method="post" action="/admin/logout">
-		@button.Button(button.Props{
-			Variant: button.VariantOutline, Type: button.TypeSubmit, FullWidth: true, Size: button.SizeSm,
-			Class:      "gap-2 text-destructive hover:text-destructive group-data-[tui-sidebar-state=collapsed]:px-0",
-			Attributes: templ.Attributes{"aria-label": T("nav.logout"), "title": T("nav.logout")},
-		}) {
-			@Icon("log-out")
-			<span class="group-data-[tui-sidebar-state=collapsed]:hidden">{ T("nav.logout") }</span>
+		@WithTooltip(T("nav.logout")) {
+			@button.Button(button.Props{
+				Variant: button.VariantOutline, Type: button.TypeSubmit, FullWidth: true, Size: button.SizeSm,
+				Class:      "gap-2 text-destructive hover:text-destructive group-data-[tui-sidebar-state=collapsed]:px-0",
+				Attributes: templ.Attributes{"aria-label": T("nav.logout")},
+			}) {
+				@Icon("log-out")
+				<span class="group-data-[tui-sidebar-state=collapsed]:hidden">{ T("nav.logout") }</span>
+			}
 		}
 	</form>
 }

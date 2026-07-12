@@ -45,7 +45,7 @@ func confirmTriggerProps(c Confirm) button.Props {
 	if c.IconOnly {
 		p.Size = button.SizeIcon
 		if c.TriggerTooltip != "" {
-			p.Attributes = templ.Attributes{"aria-label": c.TriggerTooltip, "title": c.TriggerTooltip}
+			p.Attributes = templ.Attributes{"aria-label": c.TriggerTooltip}
 		}
 	}
 	return p

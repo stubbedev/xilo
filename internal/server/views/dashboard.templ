@@ -259,8 +259,10 @@ templ editTokenDialog(d DashboardData, t store.Token) {
 	{{ id := "dlg-token-edit-" + strconv.FormatInt(t.ID, 10) }}
 	@dialog.Dialog(dialog.Props{ID: id}) {
 		@dialog.Trigger(dialog.TriggerProps{For: id}) {
-			@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton, Attributes: templ.Attributes{"aria-label": T("tokens.edit"), "title": T("tokens.edit")}}) {
-				@Icon("square-pen")
+			@WithTooltip(T("tokens.edit")) {
+				@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton, Attributes: templ.Attributes{"aria-label": T("tokens.edit")}}) {
+					@Icon("square-pen")
+				}
 			}
 		}
 		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-lg"}) {

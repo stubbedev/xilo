@@ -65,13 +65,17 @@ templ Org(d OrgPageData) {
 															<input type="hidden" name="user_id" value={ strconv.FormatInt(m.UserID, 10) }/>
 															if m.Role == "admin" {
 																<input type="hidden" name="role" value="member"/>
-																@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.demote"), "title": T("users.demote")}}) {
-																	@Icon("user-minus")
+																@WithTooltip(T("users.demote")) {
+																	@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.demote")}}) {
+																		@Icon("user-minus")
+																	}
 																}
 															} else {
 																<input type="hidden" name="role" value="admin"/>
-																@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.promote"), "title": T("users.promote")}}) {
-																	@Icon("user-plus")
+																@WithTooltip(T("users.promote")) {
+																	@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.promote")}}) {
+																		@Icon("user-plus")
+																	}
 																}
 															}
 														</form>

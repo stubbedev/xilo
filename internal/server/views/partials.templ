@@ -10,7 +10,21 @@ import (
 	"github.com/templui/templui/components/pagination"
 	"github.com/templui/templui/components/table"
 	"github.com/templui/templui/components/toast"
+	"github.com/templui/templui/components/tooltip"
 )
+
+// WithTooltip wraps its children (typically an icon-only control) in a hover
+// tooltip carrying `text`. Wrappers are display:contents — layout-neutral.
+templ WithTooltip(text string) {
+	@tooltip.Tooltip() {
+		@tooltip.Trigger() {
+			{ children... }
+		}
+		@tooltip.Content(tooltip.ContentProps{ShowArrow: true, Class: "text-xs"}) {
+			{ text }
+		}
+	}
+}
 
 // FlashToast surfaces a one-shot message as a templui toast. When the flash
 // carries a secret Code, a persistent SecretCard is rendered too (a copyable
@@ -183,11 +197,12 @@ type Confirm struct {
 templ ConfirmForm(c Confirm) {
 	@dialog.Dialog(dialog.Props{ID: c.ID}) {
 		@dialog.Trigger(dialog.TriggerProps{For: c.ID}) {
-			@button.Button(confirmTriggerProps(c)) {
-				@Icon(c.TriggerIcon)
-				if !c.IconOnly {
-					<span>{ c.TriggerLabel }</span>
+			if c.IconOnly && c.TriggerTooltip != "" {
+				@WithTooltip(c.TriggerTooltip) {
+					@confirmTriggerButton(c)
 				}
+			} else {
+				@confirmTriggerButton(c)
 			}
 		}
 		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-md"}) {
@@ -215,6 +230,16 @@ templ ConfirmForm(c Confirm) {
 					}
 				}
 			</form>
+		}
+	}
+}
+
+// confirmTriggerButton is the inline trigger button for a Confirm.
+templ confirmTriggerButton(c Confirm) {
+	@button.Button(confirmTriggerProps(c)) {
+		@Icon(c.TriggerIcon)
+		if !c.IconOnly {
+			<span>{ c.TriggerLabel }</span>
 		}
 	}
 }

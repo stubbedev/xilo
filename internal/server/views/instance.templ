@@ -172,8 +172,10 @@ templ editPlanDialog(p store.Plan) {
 	{{ id := "dlg-plan-edit-" + strconv.FormatInt(p.ID, 10) }}
 	@dialog.Dialog(dialog.Props{ID: id}) {
 		@dialog.Trigger(dialog.TriggerProps{For: id}) {
-			@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton, Attributes: templ.Attributes{"aria-label": T("plan.edit"), "title": T("plan.edit")}}) {
-				@Icon("square-pen")
+			@WithTooltip(T("plan.edit")) {
+				@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton, Attributes: templ.Attributes{"aria-label": T("plan.edit")}}) {
+					@Icon("square-pen")
+				}
 			}
 		}
 		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-lg"}) {
@@ -268,8 +270,10 @@ templ usersCard(actingName string, multiTenant bool, users []store.User) {
 									<div class="flex justify-end gap-1">
 										if u.Status == "pending" {
 											<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/approve") }>
-												@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.approve"), "title": T("users.approve")}}) {
-													@Icon("user-check")
+												@WithTooltip(T("users.approve")) {
+													@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.approve")}}) {
+														@Icon("user-check")
+													}
 												}
 											</form>
 										}
@@ -278,13 +282,17 @@ templ usersCard(actingName string, multiTenant bool, users []store.User) {
 											<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/role") }>
 												if u.Role == "admin" {
 													<input type="hidden" name="role" value="member"/>
-													@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.demote"), "title": T("users.demote")}}) {
-														@Icon("user-minus")
+													@WithTooltip(T("users.demote")) {
+														@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.demote")}}) {
+															@Icon("user-minus")
+														}
 													}
 												} else {
 													<input type="hidden" name="role" value="admin"/>
-													@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.promote"), "title": T("users.promote")}}) {
-														@Icon("user-plus")
+													@WithTooltip(T("users.promote")) {
+														@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.promote")}}) {
+															@Icon("user-plus")
+														}
 													}
 												}
 											</form>
@@ -317,8 +325,10 @@ templ resetUserDialog(u store.User) {
 	{{ id := "dlg-user-reset-" + strconv.FormatInt(u.ID, 10) }}
 	@dialog.Dialog(dialog.Props{ID: id}) {
 		@dialog.Trigger(dialog.TriggerProps{For: id}) {
-			@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton, Attributes: templ.Attributes{"aria-label": T("users.reset"), "title": T("users.reset")}}) {
-				@Icon("key-round")
+			@WithTooltip(T("users.reset")) {
+				@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton, Attributes: templ.Attributes{"aria-label": T("users.reset")}}) {
+					@Icon("key-round")
+				}
 			}
 		}
 		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-md"}) {
