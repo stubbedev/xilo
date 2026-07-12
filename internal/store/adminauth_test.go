@@ -11,18 +11,18 @@ func TestUsersLifecycle(t *testing.T) {
 	if db.UsersExist() {
 		t.Fatal("no users should exist yet")
 	}
-	u, err := db.CreateUser("admin", "", "hash-1", "admin")
+	u, err := db.CreateUser("admin", "", "hash-1", "owner")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !db.UsersExist() {
 		t.Fatal("users should exist after create")
 	}
-	if _, err := db.CreateUser("admin", "", "x", "member"); err == nil {
+	if _, err := db.CreateUser("admin", "", "x", "user"); err == nil {
 		t.Fatal("duplicate username should fail")
 	}
 	got, err := db.GetUserByName("admin")
-	if err != nil || got.ID != u.ID || got.PassHash != "hash-1" || got.Role != "admin" {
+	if err != nil || got.ID != u.ID || got.PassHash != "hash-1" || got.Role != "owner" {
 		t.Fatalf("GetUserByName: %+v %v", got, err)
 	}
 	if _, err := db.GetUser(9999); err != ErrNotFound {
@@ -35,18 +35,18 @@ func TestUsersLifecycle(t *testing.T) {
 		t.Fatalf("password not updated: %q", got.PassHash)
 	}
 
-	m, err := db.CreateUser("bob", "", "h", "member")
+	m, err := db.CreateUser("bob", "", "h", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n, _ := db.CountAdmins(); n != 1 {
-		t.Fatalf("CountAdmins = %d", n)
+	if n, _ := db.CountOwners(); n != 1 {
+		t.Fatalf("CountOwners = %d", n)
 	}
-	if err := db.SetUserRole(m.ID, "admin"); err != nil {
+	if err := db.SetUserRole(m.ID, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	if n, _ := db.CountAdmins(); n != 2 {
-		t.Fatalf("CountAdmins after promote = %d", n)
+	if n, _ := db.CountOwners(); n != 2 {
+		t.Fatalf("CountOwners after promote = %d", n)
 	}
 	users, err := db.ListUsers()
 	if err != nil || len(users) != 2 {
@@ -70,7 +70,7 @@ func TestUsersLifecycle(t *testing.T) {
 
 func TestTOTPLifecycle(t *testing.T) {
 	db := openTest(t)
-	u, err := db.CreateUser("admin", "", "h", "admin")
+	u, err := db.CreateUser("admin", "", "h", "owner")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,12 +130,12 @@ func openLegacyAdminDB(t *testing.T) *DB {
 }
 
 // TestAdminMigration builds a pre-users database (singleton admin table) and
-// checks migrate() converts it: admin row → user "admin", passkeys claimed,
+// checks migrate() converts it: admin row → user "admin" (role owner), passkeys claimed,
 // sessions wiped, old table dropped.
 func TestAdminMigration(t *testing.T) {
 	db := openLegacyAdminDB(t)
 	u, err := db.GetUserByName("admin")
-	if err != nil || u.Role != "admin" || u.PassHash != "legacy-hash" {
+	if err != nil || u.Role != "owner" || u.PassHash != "legacy-hash" {
 		t.Fatalf("migrated admin: %+v %v", u, err)
 	}
 	if !u.TOTPEnabled {

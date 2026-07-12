@@ -102,19 +102,19 @@ func TestRegistrationFlow(t *testing.T) {
 
 	// Member quota: plan allows 2 members (carol + one more). Members are
 	// added by user id (picker), not free text.
-	dave, err := db.CreateUser("dave", "", "h", "member")
+	dave, err := db.CreateUser("dave", "", "h", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
-	erin, err := db.CreateUser("erin", "", "h", "member")
+	erin, err := db.CreateUser("erin", "", "h", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
 	daveID := strconv.FormatInt(dave.ID, 10)
 	erinID := strconv.FormatInt(erin.ID, 10)
-	resp, _ = ac.PostForm(ts.URL+"/admin/org/carols-org/members", url.Values{"user_id": {daveID}, "role": {"member"}})
+	resp, _ = ac.PostForm(ts.URL+"/admin/org/carols-org/members", url.Values{"user_id": {daveID}, "role": {"user"}})
 	resp.Body.Close()
-	resp, _ = ac.PostForm(ts.URL+"/admin/org/carols-org/members", url.Values{"user_id": {erinID}, "role": {"member"}})
+	resp, _ = ac.PostForm(ts.URL+"/admin/org/carols-org/members", url.Values{"user_id": {erinID}, "role": {"user"}})
 	if b := body(t, resp); !contains(b, "at most 2 members") {
 		t.Fatalf("member quota: %.200q", b)
 	}
@@ -139,9 +139,9 @@ func TestOrgManagementAuthz(t *testing.T) {
 	_ = s
 
 	// alice: org admin of "acme"; bob: unrelated user; carol: to be added.
-	alice, _ := db.CreateUser("alice", "", passHash(t, "alicepass1"), "member")
-	db.CreateUser("bob", "", passHash(t, "bobpass1234"), "member")
-	carol, _ := db.CreateUser("carol", "", passHash(t, "carolpass1"), "member")
+	alice, _ := db.CreateUser("alice", "", passHash(t, "alicepass1"), "user")
+	db.CreateUser("bob", "", passHash(t, "bobpass1234"), "user")
+	carol, _ := db.CreateUser("carol", "", passHash(t, "carolpass1"), "user")
 	acme, _ := db.EnsureAccount("acme", "org")
 	db.SetMember(acme.ID, alice.ID, "admin")
 
@@ -149,9 +149,9 @@ func TestOrgManagementAuthz(t *testing.T) {
 
 	// Org admin adds carol by id — no instance-admin rights needed.
 	resp, _ := al.PostForm(ts.URL+"/admin/org/acme/members",
-		url.Values{"user_id": {itoa(carol.ID)}, "role": {"member"}})
+		url.Values{"user_id": {itoa(carol.ID)}, "role": {"user"}})
 	resp.Body.Close()
-	if db.MemberRole(acme.ID, carol.ID) != "member" {
+	if db.MemberRole(acme.ID, carol.ID) != "user" {
 		t.Fatal("org admin could not add a member")
 	}
 
@@ -173,7 +173,7 @@ func TestOrgManagementAuthz(t *testing.T) {
 	resp.Body.Close()
 
 	// Personal accounts refuse members at the store layer.
-	if err := db.SetMember(mustAccount(t, db, "alice").ID, carol.ID, "member"); err == nil {
+	if err := db.SetMember(mustAccount(t, db, "alice").ID, carol.ID, "user"); err == nil {
 		t.Fatal("personal account accepted an extra member")
 	}
 }

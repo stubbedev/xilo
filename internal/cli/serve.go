@@ -12,7 +12,7 @@ import (
 	"github.com/stubbedev/xilo/internal/store"
 )
 
-// bootstrapAdmin seeds the first account ("admin", role admin) from the
+// bootstrapAdmin seeds the first account ("admin", role owner) from the
 // config/env password on first run. Once any user exists, the config value is
 // ignored so a stale env var can't reset a password.
 func bootstrapAdmin(db *store.DB, password string) error {
@@ -24,7 +24,7 @@ func bootstrapAdmin(db *store.DB, password string) error {
 		return err
 	}
 	log.Printf("bootstrapping admin account from configured password")
-	_, err = db.CreateUser("admin", "", string(hash), "admin")
+	_, err = db.CreateUser("admin", "", string(hash), "owner")
 	return err
 }
 

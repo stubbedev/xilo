@@ -29,7 +29,7 @@ func bootstrapAdmin(t *testing.T, db *store.DB) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.CreateUser("admin", "", string(hash), "admin"); err != nil {
+	if _, err := db.CreateUser("admin", "", string(hash), "owner"); err != nil {
 		t.Fatal(err)
 	}
 }

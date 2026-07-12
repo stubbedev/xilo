@@ -15,7 +15,7 @@ import (
 // Perms carried by tokens. pull/push gate the cache protocol; the rest gate
 // the management API (attic parity: create/configure/destroy per scope,
 // admin = full instance control).
-var ValidPerms = []string{"pull", "push", "create-cache", "configure-cache", "destroy-cache", "admin"}
+var ValidPerms = []string{"pull", "push", "create", "configure", "destroy", "admin"}
 
 type Token struct {
 	ID        int64
@@ -198,7 +198,7 @@ func (db *DB) AuthorizeAdmin(secret string, now int64) bool {
 }
 
 // AuthorizeNS reports whether the secret grants a management perm
-// (create-cache / configure-cache / destroy-cache) for account/cache. A full
+// (create / configure / destroy) for account/cache. A full
 // "admin" token always passes.
 func (db *DB) AuthorizeNS(secret, account, cache, perm string, now int64) bool {
 	t, ok := db.lookupLive(secret, now)

@@ -53,7 +53,7 @@ templ Org(d OrgPageData) {
 														}
 													} else {
 														@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
-															{ T("role.member") }
+															{ T("role.user") }
 														}
 													}
 												</div>
@@ -64,7 +64,7 @@ templ Org(d OrgPageData) {
 														<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") }>
 															<input type="hidden" name="user_id" value={ strconv.FormatInt(m.UserID, 10) }/>
 															if m.Role == "admin" {
-																<input type="hidden" name="role" value="member"/>
+																<input type="hidden" name="role" value="user"/>
 																@WithTooltip(T("users.demote")) {
 																	@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.demote")}}) {
 																		@Icon("user-minus")
@@ -122,7 +122,7 @@ templ Org(d OrgPageData) {
 								</div>
 								<div class="w-36">
 									@Field("", T("users.role")) {
-										@roleSelect("role", "member")
+										@roleSelect("role", "user")
 									}
 								</div>
 								@button.Button(button.Props{Type: button.TypeSubmit}) {
@@ -170,11 +170,11 @@ templ roleSelect(name, value string) {
 			@selectbox.Value(selectbox.ValueProps{})
 		}
 		@selectbox.Content() {
-			@selectbox.Item(selectbox.ItemProps{Value: "member", Selected: value == "member"}) {
-				{ T("users.member") }
+			@selectbox.Item(selectbox.ItemProps{Value: "user", Selected: value == "user"}) {
+				{ T("role.user") }
 			}
 			@selectbox.Item(selectbox.ItemProps{Value: "admin", Selected: value == "admin"}) {
-				{ T("users.admin") }
+				{ T("role.admin") }
 			}
 		}
 	}

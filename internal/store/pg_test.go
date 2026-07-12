@@ -204,15 +204,15 @@ func TestPostgres(t *testing.T) {
 	if db.UsersExist() {
 		t.Fatal("no users should exist yet")
 	}
-	usr, err := db.CreateUser("admin", "", "hash1", "admin")
+	usr, err := db.CreateUser("admin", "", "hash1", "owner")
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 	if got, err := db.GetUserByName("admin"); err != nil || got.ID != usr.ID {
 		t.Fatalf("GetUserByName: %+v %v", got, err)
 	}
-	if n, _ := db.CountAdmins(); n != 1 {
-		t.Fatalf("CountAdmins = %d", n)
+	if n, _ := db.CountOwners(); n != 1 {
+		t.Fatalf("CountOwners = %d", n)
 	}
 	if err := db.SetUserTOTPSecret(usr.ID, []byte("s3cret")); err != nil {
 		t.Fatalf("SetUserTOTPSecret: %v", err)

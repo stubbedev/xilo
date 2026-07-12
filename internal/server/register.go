@@ -139,7 +139,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if s.requireApproval() {
 		u, err = s.db.CreatePendingUser(username, email, string(hash))
 	} else {
-		u, err = s.db.CreateUser(username, email, string(hash), "member")
+		u, err = s.db.CreateUser(username, email, string(hash), "user")
 	}
 	if err != nil {
 		fail("Could not register: " + err.Error())
@@ -289,7 +289,7 @@ func (s *Server) userCanCreateOrg(u *store.User) bool {
 	if u == nil {
 		return false
 	}
-	if u.Role == "admin" {
+	if u.Role == "owner" {
 		return true
 	}
 	if !s.cfg.MultiTenant {
@@ -332,7 +332,7 @@ func (s *Server) handleUserCreateOrg(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if u.Role != "admin" {
+	if u.Role != "owner" {
 		if personal, err := s.db.GetAccount(u.Name); err == nil && personal.PlanID != 0 {
 			_ = s.db.SetAccountPlan(org.ID, personal.PlanID)
 		}

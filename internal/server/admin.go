@@ -144,7 +144,7 @@ func (s *Server) activeContext(r *http.Request, u *store.User) string {
 	if err != nil {
 		return ""
 	}
-	if u.Role == "admin" || s.db.MemberRole(acc.ID, u.ID) != "" {
+	if u.Role == "owner" || s.db.MemberRole(acc.ID, u.ID) != "" {
 		return acc.Slug
 	}
 	return ""
@@ -155,9 +155,9 @@ func (s *Server) nav(r *http.Request, u *store.User) views.Nav {
 	if u == nil {
 		return views.Nav{}
 	}
-	n := views.Nav{LoggedIn: true, UserName: u.Name, IsAdmin: u.Role == "admin", Active: s.activeContext(r, u)}
+	n := views.Nav{LoggedIn: true, UserName: u.Name, IsAdmin: u.Role == "owner", Active: s.activeContext(r, u)}
 	var err error
-	if u.Role == "admin" {
+	if u.Role == "owner" {
 		n.Contexts, err = s.db.ListAccounts()
 	} else {
 		n.Contexts, err = s.db.UserAccounts(u.ID)
@@ -177,7 +177,7 @@ func (s *Server) handleContext(w http.ResponseWriter, r *http.Request) {
 	val := strings.TrimSpace(r.FormValue("ctx"))
 	if val != "" {
 		acc, err := s.db.GetAccount(val)
-		if err != nil || (u.Role != "admin" && s.db.MemberRole(acc.ID, u.ID) == "") {
+		if err != nil || (u.Role != "owner" && s.db.MemberRole(acc.ID, u.ID) == "") {
 			val = ""
 		}
 	}
@@ -229,8 +229,8 @@ func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	if u == nil {
 		return false
 	}
-	if u.Role != "admin" {
-		http.Error(w, "admin role required", http.StatusForbidden)
+	if u.Role != "owner" {
+		http.Error(w, "owner role required", http.StatusForbidden)
 		return false
 	}
 	return true
@@ -302,13 +302,13 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 // canManage reports whether u may mutate resources in a namespace: instance
 // admins always, otherwise namespace owners.
 func (s *Server) canManage(u *store.User, nsID int64) bool {
-	return u != nil && (u.Role == "admin" || s.db.MemberRole(nsID, u.ID) == "admin")
+	return u != nil && (u.Role == "owner" || s.db.MemberRole(nsID, u.ID) == "admin")
 }
 
 // visibleCaches lists the caches u may see: all for admins, their namespaces'
 // for everyone else.
 func (s *Server) visibleCaches(u *store.User) ([]store.Cache, error) {
-	if u.Role == "admin" {
+	if u.Role == "owner" {
 		return s.db.ListCaches()
 	}
 	nss, err := s.db.UserAccounts(u.ID)
@@ -329,7 +329,7 @@ func (s *Server) visibleCaches(u *store.User) ([]store.Cache, error) {
 // visibleTokens lists tokens u may see: all for admins, else the tokens of
 // namespaces they own.
 func (s *Server) visibleTokens(u *store.User) ([]store.Token, error) {
-	if u.Role == "admin" {
+	if u.Role == "owner" {
 		return s.db.ListTokens()
 	}
 	nss, err := s.db.UserAccounts(u.ID)
@@ -352,7 +352,7 @@ func (s *Server) visibleTokens(u *store.User) ([]store.Token, error) {
 
 // ownedNamespaces returns the namespaces u may create caches/tokens in.
 func (s *Server) ownedNamespaces(u *store.User) ([]store.Account, error) {
-	if u.Role == "admin" {
+	if u.Role == "owner" {
 		return s.db.ListAccounts()
 	}
 	nss, err := s.db.UserAccounts(u.ID)
@@ -403,7 +403,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if u.Role != "admin" || s.activeContext(r, u) != "" {
+	if u.Role != "owner" || s.activeContext(r, u) != "" {
 		// Tenants — and any scoped context — see that footprint, not the
 		// instance's.
 		global = store.Global{Caches: int64(len(usages))}
@@ -467,7 +467,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 		Tokens:     pagedTokens,
 		Accounts:   owned,
 		Storages:   s.storageNames(),
-		IsAdmin:    u.Role == "admin",
+		IsAdmin:    u.Role == "owner",
 		Flash:      flash,
 		ServerCap:  s.cfg.Limits.TotalBytes(),
 		Bytes:      humanBytes,
@@ -649,8 +649,8 @@ func (s *Server) renderInstance(w http.ResponseWriter, r *http.Request, flash vi
 		http.Redirect(w, r, "/admin", http.StatusSeeOther)
 		return
 	}
-	if u.Role != "admin" { // defense in depth: never leak the instance page
-		http.Error(w, "admin role required", http.StatusForbidden)
+	if u.Role != "owner" { // defense in depth: never leak the instance page
+		http.Error(w, "owner role required", http.StatusForbidden)
 		return
 	}
 	d := views.InstanceData{
@@ -710,7 +710,7 @@ func (s *Server) renderOrg(w http.ResponseWriter, r *http.Request, u *store.User
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if u.Role != "admin" && s.db.MemberRole(acct.ID, u.ID) == "" {
+	if u.Role != "owner" && s.db.MemberRole(acct.ID, u.ID) == "" {
 		s.notFound(w, r) // no existence oracle
 		return
 	}
@@ -1101,7 +1101,7 @@ func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
 	// Instance admins may create caches anywhere (minting the account on the
 	// fly); everyone else only inside accounts they administer, within plan
 	// quota.
-	if u.Role != "admin" {
+	if u.Role != "owner" {
 		acc, err := s.db.GetAccount(ns)
 		if err != nil || s.db.MemberRole(acc.ID, u.ID) != "admin" {
 			s.flashRedirect(w, r, "/admin", views.T("flash.notadmin"))
@@ -1153,7 +1153,7 @@ func (s *Server) handleCacheDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	// Members see their namespaces' caches; outsiders get the same 404 as a
 	// nonexistent cache (no existence oracle).
-	if u.Role != "admin" && s.db.MemberRole(c.AccountID, u.ID) == "" {
+	if u.Role != "owner" && s.db.MemberRole(c.AccountID, u.ID) == "" {
 		s.notFound(w, r)
 		return
 	}
@@ -1285,7 +1285,7 @@ func (s *Server) handleDeleteCache(w http.ResponseWriter, r *http.Request) {
 func (s *Server) tokenScope(u *store.User, r *http.Request) (nsID int64, nsName string, caches []string, err error) {
 	nsName = strings.TrimSpace(r.FormValue("namespace"))
 	if nsName == "" {
-		if u.Role != "admin" {
+		if u.Role != "owner" {
 			return 0, "", nil, errors.New("only admins can mint instance-wide tokens")
 		}
 	} else {
@@ -1328,7 +1328,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 	if len(perms) == 0 {
 		perms = []string{"pull"}
 	}
-	if slices.Contains(perms, "admin") && (nsID != 0 || u.Role != "admin") {
+	if slices.Contains(perms, "admin") && (nsID != 0 || u.Role != "owner") {
 		http.Error(w, "admin tokens are instance-wide and admin-only", http.StatusForbidden)
 		return
 	}
@@ -1364,7 +1364,7 @@ func (s *Server) manageToken(w http.ResponseWriter, r *http.Request) (*store.Tok
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil, nil, false
 	}
-	if t.AccountID == 0 && u.Role != "admin" {
+	if t.AccountID == 0 && u.Role != "owner" {
 		s.notFound(w, r)
 		return nil, nil, false
 	}
@@ -1401,7 +1401,7 @@ func (s *Server) handleEditToken(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	perms := formPerms(r)
-	if slices.Contains(perms, "admin") && (t.AccountID != 0 || u.Role != "admin") {
+	if slices.Contains(perms, "admin") && (t.AccountID != 0 || u.Role != "owner") {
 		http.Error(w, "admin tokens are instance-wide and admin-only", http.StatusForbidden)
 		return
 	}
@@ -1525,12 +1525,12 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.usercreated"), name))
 }
 
-// formRole whitelists the role field.
+// formRole whitelists the instance role field.
 func formRole(r *http.Request) string {
-	if r.FormValue("role") == "admin" {
-		return "admin"
+	if r.FormValue("role") == "owner" {
+		return "owner"
 	}
-	return "member"
+	return "user"
 }
 
 // userByPath resolves the {id} path value to a user, or writes 404.
@@ -1548,13 +1548,13 @@ func (s *Server) userByPath(w http.ResponseWriter, r *http.Request) (*store.User
 	return u, true
 }
 
-// lastAdmin reports whether u is the only admin left — the one account that
+// lastOwner reports whether u is the only owner left — the one account that
 // can never be demoted or deleted.
-func (s *Server) lastAdmin(u *store.User) bool {
-	if u.Role != "admin" {
+func (s *Server) lastOwner(u *store.User) bool {
+	if u.Role != "owner" {
 		return false
 	}
-	n, err := s.db.CountAdmins()
+	n, err := s.db.CountOwners()
 	return err != nil || n <= 1
 }
 
@@ -1567,7 +1567,7 @@ func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	role := formRole(r)
-	if role != "admin" && s.lastAdmin(u) {
+	if role != "owner" && s.lastOwner(u) {
 		s.instanceFlash(w, r, views.T("flash.lastadmin"))
 		return
 	}
@@ -1615,7 +1615,7 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 		s.instanceFlash(w, r, views.T("flash.delself"))
 		return
 	}
-	if s.lastAdmin(u) {
+	if s.lastOwner(u) {
 		s.instanceFlash(w, r, views.T("flash.dellastadmin"))
 		return
 	}
@@ -1699,7 +1699,7 @@ func (s *Server) handleSetMember(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	role := "member"
+	role := "user"
 	if r.FormValue("role") == "admin" {
 		role = "admin"
 	}
@@ -1745,7 +1745,7 @@ func (s *Server) mailAdmins(subject, body string) {
 		return
 	}
 	for _, u := range users {
-		if u.Role == "admin" && u.Email != "" {
+		if u.Role == "owner" && u.Email != "" {
 			mail.Go(s.cfg.SMTP.Mail(), u.Email, subject, body)
 		}
 	}

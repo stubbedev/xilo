@@ -18,10 +18,10 @@ import (
 func (s *Server) registerAdminAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/caches", s.apiAdmin(s.apiListCaches))
 	mux.HandleFunc("POST /api/v1/caches", s.apiCreateCache)
-	mux.HandleFunc("GET /api/v1/caches/{account}/{name}", s.apiNS("configure-cache", s.apiGetCache))
-	mux.HandleFunc("PATCH /api/v1/caches/{account}/{name}", s.apiNS("configure-cache", s.apiConfigureCache))
-	mux.HandleFunc("POST /api/v1/caches/{account}/{name}/rotate", s.apiNS("configure-cache", s.apiRotateKey))
-	mux.HandleFunc("DELETE /api/v1/caches/{account}/{name}", s.apiNS("destroy-cache", s.apiDeleteCache))
+	mux.HandleFunc("GET /api/v1/caches/{account}/{name}", s.apiNS("configure", s.apiGetCache))
+	mux.HandleFunc("PATCH /api/v1/caches/{account}/{name}", s.apiNS("configure", s.apiConfigureCache))
+	mux.HandleFunc("POST /api/v1/caches/{account}/{name}/rotate", s.apiNS("configure", s.apiRotateKey))
+	mux.HandleFunc("DELETE /api/v1/caches/{account}/{name}", s.apiNS("destroy", s.apiDeleteCache))
 	mux.HandleFunc("GET /api/v1/namespaces", s.apiAdmin(s.apiListNamespaces))
 	mux.HandleFunc("POST /api/v1/namespaces", s.apiAdmin(s.apiCreateNamespace))
 	mux.HandleFunc("DELETE /api/v1/accounts/{account}", s.apiAdmin(s.apiDeleteNamespace))
@@ -124,10 +124,10 @@ func (s *Server) apiCreateCache(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest, "names cannot contain '/'")
 		return
 	}
-	// create-cache tokens work within their scope; admin tokens anywhere.
-	if !s.db.AuthorizeNS(extractToken(r), req.Account, req.Name, "create-cache", time.Now().Unix()) {
+	// create tokens work within their scope; admin tokens anywhere.
+	if !s.db.AuthorizeNS(extractToken(r), req.Account, req.Name, "create", time.Now().Unix()) {
 		s.metrics.authFailures.Add(1)
-		apiError(w, http.StatusUnauthorized, "create-cache token required")
+		apiError(w, http.StatusUnauthorized, "create token required")
 		return
 	}
 	if req.Priority == 0 {

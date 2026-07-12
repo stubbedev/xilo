@@ -247,13 +247,13 @@ templ usersCard(actingName string, multiTenant bool, users []store.User) {
 									<div class="flex flex-wrap items-center gap-2">
 										@Icon("user")
 										<span class="font-medium">{ u.Name }</span>
-										if u.Role == "admin" {
+										if u.Role == "owner" {
 											@badge.Badge(badge.Props{Variant: badge.VariantDefault}) {
-												{ T("role.admin") }
+												{ T("role.owner") }
 											}
 										} else {
 											@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
-												{ T("role.member") }
+												{ T("role.user") }
 											}
 										}
 										if u.Status == "pending" {
@@ -280,15 +280,15 @@ templ usersCard(actingName string, multiTenant bool, users []store.User) {
 										@resetUserDialog(u)
 										if u.Name != actingName {
 											<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/role") }>
-												if u.Role == "admin" {
-													<input type="hidden" name="role" value="member"/>
+												if u.Role == "owner" {
+													<input type="hidden" name="role" value="user"/>
 													@WithTooltip(T("users.demote")) {
 														@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.demote")}}) {
 															@Icon("user-minus")
 														}
 													}
 												} else {
-													<input type="hidden" name="role" value="admin"/>
+													<input type="hidden" name="role" value="owner"/>
 													@WithTooltip(T("users.promote")) {
 														@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.promote")}}) {
 															@Icon("user-plus")
@@ -387,7 +387,7 @@ templ newUserDialog(multiTenant bool) {
 				@Field("nu-pw", T("login.password")) {
 					@input.Input(input.Props{ID: "nu-pw", Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "8"}})
 				}
-				@PermSwitchVal("role", "admin", T("users.instadmin"), false)
+				@PermSwitchVal("role", "owner", T("role.owner"), false)
 				@dialog.Footer() {
 					@dialog.Close(dialog.CloseProps{For: "dlg-user-new"}) {
 						@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {

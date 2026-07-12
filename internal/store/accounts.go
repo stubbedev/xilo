@@ -9,7 +9,7 @@ import (
 // Account is the tenancy unit and the first URL segment under /c/: a personal
 // account (kind "user", slug == the username) or an organization (kind
 // "org"). Caches belong to an account; tokens can be scoped to one; users
-// join orgs as admin or member.
+// join orgs as admin or user.
 type Account struct {
 	ID      int64
 	Slug    string
@@ -25,7 +25,7 @@ type AccountMember struct {
 	AccountID int64
 	UserID    int64
 	UserName  string
-	Role      string // "admin" | "member"
+	Role      string // "admin" | "user"
 }
 
 // ValidSlug reports whether s can name an account (or user — one pool).

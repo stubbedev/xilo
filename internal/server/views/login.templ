@@ -300,7 +300,7 @@ templ Register(plans []store.Plan, flash Flash) {
 							</div>
 							<div id="org-field" hidden?={ !(len(plans) > 0 && plans[0].OrgsAllowed) }>
 								@FieldHint("r-org", T("reg.org"), T("reg.orghint")) {
-									@input.Input(input.Props{ID: "r-org", Name: "org", Placeholder: T("ph.optional"), Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
+									@input.Input(input.Props{ID: "r-org", Name: "org", Placeholder: T("ph.orgname"), Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
 								}
 							</div>
 						</div>

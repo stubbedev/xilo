@@ -500,7 +500,7 @@ func (s *Server) handleStatusData(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if u.Role != "admin" {
+	if u.Role != "owner" {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

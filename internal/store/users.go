@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// User is a dashboard account. Role "admin" manages everything; "member" can
+// User is a dashboard account. Role "owner" manages everything; "user" can
 // sign in and manage their own account (namespace membership scopes what they
 // see — added with namespaces).
 type User struct {
@@ -15,7 +15,7 @@ type User struct {
 	Name        string
 	Email       string // optional; unique when set; usable for sign-in
 	PassHash    string
-	Role        string // "admin" | "member"
+	Role        string // "owner" | "user"
 	Status      string // "active" | "pending" (awaiting approval)
 	TOTPEnabled bool
 	Created     int64
@@ -42,7 +42,7 @@ func (db *DB) CreateUser(name, email, passHash, role string) (*User, error) {
 
 // CreatePendingUser is CreateUser for self-registration awaiting approval.
 func (db *DB) CreatePendingUser(name, email, passHash string) (*User, error) {
-	return db.createUser(name, email, passHash, "member", "pending")
+	return db.createUser(name, email, passHash, "user", "pending")
 }
 
 func (db *DB) createUser(name, email, passHash, role, status string) (*User, error) {
@@ -132,11 +132,11 @@ func (db *DB) UsersExist() bool {
 	return db.r.QueryRow(`SELECT 1 FROM users LIMIT 1`).Scan(&one) == nil
 }
 
-// CountAdmins counts admin-role users — deleting or demoting the last one is
+// CountOwners counts owner-role users — deleting or demoting the last one is
 // refused at the handler layer.
-func (db *DB) CountAdmins() (int, error) {
+func (db *DB) CountOwners() (int, error) {
 	var n int
-	err := db.r.QueryRow(`SELECT COUNT(*) FROM users WHERE role='admin'`).Scan(&n)
+	err := db.r.QueryRow(`SELECT COUNT(*) FROM users WHERE role='owner'`).Scan(&n)
 	return n, err
 }
 

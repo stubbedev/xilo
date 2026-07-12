@@ -213,7 +213,7 @@ func migrate(w *sql.DB, pg bool) error {
 		`CREATE TABLE IF NOT EXISTS account_members (
 			account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
 			user_id    INTEGER NOT NULL,
-			role       TEXT NOT NULL DEFAULT 'member',
+			role       TEXT NOT NULL DEFAULT 'user',
 			UNIQUE(account_id, user_id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS caches (
@@ -233,7 +233,7 @@ func migrate(w *sql.DB, pg bool) error {
 			id            INTEGER PRIMARY KEY,
 			username      TEXT UNIQUE NOT NULL,
 			password_hash TEXT NOT NULL,
-			role          TEXT NOT NULL DEFAULT 'member',
+			role          TEXT NOT NULL DEFAULT 'user',
 			totp_secret   BLOB,
 			totp_enabled  INTEGER NOT NULL DEFAULT 0,
 			created       INTEGER NOT NULL DEFAULT 0
@@ -375,7 +375,7 @@ func migrate(w *sql.DB, pg bool) error {
 }
 
 // migrateAdminToUsers converts a pre-1.0 singleton `admin` row into the first
-// user (username "admin", role admin), claims the existing passkeys for it,
+// user (username "admin", role owner), claims the existing passkeys for it,
 // and drops the old table. Sessions are wiped — one forced re-login beats
 // carrying ownerless cookies forward.
 func migrateAdminToUsers(w *sql.DB, pg bool) error {
@@ -404,7 +404,7 @@ func migrateAdminToUsers(w *sql.DB, pg bool) error {
 		var uid int64
 		if err := w.QueryRow(
 			`INSERT INTO users (username,password_hash,role,totp_secret,totp_enabled,created)
-			 VALUES ('admin',?,'admin',?,?,?) RETURNING id`,
+			 VALUES ('admin',?,'owner',?,?,?) RETURNING id`,
 			hash, totpSecret, totpEnabled, time.Now().Unix()).Scan(&uid); err != nil {
 			return err
 		}
