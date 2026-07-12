@@ -66,7 +66,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/nix-installer-action@v22
       - name: build admin CSS
         run: |
           curl -sSL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.2/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
