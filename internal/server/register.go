@@ -154,7 +154,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			if plan != nil {
 				_ = s.db.SetAccountPlan(org.ID, plan.ID)
 			}
-			_ = s.db.SetMember(org.ID, u.ID, "admin")
+			_ = s.db.MakeOwner(org.ID, u.ID)
 		}
 	}
 
@@ -337,7 +337,7 @@ func (s *Server) handleUserCreateOrg(w http.ResponseWriter, r *http.Request) {
 			_ = s.db.SetAccountPlan(org.ID, personal.PlanID)
 		}
 	}
-	if err := s.db.SetMember(org.ID, u.ID, "admin"); err != nil {
+	if err := s.db.MakeOwner(org.ID, u.ID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

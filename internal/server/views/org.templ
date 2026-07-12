@@ -47,7 +47,11 @@ templ Org(d OrgPageData) {
 												<div class="flex items-center gap-2">
 													@Icon("user")
 													<span class="font-medium">{ m.UserName }</span>
-													if m.Role == "admin" {
+													if m.Role == "owner" {
+														@badge.Badge(badge.Props{Variant: badge.VariantDefault}) {
+															{ T("role.owner") }
+														}
+													} else if m.Role == "admin" {
 														@badge.Badge(badge.Props{Variant: badge.VariantDefault}) {
 															{ T("role.admin") }
 														}
@@ -59,7 +63,7 @@ templ Org(d OrgPageData) {
 												</div>
 											}
 											@table.Cell(table.CellProps{Class: "text-right"}) {
-												if d.CanManage {
+												if d.CanManage && m.Role != "owner" {
 													<div class="flex justify-end gap-1">
 														<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") }>
 															<input type="hidden" name="user_id" value={ strconv.FormatInt(m.UserID, 10) }/>

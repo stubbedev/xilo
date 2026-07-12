@@ -92,6 +92,35 @@ templ StorageSelect(name, value string, storages []string) {
 	}
 }
 
+// ttlPresets are the expiry choices offered for tokens, in seconds.
+var ttlPresets = []struct {
+	Secs  int64
+	Label string
+}{
+	{7 * 86400, "ttl.7d"},
+	{30 * 86400, "ttl.30d"},
+	{90 * 86400, "ttl.90d"},
+	{365 * 86400, "ttl.1y"},
+}
+
+// TTLSelect picks a token expiry from preset durations. On create 30 days is
+// preselected; on edit nothing is, and the empty value keeps the stored
+// expiry (the handler's empty-keeps-current contract).
+templ TTLSelect(t *store.Token) {
+	@selectbox.SelectBox() {
+		@selectbox.Trigger(selectbox.TriggerProps{Name: "ttl"}) {
+			@selectbox.Value(selectbox.ValueProps{Placeholder: T("ttl.keep")})
+		}
+		@selectbox.Content() {
+			for _, p := range ttlPresets {
+				@selectbox.Item(selectbox.ItemProps{Value: strconv.FormatInt(p.Secs, 10), Selected: t == nil && p.Secs == 30*86400}) {
+					{ T(p.Label) }
+				}
+			}
+		}
+	}
+}
+
 // DurationInput is a number + unit (hours/days/months/years) pair backed by
 // "<name>_value" and "<name>_unit" fields.
 templ DurationInput(name string, secs int64) {

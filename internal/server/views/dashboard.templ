@@ -34,7 +34,11 @@ templ Dashboard(d DashboardData) {
 		}
 		@SectionHeader(T("caches.title")) {
 			@SearchInput("/admin", "caches[q]", d.CacheQuery, T("caches.search"), "#cache-list")
-			@newCacheDialog(d)
+			if len(d.Accounts) > 0 {
+				@newCacheDialog(d)
+			} else {
+				@disabledCreate(T("caches.new"), T("caches.needaccount"))
+			}
 		}
 		<div id="cache-list" class="mb-8">
 			if len(d.Caches) == 0 {
@@ -42,11 +46,15 @@ templ Dashboard(d DashboardData) {
 					@EmptyState("database", T("caches.nomatch"))
 				} else {
 					@EmptyState("database", T("caches.empty")) {
-						@dialog.Trigger(dialog.TriggerProps{For: "dlg-cache"}) {
-							@button.Button(button.Props{Size: button.SizeSm}) {
-								@Icon("plus")
-								<span>{ T("caches.new") }</span>
+						if len(d.Accounts) > 0 {
+							@dialog.Trigger(dialog.TriggerProps{For: "dlg-cache"}) {
+								@button.Button(button.Props{Size: button.SizeSm}) {
+									@Icon("plus")
+									<span>{ T("caches.new") }</span>
+								}
 							}
+						} else {
+							@disabledCreate(T("caches.new"), T("caches.needaccount"))
 						}
 					}
 				}
@@ -61,7 +69,11 @@ templ Dashboard(d DashboardData) {
 		</div>
 		@SectionHeader(T("tokens.title")) {
 			@SearchInput("/admin", "tokens[q]", d.TokenQuery, T("tokens.search"), "#token-list")
-			@newTokenDialog(d)
+			if canMintToken(d) {
+				@newTokenDialog(d)
+			} else {
+				@disabledCreate(T("tokens.new"), T("tokens.needcache"))
+			}
 		}
 		<div id="token-list">
 			if len(d.Tokens) == 0 {
@@ -69,11 +81,15 @@ templ Dashboard(d DashboardData) {
 					@EmptyState("key-round", T("tokens.nomatch"))
 				} else {
 					@EmptyState("key-round", T("tokens.empty")) {
-						@dialog.Trigger(dialog.TriggerProps{For: "dlg-token"}) {
-							@button.Button(button.Props{Size: button.SizeSm}) {
-								@Icon("plus")
-								<span>{ T("tokens.new") }</span>
+						if canMintToken(d) {
+							@dialog.Trigger(dialog.TriggerProps{For: "dlg-token"}) {
+								@button.Button(button.Props{Size: button.SizeSm}) {
+									@Icon("plus")
+									<span>{ T("tokens.new") }</span>
+								}
 							}
+						} else {
+							@disabledCreate(T("tokens.new"), T("tokens.needcache"))
 						}
 					}
 				}
@@ -179,6 +195,17 @@ templ tokenRow(d DashboardData, t store.Token) {
 					})
 				}
 			</div>
+		}
+	}
+}
+
+// disabledCreate is a create button whose precondition is not met yet; the
+// tooltip says what is missing.
+templ disabledCreate(label, why string) {
+	@WithTooltip(why) {
+		@button.Button(button.Props{Size: button.SizeSm, Disabled: true}) {
+			@Icon("plus")
+			<span>{ label }</span>
 		}
 	}
 }
@@ -289,7 +316,7 @@ templ tokenFormBody(action string, t *store.Token, d DashboardData, submitIcon, 
 			@input.Input(input.Props{ID: dlgID + "-ns", Value: tokenAccount(t, d), Disabled: true})
 		}
 		@Field("", T("tokens.scope")) {
-			@ScopeSelect("cache", tokenScopeValue(t), tokenScopeCaches(t, d))
+			@ScopeSelect("cache", tokenScopeValue(t, d), tokenScopeCaches(t, d))
 		}
 		@Field("", T("tokens.perms")) {
 			<div class="space-y-2">
@@ -298,9 +325,11 @@ templ tokenFormBody(action string, t *store.Token, d DashboardData, submitIcon, 
 			</div>
 		}
 		@Field("", T("tokens.expiry")) {
-			@PermSwitchID(dlgID+"-permanent", "permanent", "on", T("tokens.permanent"), tokenPermanent(t))
-			<div class="mt-2">
-				@DurationInput("ttl", tokenTTL(t))
+			<div class="group/expiry space-y-2">
+				@PermSwitchID(dlgID+"-permanent", "permanent", "on", T("tokens.permanent"), tokenPermanent(t))
+				<div class="group-has-[:checked]/expiry:hidden">
+					@TTLSelect(t)
+				</div>
 			</div>
 		}
 		@dialog.Footer() {

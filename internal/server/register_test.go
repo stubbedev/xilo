@@ -68,8 +68,8 @@ func TestRegistrationFlow(t *testing.T) {
 	if err != nil || org.Kind != "org" || org.PlanID != plan.ID {
 		t.Fatalf("org: %+v %v", org, err)
 	}
-	if db.MemberRole(org.ID, u.ID) != "admin" {
-		t.Fatal("carol should administer her org")
+	if db.MemberRole(org.ID, u.ID) != "owner" {
+		t.Fatal("carol should own her org")
 	}
 
 	// Pending users cannot sign in.

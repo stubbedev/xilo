@@ -25,7 +25,7 @@ type AccountMember struct {
 	AccountID int64
 	UserID    int64
 	UserName  string
-	Role      string // "admin" | "user"
+	Role      string // "owner" (creator, fixed) | "admin" | "user"
 }
 
 // ValidSlug reports whether s can name an account (or user — one pool).
@@ -123,40 +123,60 @@ func (db *DB) listAccounts(q string, args ...any) ([]Account, error) {
 	return out, rows.Err()
 }
 
-// DeleteAccount removes an EMPTY account (no caches). Refusing non-empty
-// deletion keeps a fat-fingered admin from cascading a tenant's data away.
-func (db *DB) DeleteAccount(id int64) error {
+// DeleteOrg removes an organization and everything it holds: memberships,
+// tokens, caches and their paths (FK cascade), and its egress ledger.
+// Personal accounts are refused — they die with their user. Chunk blobs are
+// NOT touched here: dedup means a chunk may back other accounts' paths, so
+// only the GC mark-sweep decides what actually leaves disk.
+func (db *DB) DeleteOrg(id int64) error {
 	return db.write(func(tx *sql.Tx) error {
-		var n int
-		if err := tx.QueryRow(`SELECT COUNT(*) FROM caches WHERE account_id=?`, id).Scan(&n); err != nil {
+		var kind string
+		err := tx.QueryRow(`SELECT kind FROM accounts WHERE id=?`, id).Scan(&kind)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
 			return err
 		}
-		if n > 0 {
-			return errors.New("account still has caches — destroy them first")
+		if kind != "org" {
+			return errors.New("only organizations can be deleted")
 		}
-		if _, err := tx.Exec(`DELETE FROM account_members WHERE account_id=?`, id); err != nil {
-			return err
+		for _, q := range []string{
+			`DELETE FROM account_members WHERE account_id=?`,
+			`DELETE FROM tokens WHERE account_id=?`,
+			`DELETE FROM caches WHERE account_id=?`,
+			`DELETE FROM account_egress WHERE account_id=?`,
+			`DELETE FROM accounts WHERE id=?`,
+		} {
+			if _, err := tx.Exec(q, id); err != nil {
+				return err
+			}
 		}
-		if _, err := tx.Exec(`DELETE FROM tokens WHERE account_id=?`, id); err != nil {
-			return err
-		}
-		_, err := tx.Exec(`DELETE FROM accounts WHERE id=?`, id)
-		return err
+		return nil
 	})
 }
 
-// SetMember adds a user to an ORG account or updates their role. Personal
-// accounts have exactly their owner — extra members are refused here, not
-// just hidden in the UI.
+// SetMember adds a user to an ORG account or updates their role. Only
+// "admin" and "user" are grantable; the owner (the org's original creator)
+// can never be granted, changed, or displaced — that rules out privilege
+// escalation and ownerless orgs by construction. Personal accounts have
+// exactly their owner — extra members are refused here, not just hidden in
+// the UI.
 func (db *DB) SetMember(accountID, userID int64, role string) error {
+	if role != "admin" && role != "user" {
+		return errors.New("grantable roles are admin and user")
+	}
 	return db.write(func(tx *sql.Tx) error {
 		var kind string
 		if err := tx.QueryRow(`SELECT kind FROM accounts WHERE id=?`, accountID).Scan(&kind); err != nil {
 			return err
 		}
-		var owner int
-		isOwner := tx.QueryRow(`SELECT 1 FROM account_members WHERE account_id=? AND user_id=?`, accountID, userID).Scan(&owner) == nil
-		if kind != "org" && !isOwner {
+		var cur string
+		isMember := tx.QueryRow(`SELECT role FROM account_members WHERE account_id=? AND user_id=?`, accountID, userID).Scan(&cur) == nil
+		if isMember && cur == "owner" {
+			return errors.New("the owner's role cannot be changed")
+		}
+		if kind != "org" && !isMember {
 			return errors.New("personal accounts cannot have additional members")
 		}
 		_, err := tx.Exec(`INSERT INTO account_members (account_id, user_id, role) VALUES (?,?,?)
@@ -165,12 +185,39 @@ func (db *DB) SetMember(accountID, userID int64, role string) error {
 	})
 }
 
-// RemoveMember drops a user from an account.
+// MakeOwner records the account's owner — its original creator. Exactly one
+// per account, set at creation time, never transferable.
+func (db *DB) MakeOwner(accountID, userID int64) error {
+	return db.write(func(tx *sql.Tx) error {
+		var one int
+		if tx.QueryRow(`SELECT 1 FROM account_members WHERE account_id=? AND role='owner'`, accountID).Scan(&one) == nil {
+			return errors.New("account already has an owner")
+		}
+		_, err := tx.Exec(`INSERT INTO account_members (account_id, user_id, role) VALUES (?,?,'owner')
+			 ON CONFLICT (account_id, user_id) DO UPDATE SET role='owner'`, accountID, userID)
+		return err
+	})
+}
+
+// RemoveMember drops a user from an account. The owner cannot be removed —
+// an org keeps its creator for its lifetime.
 func (db *DB) RemoveMember(accountID, userID int64) error {
 	return db.write(func(tx *sql.Tx) error {
+		var cur string
+		if tx.QueryRow(`SELECT role FROM account_members WHERE account_id=? AND user_id=?`, accountID, userID).Scan(&cur) == nil && cur == "owner" {
+			return errors.New("the owner cannot be removed")
+		}
 		_, err := tx.Exec(`DELETE FROM account_members WHERE account_id=? AND user_id=?`, accountID, userID)
 		return err
 	})
+}
+
+// OwnsOrgs reports whether the user is the owner of any organization —
+// such a user cannot be deleted until their orgs are gone.
+func (db *DB) OwnsOrgs(userID int64) bool {
+	var one int
+	return db.r.QueryRow(`SELECT 1 FROM account_members m JOIN accounts a ON a.id = m.account_id
+		WHERE m.user_id=? AND m.role='owner' AND a.kind='org'`, userID).Scan(&one) == nil
 }
 
 // ListMembers returns an account's members with usernames.

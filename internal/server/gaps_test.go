@@ -239,7 +239,7 @@ func TestCreateAndEditTokenDefaults(t *testing.T) {
 	id := tok.ID
 	resp, _ = c.PostForm(ts.URL+"/admin/tokens/"+strconv.FormatInt(id, 10)+"/edit", url.Values{
 		"name": {""}, "cache": {"admin/somecache"}, "push": {"on"},
-		"ttl_value": {"1"}, "ttl_unit": {"h"},
+		"ttl": {"2592000"},
 	})
 	resp.Body.Close()
 	got, _ := db.GetToken(id)

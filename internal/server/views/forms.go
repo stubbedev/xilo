@@ -71,16 +71,28 @@ func planSecs(p *store.Plan) int64 {
 	return p.MaxRetention
 }
 
-// tokenScopeValue is the cache-scope select value for a token ("" = none
-// picked yet; admin-only tokens have no cache scope).
-func tokenScopeValue(t *store.Token) string {
-	if t == nil || scopeAll(t.Caches) {
+// tokenScopeValue is the cache-scope select value for a token; a new token
+// preselects its account's first cache (admin-only tokens have no scope).
+func tokenScopeValue(t *store.Token, d DashboardData) string {
+	if t == nil {
+		if cs := tokenScopeCaches(nil, d); len(cs) > 0 {
+			return cs[0].Cache.Ref()
+		}
+		return ""
+	}
+	if scopeAll(t.Caches) {
 		return ""
 	}
 	if t.AccountID != 0 {
 		return t.Account + "/" + t.Caches[0]
 	}
 	return t.Caches[0]
+}
+
+// canMintToken reports whether the acting account has a cache to scope a new
+// token to — the create button stays disabled until it does.
+func canMintToken(d DashboardData) bool {
+	return len(tokenScopeCaches(nil, d)) > 0
 }
 
 // tokenAccount is the read-only owning-account label: the stored owner when
@@ -100,10 +112,10 @@ func tokenAccount(t *store.Token, d DashboardData) string {
 func tokenScopeCaches(t *store.Token, d DashboardData) []CacheUsage {
 	acct := tokenAccount(t, d)
 	if t != nil && t.AccountID == 0 {
-		return d.Caches
+		return d.AllCaches
 	}
 	var out []CacheUsage
-	for _, u := range d.Caches {
+	for _, u := range d.AllCaches {
 		if u.Cache.Account == acct {
 			out = append(out, u)
 		}
@@ -132,12 +144,4 @@ func tokenPerm(t *store.Token, perm string) bool {
 // permanent; new tokens never expire unless a TTL is chosen.
 func tokenPermanent(t *store.Token) bool {
 	return t == nil || t.Expires == 0
-}
-
-// tokenTTL is the prefilled TTL seconds for the duration input.
-func tokenTTL(t *store.Token) int64 {
-	if t == nil {
-		return 30 * 86400
-	}
-	return Remaining(t.Expires)
 }

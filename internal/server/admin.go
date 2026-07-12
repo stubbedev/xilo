@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -280,7 +281,6 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/account/totp/enable", s.handleTOTPEnable)
 	mux.HandleFunc("POST /admin/account/totp/disable", s.handleTOTPDisable)
 	mux.HandleFunc("POST /admin/users", s.handleCreateUser)
-	mux.HandleFunc("POST /admin/users/{id}/role", s.handleUserRole)
 	mux.HandleFunc("POST /admin/users/{id}/reset", s.handleUserReset)
 	mux.HandleFunc("POST /admin/users/{id}/delete", s.handleUserDelete)
 }
@@ -299,10 +299,17 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	s.renderDashboard(w, r, s.popFlash(w, r))
 }
 
-// canManage reports whether u may mutate resources in a namespace: instance
-// admins always, otherwise namespace owners.
+// canManage reports whether u may mutate resources in an account: the
+// instance owner always, otherwise the account's owner or admins.
 func (s *Server) canManage(u *store.User, nsID int64) bool {
-	return u != nil && (u.Role == "owner" || s.db.MemberRole(nsID, u.ID) == "admin")
+	if u == nil {
+		return false
+	}
+	if u.Role == "owner" {
+		return true
+	}
+	mr := s.db.MemberRole(nsID, u.ID)
+	return mr == "owner" || mr == "admin"
 }
 
 // visibleCaches lists the caches u may see: all for admins, their namespaces'
@@ -338,7 +345,7 @@ func (s *Server) visibleTokens(u *store.User) ([]store.Token, error) {
 	}
 	var out []store.Token
 	for _, ns := range nss {
-		if s.db.MemberRole(ns.ID, u.ID) != "admin" {
+		if mr := s.db.MemberRole(ns.ID, u.ID); mr != "owner" && mr != "admin" {
 			continue
 		}
 		ts, err := s.db.ListAccountTokens(ns.ID)
@@ -361,7 +368,7 @@ func (s *Server) ownedNamespaces(u *store.User) ([]store.Account, error) {
 	}
 	var out []store.Account
 	for _, ns := range nss {
-		if s.db.MemberRole(ns.ID, u.ID) == "admin" {
+		if mr := s.db.MemberRole(ns.ID, u.ID); mr == "owner" || mr == "admin" {
 			out = append(out, ns)
 		}
 	}
@@ -433,6 +440,9 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// The full visible list, captured before search/paging mutate `usages`
+	// in place — the token dialog's scope picker must see every cache.
+	allCaches := append([]views.CacheUsage(nil), usages...)
 	cq := strings.TrimSpace(r.URL.Query().Get("caches[q]"))
 	if cq != "" {
 		kept := usages[:0]
@@ -464,6 +474,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 		Nav:        s.nav(r, u),
 		Global:     global,
 		Caches:     pagedCaches,
+		AllCaches:  allCaches,
 		Tokens:     pagedTokens,
 		Accounts:   owned,
 		Storages:   s.storageNames(),
@@ -1103,7 +1114,7 @@ func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
 	// quota.
 	if u.Role != "owner" {
 		acc, err := s.db.GetAccount(ns)
-		if err != nil || s.db.MemberRole(acc.ID, u.ID) != "admin" {
+		if err != nil || !s.canManage(u, acc.ID) {
 			s.flashRedirect(w, r, "/admin", views.T("flash.notadmin"))
 			return
 		}
@@ -1323,7 +1334,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 	}
 	var expires int64
 	if r.FormValue("permanent") == "" {
-		if secs, ok := formSeconds(r, "ttl"); ok && secs > 0 {
+		if secs, _ := strconv.ParseInt(r.FormValue("ttl"), 10, 64); secs > 0 {
 			expires = time.Now().Unix() + secs
 		}
 	}
@@ -1403,7 +1414,7 @@ func (s *Server) handleEditToken(w http.ResponseWriter, r *http.Request) {
 	expires := t.Expires
 	if r.FormValue("permanent") != "" {
 		expires = 0
-	} else if secs, ok := formSeconds(r, "ttl"); ok && secs > 0 {
+	} else if secs, _ := strconv.ParseInt(r.FormValue("ttl"), 10, 64); secs > 0 {
 		expires = time.Now().Unix() + secs
 	}
 	if err := s.db.UpdateToken(t.ID, name, caches, perms, expires); err != nil {
@@ -1495,7 +1506,6 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.FormValue("username"))
 	email := strings.TrimSpace(r.FormValue("email"))
 	pw := r.FormValue("password")
-	role := formRole(r)
 	if name == "" {
 		s.instanceFlash(w, r, views.T("flash.userreq"))
 		return
@@ -1513,19 +1523,11 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if _, err := s.db.CreateUser(name, email, string(hash), role); err != nil {
+	if _, err := s.db.CreateUser(name, email, string(hash), "user"); err != nil {
 		s.instanceFlash(w, r, views.T("flash.userfailed")+" "+err.Error())
 		return
 	}
 	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.usercreated"), name))
-}
-
-// formRole whitelists the instance role field.
-func formRole(r *http.Request) string {
-	if r.FormValue("role") == "owner" {
-		return "owner"
-	}
-	return "user"
 }
 
 // userByPath resolves the {id} path value to a user, or writes 404.
@@ -1541,36 +1543,6 @@ func (s *Server) userByPath(w http.ResponseWriter, r *http.Request) (*store.User
 		return nil, false
 	}
 	return u, true
-}
-
-// lastOwner reports whether u is the only owner left — the one account that
-// can never be demoted or deleted.
-func (s *Server) lastOwner(u *store.User) bool {
-	if u.Role != "owner" {
-		return false
-	}
-	n, err := s.db.CountOwners()
-	return err != nil || n <= 1
-}
-
-func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
-		return
-	}
-	u, ok := s.userByPath(w, r)
-	if !ok {
-		return
-	}
-	role := formRole(r)
-	if role != "owner" && s.lastOwner(u) {
-		s.instanceFlash(w, r, views.T("flash.lastadmin"))
-		return
-	}
-	if err := s.db.SetUserRole(u.ID, role); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.userrole"), u.Name, views.T("role."+role)))
 }
 
 func (s *Server) handleUserReset(w http.ResponseWriter, r *http.Request) {
@@ -1610,8 +1582,12 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 		s.instanceFlash(w, r, views.T("flash.delself"))
 		return
 	}
-	if s.lastOwner(u) {
-		s.instanceFlash(w, r, views.T("flash.dellastadmin"))
+	if u.Role == "owner" {
+		s.instanceFlash(w, r, views.T("flash.delowner"))
+		return
+	}
+	if s.db.OwnsOrgs(u.ID) {
+		s.instanceFlash(w, r, views.T("flash.ownsorgs"))
 		return
 	}
 	if err := s.db.DeleteUser(u.ID); err != nil {
@@ -1632,9 +1608,13 @@ func (s *Server) handleCreateOrg(w http.ResponseWriter, r *http.Request) {
 		s.instanceFlash(w, r, views.T("flash.badorgname"))
 		return
 	}
-	if _, err := s.db.EnsureAccount(name, "org"); err != nil {
+	org, err := s.db.EnsureAccount(name, "org")
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if u := s.currentUser(r); u != nil {
+		_ = s.db.MakeOwner(org.ID, u.ID)
 	}
 	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.orgready"), name))
 }
@@ -1662,19 +1642,29 @@ func (s *Server) orgByPath(w http.ResponseWriter, r *http.Request) (*store.Accou
 	return ns, u, true
 }
 
+// handleDeleteOrg cascades an organization away — memberships, tokens,
+// caches, paths; orphaned chunk blobs leave disk on the GC sweep kicked
+// below. Only the org's owner (or the instance owner) may do this: admins
+// manage an org, owners destroy it.
 func (s *Server) handleDeleteOrg(w http.ResponseWriter, r *http.Request) {
-	if !s.requireAdmin(w, r) {
-		return
-	}
-	ns, _, ok := s.orgByPath(w, r)
+	ns, u, ok := s.orgByPath(w, r)
 	if !ok {
 		return
 	}
-	if err := s.db.DeleteAccount(ns.ID); err != nil {
-		s.instanceFlash(w, r, views.T("flash.deletefailed")+" "+err.Error())
+	if u.Role != "owner" && s.db.MemberRole(ns.ID, u.ID) != "owner" {
+		s.flashRedirect(w, r, "/admin/org/"+ns.Slug, views.T("flash.ownerdelete"))
 		return
 	}
-	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.orgdeleted"), ns.Slug))
+	if err := s.db.DeleteOrg(ns.ID); err != nil {
+		s.flashRedirect(w, r, "/admin/org/"+ns.Slug, views.T("flash.deletefailed")+" "+err.Error())
+		return
+	}
+	go s.runGC(context.Background())
+	if u.Role == "owner" {
+		s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.orgdeleted"), ns.Slug))
+		return
+	}
+	s.flashRedirect(w, r, "/admin", fmt.Sprintf(views.T("flash.orgdeleted"), ns.Slug))
 }
 
 // handleSetMember adds a user (picked by id) to an org or changes their role.
@@ -1719,7 +1709,7 @@ func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 	}
 	uid, _ := strconv.ParseInt(r.PathValue("uid"), 10, 64)
 	if err := s.db.RemoveMember(ns.ID, uid); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		s.flashRedirect(w, r, "/admin/org/"+ns.Slug, err.Error())
 		return
 	}
 	s.flashRedirect(w, r, "/admin/org/"+ns.Slug, views.T("flash.memberremoved"))

@@ -191,7 +191,7 @@ func (s *Server) apiDeleteNamespace(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := s.db.DeleteAccount(ns.ID); err != nil {
+	if err := s.db.DeleteOrg(ns.ID); err != nil {
 		apiError(w, http.StatusConflict, err.Error())
 		return
 	}

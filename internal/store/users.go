@@ -7,7 +7,9 @@ import (
 	"time"
 )
 
-// User is a dashboard account. Role "owner" manages everything; "user" can
+// User is a dashboard account. Role "owner" manages everything and is held
+// only by the bootstrap account — it is never granted, demoted, or deleted;
+// "user" can
 // sign in and manage their own account (namespace membership scopes what they
 // see — added with namespaces).
 type User struct {
@@ -71,7 +73,7 @@ func (db *DB) createUser(name, email, passHash, role, status string) (*User, err
 			u.Name, "user", u.Created).Scan(&accID); err != nil {
 			return err
 		}
-		_, err := tx.Exec(`INSERT INTO account_members (account_id, user_id, role) VALUES (?,?,'admin')`, accID, u.ID)
+		_, err := tx.Exec(`INSERT INTO account_members (account_id, user_id, role) VALUES (?,?,'owner')`, accID, u.ID)
 		return err
 	})
 	if err != nil {
@@ -132,14 +134,6 @@ func (db *DB) UsersExist() bool {
 	return db.r.QueryRow(`SELECT 1 FROM users LIMIT 1`).Scan(&one) == nil
 }
 
-// CountOwners counts owner-role users — deleting or demoting the last one is
-// refused at the handler layer.
-func (db *DB) CountOwners() (int, error) {
-	var n int
-	err := db.r.QueryRow(`SELECT COUNT(*) FROM users WHERE role='owner'`).Scan(&n)
-	return n, err
-}
-
 func (db *DB) SetUserPassword(id int64, passHash string) error {
 	return db.write(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`UPDATE users SET password_hash=? WHERE id=?`, passHash, id)
@@ -167,13 +161,6 @@ func (db *DB) SetUserEmail(id int64, email string) error {
 	})
 }
 
-func (db *DB) SetUserRole(id int64, role string) error {
-	return db.write(func(tx *sql.Tx) error {
-		_, err := tx.Exec(`UPDATE users SET role=? WHERE id=?`, role, id)
-		return err
-	})
-}
-
 // DeleteUser removes a user along with their passkeys, sessions and org
 // memberships. Their personal account is removed only when empty; with caches
 // it stays (orphaned, super-admin managed) rather than cascading data away.
@@ -190,6 +177,12 @@ func (db *DB) DeleteUser(id int64) error {
 			return err
 		}
 		if _, err := tx.Exec(`DELETE FROM account_members WHERE user_id=?`, id); err != nil {
+			return err
+		}
+		// Credentials die with the user: every token of their personal account
+		// is revoked (org tokens belong to the org, not to its members).
+		if _, err := tx.Exec(`UPDATE tokens SET revoked=1 WHERE account_id IN
+			(SELECT id FROM accounts WHERE slug=? AND kind='user')`, name); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(`DELETE FROM accounts WHERE slug=? AND kind='user'

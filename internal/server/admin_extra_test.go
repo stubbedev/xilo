@@ -233,7 +233,7 @@ func TestAdminTokenCRUD(t *testing.T) {
 
 	resp, _ := c.PostForm(ts.URL+"/admin/tokens", url.Values{
 		"name": {"ci"}, "cache": {"admin/c"}, "push": {"on"}, "pull": {"on"},
-		"ttl_value": {"1"}, "ttl_unit": {"d"},
+		"ttl": {"604800"},
 	})
 	if b := body(t, resp); !strings.Contains(b, "created") {
 		t.Fatalf("token create response: %q", b)

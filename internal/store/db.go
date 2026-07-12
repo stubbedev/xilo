@@ -778,7 +778,7 @@ func migratePersonalAccounts(w *sql.DB) error {
 			r.name, "user", r.created).Scan(&accID); err != nil {
 			return err
 		}
-		if _, err := w.Exec(`INSERT INTO account_members (account_id, user_id, role) VALUES (?,?,'admin')
+		if _, err := w.Exec(`INSERT INTO account_members (account_id, user_id, role) VALUES (?,?,'owner')
 			ON CONFLICT (account_id, user_id) DO NOTHING`, accID, r.id); err != nil {
 			return err
 		}

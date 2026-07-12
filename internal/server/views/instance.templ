@@ -278,24 +278,7 @@ templ usersCard(actingName string, multiTenant bool, users []store.User) {
 											</form>
 										}
 										@resetUserDialog(u)
-										if u.Name != actingName {
-											<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/role") }>
-												if u.Role == "owner" {
-													<input type="hidden" name="role" value="user"/>
-													@WithTooltip(T("users.demote")) {
-														@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.demote")}}) {
-															@Icon("user-minus")
-														}
-													}
-												} else {
-													<input type="hidden" name="role" value="owner"/>
-													@WithTooltip(T("users.promote")) {
-														@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.promote")}}) {
-															@Icon("user-plus")
-														}
-													}
-												}
-											</form>
+										if u.Name != actingName && u.Role != "owner" {
 											@ConfirmForm(Confirm{
 												ID:             "del-user-" + strconv.FormatInt(u.ID, 10),
 												Action:         "/admin/users/" + strconv.FormatInt(u.ID, 10) + "/delete",
@@ -387,7 +370,6 @@ templ newUserDialog(multiTenant bool) {
 				@Field("nu-pw", T("login.password")) {
 					@input.Input(input.Props{ID: "nu-pw", Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "8"}})
 				}
-				@PermSwitchVal("role", "owner", T("role.owner"), false)
 				@dialog.Footer() {
 					@dialog.Close(dialog.CloseProps{For: "dlg-user-new"}) {
 						@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {

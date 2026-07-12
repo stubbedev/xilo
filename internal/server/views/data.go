@@ -177,7 +177,8 @@ func PageOf[T any](items []T, page, n int) ([]T, int, int) {
 type DashboardData struct {
 	Nav        Nav
 	Global     store.Global
-	Caches     []CacheUsage
+	Caches     []CacheUsage // current page of the (possibly searched) cache list
+	AllCaches  []CacheUsage // every visible cache — scope pickers, preconditions
 	Tokens     []store.Token
 	Accounts   []store.Account // accounts the viewer can create caches/tokens in
 	Storages   []string        // configured blob backends, default first

@@ -124,7 +124,7 @@ func TestPostgres(t *testing.T) {
 	if err := db.DeleteCache(tc.ID); err != nil {
 		t.Fatalf("delete team cache: %v", err)
 	}
-	if err := db.DeleteAccount(ns2.ID); err != nil {
+	if err := db.DeleteOrg(ns2.ID); err != nil {
 		t.Fatalf("DeleteNamespace: %v", err)
 	}
 
@@ -210,9 +210,6 @@ func TestPostgres(t *testing.T) {
 	}
 	if got, err := db.GetUserByName("admin"); err != nil || got.ID != usr.ID {
 		t.Fatalf("GetUserByName: %+v %v", got, err)
-	}
-	if n, _ := db.CountOwners(); n != 1 {
-		t.Fatalf("CountOwners = %d", n)
 	}
 	if err := db.SetUserTOTPSecret(usr.ID, []byte("s3cret")); err != nil {
 		t.Fatalf("SetUserTOTPSecret: %v", err)
