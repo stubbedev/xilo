@@ -99,7 +99,7 @@ templ Account(d AccountData) {
 							}
 						</div>
 					}
-					@button.Button(button.Props{Type: button.TypeButton, Attributes: templ.Attributes{"onclick": "xiloPasskeyRegister()"}}) {
+					@button.Button(button.Props{Size: button.SizeSm, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": "xiloPasskeyRegister()"}}) {
 						@Icon("fingerprint-pattern")
 						<span>{ T("set.passkeys.add") }</span>
 					}
@@ -140,7 +140,7 @@ templ Account(d AccountData) {
 						<div class="flex items-center justify-between">
 							<p class="text-sm text-muted-foreground">{ T("set.2fa.protect") }</p>
 							<form method="post" action="/admin/account/totp/enroll">
-								@button.Button(button.Props{Type: button.TypeSubmit, Size: button.SizeSm}) {
+								@button.Button(button.Props{Type: button.TypeSubmit}) {
 									@Icon("shield")
 									<span>{ T("set.2fa.enable") }</span>
 								}

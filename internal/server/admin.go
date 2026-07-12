@@ -186,7 +186,18 @@ func (s *Server) handleContext(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   int((30 * 24 * time.Hour).Seconds()),
 		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.secureCookies(),
 	})
-	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+	http.Redirect(w, r, refererPath(r), http.StatusSeeOther)
+}
+
+// refererPath is the same-origin path the request came from ("/admin" when
+// absent or cross-origin) — POST-and-return for controls that live on every
+// page, like the context switcher.
+func refererPath(r *http.Request) string {
+	ref, err := url.Parse(r.Header.Get("Referer"))
+	if err != nil || ref.Host != r.Host || !strings.HasPrefix(ref.Path, "/admin") {
+		return "/admin"
+	}
+	return ref.Path
 }
 
 // requireUser gates per-account endpoints: any signed-in user, plus a
@@ -194,6 +205,13 @@ func (s *Server) handleContext(w http.ResponseWriter, r *http.Request) {
 func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) *store.User {
 	u := s.currentUser(r)
 	if u == nil {
+		// htmx fragment requests must not receive the login page (the swap
+		// would splice it into the open page) — send a client-side redirect.
+		if r.Header.Get("HX-Request") == "true" {
+			w.Header().Set("HX-Redirect", "/admin")
+			w.WriteHeader(http.StatusUnauthorized)
+			return nil
+		}
 		http.Redirect(w, r, "/admin", http.StatusSeeOther)
 		return nil
 	}
@@ -278,7 +296,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		views.Login(!s.db.UsersExist(), s.hasPasskeys(), s.registrationOpen(), views.Flash{}).Render(r.Context(), w)
 		return
 	}
-	s.renderDashboard(w, r, views.Flash{})
+	s.renderDashboard(w, r, s.popFlash(w, r))
 }
 
 // canManage reports whether u may mutate resources in a namespace: instance
@@ -468,7 +486,8 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !s.logins.allow(clientIP(r)) {
 		s.metrics.authFailures.Add(1)
-		http.Error(w, "too many attempts — wait a moment", http.StatusTooManyRequests)
+		w.WriteHeader(http.StatusTooManyRequests)
+		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T("flash.ratelimited")}).Render(r.Context(), w)
 		return
 	}
 	u, err := s.db.GetUserByLogin(strings.TrimSpace(r.FormValue("username")))
@@ -514,7 +533,8 @@ func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
 	// Same bucket as passwords: a 6-digit TOTP is brute-forceable without it.
 	if !s.logins.allow(clientIP(r)) {
 		s.metrics.authFailures.Add(1)
-		http.Error(w, "too many attempts — wait a moment", http.StatusTooManyRequests)
+		w.WriteHeader(http.StatusTooManyRequests)
+		views.LoginCode(r.FormValue("pending"), views.Flash{Msg: views.T("flash.ratelimited")}).Render(r.Context(), w)
 		return
 	}
 	pid := r.FormValue("pending")
@@ -561,7 +581,7 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, id string) {
 
 func (s *Server) handleAccountPage(w http.ResponseWriter, r *http.Request) {
 	if u := s.requireUser(w, r); u != nil {
-		s.renderAccount(w, r, u, views.Flash{})
+		s.renderAccount(w, r, u, s.popFlash(w, r))
 	}
 }
 
@@ -586,8 +606,12 @@ func (s *Server) handleAccountEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email := strings.TrimSpace(r.FormValue("email"))
+	if s.cfg.MultiTenant && !validEmail(email) {
+		s.accountFlash(w, r, views.T("flash.emailreq"))
+		return
+	}
 	if err := s.db.SetUserEmail(u.ID, email); err != nil {
-		s.renderAccount(w, r, u, views.Flash{Msg: "Could not save email: " + err.Error()})
+		s.accountFlash(w, r, views.T("flash.emailfailed")+" "+err.Error())
 		return
 	}
 	u.Email = email
@@ -595,14 +619,14 @@ func (s *Server) handleAccountEmail(w http.ResponseWriter, r *http.Request) {
 	if email == "" {
 		msg = "Email cleared."
 	}
-	s.renderAccount(w, r, u, views.Flash{Msg: msg})
+	s.accountFlash(w, r, msg)
 }
 
 func (s *Server) handleInstancePage(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return
 	}
-	s.renderInstance(w, r, views.Flash{})
+	s.renderInstance(w, r, s.popFlash(w, r))
 }
 
 // orgInfo assembles one account's membership + usage.
@@ -623,6 +647,10 @@ func (s *Server) renderInstance(w http.ResponseWriter, r *http.Request, flash vi
 	u := s.currentUser(r)
 	if u == nil {
 		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		return
+	}
+	if u.Role != "admin" { // defense in depth: never leak the instance page
+		http.Error(w, "admin role required", http.StatusForbidden)
 		return
 	}
 	d := views.InstanceData{
@@ -669,7 +697,7 @@ func (s *Server) handleOrgPage(w http.ResponseWriter, r *http.Request) {
 	if u == nil {
 		return
 	}
-	s.renderOrg(w, r, u, r.PathValue("slug"), views.Flash{})
+	s.renderOrg(w, r, u, r.PathValue("slug"), s.popFlash(w, r))
 }
 
 func (s *Server) renderOrg(w http.ResponseWriter, r *http.Request, u *store.User, slug string, flash views.Flash) {
@@ -734,16 +762,16 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(u.PassHash), []byte(r.FormValue("current"))) != nil {
-		s.renderAccount(w, r, u, views.Flash{Msg: "Current password is incorrect"})
+		s.accountFlash(w, r, views.T("flash.pwwrong"))
 		return
 	}
 	next := r.FormValue("new")
 	switch pwState(next, r.FormValue("confirm")) {
 	case "short", "":
-		s.renderAccount(w, r, u, views.Flash{Msg: "New password must be at least 8 characters"})
+		s.accountFlash(w, r, views.T("flash.pwshort"))
 		return
 	case "mismatch":
-		s.renderAccount(w, r, u, views.Flash{Msg: "Passwords do not match"})
+		s.accountFlash(w, r, views.T("flash.pwmismatch"))
 		return
 	}
 	nh, err := bcrypt.GenerateFromPassword([]byte(next), bcrypt.DefaultCost)
@@ -755,7 +783,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.renderAccount(w, r, u, views.Flash{Msg: "Password changed."})
+	s.accountFlash(w, r, views.T("flash.pwchanged"))
 }
 
 // pwState is the single source of truth for new-password validation: the
@@ -848,7 +876,7 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.TOTPEnabled = true
-	s.renderAccount(w, r, u, views.Flash{Msg: "Two-factor authentication enabled."})
+	s.accountFlash(w, r, views.T("flash.totpon"))
 }
 
 func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
@@ -861,7 +889,7 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.TOTPEnabled = false
-	s.renderAccount(w, r, u, views.Flash{Msg: "Two-factor authentication disabled."})
+	s.accountFlash(w, r, views.T("flash.totpoff"))
 }
 
 // secureCookies marks session cookies Secure when the public base URL is HTTPS
@@ -1067,7 +1095,7 @@ func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
 		ns = "default"
 	}
 	if strings.Contains(name, "/") || strings.Contains(ns, "/") {
-		http.Error(w, "names cannot contain '/'", http.StatusBadRequest)
+		s.flashRedirect(w, r, "/admin", views.T("flash.badname"))
 		return
 	}
 	// Instance admins may create caches anywhere (minting the account on the
@@ -1076,11 +1104,11 @@ func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
 	if u.Role != "admin" {
 		acc, err := s.db.GetAccount(ns)
 		if err != nil || s.db.MemberRole(acc.ID, u.ID) != "admin" {
-			http.Error(w, "you do not administer this account", http.StatusForbidden)
+			s.flashRedirect(w, r, "/admin", views.T("flash.notadmin"))
 			return
 		}
 		if err := s.checkCacheQuota(acc); err != nil {
-			http.Error(w, err.Error(), http.StatusForbidden)
+			s.flashRedirect(w, r, "/admin", err.Error())
 			return
 		}
 	}
@@ -1093,14 +1121,14 @@ func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := s.db.CreateCache(ns, name, public, priority)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		s.flashRedirect(w, r, "/admin", fmt.Sprintf(views.T("flash.cachefailed"), err))
 		return
 	}
 	if err := s.assignStorage(c, stName); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+	s.flashRedirect(w, r, "/admin/cache/"+c.Ref(), fmt.Sprintf(views.T("flash.cachecreated"), c.Ref()))
 }
 
 // notFound renders the styled 404 page (browser routes only).
@@ -1161,6 +1189,7 @@ func (s *Server) handleCacheDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	views.CacheView(views.CacheData{
 		Nav:       s.nav(r, u),
+		Flash:     s.popFlash(w, r),
 		Cache:     *c,
 		Stats:     st,
 		Dedup:     dedup,
@@ -1235,10 +1264,7 @@ func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.renderDashboard(w, r, views.Flash{
-		Msg:  "Signing key rotated. Update trusted-public-keys everywhere — the old key no longer verifies:",
-		Code: nc.PubKey,
-	})
+	s.flashRedirectCode(w, r, "/admin/cache/"+c.Ref(), views.T("flash.rotated"), nc.PubKey)
 }
 
 func (s *Server) handleDeleteCache(w http.ResponseWriter, r *http.Request) {
@@ -1250,7 +1276,7 @@ func (s *Server) handleDeleteCache(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+	s.flashRedirect(w, r, "/admin", fmt.Sprintf(views.T("flash.cachedeleted"), c.Ref()))
 }
 
 // tokenScope validates the form's namespace + cache-scope pair for the acting
@@ -1389,7 +1415,7 @@ func (s *Server) handleEditToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+	s.flashRedirect(w, r, "/admin", views.T("flash.tokenupdated"))
 }
 
 func (s *Server) handleRevokeToken(w http.ResponseWriter, r *http.Request) {
@@ -1401,7 +1427,7 @@ func (s *Server) handleRevokeToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+	s.flashRedirect(w, r, "/admin", views.T("flash.tokenrevoked"))
 }
 
 func (s *Server) handleGC(w http.ResponseWriter, r *http.Request) {
@@ -1413,14 +1439,58 @@ func (s *Server) handleGC(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.renderDashboard(w, r, views.Flash{Msg: fmt.Sprintf("GC done: removed %d chunks, freed %s", deleted, humanBytes(freed))})
+	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.gcdone"), deleted, humanBytes(freed)))
 }
 
 // ---- user management (admin role only) ----
 
-// instanceFlash re-renders the general settings page with a message.
+const flashCookie = "xilo_flash"
+
+// flashRedirect stores a one-shot flash in a cookie and 303-redirects (PRG:
+// a refresh re-fetches the page instead of re-executing the action). Never
+// used for secrets — those render directly and are shown exactly once.
+func (s *Server) flashRedirect(w http.ResponseWriter, r *http.Request, path, msg string) {
+	s.flashRedirectCode(w, r, path, msg, "")
+}
+
+// flashRedirectCode is flashRedirect with a copyable code box (e.g. a rotated
+// public key). Not for secrets.
+func (s *Server) flashRedirectCode(w http.ResponseWriter, r *http.Request, path, msg, code string) {
+	v := url.QueryEscape(msg)
+	if code != "" {
+		v += "|" + url.QueryEscape(code)
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: flashCookie, Value: v, Path: "/admin",
+		MaxAge: 60, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.secureCookies(),
+	})
+	http.Redirect(w, r, path, http.StatusSeeOther)
+}
+
+// popFlash reads and clears the one-shot flash cookie set by flashRedirect.
+func (s *Server) popFlash(w http.ResponseWriter, r *http.Request) views.Flash {
+	c, err := r.Cookie(flashCookie)
+	if err != nil || c.Value == "" {
+		return views.Flash{}
+	}
+	http.SetCookie(w, &http.Cookie{Name: flashCookie, Path: "/admin", MaxAge: -1})
+	raw, code := c.Value, ""
+	if i := strings.IndexByte(raw, '|'); i >= 0 {
+		raw, code = raw[:i], raw[i+1:]
+	}
+	msg, _ := url.QueryUnescape(raw)
+	codeVal, _ := url.QueryUnescape(code)
+	return views.Flash{Msg: msg, Code: codeVal}
+}
+
+// instanceFlash lands the user back on the settings page with a message.
 func (s *Server) instanceFlash(w http.ResponseWriter, r *http.Request, msg string) {
-	s.renderInstance(w, r, views.Flash{Msg: msg})
+	s.flashRedirect(w, r, "/admin/settings", msg)
+}
+
+// accountFlash lands the user back on their account page with a message.
+func (s *Server) accountFlash(w http.ResponseWriter, r *http.Request, msg string) {
+	s.flashRedirect(w, r, "/admin/account", msg)
 }
 
 func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -1432,15 +1502,15 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	pw := r.FormValue("password")
 	role := formRole(r)
 	if name == "" {
-		s.instanceFlash(w, r, "Username is required")
+		s.instanceFlash(w, r, views.T("flash.userreq"))
 		return
 	}
 	if s.cfg.MultiTenant && !validEmail(email) {
-		s.instanceFlash(w, r, "A valid email address is required for accounts on this instance.")
+		s.instanceFlash(w, r, views.T("flash.emailreq"))
 		return
 	}
 	if len(pw) < 8 {
-		s.instanceFlash(w, r, "Password must be at least 8 characters")
+		s.instanceFlash(w, r, views.T("flash.pwshort"))
 		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
@@ -1449,10 +1519,10 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.db.CreateUser(name, email, string(hash), role); err != nil {
-		s.instanceFlash(w, r, "Could not create user: "+err.Error())
+		s.instanceFlash(w, r, views.T("flash.userfailed")+" "+err.Error())
 		return
 	}
-	s.instanceFlash(w, r, fmt.Sprintf("User %q created.", name))
+	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.usercreated"), name))
 }
 
 // formRole whitelists the role field.
@@ -1498,14 +1568,14 @@ func (s *Server) handleUserRole(w http.ResponseWriter, r *http.Request) {
 	}
 	role := formRole(r)
 	if role != "admin" && s.lastAdmin(u) {
-		s.instanceFlash(w, r, "Cannot demote the last admin.")
+		s.instanceFlash(w, r, views.T("flash.lastadmin"))
 		return
 	}
 	if err := s.db.SetUserRole(u.ID, role); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.instanceFlash(w, r, fmt.Sprintf("%s is now a %s.", u.Name, role))
+	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.userrole"), u.Name, views.T("role."+role)))
 }
 
 func (s *Server) handleUserReset(w http.ResponseWriter, r *http.Request) {
@@ -1518,7 +1588,7 @@ func (s *Server) handleUserReset(w http.ResponseWriter, r *http.Request) {
 	}
 	pw := r.FormValue("password")
 	if len(pw) < 8 {
-		s.instanceFlash(w, r, "Password must be at least 8 characters")
+		s.instanceFlash(w, r, views.T("flash.pwshort"))
 		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
@@ -1530,7 +1600,7 @@ func (s *Server) handleUserReset(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.instanceFlash(w, r, fmt.Sprintf("Password reset for %s.", u.Name))
+	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.pwreset"), u.Name))
 }
 
 func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
@@ -1542,18 +1612,18 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if acting := s.currentUser(r); acting != nil && acting.ID == u.ID {
-		s.instanceFlash(w, r, "You cannot delete your own account.")
+		s.instanceFlash(w, r, views.T("flash.delself"))
 		return
 	}
 	if s.lastAdmin(u) {
-		s.instanceFlash(w, r, "Cannot delete the last admin.")
+		s.instanceFlash(w, r, views.T("flash.dellastadmin"))
 		return
 	}
 	if err := s.db.DeleteUser(u.ID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.instanceFlash(w, r, fmt.Sprintf("User %s deleted.", u.Name))
+	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.userdeleted"), u.Name))
 }
 
 // ---- namespace management ----
@@ -1564,14 +1634,14 @@ func (s *Server) handleCreateOrg(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" || strings.ContainsAny(name, "/ ") {
-		s.instanceFlash(w, r, "Namespace names cannot be empty or contain '/' or spaces.")
+		s.instanceFlash(w, r, views.T("flash.badorgname"))
 		return
 	}
 	if _, err := s.db.EnsureAccount(name, "org"); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.instanceFlash(w, r, fmt.Sprintf("Namespace %q ready.", name))
+	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.orgready"), name))
 }
 
 // orgByPath resolves the {slug} path value to an ORG the acting user may
@@ -1606,23 +1676,23 @@ func (s *Server) handleDeleteOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.DeleteAccount(ns.ID); err != nil {
-		s.instanceFlash(w, r, "Could not delete: "+err.Error())
+		s.instanceFlash(w, r, views.T("flash.deletefailed")+" "+err.Error())
 		return
 	}
-	s.instanceFlash(w, r, fmt.Sprintf("Organization %s deleted.", ns.Slug))
+	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.orgdeleted"), ns.Slug))
 }
 
 // handleSetMember adds a user (picked by id) to an org or changes their role.
 // Org admins and instance admins may do this.
 func (s *Server) handleSetMember(w http.ResponseWriter, r *http.Request) {
-	ns, actor, ok := s.orgByPath(w, r)
+	ns, _, ok := s.orgByPath(w, r)
 	if !ok {
 		return
 	}
 	uid, _ := strconv.ParseInt(r.FormValue("user_id"), 10, 64)
 	target, err := s.db.GetUser(uid)
 	if errors.Is(err, store.ErrNotFound) {
-		s.renderOrg(w, r, actor, ns.Slug, views.Flash{Msg: "No such user."})
+		s.flashRedirect(w, r, "/admin/org/"+ns.Slug, views.T("flash.nouser"))
 		return
 	}
 	if err != nil {
@@ -1635,20 +1705,20 @@ func (s *Server) handleSetMember(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.db.MemberRole(ns.ID, target.ID) == "" { // adding, not editing
 		if err := s.checkMemberQuota(ns); err != nil {
-			s.renderOrg(w, r, actor, ns.Slug, views.Flash{Msg: err.Error()})
+			s.flashRedirect(w, r, "/admin/org/"+ns.Slug, err.Error())
 			return
 		}
 	}
 	if err := s.db.SetMember(ns.ID, target.ID, role); err != nil {
-		s.renderOrg(w, r, actor, ns.Slug, views.Flash{Msg: err.Error()})
+		s.flashRedirect(w, r, "/admin/org/"+ns.Slug, err.Error())
 		return
 	}
 	s.notifyOrgMembership(target, ns.Slug, role)
-	s.renderOrg(w, r, actor, ns.Slug, views.Flash{Msg: fmt.Sprintf("%s is now a %s of %s.", target.Name, role, ns.Slug)})
+	s.flashRedirect(w, r, "/admin/org/"+ns.Slug, fmt.Sprintf(views.T("flash.memberrole"), target.Name, views.T("role."+role), ns.Slug))
 }
 
 func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
-	ns, actor, ok := s.orgByPath(w, r)
+	ns, _, ok := s.orgByPath(w, r)
 	if !ok {
 		return
 	}
@@ -1657,7 +1727,7 @@ func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.renderOrg(w, r, actor, ns.Slug, views.Flash{Msg: "Member removed."})
+	s.flashRedirect(w, r, "/admin/org/"+ns.Slug, views.T("flash.memberremoved"))
 }
 
 // mailUser sends a transactional notice to one user (no-op without email or

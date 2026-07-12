@@ -12,6 +12,7 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 
+	"github.com/stubbedev/xilo/internal/server/views"
 	"github.com/stubbedev/xilo/internal/store"
 )
 
@@ -225,7 +226,7 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/admin/account", http.StatusSeeOther)
+	s.accountFlash(w, r, views.T("flash.pkremoved"))
 }
 
 func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request) {

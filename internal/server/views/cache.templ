@@ -25,10 +25,11 @@ type CacheData struct {
 	PathTotal int64
 	PathPager Pager
 	PathSort  SortCtx
+	Flash     Flash
 }
 
 templ CacheView(d CacheData) {
-	@Layout(d.Cache.Ref(), "caches", d.Nav, Flash{}) {
+	@Layout(d.Cache.Ref(), "caches", d.Nav, d.Flash) {
 		<div id="cache-head" class="mb-6 flex flex-wrap items-end justify-between gap-4">
 			<div class="space-y-1">
 				<h1 class="flex items-center gap-2 text-2xl font-semibold tracking-tight">
@@ -39,7 +40,7 @@ templ CacheView(d CacheData) {
 			</div>
 			@button.Button(button.Props{Href: "/admin", Variant: button.VariantOutline, Size: button.SizeSm}) {
 				@Icon("arrow-left")
-				<span>{ T("tokens.scopeall") }</span>
+				<span>{ T("cd.back") }</span>
 			}
 		</div>
 		<div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -145,15 +146,14 @@ templ CacheView(d CacheData) {
 					<div class="flex items-center justify-between gap-3">
 						<p class="text-sm text-muted-foreground">{ T("cd.rotatehint") }</p>
 						@ConfirmForm(Confirm{
-							ID:             "rotate",
-							Action:         "/admin/cache/" + d.Cache.Ref() + "/rotate",
-							Title:          T("cd.rotatetitle"),
-							Message:        T("confirm.rotate"),
-							ConfirmLabel:   T("cd.rotate"),
-							ConfirmIcon:    "key-round",
-							TriggerLabel:   T("cd.rotate"),
-							TriggerIcon:    "key-round",
-							TriggerVariant: button.VariantSecondary,
+							ID:           "rotate",
+							Action:       "/admin/cache/" + d.Cache.Ref() + "/rotate",
+							Title:        T("cd.rotatetitle"),
+							Message:      T("confirm.rotate"),
+							ConfirmLabel: T("cd.rotate"),
+							ConfirmIcon:  "key-round",
+							TriggerLabel: T("cd.rotate"),
+							TriggerIcon:  "key-round",
 						})
 					</div>
 					@separator.Separator()

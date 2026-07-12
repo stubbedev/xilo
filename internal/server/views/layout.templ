@@ -22,10 +22,12 @@ import (
 	"github.com/templui/templui/components/tooltip"
 )
 
-// Flash is a one-shot banner. A non-empty Code renders as a copy-me token box.
+// Flash is a one-shot banner. A non-empty Code renders as a copy-me token
+// box; OK marks a success message (auth pages otherwise style it as an error).
 type Flash struct {
 	Msg  string
 	Code string
+	OK   bool
 }
 
 // Nav is the header state: who is signed in and which account contexts they

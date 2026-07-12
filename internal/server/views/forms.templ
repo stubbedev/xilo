@@ -189,14 +189,20 @@ templ VisibilitySwitch(private bool) {
 	}
 }
 
-// PermSwitchVal is a labelled switch row posting `value` when checked.
-templ PermSwitchVal(name, value, text string, checked bool) {
+// PermSwitchID is a labelled switch row with an explicit DOM id — required
+// when the same form body renders more than once per page (per-row dialogs).
+templ PermSwitchID(id, name, value, text string, checked bool) {
 	@form.ItemFlex(form.ItemProps{Class: "justify-between rounded-lg border p-3"}) {
-		@form.Label(form.LabelProps{For: "perm-" + name}) {
+		@form.Label(form.LabelProps{For: id}) {
 			{ text }
 		}
-		@switchcomp.Switch(switchcomp.Props{ID: "perm-" + name, Name: name, Value: value, Checked: checked})
+		@switchcomp.Switch(switchcomp.Props{ID: id, Name: name, Value: value, Checked: checked})
 	}
+}
+
+// PermSwitchVal is a labelled switch row posting `value` when checked.
+templ PermSwitchVal(name, value, text string, checked bool) {
+	@PermSwitchID("perm-"+name, name, value, text, checked)
 }
 
 // PermSwitch is one token-permission switch row ("on" when checked).

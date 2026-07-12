@@ -40,7 +40,7 @@ func tokenNamespaceDefault(d DashboardData) string {
 // admin-only concept.
 func tokenNamespacePlaceholder(d DashboardData) string {
 	if d.IsAdmin {
-		return T("tokens.instance")
+		return T("tokens.pickaccount")
 	}
 	return T("caches.pickaccount")
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/stubbedev/xilo/internal/store"
+	"github.com/templui/templui/components/alert"
 	"github.com/templui/templui/components/badge"
 	"github.com/templui/templui/components/button"
 	"github.com/templui/templui/components/progress"
@@ -65,6 +66,14 @@ func toastDuration(flash Flash) int {
 		return 10000
 	}
 	return 5000
+}
+
+// authAlertVariant styles auth-page flashes: destructive unless marked OK.
+func authAlertVariant(f Flash) alert.Variant {
+	if f.OK {
+		return alert.VariantDefault
+	}
+	return alert.VariantDestructive
 }
 
 // statusVariant maps a token status to a badge variant.
@@ -158,16 +167,18 @@ func snippetPush(d CacheData) string {
 	return "XILO_URL=" + d.BaseURL + " XILO_TOKEN=<token> xilo push " + d.Cache.Ref() + " ./result"
 }
 
-// hxSwapAttrs makes a link (or its descendants) swap just one region via
-// htmx instead of the boosted full-body navigation.
-func hxSwapAttrs(target string) templ.Attributes {
-	if target == "" {
+// hxSwapAttrs makes a link fetch `url` via htmx and swap just one region in
+// place of a full-page navigation; plain-anchor fallback still works.
+func hxSwapAttrs(url, target string) templ.Attributes {
+	if url == "" || target == "" {
 		return nil
 	}
 	return templ.Attributes{
-		"hx-target": target,
-		"hx-select": target,
-		"hx-swap":   "outerHTML show:none",
+		"hx-get":      url,
+		"hx-target":   target,
+		"hx-select":   target,
+		"hx-swap":     "outerHTML show:none",
+		"hx-push-url": "true",
 	}
 }
 

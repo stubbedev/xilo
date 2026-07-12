@@ -127,13 +127,13 @@ templ PagerNav(p Pager) {
 		@pagination.Pagination(pagination.Props{Class: "mt-4"}) {
 			@pagination.Content() {
 				@pagination.Item() {
-					@pagination.Previous(pagination.PreviousProps{Href: p.Prev, Disabled: p.Prev == "", Label: T("pager.prev"), Attributes: hxSwapAttrs(p.Target)})
+					@pagination.Previous(pagination.PreviousProps{Href: p.Prev, Disabled: p.Prev == "", Label: T("pager.prev"), Attributes: hxSwapAttrs(p.Prev, p.Target)})
 				}
 				@pagination.Item() {
 					<span class="px-2 text-sm text-muted-foreground tabular-nums">{ itoa(int64(p.Page)) } / { itoa(int64(p.Pages)) }</span>
 				}
 				@pagination.Item() {
-					@pagination.Next(pagination.NextProps{Href: p.Next, Disabled: p.Next == "", Label: T("pager.next"), Attributes: hxSwapAttrs(p.Target)})
+					@pagination.Next(pagination.NextProps{Href: p.Next, Disabled: p.Next == "", Label: T("pager.next"), Attributes: hxSwapAttrs(p.Next, p.Target)})
 				}
 			}
 		}
@@ -148,7 +148,7 @@ templ SortHead(s SortCtx, key, label, class string) {
 			class="inline-flex items-center gap-1 hover:text-foreground"
 			href={ templ.SafeURL(s.URL(key)) }
 			aria-sort={ ariaSort(s, key) }
-			{ hxSwapAttrs(s.Target)... }
+			{ hxSwapAttrs(s.URL(key), s.Target)... }
 		>
 			<span>{ label }</span>
 			if s.Key == key {

@@ -272,7 +272,7 @@ templ editTokenDialog(d DashboardData, t store.Token) {
 					{ T("tokens.edithint") }
 				}
 			}
-			@tokenFormBody("/admin/tokens/"+strconv.FormatInt(t.ID, 10)+"/edit", &t, d, "check", T("tokens.save"), id)
+			@tokenFormBody("/admin/tokens/"+strconv.FormatInt(t.ID, 10)+"/edit", &t, d, "check", T("action.savechanges"), id)
 		}
 	}
 }
@@ -280,13 +280,15 @@ templ editTokenDialog(d DashboardData, t store.Token) {
 // tokenFormBody is the shared create/edit token form; t is nil on create.
 templ tokenFormBody(action string, t *store.Token, d DashboardData, submitIcon, submitLabel, dlgID string) {
 	<form method="post" action={ templ.SafeURL(action) } class="mt-2 space-y-4">
-		@Field("token-name", T("tokens.name")) {
-			@input.Input(input.Props{ID: "token-name", Name: "name", Value: tokenName(t), Placeholder: T("ph.tokenname"), Required: true})
+		@Field(dlgID+"-name", T("tokens.name")) {
+			@input.Input(input.Props{ID: dlgID + "-name", Name: "name", Value: tokenName(t), Placeholder: T("ph.tokenname"), Required: true})
 		}
-		@Field("token-ns", T("tokens.namespace")) {
-			if t != nil {
-				@input.Input(input.Props{ID: "token-ns", Value: tokenAccountLabel(t), Disabled: true})
-			} else {
+		if t != nil {
+			@Field(dlgID+"-ns", T("caches.account")) {
+				@input.Input(input.Props{ID: dlgID + "-ns", Value: tokenAccountLabel(t), Disabled: true})
+			}
+		} else {
+			@Field("", T("caches.account")) {
 				@AccountSelect("namespace", tokenNamespaceDefault(d), tokenNamespacePlaceholder(d), d.Accounts, d.IsAdmin)
 			}
 		}
@@ -295,15 +297,15 @@ templ tokenFormBody(action string, t *store.Token, d DashboardData, submitIcon, 
 		}
 		@Field("", T("tokens.perms")) {
 			<div class="space-y-2">
-				@PermSwitch("push", T("tokens.push"), tokenPerm(t, "push"))
-				@PermSwitch("pull", T("tokens.pull"), tokenPerm(t, "pull"))
+				@PermSwitchID(dlgID+"-push", "push", "on", T("tokens.push"), tokenPerm(t, "push"))
+				@PermSwitchID(dlgID+"-pull", "pull", "on", T("tokens.pull"), tokenPerm(t, "pull"))
 				if d.IsAdmin {
-					@PermSwitch("admin", T("tokens.admin"), tokenPerm(t, "admin"))
+					@PermSwitchID(dlgID+"-admin", "admin", "on", T("tokens.admin"), tokenPerm(t, "admin"))
 				}
 			</div>
 		}
 		@Field("", T("tokens.expiry")) {
-			@PermSwitch("permanent", T("tokens.permanent"), tokenPermanent(t))
+			@PermSwitchID(dlgID+"-permanent", "permanent", "on", T("tokens.permanent"), tokenPermanent(t))
 			<div class="mt-2">
 				@DurationInput("ttl", tokenTTL(t))
 			</div>

@@ -157,12 +157,12 @@ func TestAdminCacheCRUD(t *testing.T) {
 		t.Fatalf("created cache: public=%v priority=%d", cc.Public, cc.Priority)
 	}
 
-	// duplicate name → 400
+	// duplicate name → flash + redirect back to the dashboard (PRG), and the
+	// landing page carries the error message.
 	resp, _ = c.PostForm(ts.URL+"/admin/caches", url.Values{"name": {"web"}})
-	if resp.StatusCode != 400 {
-		t.Errorf("duplicate cache name → %d want 400", resp.StatusCode)
+	if b := body(t, resp); resp.StatusCode != 200 || resp.Request.URL.Path != "/admin" || !contains(b, "Could not create cache") {
+		t.Errorf("duplicate cache name → %d at %s", resp.StatusCode, resp.Request.URL.Path)
 	}
-	resp.Body.Close()
 
 	// detail page renders (with paths, search, sort, past-the-end page)
 	pushFake(t, ts, "web", h32, []byte("some path data"), "")

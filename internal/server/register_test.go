@@ -96,8 +96,8 @@ func TestRegistrationFlow(t *testing.T) {
 	}
 	resp.Body.Close()
 	resp, _ = c.PostForm(ts.URL+"/admin/caches", url.Values{"namespace": {"carols-org"}, "name": {"two"}})
-	if b := body(t, resp); resp.StatusCode != http.StatusForbidden || !contains(b, "at most 1 caches") {
-		t.Fatalf("quota: %d %.120q", resp.StatusCode, b)
+	if b := body(t, resp); resp.StatusCode != 200 || resp.Request.URL.Path != "/admin" || !contains(b, "at most 1 caches") {
+		t.Fatalf("quota: %d at %s %.120q", resp.StatusCode, resp.Request.URL.Path, b)
 	}
 
 	// Member quota: plan allows 2 members (carol + one more). Members are

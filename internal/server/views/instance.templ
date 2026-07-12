@@ -89,7 +89,14 @@ templ plansCard(plans []store.Plan) {
 		}
 		@card.Content(card.ContentProps{Class: "space-y-2"}) {
 			if len(plans) == 0 {
-				@EmptyState("layers", T("plan.empty"))
+				@EmptyState("layers", T("plan.empty")) {
+					@dialog.Trigger(dialog.TriggerProps{For: "dlg-plan-new"}) {
+						@button.Button(button.Props{Size: button.SizeSm}) {
+							@Icon("plus")
+							<span>{ T("plan.new") }</span>
+						}
+					}
+				}
 			} else {
 				<div class="overflow-hidden rounded-lg border">
 					@table.Table() {
@@ -103,11 +110,11 @@ templ plansCard(plans []store.Plan) {
 												@VisBadge(true)
 											}
 											if p.OrgsAllowed {
-												@badge.Badge(badge.Props{Variant: badge.VariantOutline}) {
+												@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
 													{ T("plan.orgs") }
 												}
 											}
-											<span class="text-xs text-muted-foreground">{ planLimits(p) }</span>
+											<span class="text-xs text-muted-foreground tabular-nums">{ planLimits(p) }</span>
 										</div>
 									}
 									@table.Cell(table.CellProps{Class: "text-right"}) {
@@ -178,7 +185,7 @@ templ editPlanDialog(p store.Plan) {
 					{ T("plan.hint") }
 				}
 			}
-			@planFormBody("/admin/plans/"+strconv.FormatInt(p.ID, 10)+"/edit", &p, "check", T("tokens.save"), id)
+			@planFormBody("/admin/plans/"+strconv.FormatInt(p.ID, 10)+"/edit", &p, "check", T("action.savechanges"), id)
 		}
 	}
 }
@@ -203,8 +210,8 @@ templ planFormBody(action string, p *store.Plan, submitIcon, submitLabel, dlgID 
 		@Field("", T("plan.maxretention")) {
 			@DurationInput("plan_retention", planSecs(p))
 		}
-		@PermSwitch("orgs_allowed", T("plan.orgsallowed"), p != nil && p.OrgsAllowed)
-		@PermSwitch("public", T("plan.public"), p == nil || p.Public)
+		@PermSwitchID(dlgID+"-orgs_allowed", "orgs_allowed", "on", T("plan.orgsallowed"), p != nil && p.OrgsAllowed)
+		@PermSwitchID(dlgID+"-public", "public", "on", T("plan.public"), p == nil || p.Public)
 		@dialog.Footer() {
 			@dialog.Close(dialog.CloseProps{For: dlgID}) {
 				@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
@@ -240,11 +247,11 @@ templ usersCard(actingName string, multiTenant bool, users []store.User) {
 										<span class="font-medium">{ u.Name }</span>
 										if u.Role == "admin" {
 											@badge.Badge(badge.Props{Variant: badge.VariantDefault}) {
-												{ T("ns.owner") }
+												{ T("role.admin") }
 											}
 										} else {
 											@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
-												{ T("ns.member") }
+												{ T("role.member") }
 											}
 										}
 										if u.Status == "pending" {
@@ -488,10 +495,12 @@ templ maintCard() {
 			@card.Title() {
 				{ T("inst.maint") }
 			}
+			@card.Description() {
+				{ T("inst.gcdesc") }
+			}
 		}
 		@card.Content() {
-			<div class="flex items-center justify-between gap-3">
-				<p class="text-sm text-muted-foreground">{ T("inst.gcdesc") }</p>
+			<div class="flex justify-end">
 				@ConfirmForm(Confirm{
 					ID:           "gc",
 					Action:       "/admin/gc",
@@ -499,6 +508,7 @@ templ maintCard() {
 					Message:      T("inst.gcmsg"),
 					ConfirmLabel: T("inst.gcrun"),
 					ConfirmIcon:  "recycle",
+					Danger:       true,
 					TriggerLabel: T("inst.gcrun"),
 					TriggerIcon:  "recycle",
 				})

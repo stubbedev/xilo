@@ -160,7 +160,7 @@ templ AuthShell(title string, flash Flash) {
 				</div>
 				if flash.Msg != "" {
 					<div class="mb-4">
-						@alert.Alert(alert.Props{Variant: alert.VariantDestructive}) {
+						@alert.Alert(alert.Props{Variant: authAlertVariant(flash)}) {
 							@alert.Description() {
 								{ flash.Msg }
 							}
@@ -311,7 +311,7 @@ templ Register(plans []store.Plan, flash Flash) {
 				</form>
 			}
 			@card.Footer(card.FooterProps{Class: "justify-center"}) {
-				<a href="/admin" class="text-sm text-muted-foreground hover:text-foreground">{ T("reg.back") }</a>
+				<a href="/admin" class="text-sm text-muted-foreground hover:text-foreground">{ T("login.back") }</a>
 			}
 		}
 	}
