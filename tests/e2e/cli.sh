@@ -81,6 +81,9 @@ KEY_AFTER=$(exec_srv cache info e2e | grep 'public key')
 echo "== tokens =="
 TOK=$(exec_srv token create e2e-full --cache e2e --push --pull 2>/dev/null | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
 [ -n "$TOK" ] && pass "token create prints secret" || fail "token create prints secret"
+# Tokens are scoped to exactly one cache, so the private cache needs its own.
+PRIV_TOK=$(exec_srv token create e2e-priv-full --cache e2e-priv --push --pull 2>/dev/null | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
+[ -n "$PRIV_TOK" ] && pass "private cache token created" || fail "private cache token created"
 assert "token list" bash -c "exec_srv token list | grep -q e2e-full"
 DEAD=$(exec_srv token create e2e-dead --cache e2e --push 2>/dev/null | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
 DEAD_ID=$(exec_srv token list | grep e2e-dead | grep -oE '^[0-9 ]+' | tr -d ' ' | head -1)
@@ -111,7 +114,7 @@ echo "== use (nix.conf managed block) =="
 assert "use adds substituter" "$XILO" use e2e
 grep -q "$URL/c/default/e2e" "$XDG_CONFIG_HOME/nix/nix.conf" && pass "nix.conf contains substituter" || fail "nix.conf contains substituter"
 grep -q "e2e:" "$XDG_CONFIG_HOME/nix/nix.conf" && pass "nix.conf contains trusted key" || fail "nix.conf contains trusted key"
-assert "use second cache accumulates" "$XILO" use e2e-priv
+assert "use second cache accumulates" "$XILO" use e2e-priv --token "$PRIV_TOK"
 grep -q "machine 127.0.0.1:18080" "$HOME/.netrc" && pass "netrc entry for private cache" || fail "netrc entry for private cache"
 assert "use --remove" "$XILO" use e2e --remove
 grep -q "$URL/c/default/e2e " "$XDG_CONFIG_HOME/nix/nix.conf" && fail "substituter removed" || pass "substituter removed"
@@ -119,7 +122,7 @@ grep -q "$URL/c/default/e2e-priv" "$XDG_CONFIG_HOME/nix/nix.conf" && pass "sibli
 
 echo "== private cache pull auth =="
 curl -fs -o /dev/null "$URL/c/default/e2e-priv/nix-cache-info" && fail "private anonymous rejected" || pass "private anonymous rejected"
-curl -fs -o /dev/null -H "Authorization: Bearer $TOK" "$URL/c/default/e2e-priv/nix-cache-info" && pass "private token accepted" || fail "private token accepted"
+curl -fs -o /dev/null -H "Authorization: Bearer $PRIV_TOK" "$URL/c/default/e2e-priv/nix-cache-info" && pass "private token accepted" || fail "private token accepted"
 
 echo "== cache configure variants =="
 assert "configure --public" exec_srv cache configure e2e-priv --public

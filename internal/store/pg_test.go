@@ -111,7 +111,7 @@ func TestPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("same cache name in second namespace: %v", err)
 	}
-	nsSec, _, err := db.CreateToken(ns2.ID, "team-tok", []string{"team-cache"}, []string{"pull"}, 0)
+	nsSec, _, err := db.CreateToken(ns2.ID, "team-tok", []string{"pg-cache"}, []string{"pull"}, 0)
 	if err != nil {
 		t.Fatalf("ns token: %v", err)
 	}

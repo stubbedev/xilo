@@ -3,6 +3,7 @@ module github.com/stubbedev/xilo
 go 1.26.4
 
 require (
+	github.com/Oudwins/tailwind-merge-go v0.2.0
 	github.com/a-h/templ v0.3.1020
 	github.com/aws/aws-sdk-go-v2 v1.42.1
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.28
@@ -24,7 +25,6 @@ require (
 )
 
 require (
-	github.com/Oudwins/tailwind-merge-go v0.2.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.14 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.30 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.30 // indirect
