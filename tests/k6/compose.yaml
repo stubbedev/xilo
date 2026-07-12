@@ -30,6 +30,8 @@ services:
     environment:
       BASE_URL: http://xilo:8080
       CACHE: k6
+      ACCOUNT: ${ACCOUNT:-default}
+      TENANTS: ${TENANTS:-0}
       ADMIN_PASSWORD: k6-admin
       DURATION: ${DURATION:-3m}
     command: ["run", "--summary-export=/out/summary.json", "/scripts/perf.js"]

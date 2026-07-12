@@ -25,12 +25,14 @@ import crypto from "k6/crypto";
 import { check, sleep, fail } from "k6";
 import exec from "k6/execution";
 import { Trend, Counter } from "k6/metrics";
-import { BASE, CACHE, pushPath, chunkBytes, storePathFor, authHeaders, waitHealthy, ensureCache } from "./lib.js";
+import { BASE, cachePrefix, pushPath, storePathFor, waitHealthy, provisionTenants } from "./lib.js";
 
 const STORM_VUS = parseInt(__ENV.STORM_VUS || "512");
 const FLOOD_RPS = parseInt(__ENV.FLOOD_RPS || "5000");
 const PULL_VUS = parseInt(__ENV.PULL_VUS || "128");
 const D = parseInt(__ENV.DURATION_S || "60"); // storm plateau seconds
+// TENANTS>0 shards every scenario across that many accounts (multi-tenant).
+const TENANTS = parseInt(__ENV.TENANTS || "0", 10);
 
 const goroutines = new Trend("srv_goroutines");
 const heapMiB = new Trend("srv_heap_mib");
@@ -115,55 +117,73 @@ const BIG_SEED = 909; // 256 x 256KiB = 64MiB — abort_storm target
 
 export function setup() {
   waitHealthy(60);
-  ensureCache();
-  const corpus = [];
-  for (let i = 0; i < SEED_PATHS; i++) {
-    const r = pushPath(9000 + i, CHUNKS, CHUNK_SIZE, { phase: "seed" });
-    if (!r.ok) throw new Error(`seed ${i} failed`);
-    corpus.push({ hash: r.storeHash, narHex: r.narHex, narSize: r.narSize });
+  const targets = provisionTenants(TENANTS);
+  const corpora = [];
+  for (const t of targets) {
+    const corpus = [];
+    for (let i = 0; i < SEED_PATHS; i++) {
+      const r = pushPath(9000 + i, CHUNKS, CHUNK_SIZE, { phase: "seed" }, t);
+      if (!r.ok) throw new Error(`seed ${i} for ${t.account} failed`);
+      corpus.push({ hash: r.storeHash, narHex: r.narHex, narSize: r.narSize });
+    }
+    const big = pushPath(BIG_SEED, 256, CHUNK_SIZE, { phase: "seed" }, t);
+    if (!big.ok) throw new Error(`big seed for ${t.account} failed`);
+    corpora.push({ corpus, bigHash: big.storeHash });
   }
-  const big = pushPath(BIG_SEED, 256, CHUNK_SIZE, { phase: "seed" });
-  if (!big.ok) throw new Error("big seed failed");
-  return { corpus, bigHash: big.storeHash };
+  return { targets, corpora };
+}
+
+// tn shards a VU onto one tenant; corpusFor returns that tenant's seed set.
+function tn(data) {
+  return exec.scenario.iterationInTest % data.targets.length;
 }
 
 export function storm(data) {
   const it = exec.scenario.iterationInTest;
+  const i = tn(data);
+  const t = data.targets[i];
   if (it % 5 === 4) {
     // 20% miss traffic — negative lookups are part of every nix eval
     const absent = storePathFor(0x6fff0000 + it).slice(11, 43);
-    const res = http.get(`${BASE}/${CACHE}/${absent}.narinfo`, {
+    const res = http.get(`${cachePrefix(t)}/${absent}.narinfo`, {
       responseCallback: http.expectedStatuses(404),
       tags: { name: "storm-miss" },
     });
     check(res, { "storm miss 404": (r) => r.status === 404 });
   } else {
-    const p = data.corpus[it % data.corpus.length];
-    const res = http.get(`${BASE}/${CACHE}/${p.hash}.narinfo`, { tags: { name: "storm-hit" } });
+    const corpus = data.corpora[i].corpus;
+    const p = corpus[it % corpus.length];
+    const res = http.get(`${cachePrefix(t)}/${p.hash}.narinfo`, { tags: { name: "storm-hit" } });
     check(res, { "storm hit 200": (r) => r.status === 200 });
   }
 }
 
-export function pushStorm() {
+export function pushStorm(data) {
   // Fresh content non-stop while the read side is saturated.
+  const t = data.targets[tn(data)];
   const r = pushPath(2_000_000 + exec.scenario.iterationInTest, CHUNKS, CHUNK_SIZE, {
     phase: "push-storm",
-  });
+  }, t);
   check(null, { "push lands under storm": () => r.ok });
 }
 
 export function floodHit(data) {
-  const p = data.corpus[exec.scenario.iterationInTest % data.corpus.length];
-  const res = http.get(`${BASE}/${CACHE}/${p.hash}.narinfo`, { tags: { name: "flood" } });
+  const i = tn(data);
+  const corpus = data.corpora[i].corpus;
+  const p = corpus[exec.scenario.iterationInTest % corpus.length];
+  const res = http.get(`${cachePrefix(data.targets[i])}/${p.hash}.narinfo`, { tags: { name: "flood" } });
   check(res, { "flood 200": (r) => r.status === 200 });
 }
 
 export function pullWall(data) {
   const it = exec.scenario.iterationInTest;
-  const p = data.corpus[it % data.corpus.length];
+  const i = tn(data);
+  const t = data.targets[i];
+  const corpus = data.corpora[i].corpus;
+  const p = corpus[it % corpus.length];
   if (it % 2 === 0) {
     // identity: verify every byte, every time
-    const res = http.get(`${BASE}/${CACHE}/nar/${p.hash}.nar`, {
+    const res = http.get(`${cachePrefix(t)}/nar/${p.hash}.nar`, {
       headers: { "Accept-Encoding": "identity" },
       responseType: "binary",
       tags: { name: "wall-identity" },
@@ -173,7 +193,7 @@ export function pullWall(data) {
     if (!intact) pullBroken.add(1);
     check(res, { "wall pull intact": () => intact });
   } else {
-    const res = http.get(`${BASE}/${CACHE}/nar/${p.hash}.nar`, {
+    const res = http.get(`${cachePrefix(t)}/nar/${p.hash}.nar`, {
       headers: { "Accept-Encoding": "zstd" },
       responseType: "none",
       tags: { name: "wall-zstd" },
@@ -185,7 +205,8 @@ export function pullWall(data) {
 export function abortStorm(data) {
   // 64MiB NAR with a 150ms budget: aborts mid-body by design. Failures here
   // are the point — no thresholds reference this scenario.
-  http.get(`${BASE}/${CACHE}/nar/${data.bigHash}.nar`, {
+  const i = tn(data);
+  http.get(`${cachePrefix(data.targets[i])}/nar/${data.corpora[i].bigHash}.nar`, {
     headers: { "Accept-Encoding": "identity" },
     responseType: "none",
     timeout: "150ms",
@@ -221,13 +242,17 @@ export function teardown(data) {
   const bound = 200 + Math.ceil(STORM_VUS / 4);
   if (n > bound) fail(`goroutine leak: ${n} still alive 15s after load stopped (bound ${bound})`);
 
-  for (const p of data.corpus.slice(0, 4)) {
-    const nar = http.get(`${BASE}/${CACHE}/nar/${p.hash}.nar`, {
-      headers: { "Accept-Encoding": "identity" },
-      responseType: "binary",
-    });
-    if (nar.status !== 200 || crypto.sha256(nar.body, "hex") !== p.narHex) {
-      fail(`corpus NAR ${p.hash} corrupt after pressure run`);
+  // Verify a few NARs per tenant are still byte-exact.
+  for (let i = 0; i < data.targets.length; i++) {
+    const t = data.targets[i];
+    for (const p of data.corpora[i].corpus.slice(0, 4)) {
+      const nar = http.get(`${cachePrefix(t)}/nar/${p.hash}.nar`, {
+        headers: { "Accept-Encoding": "identity" },
+        responseType: "binary",
+      });
+      if (nar.status !== 200 || crypto.sha256(nar.body, "hex") !== p.narHex) {
+        fail(`corpus NAR ${t.account}/${p.hash} corrupt after pressure run`);
+      }
     }
   }
   if (http.get(`${BASE}/healthz`).status !== 200) fail("healthz failed after pressure run");

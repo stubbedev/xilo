@@ -1,0 +1,12 @@
+# Multi-tenant + hostile GC: the churn/integrity soak run across several
+# accounts at once (TENANTS>0). Same aggressive sweep as server-churn.yaml, but
+# with multi_tenant on and open bootstrap off so each account pushes with its
+# own scoped token while its paths are evicted and swept underneath it.
+listen: ":8080"
+base_url: "http://xilo:8080"
+data_dir: "/data"
+multi_tenant: true
+gc:
+  interval: "5s"
+  retention: "30s"
+  grace: "15s"

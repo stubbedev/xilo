@@ -20,13 +20,16 @@
 import http from "k6/http";
 import { check } from "k6";
 import exec from "k6/execution";
-import { BASE, CACHE, pushPath, storePathFor, waitHealthy, ensureCache } from "./lib.js";
+import { cachePrefix, pushPath, storePathFor, waitHealthy, provisionTenants } from "./lib.js";
 
 const SEED_PATHS = 12; // pull corpus: 12 paths x 4 x 256 KiB
 const CHUNKS = 4;
 const CHUNK_SIZE = 256 * 1024;
 const BIG_CHUNKS = 256; // 256 x 256 KiB = 64 MiB
 const BIG_SEED = 777;
+// TENANTS>0 spreads the whole suite across that many accounts (multi-tenant);
+// 0 keeps the classic single-tenant "default" account.
+const TENANTS = parseInt(__ENV.TENANTS || "0", 10);
 
 export const options = {
   setupTimeout: "300s",
@@ -100,24 +103,38 @@ export const options = {
 
 export function setup() {
   waitHealthy(60);
-  ensureCache();
-  const hashes = [];
-  for (let i = 0; i < SEED_PATHS; i++) {
-    const r = pushPath(1000 + i, CHUNKS, CHUNK_SIZE, { phase: "seed" });
-    if (!r.ok) throw new Error(`seeding path ${i} failed`);
-    hashes.push(r.storeHash);
+  // One tenant (single-tenant default) or N accounts each with their own
+  // cache + push token (multi-tenant). Each is seeded identically so any VU,
+  // whichever tenant it lands on, has the same pull corpus.
+  const targets = provisionTenants(TENANTS);
+  const seeds = [];
+  for (const t of targets) {
+    const hashes = [];
+    for (let i = 0; i < SEED_PATHS; i++) {
+      const r = pushPath(1000 + i, CHUNKS, CHUNK_SIZE, { phase: "seed" }, t);
+      if (!r.ok) throw new Error(`seeding path ${i} for ${t.account} failed`);
+      hashes.push(r.storeHash);
+    }
+    const big = pushPath(BIG_SEED, BIG_CHUNKS, CHUNK_SIZE, { phase: "seed" }, t);
+    if (!big.ok) throw new Error(`seeding big path for ${t.account} failed`);
+    seeds.push({ hashes, bigHash: big.storeHash });
   }
-  const big = pushPath(BIG_SEED, BIG_CHUNKS, CHUNK_SIZE, { phase: "seed" });
-  if (!big.ok) throw new Error("seeding big path failed");
-  return { hashes, bigHash: big.storeHash };
+  return { targets, seeds };
+}
+
+// tenant shards a VU onto one of the provisioned accounts by global iteration.
+function tenant(data) {
+  return exec.scenario.iterationInTest % data.targets.length;
 }
 
 function pick(data) {
-  return data.hashes[exec.scenario.iterationInTest % data.hashes.length];
+  const i = tenant(data);
+  return data.seeds[i].hashes[exec.scenario.iterationInTest % data.seeds[i].hashes.length];
 }
 
 export function narinfoHit(data) {
-  const res = http.get(`${BASE}/${CACHE}/${pick(data)}.narinfo`, {
+  const t = data.targets[tenant(data)];
+  const res = http.get(`${cachePrefix(t)}/${pick(data)}.narinfo`, {
     tags: { name: "narinfo" },
   });
   check(res, { "narinfo 200": (r) => r.status === 200 });
@@ -125,12 +142,13 @@ export function narinfoHit(data) {
 
 const expect404 = http.expectedStatuses(404);
 
-export function narinfoMiss() {
+export function narinfoMiss(data) {
   // Deterministic absent store hashes — exercises the 404/negative-cache path
   // nix hits for every path the cache doesn't have during mass query. The 404
   // is the correct answer, so it must not count into http_req_failed.
+  const t = data.targets[tenant(data)];
   const absent = storePathFor(0x7fff0000 + exec.scenario.iterationInTest).slice(11, 43);
-  const res = http.get(`${BASE}/${CACHE}/${absent}.narinfo`, {
+  const res = http.get(`${cachePrefix(t)}/${absent}.narinfo`, {
     responseCallback: expect404,
     tags: { name: "narinfo-miss" },
   });
@@ -138,7 +156,8 @@ export function narinfoMiss() {
 }
 
 export function pullIdentity(data) {
-  const res = http.get(`${BASE}/${CACHE}/nar/${pick(data)}.nar`, {
+  const t = data.targets[tenant(data)];
+  const res = http.get(`${cachePrefix(t)}/nar/${pick(data)}.nar`, {
     headers: { "Accept-Encoding": "identity" },
     responseType: "none",
     tags: { name: "nar-identity" },
@@ -148,7 +167,8 @@ export function pullIdentity(data) {
 
 export function pullZstd(data) {
   // k6 doesn't decode zstd; we measure the server serving stored frames.
-  const res = http.get(`${BASE}/${CACHE}/nar/${pick(data)}.nar`, {
+  const t = data.targets[tenant(data)];
+  const res = http.get(`${cachePrefix(t)}/nar/${pick(data)}.nar`, {
     headers: { "Accept-Encoding": "zstd" },
     responseType: "none",
     tags: { name: "nar-zstd" },
@@ -157,7 +177,8 @@ export function pullZstd(data) {
 }
 
 export function pullBig(data) {
-  const res = http.get(`${BASE}/${CACHE}/nar/${data.bigHash}.nar`, {
+  const i = tenant(data);
+  const res = http.get(`${cachePrefix(data.targets[i])}/nar/${data.seeds[i].bigHash}.nar`, {
     headers: { "Accept-Encoding": "identity" },
     responseType: "none",
     tags: { name: "nar-big" },
@@ -165,28 +186,24 @@ export function pullBig(data) {
   check(res, { "big nar 200": (r) => r.status === 200 });
 }
 
-export function pushDedup() {
+export function pushDedup(data) {
   // Same seeds as the pull corpus: every chunk already exists, so this is
   // get-missing-chunks + put-path (with server-side reassembly verify) only.
-  pushPath(1000 + (exec.scenario.iterationInTest % SEED_PATHS), CHUNKS, CHUNK_SIZE, {
-    phase: "dedup",
-  });
+  const t = data.targets[tenant(data)];
+  pushPath(1000 + (exec.scenario.iterationInTest % SEED_PATHS), CHUNKS, CHUNK_SIZE, { phase: "dedup" }, t);
 }
 
-export function pushFresh() {
-  pushPath(1_000_000 + exec.scenario.iterationInTest, CHUNKS, CHUNK_SIZE, {
-    phase: "fresh",
-  });
+export function pushFresh(data) {
+  const t = data.targets[tenant(data)];
+  pushPath(1_000_000 + exec.scenario.iterationInTest, CHUNKS, CHUNK_SIZE, { phase: "fresh" }, t);
 }
 
-export function pushSaturate() {
-  pushPath(2_000_000 + exec.scenario.iterationInTest, CHUNKS, CHUNK_SIZE, {
-    phase: "saturate",
-  });
+export function pushSaturate(data) {
+  const t = data.targets[tenant(data)];
+  pushPath(2_000_000 + exec.scenario.iterationInTest, CHUNKS, CHUNK_SIZE, { phase: "saturate" }, t);
 }
 
-export function mixedPush() {
-  pushPath(3_000_000 + exec.scenario.iterationInTest, CHUNKS, CHUNK_SIZE, {
-    phase: "mixed",
-  });
+export function mixedPush(data) {
+  const t = data.targets[tenant(data)];
+  pushPath(3_000_000 + exec.scenario.iterationInTest, CHUNKS, CHUNK_SIZE, { phase: "mixed" }, t);
 }

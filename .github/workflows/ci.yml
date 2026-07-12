@@ -18,7 +18,7 @@ jobs:
       # Admin CSS is generated (not committed) and embedded via go:embed.
       - name: build admin CSS
         run: |
-          curl -sSL https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
+          curl -sSL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.2/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
           chmod +x /usr/local/bin/tailwindcss
           ./scripts/build-css.sh
       # *_templ.go is not committed — generate it (templ version from go.mod).
@@ -69,7 +69,7 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@main
       - name: build admin CSS
         run: |
-          curl -sSL https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
+          curl -sSL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.2/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
           chmod +x /usr/local/bin/tailwindcss
           ./scripts/build-css.sh
       - name: generate templ views
@@ -82,8 +82,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: run ops suite
+      - name: run ops suite (single-tenant)
         run: docker compose -f tests/k6/compose.yaml run --rm k6 run /scripts/ops.js
+      - name: run deep suite (edge dimensions)
+        run: docker compose -f tests/k6/compose.yaml run --rm k6 run /scripts/deep.js
+      - name: run mt suite (multi-tenant conformance)
+        run: |
+          docker compose -f tests/k6/compose.yaml down -v
+          XILO_E2E_CONFIG=server-mt.yaml docker compose -f tests/k6/compose.yaml \
+            run --rm k6 run /scripts/mt.js
       - name: teardown
         if: always()
         run: docker compose -f tests/k6/compose.yaml down -v
@@ -107,7 +114,7 @@ jobs:
       # so a new/changed field always flows into editor hinting.
       - name: build admin CSS
         run: |
-          curl -sSL https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
+          curl -sSL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.2/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
           chmod +x /usr/local/bin/tailwindcss
           ./scripts/build-css.sh
       - name: regenerate schema

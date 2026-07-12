@@ -14,7 +14,7 @@ import http from "k6/http";
 import crypto from "k6/crypto";
 import { check } from "k6";
 import exec from "k6/execution";
-import { BASE, CACHE, pushPath, chunkBytes, storePathFor, authHeaders, waitHealthy, ensureCache } from "./lib.js";
+import { cachePrefix, pushPath, chunkBytes, storePathFor, authHeaders, waitHealthy, provisionTenants } from "./lib.js";
 
 const STORM_PATHS = 10_000; // registered cheaply: 1 shared chunk, distinct paths
 
@@ -47,18 +47,21 @@ export const options = {
 
 export function setup() {
   waitHealthy(60);
-  ensureCache();
+  // Single-target edge suite (the interesting dimensions are batch boundaries
+  // and encodings, not tenant fan-out); tenancy-agnostic via ACCOUNT/XILO_TOKEN.
+  const t = provisionTenants(0)[0];
+  const prefix = cachePrefix(t);
 
   // Storm corpus: 10k distinct paths all referencing one tiny shared chunk —
   // cheap to create, forces distinct-row reads on every narinfo.
   const shared = chunkBytes(1, 0, 4096);
   const sharedHex = crypto.sha256(shared, "hex");
-  http.put(`${BASE}/${CACHE}/api/chunk/${sharedHex}`, shared, { headers: authHeaders() });
+  http.put(`${prefix}/api/chunk/${sharedHex}`, shared, { headers: authHeaders({}, t) });
   const stormHashes = [];
   const batchTags = { phase: "storm-seed" };
   for (let i = 0; i < STORM_PATHS; i++) {
     const res = http.put(
-      `${BASE}/${CACHE}/api/path`,
+      `${prefix}/api/path`,
       JSON.stringify({
         storePath: storePathFor(500_000 + i),
         narHash: `sha256:${sharedHex}`,
@@ -67,19 +70,21 @@ export function setup() {
         references: [],
         chunks: [sharedHex],
       }),
-      { headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()), tags: batchTags },
+      { headers: Object.assign({ "Content-Type": "application/json" }, authHeaders({}, t)), tags: batchTags },
     );
     if (res.status !== 200) throw new Error(`storm seed ${i}: ${res.status} ${res.body}`);
     stormHashes.push(storePathFor(500_000 + i).slice(11, 43));
   }
 
   // gzip pull corpus
-  const gz = pushPath(600_000, 4, 262144, { phase: "seed" });
+  const gz = pushPath(600_000, 4, 262144, { phase: "seed" }, t);
   if (!gz.ok) throw new Error("gzip corpus seed failed");
-  return { stormHashes, gzHash: gz.storeHash, gzNarHex: gz.narHex };
+  return { target: t, stormHashes, gzHash: gz.storeHash, gzNarHex: gz.narHex };
 }
 
-export function hugePath() {
+export function hugePath(data) {
+  const t = data.target;
+  const prefix = cachePrefix(t);
   // 1000 x 64 KiB = 64 MiB NAR; chunk list crosses the 900-var batch boundary
   // in every server-side lookup it touches.
   const seed = 700_001;
@@ -92,26 +97,26 @@ export function hugePath() {
     hexes.push(hex);
     hasher.update(data);
     size += data.byteLength;
-    const res = http.put(`${BASE}/${CACHE}/api/chunk/${hex}`, data, {
-      headers: authHeaders(), tags: { name: "huge-chunk" },
+    const res = http.put(`${prefix}/api/chunk/${hex}`, data, {
+      headers: authHeaders({}, t), tags: { name: "huge-chunk" },
     });
     check(res, { "huge chunk 200": (r) => r.status === 200 });
   }
   const narHex = hasher.digest("hex");
 
   // get-missing-chunks with all 1000 hashes: batching must report none missing
-  let res = http.post(`${BASE}/${CACHE}/api/get-missing-chunks`, JSON.stringify({ hashes: hexes }),
-    { headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()) });
+  let res = http.post(`${prefix}/api/get-missing-chunks`, JSON.stringify({ hashes: hexes }),
+    { headers: Object.assign({ "Content-Type": "application/json" }, authHeaders({}, t)) });
   check(res, { "huge missing-chunks empty": (r) => r.status === 200 && (JSON.parse(r.body).missing || []).length === 0 });
 
-  res = http.put(`${BASE}/${CACHE}/api/path`,
+  res = http.put(`${prefix}/api/path`,
     JSON.stringify({ storePath: storePathFor(seed), narHash: `sha256:${narHex}`, narSize: size, deriver: "", references: [], chunks: hexes }),
-    { headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()) });
+    { headers: Object.assign({ "Content-Type": "application/json" }, authHeaders({}, t)) });
   check(res, { "huge put-path 200": (r) => r.status === 200 });
 
   // byte-exact read-back of all 64 MiB through the 1000-chunk reassembly
   const storeHash = storePathFor(seed).slice(11, 43);
-  res = http.get(`${BASE}/${CACHE}/nar/${storeHash}.nar`, {
+  res = http.get(`${prefix}/nar/${storeHash}.nar`, {
     headers: { "Accept-Encoding": "identity" }, responseType: "binary", tags: { name: "huge-nar" },
   });
   check(res, {
@@ -119,26 +124,26 @@ export function hugePath() {
   });
 }
 
-export function bigChunks() {
+export function bigChunks(data) {
   // max-size (1 MiB) chunk bodies — the largest single PUT the server accepts.
   const it = exec.scenario.iterationInTest;
-  const data = chunkBytes(800_000 + it, 0, 1 << 20);
-  const hex = crypto.sha256(data, "hex");
-  const res = http.put(`${BASE}/${CACHE}/api/chunk/${hex}`, data, {
-    headers: authHeaders(), tags: { name: "big-chunk" },
+  const bytes = chunkBytes(800_000 + it, 0, 1 << 20);
+  const hex = crypto.sha256(bytes, "hex");
+  const res = http.put(`${cachePrefix(data.target)}/api/chunk/${hex}`, bytes, {
+    headers: authHeaders({}, data.target), tags: { name: "big-chunk" },
   });
   check(res, { "1MiB chunk 200": (r) => r.status === 200 });
 }
 
 export function narinfoStorm(data) {
   const h = data.stormHashes[(exec.scenario.iterationInTest * 7919) % data.stormHashes.length];
-  const res = http.get(`${BASE}/${CACHE}/${h}.narinfo`, { tags: { name: "storm" } });
+  const res = http.get(`${cachePrefix(data.target)}/${h}.narinfo`, { tags: { name: "storm" } });
   check(res, { "storm narinfo 200": (r) => r.status === 200 });
 }
 
 export function pullGzip(data) {
   // k6 decodes gzip — byte-exact hash under sustained load.
-  const res = http.get(`${BASE}/${CACHE}/nar/${data.gzHash}.nar`, {
+  const res = http.get(`${cachePrefix(data.target)}/nar/${data.gzHash}.nar`, {
     headers: { "Accept-Encoding": "gzip" }, responseType: "binary", tags: { name: "nar-gzip" },
   });
   check(res, { "gzip nar byte-exact": (r) => r.status === 200 && crypto.sha256(r.body, "hex") === data.gzNarHex });

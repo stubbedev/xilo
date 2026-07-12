@@ -8,28 +8,47 @@ on:
 
 jobs:
   k6:
+    name: k6 (${{ matrix.tenancy }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Single-tenant: the classic numbers, tracked release over release.
+          - tenancy: single
+            config: server-perf.yaml
+            churn_config: server-churn.yaml
+            tenants: 0
+          # Multi-tenant: same suites with load spread across registered
+          # accounts, so per-account isolation is exercised under pressure.
+          - tenancy: multi
+            config: server-mt.yaml
+            churn_config: server-mt-churn.yaml
+            tenants: 4
     steps:
       - uses: actions/checkout@v7
 
       - name: perf suite
-        run: docker compose -f tests/k6/compose.yaml run --rm k6
-
-      - name: export perf summary
         run: |
+          XILO_E2E_CONFIG=${{ matrix.config }} docker compose -f tests/k6/compose.yaml \
+            run --rm -e TENANTS=${{ matrix.tenants }} k6
           docker compose -f tests/k6/compose.yaml run --rm --entrypoint cat k6 /out/summary.json > k6-perf-summary.json
 
       - name: integrity churn (hostile GC)
         run: |
-          XILO_E2E_CONFIG=server-churn.yaml docker compose -f tests/k6/compose.yaml \
-            run --rm k6 run --summary-export=/out/summary.json /scripts/churn.js
+          docker compose -f tests/k6/compose.yaml down -v
+          XILO_E2E_CONFIG=${{ matrix.churn_config }} docker compose -f tests/k6/compose.yaml \
+            run --rm -e TENANTS=${{ matrix.tenants }} \
+            k6 run --summary-export=/out/summary.json /scripts/churn.js
           docker compose -f tests/k6/compose.yaml run --rm --entrypoint cat k6 /out/summary.json > k6-churn-summary.json
 
       - name: pressure (scaled for 2-core runner)
         run: |
           docker compose -f tests/k6/compose.yaml down -v
-          docker compose -f tests/k6/compose.yaml run --rm \
+          XILO_E2E_CONFIG=${{ matrix.config }} docker compose -f tests/k6/compose.yaml \
+            run --rm \
             -e STORM_VUS=128 -e FLOOD_RPS=1200 -e PULL_VUS=32 -e DURATION_S=45 \
+            -e TENANTS=${{ matrix.tenants }} \
             k6 run --summary-export=/out/summary.json /scripts/pressure.js
           docker compose -f tests/k6/compose.yaml run --rm --entrypoint cat k6 /out/summary.json > k6-pressure-summary.json
 
@@ -38,7 +57,7 @@ jobs:
         run: |
           summarize() {
             [ -f "$2" ] || return 0
-            echo "### $1" >> "$GITHUB_STEP_SUMMARY"
+            echo "### $1 (${{ matrix.tenancy }}-tenant)" >> "$GITHUB_STEP_SUMMARY"
             echo '| metric | p50 | p95 | p99 |' >> "$GITHUB_STEP_SUMMARY"
             echo '|---|---|---|---|' >> "$GITHUB_STEP_SUMMARY"
             jq -r '.metrics | to_entries[]
@@ -57,7 +76,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: k6-summary-${{ github.ref_name }}-${{ github.run_number }}
+          name: k6-summary-${{ matrix.tenancy }}-${{ github.ref_name }}-${{ github.run_number }}
           path: k6-*-summary.json
 
       - name: teardown

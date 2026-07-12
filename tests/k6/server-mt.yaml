@@ -1,0 +1,9 @@
+# xilo config for the multi-tenant k6 suites (mt.js conformance + the
+# tenant-spread perf/pressure runs with TENANTS>0). multi_tenant unlocks the
+# /register surface, plans, and user org creation. Open bootstrap is OFF: every
+# push must carry a scoped token, which is what makes the isolation checks
+# meaningful — provisionTenants() mints one per account through the admin API.
+listen: ":8080"
+base_url: "http://xilo:8080"
+data_dir: "/data"
+multi_tenant: true

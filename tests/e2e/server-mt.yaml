@@ -1,0 +1,3 @@
+# Multi-tenant e2e server config (chaos.sh MT leg): enables /register, plans,
+# org creation. Everything else comes from compose env vars.
+multi_tenant: true

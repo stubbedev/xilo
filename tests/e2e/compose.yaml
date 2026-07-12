@@ -1,5 +1,7 @@
 # Server-only stack for the CLI e2e suite (tests/e2e/cli.sh): the xilo image
 # with the port published so the host-side CLI + host Nix can reach it.
+# XILO_E2E_CONFIG selects the mounted server config (default single-tenant);
+# chaos.sh flips it to server-mt.yaml for its multi-tenant leg.
 name: xilo-e2e
 
 services:
@@ -13,6 +15,7 @@ services:
       - "127.0.0.1:18080:8080"
     volumes:
       - xilo-e2e-data:/data
+      - ./${XILO_E2E_CONFIG:-server.yaml}:/xilo.yaml:ro
 
 volumes:
   xilo-e2e-data:

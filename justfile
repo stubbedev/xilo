@@ -147,6 +147,14 @@ k6-ops:
     docker compose -f tests/k6/compose.yaml run --rm k6 run /scripts/ops.js
     docker compose -f tests/k6/compose.yaml down -v
 
+# Multi-tenant conformance: registration + approval, plans, the three quotas
+# (caches/storage/members), plan-gated org creation, cross-account isolation,
+# and the registration rate limit. Runs against the multi_tenant config.
+k6-mt:
+    XILO_E2E_CONFIG=server-mt.yaml docker compose -f tests/k6/compose.yaml \
+        run --rm k6 run /scripts/mt.js
+    docker compose -f tests/k6/compose.yaml down -v
+
 # CLI end-to-end: every xilo subcommand against a containerized server,
 # real nix closure push, `nix copy` as the pull verifier. Needs nix + docker.
 e2e:
@@ -157,11 +165,24 @@ k6-perf:
     docker compose -f tests/k6/compose.yaml run --rm k6
     docker compose -f tests/k6/compose.yaml down -v
 
+# Perf with load spread across 4 accounts on a multi_tenant server: same
+# scenarios, per-account scoped push tokens, tenant chosen per VU.
+k6-perf-mt:
+    XILO_E2E_CONFIG=server-mt.yaml docker compose -f tests/k6/compose.yaml \
+        run --rm -e TENANTS=4 k6
+    docker compose -f tests/k6/compose.yaml down -v
+
 # Integrity soak: hostile GC vs concurrent dedup pushes; any dropped or
 # corrupt NAR fails. DURATION=10m just k6-churn for a longer run.
 k6-churn:
     XILO_E2E_CONFIG=server-churn.yaml docker compose -f tests/k6/compose.yaml \
         run --rm k6 run --summary-export=/out/summary.json /scripts/churn.js
+    docker compose -f tests/k6/compose.yaml down -v
+
+# Integrity soak across 4 accounts on a multi_tenant server with hostile GC.
+k6-churn-mt:
+    XILO_E2E_CONFIG=server-mt-churn.yaml docker compose -f tests/k6/compose.yaml \
+        run --rm -e TENANTS=4 k6 run --summary-export=/out/summary.json /scripts/churn.js
     docker compose -f tests/k6/compose.yaml down -v
 
 # Churn against a race-detector server build (slow start, catches data races).
@@ -182,6 +203,13 @@ k6-deep:
 k6-pressure:
     docker compose -f tests/k6/compose.yaml run --rm \
         -e STORM_VUS -e FLOOD_RPS -e PULL_VUS -e DURATION_S -e DROP_BUDGET \
+        k6 run /scripts/pressure.js
+    docker compose -f tests/k6/compose.yaml down -v
+
+# Pressure with load spread across 4 accounts on a multi_tenant server.
+k6-pressure-mt:
+    XILO_E2E_CONFIG=server-mt.yaml docker compose -f tests/k6/compose.yaml run --rm \
+        -e STORM_VUS -e FLOOD_RPS -e PULL_VUS -e DURATION_S -e DROP_BUDGET -e TENANTS=4 \
         k6 run /scripts/pressure.js
     docker compose -f tests/k6/compose.yaml down -v
 

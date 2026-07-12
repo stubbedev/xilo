@@ -7,9 +7,12 @@ RUN go mod download
 COPY . .
 ARG VERSION=docker
 # Admin CSS is a generated artifact (not committed); build it before compiling
-# since it's embedded via go:embed. Tailwind standalone CLI, musl build.
-RUN apk add --no-cache bash \
- && wget -qO /usr/local/bin/tailwindcss https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64-musl \
+# since it's embedded via go:embed. Tailwind standalone CLI, musl build —
+# pinned (releases/latest broke: v4.3+ binaries link libstdc++/libgcc
+# dynamically), with those runtime libs installed for the same reason.
+ARG TAILWIND_VERSION=v4.3.2
+RUN apk add --no-cache bash libstdc++ libgcc \
+ && wget -qO /usr/local/bin/tailwindcss https://github.com/tailwindlabs/tailwindcss/releases/download/${TAILWIND_VERSION}/tailwindcss-linux-x64-musl \
  && chmod +x /usr/local/bin/tailwindcss \
  && sh scripts/build-css.sh
 # Views are generated at build time (*_templ.go is not committed); templ's

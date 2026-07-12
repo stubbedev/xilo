@@ -121,6 +121,14 @@ echo "== private cache pull auth =="
 curl -fs -o /dev/null "$URL/c/default/e2e-priv/nix-cache-info" && fail "private anonymous rejected" || pass "private anonymous rejected"
 curl -fs -o /dev/null -H "Authorization: Bearer $TOK" "$URL/c/default/e2e-priv/nix-cache-info" && pass "private token accepted" || fail "private token accepted"
 
+echo "== cache configure variants =="
+assert "configure --public" exec_srv cache configure e2e-priv --public
+assert "flipped public pulls anonymously" bash -c "curl -fs -o /dev/null $URL/c/default/e2e-priv/nix-cache-info"
+assert "configure --private" exec_srv cache configure e2e-priv --private
+curl -fs -o /dev/null "$URL/c/default/e2e-priv/nix-cache-info" && fail "flipped back private" || pass "flipped back private"
+assert "configure retention + max-size" exec_srv cache configure e2e --retention 24h --max-size 10GB
+assert "retention shown in info" bash -c "exec_srv cache info e2e | grep -q 24h"
+
 echo "== watch (inotify auto-push) =="
 if [ "$(uname -s)" = "Linux" ]; then
   head -c 1M /dev/urandom > "$WORK/watched.bin"
@@ -148,6 +156,9 @@ echo "$GC_OUT" | grep -qE "removed [0-9]+ chunks" && pass "gc reports sweep" || 
 # everything still pullable after gc
 nix copy --no-check-sigs --from "$URL/c/default/e2e" --to "local?root=$WORK/nixroot2" "$CLOSURE_ROOT" >/dev/null 2>&1 \
   && pass "cache intact after gc" || fail "cache intact after gc"
+
+echo "== fsck (server-side, re-hashes every blob) =="
+assert "fsck --content reports intact" bash -c "exec_srv fsck --content | grep -q 'chunks OK'"
 
 echo
 if [ "$FAILS" -gt 0 ]; then

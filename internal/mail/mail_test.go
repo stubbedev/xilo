@@ -1,6 +1,20 @@
 package mail
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+func TestGo(t *testing.T) {
+	// Disabled config: returns without spawning a sender.
+	Go(Config{}, "a@b.com", "s", "b")
+	// Empty recipient: also a no-op.
+	Go(Config{Host: "h", From: "f"}, "", "s", "b")
+	// Enabled + recipient: spawns a goroutine that dials a dead relay and
+	// logs the failure. Must not block or panic; give it a moment to run.
+	Go(Config{Host: "127.0.0.1", Port: 1, From: "f@x"}, "to@x", "s", "b")
+	time.Sleep(50 * time.Millisecond)
+}
 
 func TestDisabledIsNoop(t *testing.T) {
 	// No host = disabled: Send returns nil without dialing.

@@ -15,11 +15,13 @@ import crypto from "k6/crypto";
 import { check } from "k6";
 import exec from "k6/execution";
 import { Counter } from "k6/metrics";
-import { BASE, CACHE, pushPath, chunkBytes, authHeaders, waitHealthy, ensureCache } from "./lib.js";
+import { cachePrefix, pushPath, chunkBytes, authHeaders, waitHealthy, provisionTenants } from "./lib.js";
 
 const RECURRING = 50; // fixed content set — re-pushed forever, dedup city
 const CHUNKS = 3;
 const CHUNK_SIZE = 128 * 1024;
+// TENANTS>0 runs the churn across that many accounts at once.
+const TENANTS = parseInt(__ENV.TENANTS || "0", 10);
 
 const narBroken = new Counter("nar_broken");
 
@@ -49,10 +51,15 @@ export const options = {
 
 export function setup() {
   waitHealthy(60);
-  ensureCache();
+  return { targets: provisionTenants(TENANTS) };
 }
 
-export function churn() {
+function tn(data) {
+  return exec.scenario.iterationInTest % data.targets.length;
+}
+
+export function churn(data) {
+  const t = data.targets[tn(data)];
   const it = exec.scenario.iterationInTest;
   // 3 of 4 iterations: recurring set — stays referenced, pure dedup load.
   // 1 of 4: a "lapsing" seed shared per 45s window. Once its window passes
@@ -65,15 +72,15 @@ export function churn() {
   } else {
     seed = it % RECURRING;
   }
-  const r = pushPath(seed, CHUNKS, CHUNK_SIZE, { phase: "churn" });
+  const r = pushPath(seed, CHUNKS, CHUNK_SIZE, { phase: "churn" }, t);
   if (!r.ok) return;
 
   // Read-back: narinfo present and the NAR reassembles to the exact bytes we
   // pushed. A 404/500 here or a hash mismatch is a dropped/corrupt NAR.
-  const ni = http.get(`${BASE}/${CACHE}/${r.storeHash}.narinfo`, {
+  const ni = http.get(`${cachePrefix(t)}/${r.storeHash}.narinfo`, {
     tags: { name: "narinfo" },
   });
-  const nar = http.get(`${BASE}/${CACHE}/nar/${r.storeHash}.nar`, {
+  const nar = http.get(`${cachePrefix(t)}/nar/${r.storeHash}.nar`, {
     headers: { "Accept-Encoding": "identity" },
     responseType: "binary",
     tags: { name: "nar-verify" },
@@ -97,11 +104,12 @@ export function churn() {
 // runs shorter than ~2m never see mid-run eviction — keep DURATION >= 3m for
 // the test to mean anything.
 
-export function orphans() {
-  const data = chunkBytes(0xdead0000 + exec.scenario.iterationInTest, 0, CHUNK_SIZE);
-  const hex = crypto.sha256(data, "hex");
-  const res = http.put(`${BASE}/${CACHE}/api/chunk/${hex}`, data, {
-    headers: authHeaders(),
+export function orphans(data) {
+  const t = data.targets[tn(data)];
+  const bytes = chunkBytes(0xdead0000 + exec.scenario.iterationInTest, 0, CHUNK_SIZE);
+  const hex = crypto.sha256(bytes, "hex");
+  const res = http.put(`${cachePrefix(t)}/api/chunk/${hex}`, bytes, {
+    headers: authHeaders({}, t),
     tags: { name: "orphan-chunk" },
   });
   check(res, { "orphan chunk 200": (r) => r.status === 200 });

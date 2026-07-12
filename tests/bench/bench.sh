@@ -92,7 +92,7 @@ XILO_DEDUP=$(t "$WORK/xilo" push bench - --quiet < "$WORK/closure.txt")
 ATTIC_DEDUP=$(t $ATTIC push bench:bench --stdin < "$WORK/closure.txt")
 # sanity: both servers must actually hold the closure before the pull phase
 SAMPLE=$(head -1 "$WORK/hashes.txt")
-curl -fs "$XILO_URL/bench/$SAMPLE.narinfo" >/dev/null || { echo "xilo push did not land"; exit 1; }
+curl -fs "$XILO_URL/c/default/bench/$SAMPLE.narinfo" >/dev/null || { echo "xilo push did not land"; exit 1; }
 curl -fs "$ATTIC_URL/bench/$SAMPLE.narinfo" >/dev/null || { echo "attic push did not land"; exit 1; }
 
 sample_stats() { # sample_stats <container> <outfile> — until killed
@@ -114,7 +114,8 @@ pull_bench() { # pull_bench <name> <container> <url>
 }
 
 echo "== pull load: xilo =="
-pull_bench xilo bench-xilo $XILO_URL
+# xilo mounts caches at /c/{account}/{cache}; pull_bench appends /bench.
+pull_bench xilo bench-xilo $XILO_URL/c/default
 echo "== pull load: attic =="
 pull_bench attic bench-attic $ATTIC_URL
 

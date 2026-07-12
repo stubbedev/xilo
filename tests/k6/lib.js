@@ -2,15 +2,38 @@
 // (chunk PUT + put-path), so scenarios can exercise the real pipeline without
 // a Nix store. Content is seeded per path index — the same index always
 // produces the same bytes, which is what makes dedup/GC-churn scenarios work.
+//
+// Every cache lives under /c/{account}/{cache}/… (there is no flat /{cache}
+// route). Single-tenant deployments use the "default" account; multi-tenant
+// runs spread load across several accounts (see TENANTS in perf/pressure/
+// churn). Helpers take an optional `target` {account, cache, token} so one VU
+// can address whichever tenant it was assigned; when omitted they fall back to
+// the module-level ACCOUNT/CACHE/XILO_TOKEN.
 import http from "k6/http";
 import crypto from "k6/crypto";
 import { check, sleep } from "k6";
 
 export const BASE = __ENV.BASE_URL || "http://localhost:8080";
 export const CACHE = __ENV.CACHE || "k6";
+export const ACCOUNT = __ENV.ACCOUNT || "default";
+export const ADMIN_PASSWORD = __ENV.ADMIN_PASSWORD || "k6-admin";
+// The bootstrap dashboard user (cli/serve.go creates "admin" on first run).
+export const ADMIN_USER = __ENV.ADMIN_USER || "admin";
 
 // nix-base32 alphabet (no e, o, u, t).
 const NIX32 = "0123456789abcdfghijklmnpqrsvwxyz";
+
+// defaultTarget is the single-tenant cache addressed when a helper is called
+// without an explicit target.
+export function defaultTarget() {
+  return { account: ACCOUNT, cache: CACHE, token: __ENV.XILO_TOKEN || "" };
+}
+
+// cachePrefix builds the /c/{account}/{cache} path a target is mounted at.
+export function cachePrefix(target) {
+  const t = target || defaultTarget();
+  return `${BASE}/c/${t.account}/${t.cache}`;
+}
 
 // xorshift32 — fast deterministic PRNG, good enough for content generation.
 function xorshift(seed) {
@@ -39,16 +62,19 @@ export function storePathFor(seed) {
   return `/nix/store/${h}-k6-${seed}`;
 }
 
-export function authHeaders(extra) {
+export function authHeaders(extra, target) {
   const h = Object.assign({}, extra);
-  if (__ENV.XILO_TOKEN) h["Authorization"] = `Bearer ${__ENV.XILO_TOKEN}`;
+  const tok = target ? target.token : __ENV.XILO_TOKEN;
+  if (tok) h["Authorization"] = `Bearer ${tok}`;
   return h;
 }
 
-// pushPath uploads a path's chunks then registers it. Returns
-// {storeHash, narHex, narSize, chunkHexes, ok} — narHex is the sha256 of the
-// reassembled NAR, which the server independently verifies before accepting.
-export function pushPath(seed, chunkCount, chunkSize, tags) {
+// pushPath uploads a path's chunks then registers it against `target` (or the
+// default single-tenant cache). Returns {storeHash, narHex, narSize, ok} —
+// narHex is the sha256 of the reassembled NAR, which the server independently
+// verifies before accepting.
+export function pushPath(seed, chunkCount, chunkSize, tags, target) {
+  const prefix = cachePrefix(target);
   const chunkHexes = [];
   const narHasher = crypto.createHash("sha256");
   let narSize = 0;
@@ -60,8 +86,8 @@ export function pushPath(seed, chunkCount, chunkSize, tags) {
     chunkHexes.push(hex);
     narHasher.update(data);
     narSize += data.byteLength;
-    const res = http.put(`${BASE}/${CACHE}/api/chunk/${hex}`, data, {
-      headers: authHeaders(),
+    const res = http.put(`${prefix}/api/chunk/${hex}`, data, {
+      headers: authHeaders({}, target),
       tags: Object.assign({ name: "put-chunk" }, tags),
     });
     ok = check(res, { "chunk 200": (r) => r.status === 200 }) && ok;
@@ -70,7 +96,7 @@ export function pushPath(seed, chunkCount, chunkSize, tags) {
   const narHex = narHasher.digest("hex");
   const storePath = storePathFor(seed);
   const res = http.put(
-    `${BASE}/${CACHE}/api/path`,
+    `${prefix}/api/path`,
     JSON.stringify({
       storePath: storePath,
       narHash: `sha256:${narHex}`,
@@ -80,7 +106,7 @@ export function pushPath(seed, chunkCount, chunkSize, tags) {
       chunks: chunkHexes,
     }),
     {
-      headers: authHeaders({ "Content-Type": "application/json" }),
+      headers: authHeaders({ "Content-Type": "application/json" }, target),
       tags: Object.assign({ name: "put-path" }, tags),
     },
   );
@@ -100,15 +126,78 @@ export function waitHealthy(timeoutSec) {
   throw new Error(`server at ${BASE} not healthy after ${timeoutSec}s`);
 }
 
-// ensureCache logs into the admin dashboard and creates the test cache —
-// idempotent (an existing cache is fine), verified via nix-cache-info.
-export function ensureCache() {
-  http.post(`${BASE}/admin/login`, {
-    password: __ENV.ADMIN_PASSWORD || "k6-admin",
-  });
-  http.post(`${BASE}/admin/caches`, { name: CACHE, priority: "40" });
-  const res = http.get(`${BASE}/${CACHE}/nix-cache-info`);
-  if (res.status !== 200) {
-    throw new Error(`cache ${CACHE} unavailable after create: ${res.status}`);
+// adminJar logs into the dashboard and returns a cookie jar with the session.
+// Login is rate-limited (per-IP burst 10, refill 1/10s) so callers must reuse
+// one jar rather than logging in per operation.
+export function adminLogin() {
+  const res = http.post(`${BASE}/admin/login`, { username: ADMIN_USER, password: ADMIN_PASSWORD });
+  if (res.status !== 200) throw new Error(`admin login failed: ${res.status}`);
+}
+
+// setContext switches the dashboard's active account context so that
+// subsequent cache creation (namespace preset) and token scoping resolve
+// against `account` rather than the owner's personal namespace.
+export function setContext(account) {
+  http.post(`${BASE}/admin/context`, { ctx: account });
+}
+
+// ensureCache creates `target`'s account+cache through the admin dashboard —
+// idempotent (an existing cache is fine), verified via nix-cache-info. Must be
+// called with an active admin session (adminLogin first).
+export function ensureCache(target) {
+  const t = target || defaultTarget();
+  const form = { name: t.cache, namespace: t.account, priority: "40" };
+  if (t.private) form.private = "on";
+  http.post(`${BASE}/admin/caches`, form);
+  const res = http.get(`${cachePrefix(t)}/nix-cache-info`);
+  if (res.status !== 200 && res.status !== 401) {
+    // 401 is expected for a private cache read without a token — the create
+    // still succeeded; only an outright failure (404/5xx) is fatal.
+    throw new Error(`cache ${t.account}/${t.cache} unavailable: ${res.status}`);
   }
+}
+
+// mintToken creates a push+pull token scoped to `target` via the admin form
+// and returns its secret (shown exactly once). Requires an active admin
+// session whose context is set to target.account (see setContext).
+export function mintToken(target, name) {
+  const res = http.post(`${BASE}/admin/tokens`, {
+    name: name || `k6-${target.account}-${target.cache}`,
+    cache: `${target.account}/${target.cache}`,
+    push: "on",
+    pull: "on",
+  });
+  const m = String(res.body).match(/[A-Za-z0-9_-]{40,}/);
+  if (!m) throw new Error(`no token secret for ${target.account}/${target.cache}: ${res.status}`);
+  return m[0];
+}
+
+// provisionTenants builds the per-VU target list. TENANTS<=0 (single-tenant)
+// yields one entry for the default account, pushing anonymously (open
+// bootstrap) or with XILO_TOKEN. TENANTS>0 (multi-tenant) creates that many
+// org accounts, each with its own cache and a scoped push token, so load can
+// be sharded across accounts. Returns an array of {account, cache, token}.
+export function provisionTenants(nTenants, cacheName) {
+  const cache = cacheName || CACHE;
+  if (!nTenants || nTenants <= 0) {
+    const t = { account: ACCOUNT, cache, token: __ENV.XILO_TOKEN || "" };
+    adminLogin();
+    ensureCache(t);
+    return [t];
+  }
+  adminLogin();
+  const targets = [];
+  for (let i = 0; i < nTenants; i++) {
+    const account = `k6t${i}`;
+    // Create the org account by creating a cache in it (owner mints accounts
+    // on the fly), then switch context to mint a scoped token.
+    http.post(`${BASE}/admin/orgs`, { name: account });
+    const t = { account, cache, token: "" };
+    ensureCache(t);
+    setContext(account);
+    t.token = mintToken(t);
+    targets.push(t);
+  }
+  setContext(ACCOUNT);
+  return targets;
 }
