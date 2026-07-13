@@ -68,7 +68,7 @@ var en = map[string]string{
 	"nav.account":     "Account",
 	"nav.settings":    "Settings",
 	"nav.status":      "Status",
-	"nav.audit":       "Action log",
+	"nav.audit":       "Activities",
 	"nav.context":     "Viewing account",
 	"nav.allaccounts": "All accounts",
 	"nav.logout":      "Log out",
