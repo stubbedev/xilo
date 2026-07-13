@@ -67,7 +67,12 @@ func saveClientConfig(c clientConfig) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p, data, 0o600) // contains tokens
+	if err := os.WriteFile(p, data, 0o600); err != nil { // contains tokens
+		return err
+	}
+	// WriteFile only applies the mode when creating the file; tighten an
+	// already-existing file that may have looser perms from an older version.
+	return os.Chmod(p, 0o600)
 }
 
 // profileFlag is the shared --profile selector for client commands.

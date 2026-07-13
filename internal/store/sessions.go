@@ -34,3 +34,13 @@ func (db *DB) DropSession(idHash string) error {
 		return err
 	})
 }
+
+// DropUserSessions invalidates every session for a user. Called after a
+// credential change (password reset, TOTP disable) so a stolen cookie can't
+// outlive the change.
+func (db *DB) DropUserSessions(userID int64) error {
+	return db.write(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`DELETE FROM sessions WHERE user_id=?`, userID)
+		return err
+	})
+}

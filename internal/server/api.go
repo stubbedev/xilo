@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"time"
 
@@ -196,6 +197,14 @@ func (s *Server) handlePutPath(w http.ResponseWriter, r *http.Request) {
 	}
 	var req api.PathReq
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	// A NarSize past MaxInt64 wraps negative when summed for quota accounting
+	// (stored as int64), so an over-quota push could slip through. Reject it
+	// here unconditionally — the reassembly check below is skippable, this is
+	// not. No real NAR approaches 2^63 bytes.
+	if req.NarSize > math.MaxInt64 {
+		http.Error(w, "narSize too large", http.StatusBadRequest)
 		return
 	}
 

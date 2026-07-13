@@ -27,6 +27,18 @@ func TestDisabledIsNoop(t *testing.T) {
 	}
 }
 
+func TestSendRejectsHeaderInjection(t *testing.T) {
+	c := Config{Host: "smtp.example.com", From: "x@y.com"}
+	// A CRLF in the recipient or subject must be rejected before any dial, so
+	// a caller can't inject extra SMTP headers (Bcc, spoofed From, …).
+	if err := Send(c, "a@b.com\r\nBcc: evil@x.com", "s", "b"); err == nil {
+		t.Fatal("newline in recipient should be rejected")
+	}
+	if err := Send(c, "a@b.com", "hi\r\nX-Injected: 1", "b"); err == nil {
+		t.Fatal("newline in subject should be rejected")
+	}
+}
+
 func TestFromAddr(t *testing.T) {
 	cases := map[string]string{
 		"Xilo <cache@example.com>": "cache@example.com",

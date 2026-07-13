@@ -403,17 +403,29 @@ func TestTOTPEnrollAndTwoStepLogin(t *testing.T) {
 	}
 	pending := m[1]
 
-	// wrong 2FA code → retry page (ticket stays valid)
+	// wrong 2FA code → ticket is burned, user is sent back to the password
+	// step (no retrying one ticket against the whole ±1-step window).
 	resp, _ = c2.PostForm(ts.URL+"/admin/login/code", url.Values{"pending": {pending}, "code": {wrongCode(secret)}})
 	if b := body(t, resp); !strings.Contains(b, "Invalid 2FA code") {
 		t.Fatalf("wrong 2fa code: %.200q", b)
+	}
+	// the burned ticket no longer works → back to password step
+	resp, _ = c2.PostForm(ts.URL+"/admin/login/code", url.Values{"pending": {pending}, "code": {totpCode(secret, time.Now())}})
+	if b := body(t, resp); !strings.Contains(b, "expired") {
+		t.Fatalf("reused burned ticket: %.200q", b)
 	}
 	// bogus ticket → back to password step
 	resp, _ = c2.PostForm(ts.URL+"/admin/login/code", url.Values{"pending": {"bogus"}, "code": {"123456"}})
 	if b := body(t, resp); !strings.Contains(b, "expired") {
 		t.Fatalf("bogus pending: %.200q", b)
 	}
-	// correct code → session granted
+	// re-do the password step for a fresh ticket, then the correct code wins
+	resp, _ = c2.PostForm(ts.URL+"/admin/login", url.Values{"username": {"admin"}, "password": {adminPass}})
+	m = pendingRe.FindStringSubmatch(body(t, resp))
+	if m == nil {
+		t.Fatal("no fresh pending ticket after re-login")
+	}
+	pending = m[1]
 	resp, _ = c2.PostForm(ts.URL+"/admin/login/code", url.Values{"pending": {pending}, "code": {totpCode(secret, time.Now())}})
 	if resp.StatusCode != 200 || resp.Request.URL.Path != "/admin" {
 		t.Fatalf("2fa login → %d at %s", resp.StatusCode, resp.Request.URL)

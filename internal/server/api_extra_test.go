@@ -259,6 +259,18 @@ func TestMissingPathsAndChunks(t *testing.T) {
 	}
 }
 
+// scrapeMetrics fetches /metrics with an admin bearer token (now required).
+func scrapeMetrics(t *testing.T, ts *httptest.Server, token, query string) *http.Response {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/metrics"+query, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
 func TestPutChunkDedupAndMetrics(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, nil)
 	db.CreateCache("default", "c", true, 40)
@@ -269,7 +281,8 @@ func TestPutChunkDedupAndMetrics(t *testing.T) {
 			t.Fatalf("upload %d: %d", i, r.StatusCode)
 		}
 	}
-	resp, _ := http.Get(ts.URL + "/metrics")
+	adminTok, _, _ := db.CreateToken(0, "metrics", nil, []string{"admin"}, 0)
+	resp := scrapeMetrics(t, ts, adminTok, "")
 	body, _ := io.ReadAll(resp.Body)
 	text := string(body)
 	if !strings.Contains(text, "xilo_chunks_received_total 1") ||
@@ -278,7 +291,7 @@ func TestPutChunkDedupAndMetrics(t *testing.T) {
 	}
 
 	// JSON shape
-	resp, _ = http.Get(ts.URL + "/metrics?format=json")
+	resp = scrapeMetrics(t, ts, adminTok, "?format=json")
 	var m map[string]int64
 	json.NewDecoder(resp.Body).Decode(&m)
 	if m["xilo_chunks_received_total"] != 1 {

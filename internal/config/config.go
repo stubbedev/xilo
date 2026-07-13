@@ -84,6 +84,13 @@ type Config struct {
 	// by any of these are skipped on push — no point re-caching nixpkgs. Sent to
 	// clients so the skip is automatic.
 	UpstreamKeys []string `yaml:"upstream_keys" json:"upstream_keys"`
+	// Number of trusted reverse-proxy hops in front of xilo. The real client
+	// IP for rate limiting is read as the Nth-from-last entry of
+	// X-Forwarded-For (the entry your proxy appends), so a client cannot forge
+	// it by sending its own leftmost entries. 0 (default) trusts one colocated
+	// proxy; set 2+ for chained proxies (each must append, not overwrite, XFF);
+	// -1 disables proxy trust entirely and keys on the raw socket peer.
+	TrustedProxyHops int `yaml:"trusted_proxy_hops" json:"trusted_proxy_hops"`
 	// Security hardening.
 	Security Security `yaml:"security" json:"security"`
 	// Server-wide storage limits.

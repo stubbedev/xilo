@@ -67,6 +67,13 @@ func runtimeGauges() []struct {
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	// Operational counters (auth failures, traffic, heap) are not public.
+	// Prometheus scrapes with an admin bearer token (authorization config).
+	if !s.db.AuthorizeAdmin(extractToken(r), time.Now().Unix()) {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="xilo"`)
+		http.Error(w, "admin token required", http.StatusUnauthorized)
+		return
+	}
 	m := &s.metrics
 	if wantsJSON(r) {
 		out := map[string]int64{"uptime_seconds": int64(time.Since(s.started).Seconds())}

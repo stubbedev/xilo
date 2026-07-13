@@ -496,7 +496,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	if !s.logins.allow(clientIP(r)) {
+	if !s.logins.allow(s.clientIP(r)) {
 		s.metrics.authFailures.Add(1)
 		w.WriteHeader(http.StatusTooManyRequests)
 		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T("flash.ratelimited")}).Render(r.Context(), w)
@@ -543,7 +543,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 // handleLoginCode is step two: a valid pre-auth ticket plus a TOTP code.
 func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
 	// Same bucket as passwords: a 6-digit TOTP is brute-forceable without it.
-	if !s.logins.allow(clientIP(r)) {
+	if !s.logins.allow(s.clientIP(r)) {
 		s.metrics.authFailures.Add(1)
 		w.WriteHeader(http.StatusTooManyRequests)
 		views.LoginCode(r.FormValue("pending"), views.Flash{Msg: views.T("flash.ratelimited")}).Render(r.Context(), w)
@@ -563,7 +563,11 @@ func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !totpVerify(secret, r.FormValue("code"), time.Now()) {
-		views.LoginCode(pid, views.Flash{Msg: "Invalid 2FA code"}).Render(r.Context(), w)
+		// Burn the ticket on any wrong code so one pre-auth ticket can't be
+		// retried against the ±1-step window for its whole 3-min lifetime;
+		// the user re-does the password step, which the limiter throttles.
+		s.sess.consumePending(pid)
+		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: "Invalid 2FA code — enter your password again."}).Render(r.Context(), w)
 		return
 	}
 	s.sess.consumePending(pid)
@@ -795,6 +799,15 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Invalidate every existing session (a stolen cookie must not outlive the
+	// change), then re-issue one for this browser so the user stays signed in.
+	if err := s.db.DropUserSessions(u.ID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if id, err := s.sess.create(u.ID); err == nil {
+		s.setSessionCookie(w, id)
+	}
 	s.accountFlash(w, r, views.T("flash.pwchanged"))
 }
 
@@ -901,6 +914,13 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.TOTPEnabled = false
+	// Dropping a second factor lowers assurance; invalidate other sessions and
+	// re-issue this one so a stolen cookie can't ride the weakened account.
+	if err := s.db.DropUserSessions(u.ID); err == nil {
+		if id, err := s.sess.create(u.ID); err == nil {
+			s.setSessionCookie(w, id)
+		}
+	}
 	s.accountFlash(w, r, views.T("flash.totpoff"))
 }
 
@@ -1605,6 +1625,12 @@ func (s *Server) handleUserReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.SetUserPassword(u.ID, string(hash)); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Admin reset targets another user: log them out everywhere so any live
+	// (possibly attacker-held) session dies with the old password.
+	if err := s.db.DropUserSessions(u.ID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

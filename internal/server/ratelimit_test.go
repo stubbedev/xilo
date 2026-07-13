@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stubbedev/xilo/internal/config"
 )
 
 func TestLoginLimiterBucket(t *testing.T) {
@@ -61,13 +63,14 @@ func TestLoginLimiterPrune(t *testing.T) {
 }
 
 func TestClientIP(t *testing.T) {
+	s := &Server{cfg: &config.Config{}} // TrustedProxyHops 0 → default 1
 	r := httptest.NewRequest(http.MethodPost, "/admin/login", nil)
 	r.RemoteAddr = "10.1.2.3:5555"
-	if got := clientIP(r); got != "10.1.2.3" {
+	if got := s.clientIP(r); got != "10.1.2.3" {
 		t.Fatalf("clientIP = %q", got)
 	}
 	r.RemoteAddr = "weird"
-	if got := clientIP(r); got != "weird" {
+	if got := s.clientIP(r); got != "weird" {
 		t.Fatalf("clientIP fallback = %q", got)
 	}
 	// Direct connection from a PUBLIC peer: forwarding headers are forgeable
@@ -75,20 +78,36 @@ func TestClientIP(t *testing.T) {
 	r.Header.Set("X-Forwarded-For", "6.6.6.6")
 	r.Header.Set("X-Real-Ip", "7.7.7.7")
 	r.RemoteAddr = "203.0.113.9:5555"
-	if got := clientIP(r); got != "203.0.113.9" {
+	if got := s.clientIP(r); got != "203.0.113.9" {
 		t.Fatalf("public peer honored forgeable header: %q", got)
 	}
-	// Behind a proxy on a private/loopback peer: X-Real-IP wins.
-	r.RemoteAddr = "10.0.0.9:5555"
-	if got := clientIP(r); got != "7.7.7.7" {
-		t.Fatalf("proxy peer X-Real-IP = %q", got)
-	}
-	// Loopback peer, no X-Real-IP: leftmost X-Forwarded-For entry wins.
+	// Behind a proxy on a private peer: a client-forged leftmost XFF entry must
+	// be ignored. With one trusted hop the RIGHTMOST entry (what the proxy
+	// appended) is the real client — the forged 6.6.6.6 must not win.
 	r.Header.Del("X-Real-Ip")
-	r.Header.Set("X-Forwarded-For", "6.6.6.6, 10.0.0.9")
-	r.RemoteAddr = "127.0.0.1:5555"
-	if got := clientIP(r); got != "6.6.6.6" {
-		t.Fatalf("proxy peer XFF = %q", got)
+	r.Header.Set("X-Forwarded-For", "6.6.6.6, 198.51.100.7")
+	r.RemoteAddr = "10.0.0.9:5555"
+	if got := s.clientIP(r); got != "198.51.100.7" {
+		t.Fatalf("proxy XFF took forgeable leftmost: %q", got)
+	}
+	// Two trusted hops: index two from the right, still skipping the forgery.
+	s.cfg.TrustedProxyHops = 2
+	r.Header.Set("X-Forwarded-For", "6.6.6.6, 198.51.100.7, 10.0.0.2")
+	if got := s.clientIP(r); got != "198.51.100.7" {
+		t.Fatalf("two-hop XFF = %q", got)
+	}
+	// X-Real-IP is only a fallback when no XFF is present.
+	s.cfg.TrustedProxyHops = 0
+	r.Header.Del("X-Forwarded-For")
+	r.Header.Set("X-Real-Ip", "7.7.7.7")
+	if got := s.clientIP(r); got != "7.7.7.7" {
+		t.Fatalf("X-Real-IP fallback = %q", got)
+	}
+	// Proxy trust disabled: always key on the socket peer.
+	s.cfg.TrustedProxyHops = -1
+	r.Header.Set("X-Forwarded-For", "6.6.6.6")
+	if got := s.clientIP(r); got != "10.0.0.9" {
+		t.Fatalf("hops=-1 honored header: %q", got)
 	}
 }
 

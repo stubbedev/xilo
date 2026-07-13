@@ -276,7 +276,8 @@ func TestRoutingAndHealth(t *testing.T) {
 		code int
 	}{
 		{"/healthz", 200},
-		{"/metrics", 200},
+		{"/metrics", 401}, // requires an admin bearer token
+
 		{"/c/default/c/nix-cache-info", 200},
 		{"/c/default/nope/nix-cache-info", 404},
 		{"/c/default/c/deadbeef.narinfo", 404}, // valid cache, missing path

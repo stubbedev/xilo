@@ -80,6 +80,12 @@ func (s *Server) webAuthn() (*webauthn.WebAuthn, error) {
 			RPDisplayName: "xilo",
 			RPID:          rpID,
 			RPOrigins:     []string{strings.TrimSuffix(s.cfg.BaseURL, "/")},
+			// A passkey replaces username+password, so it must itself be strong:
+			// require user verification (PIN/biometric) at registration so the
+			// credential is possession + inherence, not possession alone.
+			AuthenticatorSelection: protocol.AuthenticatorSelection{
+				UserVerification: protocol.VerificationRequired,
+			},
 		})
 	})
 	return s.wan, s.wanErr
@@ -201,6 +207,10 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if !cred.Flags.UserVerified {
+		http.Error(w, "passkey must verify the user (PIN or biometric)", http.StatusBadRequest)
+		return
+	}
 	// Autoname server-side: "<user>@<hostname>". Client-supplied names went
 	// stale-tab wrong once already.
 	name := s.passkeyName(u)
@@ -244,7 +254,7 @@ func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "no passkeys registered", http.StatusBadRequest)
 		return
 	}
-	opts, sd, err := wan.BeginLogin(user)
+	opts, sd, err := wan.BeginLogin(user, webauthn.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -312,6 +322,12 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 	cred, err := wan.ValidateLogin(owner, *sd, parsed)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+	// The passkey stands in for password + TOTP, so possession alone is not
+	// enough — demand the user-verified flag the assertion carries.
+	if !cred.Flags.UserVerified {
+		http.Error(w, "passkey did not verify the user", http.StatusUnauthorized)
 		return
 	}
 	// Persist the updated sign counter / clone-detection state.

@@ -32,7 +32,12 @@ type Cache struct {
 func (c *Cache) Ref() string { return c.Account + "/" + c.Name }
 
 const cacheCols = `c.id,c.account_id,a.slug,c.name,c.storage,c.public,c.priority,c.retention,c.max_bytes,c.pubkey,c.privkey,c.created`
-const cacheFrom = ` FROM caches c JOIN accounts a ON a.id = c.account_id `
+
+// The status filter lives in the JOIN so every cache read (GetCache,
+// GetCacheByID, ListCaches, ListAccountCaches) treats a cache under a
+// soft-deleted account as absent — public caches serve no token, so a missing
+// filter would keep leaking a deleted account's caches to anonymous pulls.
+const cacheFrom = ` FROM caches c JOIN accounts a ON a.id = c.account_id AND a.status<>'deleted' `
 
 type Path struct {
 	StorePath string

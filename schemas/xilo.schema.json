@@ -328,6 +328,10 @@
       "type": "array",
       "description": "Upstream cache signing-key names (e.g. \"cache.nixos.org-1\"). Paths signed\nby any of these are skipped on push — no point re-caching nixpkgs. Sent to\nclients so the skip is automatic."
     },
+    "trusted_proxy_hops": {
+      "type": "integer",
+      "description": "Number of trusted reverse-proxy hops in front of xilo. The real client\nIP for rate limiting is read as the Nth-from-last entry of\nX-Forwarded-For (the entry your proxy appends), so a client cannot forge\nit by sending its own leftmost entries. 0 (default) trusts one colocated\nproxy; set 2+ for chained proxies (each must append, not overwrite, XFF);\n-1 disables proxy trust entirely and keys on the raw socket peer."
+    },
     "security": {
       "properties": {
         "skip_upload_verify": {
@@ -396,6 +400,7 @@
     "gc",
     "parallelism",
     "upstream_keys",
+    "trusted_proxy_hops",
     "security",
     "limits",
     "logging",

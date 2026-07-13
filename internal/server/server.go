@@ -158,6 +158,13 @@ func (s *Server) RunContext(ctx context.Context) error {
 func (s *Server) middleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		// Baseline hardening headers. No CSP: the admin UI relies on inline
+		// scripts and onclick handlers, so frame-ancestors via X-Frame-Options
+		// is the pragmatic clickjacking defense.
+		hdr := w.Header()
+		hdr.Set("X-Frame-Options", "DENY")
+		hdr.Set("X-Content-Type-Options", "nosniff")
+		hdr.Set("Referrer-Policy", "same-origin")
 		lw := &logWriter{ResponseWriter: w, status: http.StatusOK}
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -213,7 +220,7 @@ func (s *Server) recordAudit(r *http.Request, status int, elapsed time.Duration)
 	}
 	if err := s.db.Audit(store.AuditEntry{
 		UserID: uid, Actor: actor, Method: r.Method, Path: r.URL.Path, Status: status,
-		IP: clientIP(r), UserAgent: r.UserAgent(), DurationMs: elapsed.Milliseconds(),
+		IP: s.clientIP(r), UserAgent: r.UserAgent(), DurationMs: elapsed.Milliseconds(),
 	}); err != nil {
 		log.Printf("audit: %v", err)
 	}

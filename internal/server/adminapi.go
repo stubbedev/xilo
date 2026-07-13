@@ -130,6 +130,19 @@ func (s *Server) apiCreateCache(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusUnauthorized, "create token required")
 		return
 	}
+	// Scoped create tokens are bound by the account's plan quota, same as the
+	// admin-UI path; only instance-admin tokens create without limit.
+	if !s.db.AuthorizeAdmin(extractToken(r), time.Now().Unix()) {
+		acc, err := s.db.GetAccount(req.Account)
+		if err != nil {
+			apiError(w, http.StatusBadRequest, "unknown account")
+			return
+		}
+		if err := s.checkCacheQuota(acc); err != nil {
+			apiError(w, http.StatusForbidden, err.Error())
+			return
+		}
+	}
 	if req.Priority == 0 {
 		req.Priority = 40
 	}

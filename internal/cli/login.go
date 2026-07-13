@@ -28,6 +28,12 @@ func loginCmd() *cobra.Command {
 			}
 			p := cc.Servers[name]
 			p.URL = strings.TrimRight(args[0], "/")
+			// A token sent over plain HTTP to a non-local host travels in
+			// cleartext (Authorization: Bearer). Warn; don't block (local dev).
+			if token != "" && strings.HasPrefix(p.URL, "http://") &&
+				!strings.Contains(p.URL, "localhost") && !strings.Contains(p.URL, "127.0.0.1") && !strings.Contains(p.URL, "[::1]") {
+				fmt.Fprintln(os.Stderr, styleDim("warning: http:// sends your token in cleartext — use https:// for remote servers"))
+			}
 			if token != "" {
 				p.Token = token
 			}
