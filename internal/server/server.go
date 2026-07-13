@@ -299,9 +299,9 @@ func (s *Server) startAuditPrune(ctx context.Context) {
 	go func() {
 		t := time.NewTicker(auditPruneEvery)
 		defer t.Stop()
-		// First pass shortly after startup so a rarely-restarted server that
-		// never reaches a tick still bounds the log.
-		s.pruneAudit(ctx, ret)
+		// First pass on the first tick, never synchronously at startup: touching
+		// the DB before a tick would race a shutdown that closes it (same reason
+		// startGC waits for its ticker).
 		for {
 			select {
 			case <-ctx.Done():
