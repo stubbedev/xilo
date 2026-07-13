@@ -353,23 +353,6 @@ YAML (see [`xilo.example.yaml`](./xilo.example.yaml)). A JSON schema is publishe
 `yaml-language-server` modeline for editor autocompletion. Secrets can come from env
 (`XILO_ADMIN_PASSWORD`, `XILO_S3_ACCESS_KEY`, `XILO_S3_SECRET_KEY`).
 
-## Upgrading to 1.0
-
-The 1.0 schema migrations run automatically on first start — SQLite databases
-from any earlier version come forward in place. Two changes need action:
-
-- **Cache URLs move** from `/{cache}` to `/c/{account}/{cache}`. Existing
-  caches land in the `default` account, so every substituter, netrc-adjacent
-  URL and CI config changes `…/mycache` → `…/c/default/mycache`. Signing keys
-  and tokens keep working (token scopes are rewritten to `default/…`
-  automatically); pull/push against the old URLs 404s until updated.
-- **Dashboard login now asks for a username.** The old admin password belongs
-  to the migrated `admin` account; its passkeys move along, and everyone is
-  signed out once.
-
-The CLI accepts both `mycache` (meaning `default/mycache`) and `ns/cache`
-everywhere.
-
 ## Development
 
 ```sh
