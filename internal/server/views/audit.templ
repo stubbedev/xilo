@@ -1,0 +1,110 @@
+package views
+
+import (
+	"github.com/stubbedev/xilo/internal/store"
+
+	"github.com/templui/templui/components/badge"
+	"github.com/templui/templui/components/card"
+	"github.com/templui/templui/components/table"
+)
+
+// AuditData is everything the action-log page renders.
+type AuditData struct {
+	Nav     Nav
+	Entries []store.AuditEntry
+	Query   string
+	Total   int64
+	Pager   Pager
+	Sort    SortCtx
+}
+
+templ AuditPage(d AuditData) {
+	@Layout(T("audit.title"), "audit", d.Nav, Flash{}) {
+		@PageHeader(T("audit.title"), T("audit.subtitle")) {
+			@SearchInput("/admin/audit", "q", d.Query, T("audit.search"), "#audit-results")
+		}
+		@auditResults(d)
+	}
+}
+
+// auditResults is the swap target for live action-log search.
+templ auditResults(d AuditData) {
+	<div id="audit-results" hx-target="#audit-results" hx-select="#audit-results" hx-swap="outerHTML show:none">
+		if len(d.Entries) == 0 {
+			if d.Query != "" {
+				@EmptyState("search-x", T("audit.nomatch"))
+			} else {
+				@EmptyState("scroll-text", T("audit.empty"))
+			}
+		} else {
+			@card.Card(card.Props{Class: "p-0"}) {
+				@table.Table(table.Props{Class: "table-fixed"}) {
+					@table.Header() {
+						@table.Row() {
+							@SortHead(d.Sort, "time", T("audit.time"), "w-44")
+							@SortHead(d.Sort, "actor", T("audit.actor"), "w-48")
+							@SortHead(d.Sort, "path", T("audit.action"), "")
+							@SortHead(d.Sort, "status", T("audit.status"), "w-28")
+						}
+					}
+					@table.Body() {
+						for _, e := range d.Entries {
+							@table.Row() {
+								@table.Cell(table.CellProps{Class: "align-top text-muted-foreground"}) {
+									@WithTooltip(Ago(e.TS)) {
+										<span class="tabular-nums">{ stamp(e.TS) }</span>
+									}
+								}
+								@table.Cell(table.CellProps{Class: "align-top"}) {
+									<div class="min-w-0">
+										if e.Actor != "" {
+											<div class="truncate font-medium">{ e.Actor }</div>
+										} else {
+											<div class="truncate text-muted-foreground">{ T("audit.system") }</div>
+										}
+										if e.IP != "" {
+											<div class="truncate font-mono text-xs text-muted-foreground">{ e.IP }</div>
+										}
+									</div>
+								}
+								@table.Cell(table.CellProps{Class: "align-top"}) {
+									@auditAction(e)
+								}
+								@table.Cell(table.CellProps{Class: "align-top"}) {
+									<div class="space-y-1">
+										@badge.Badge(badge.Props{Variant: auditStatusVariant(e.Status)}) {
+											{ itoa(int64(e.Status)) }
+										}
+										<div class="text-xs text-muted-foreground tabular-nums">{ itoa(e.DurationMs) } { T("audit.ms") }</div>
+									</div>
+								}
+							}
+						}
+					}
+				}
+			}
+			@PagerNav(d.Pager)
+		}
+	</div>
+}
+
+// auditAction is the method badge + request path; the user agent (when known)
+// rides along as a tooltip so it stays observable without widening the table.
+templ auditAction(e store.AuditEntry) {
+	if e.UserAgent != "" {
+		@WithTooltip(e.UserAgent) {
+			@auditActionInner(e)
+		}
+	} else {
+		@auditActionInner(e)
+	}
+}
+
+templ auditActionInner(e store.AuditEntry) {
+	<div class="flex min-w-0 items-center gap-2">
+		@badge.Badge(badge.Props{Variant: auditMethodVariant(e.Method), Class: "shrink-0 font-mono"}) {
+			{ e.Method }
+		}
+		<span class="truncate font-mono text-sm">{ e.Path }</span>
+	</div>
+}

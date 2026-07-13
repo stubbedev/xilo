@@ -68,6 +68,7 @@ var en = map[string]string{
 	"nav.account":     "Account",
 	"nav.settings":    "Settings",
 	"nav.status":      "Status",
+	"nav.audit":       "Action log",
 	"nav.context":     "Viewing account",
 	"nav.allaccounts": "All accounts",
 	"nav.logout":      "Log out",
@@ -99,6 +100,19 @@ var en = map[string]string{
 	"status.lat":         "Latency (ms)",
 	"status.thru":        "NAR throughput (MiB/s)",
 	"status.storedchart": "Stored (MiB)",
+
+	// action log
+	"audit.title":    "Action log",
+	"audit.subtitle": "Every admin and API mutation, newest first — instance-wide.",
+	"audit.search":   "Search actor, path or IP",
+	"audit.empty":    "No actions recorded yet.",
+	"audit.nomatch":  "No actions match your search.",
+	"audit.time":     "Time",
+	"audit.actor":    "Actor",
+	"audit.action":   "Action",
+	"audit.status":   "Status",
+	"audit.system":   "system",
+	"audit.ms":       "ms",
 
 	// login
 	"login.title":      "Sign in",

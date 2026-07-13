@@ -144,6 +144,9 @@ templ appSidebar(section string, nav Nav) {
 						@navItem("/admin/settings", T("nav.settings"), "settings", section == "settings")
 					}
 					@navItem("/admin/status", T("nav.status"), "activity", section == "status")
+					if nav.IsAdmin {
+						@navItem("/admin/audit", T("nav.audit"), "scroll-text", section == "audit")
+					}
 				}
 			}
 		}

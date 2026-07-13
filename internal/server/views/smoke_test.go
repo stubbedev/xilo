@@ -202,6 +202,30 @@ func TestSmokeStatusPage(t *testing.T) {
 	render(t, "StatusPage-custom", views.StatusPage(custom))
 }
 
+func TestSmokeAuditPage(t *testing.T) {
+	now := time.Now().Unix()
+	d := views.AuditData{
+		Nav: views.Nav{LoggedIn: true, UserName: "admin", IsAdmin: true},
+		Entries: []store.AuditEntry{
+			{ID: 2, TS: now, Actor: "alice", Method: "DELETE", Path: "/admin/cache/default/demo/delete", Status: 303, IP: "10.0.0.1", UserAgent: "Mozilla/5.0", DurationMs: 7},
+			{ID: 1, TS: now, Method: "POST", Path: "/api/v1/caches", Status: 201, IP: "10.0.0.2", DurationMs: 42},
+		},
+		Query: "demo",
+		Total: 2,
+		Pager: views.Pager{Page: 1, Pages: 2, Next: "/admin/audit?page=2"},
+		Sort:  sortCtx(),
+	}
+	out := render(t, "AuditPage", views.AuditPage(d))
+	for _, want := range []string{"alice", "DELETE", "/admin/cache/default/demo/delete", "10.0.0.1", "system", "42"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("AuditPage missing %q", want)
+		}
+	}
+	// Empty and no-match branches.
+	render(t, "AuditPage-empty", views.AuditPage(views.AuditData{Nav: d.Nav, Pager: views.Pager{Page: 1, Pages: 1}}))
+	render(t, "AuditPage-nomatch", views.AuditPage(views.AuditData{Nav: d.Nav, Query: "zzz", Pager: views.Pager{Page: 1, Pages: 1}}))
+}
+
 func TestAsset(t *testing.T) {
 	if got := views.Asset("app.css"); got != "/static/app.css" {
 		t.Fatalf("Asset unversioned = %q", got)

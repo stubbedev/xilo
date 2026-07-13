@@ -124,6 +124,7 @@ func (s *Server) RunContext(ctx context.Context) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	s.startGC(ctx)
+	s.startAuditPrune(ctx)
 	s.startStatusSampler(ctx)
 
 	srv := &http.Server{
@@ -177,7 +178,7 @@ func (s *Server) middleware(h http.Handler) http.Handler {
 			}
 			// Action log: successful admin/API mutations only.
 			if lw.status < 400 && auditable(r) {
-				s.recordAudit(r, lw.status)
+				s.recordAudit(r, lw.status, elapsed)
 			}
 		}()
 		h.ServeHTTP(lw, r)
@@ -204,13 +205,16 @@ func auditable(r *http.Request) bool {
 // recordAudit writes one action-log row, resolving the acting user from the
 // session cookie (absent for token/CLI-driven API calls). Best-effort: a miss
 // is logged, never surfaced to the request.
-func (s *Server) recordAudit(r *http.Request, status int) {
+func (s *Server) recordAudit(r *http.Request, status int, elapsed time.Duration) {
 	var uid int64
 	var actor string
 	if u := s.currentUser(r); u != nil {
 		uid, actor = u.ID, u.Name
 	}
-	if err := s.db.Audit(uid, actor, r.Method, r.URL.Path, status); err != nil {
+	if err := s.db.Audit(store.AuditEntry{
+		UserID: uid, Actor: actor, Method: r.Method, Path: r.URL.Path, Status: status,
+		IP: clientIP(r, s.cfg.Security.TrustedProxy), UserAgent: r.UserAgent(), DurationMs: elapsed.Milliseconds(),
+	}); err != nil {
 		log.Printf("audit: %v", err)
 	}
 }
@@ -271,6 +275,68 @@ func (s *Server) startGC(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// Audit pruning runs on its own schedule, independent of the chunk sweeper, so
+// the action log is bounded even when gc.interval is unset. Deliberately gentle:
+// it deletes in small batches with a pause between each, so the single writer
+// goroutine is free for real traffic almost all the time — pruning never
+// competes with a push or an admin action for the write lock.
+const (
+	auditPruneEvery = 6 * time.Hour          // how often to drain expired rows
+	auditPruneBatch = 200                    // rows per write transaction
+	auditPrunePause = 500 * time.Millisecond // yield between batches
+)
+
+// startAuditPrune launches the low-priority action-log pruner if
+// gc.audit_retention is set (default one year).
+func (s *Server) startAuditPrune(ctx context.Context) {
+	ret := parseDur(s.cfg.GC.AuditRetention)
+	if ret <= 0 {
+		return
+	}
+	log.Printf("audit: pruning entries older than %s every %s", ret, auditPruneEvery)
+	go func() {
+		t := time.NewTicker(auditPruneEvery)
+		defer t.Stop()
+		// First pass shortly after startup so a rarely-restarted server that
+		// never reaches a tick still bounds the log.
+		s.pruneAudit(ctx, ret)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				s.pruneAudit(ctx, ret)
+			}
+		}
+	}()
+}
+
+// pruneAudit deletes expired action-log rows in small paced batches, stopping
+// as soon as a batch comes up short (nothing left) or the context is cancelled.
+func (s *Server) pruneAudit(ctx context.Context, retention time.Duration) {
+	cutoff := time.Now().Add(-retention).Unix()
+	var total int64
+	for {
+		n, err := s.db.PruneAuditBatch(cutoff, auditPruneBatch)
+		if err != nil {
+			log.Printf("audit: prune: %v", err)
+			return
+		}
+		total += n
+		if n < auditPruneBatch { // drained
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(auditPrunePause):
+		}
+	}
+	if total > 0 {
+		log.Printf("audit: pruned %d expired entries", total)
+	}
 }
 
 // parseDur treats "" and "0" as disabled.

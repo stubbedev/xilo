@@ -63,18 +63,28 @@ func TestLoginLimiterPrune(t *testing.T) {
 func TestClientIP(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/admin/login", nil)
 	r.RemoteAddr = "10.1.2.3:5555"
-	if got := clientIP(r); got != "10.1.2.3" {
+	if got := clientIP(r, false); got != "10.1.2.3" {
 		t.Fatalf("clientIP = %q", got)
 	}
 	r.RemoteAddr = "weird"
-	if got := clientIP(r); got != "weird" {
+	if got := clientIP(r, false); got != "weird" {
 		t.Fatalf("clientIP fallback = %q", got)
 	}
-	// X-Forwarded-For must NOT bypass the limit (forgeable).
+	// X-Forwarded-For must NOT bypass the limit when proxy is untrusted (forgeable).
 	r.Header.Set("X-Forwarded-For", "6.6.6.6")
 	r.RemoteAddr = "10.1.2.3:5555"
-	if got := clientIP(r); got != "10.1.2.3" {
+	if got := clientIP(r, false); got != "10.1.2.3" {
 		t.Fatalf("clientIP honored forgeable header: %q", got)
+	}
+	// With a trusted proxy, the leftmost X-Forwarded-For entry wins.
+	r.Header.Set("X-Forwarded-For", "6.6.6.6, 10.0.0.9")
+	if got := clientIP(r, true); got != "6.6.6.6" {
+		t.Fatalf("clientIP trusted XFF = %q", got)
+	}
+	// X-Real-IP takes precedence over X-Forwarded-For when trusted.
+	r.Header.Set("X-Real-Ip", "7.7.7.7")
+	if got := clientIP(r, true); got != "7.7.7.7" {
+		t.Fatalf("clientIP trusted X-Real-IP = %q", got)
 	}
 }
 

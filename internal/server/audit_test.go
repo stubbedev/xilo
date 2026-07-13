@@ -30,7 +30,7 @@ func TestAuditMiddleware(t *testing.T) {
 	hit(ok, "PUT", "/c/default/web/api/path")        // skip: cache traffic
 	hit(forbidden, "POST", "/admin/orgs")            // skip: failed (403)
 
-	es, err := db.ListAudit(20)
+	es, _, err := db.SearchAudit("", 20, 0, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

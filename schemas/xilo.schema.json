@@ -301,6 +301,10 @@
         "grace": {
           "type": "string",
           "description": "Grace window: chunks created more recently than this are never swept, so\na chunk uploaded during an in-flight push is never collected before its\npath is registered. Must exceed your longest single push. Default 1h."
+        },
+        "audit_retention": {
+          "type": "string",
+          "description": "Delete action-log entries older than this on each sweep. Empty defaults\nto one year (\"8760h\"); \"0\" keeps entries forever."
         }
       },
       "additionalProperties": false,
@@ -308,7 +312,8 @@
       "required": [
         "interval",
         "retention",
-        "grace"
+        "grace",
+        "audit_retention"
       ],
       "description": "Background garbage collection."
     },
@@ -332,13 +337,18 @@
         "allow_open_bootstrap": {
           "type": "boolean",
           "description": "Allow anonymous push before the first token exists. Convenient for a\ntrusted single-user setup, but on a fresh public deploy it means anyone\ncan push until you mint a token. Default false: push requires a token."
+        },
+        "trusted_proxy": {
+          "type": "boolean",
+          "description": "Trust X-Forwarded-For / X-Real-IP for the client address (login rate\nlimiting and action-log IPs). Enable ONLY behind a reverse proxy that\nsets these headers — otherwise a client can forge its IP. Default false:\nthe direct socket peer is used."
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
         "skip_upload_verify",
-        "allow_open_bootstrap"
+        "allow_open_bootstrap",
+        "trusted_proxy"
       ],
       "description": "Security hardening."
     },

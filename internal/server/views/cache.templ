@@ -211,14 +211,14 @@ templ pathResults(d CacheData) {
 							{{ hash, name := pathParts(p.StorePath) }}
 							@table.Row() {
 								@table.Cell() {
-									@WithTooltip(p.StorePath) {
-										<div class="flex min-w-0 items-center gap-2">
-											<span class="truncate font-medium">{ name }</span>
-											if hash != "" {
+									<div class="flex min-w-0 items-center gap-2">
+										<span class="truncate font-medium">{ name }</span>
+										if hash != "" {
+											@WithTooltip(p.StorePath) {
 												<code class="font-mono text-xs text-muted-foreground">{ hash }</code>
 											}
-										</div>
-									}
+										}
+									</div>
 								}
 								@table.Cell(table.CellProps{Class: "tabular-nums"}) {
 									{ d.Bytes(p.NarSize) }

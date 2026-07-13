@@ -178,6 +178,11 @@ type Security struct {
 	// trusted single-user setup, but on a fresh public deploy it means anyone
 	// can push until you mint a token. Default false: push requires a token.
 	AllowOpenBootstrap bool `yaml:"allow_open_bootstrap" json:"allow_open_bootstrap"`
+	// Trust X-Forwarded-For / X-Real-IP for the client address (login rate
+	// limiting and action-log IPs). Enable ONLY behind a reverse proxy that
+	// sets these headers — otherwise a client can forge its IP. Default false:
+	// the direct socket peer is used.
+	TrustedProxy bool `yaml:"trusted_proxy" json:"trusted_proxy"`
 }
 
 // Chunking tunes FastCDC. Smaller average size = better dedup, more overhead.
@@ -210,6 +215,9 @@ type GC struct {
 	// a chunk uploaded during an in-flight push is never collected before its
 	// path is registered. Must exceed your longest single push. Default 1h.
 	Grace string `yaml:"grace" json:"grace"`
+	// Delete action-log entries older than this on each sweep. Empty defaults
+	// to one year ("8760h"); "0" keeps entries forever.
+	AuditRetention string `yaml:"audit_retention" json:"audit_retention"`
 }
 
 // Admin configures the management dashboard.
@@ -326,6 +334,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.GC.Grace == "" {
 		c.GC.Grace = "1h"
+	}
+	if c.GC.AuditRetention == "" {
+		c.GC.AuditRetention = "8760h" // one year
 	}
 	if c.DefaultStorage == "" {
 		c.DefaultStorage = "default"

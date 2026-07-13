@@ -77,6 +77,32 @@ func authAlertVariant(f Flash) alert.Variant {
 }
 
 // statusVariant maps a token status to a badge variant.
+// auditMethodVariant colors an HTTP method badge so destructive actions stand
+// out in the action log at a glance.
+func auditMethodVariant(method string) badge.Variant {
+	switch method {
+	case "DELETE":
+		return badge.VariantDestructive
+	case "POST", "PUT", "PATCH":
+		return badge.VariantDefault
+	default:
+		return badge.VariantSecondary
+	}
+}
+
+// auditStatusVariant colors an HTTP status badge: client/server errors red,
+// redirects muted, success neutral.
+func auditStatusVariant(status int) badge.Variant {
+	switch {
+	case status >= 400:
+		return badge.VariantDestructive
+	case status >= 300:
+		return badge.VariantOutline
+	default:
+		return badge.VariantSecondary
+	}
+}
+
 func statusVariant(status string) badge.Variant {
 	switch status {
 	case "active":
@@ -242,6 +268,15 @@ func Ago(ts int64) string {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// stamp renders a unix timestamp as an absolute local datetime — used where the
+// exact moment matters (the action log), paired with Ago for the coarse view.
+func stamp(ts int64) string {
+	if ts <= 0 {
+		return ""
+	}
+	return time.Unix(ts, 0).Format("2006-01-02 15:04:05")
+}
 
 // planLimits summarizes a plan's caps in one line.
 func planLimits(p store.Plan) string {

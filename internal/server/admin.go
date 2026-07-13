@@ -275,6 +275,7 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/org/{slug}", s.handleOrgPage)
 	mux.HandleFunc("GET /admin/status", s.handleStatus)
 	mux.HandleFunc("GET /admin/status/data", s.handleStatusData)
+	mux.HandleFunc("GET /admin/audit", s.handleAudit)
 	mux.HandleFunc("POST /admin/account/password", s.handleChangePassword)
 	mux.HandleFunc("POST /admin/account/password/check", s.handlePasswordCheck)
 	mux.HandleFunc("POST /admin/account/totp/enroll", s.handleTOTPEnroll)
@@ -495,7 +496,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	if !s.logins.allow(clientIP(r)) {
+	if !s.logins.allow(clientIP(r, s.cfg.Security.TrustedProxy)) {
 		s.metrics.authFailures.Add(1)
 		w.WriteHeader(http.StatusTooManyRequests)
 		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T("flash.ratelimited")}).Render(r.Context(), w)
@@ -542,7 +543,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 // handleLoginCode is step two: a valid pre-auth ticket plus a TOTP code.
 func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
 	// Same bucket as passwords: a 6-digit TOTP is brute-forceable without it.
-	if !s.logins.allow(clientIP(r)) {
+	if !s.logins.allow(clientIP(r, s.cfg.Security.TrustedProxy)) {
 		s.metrics.authFailures.Add(1)
 		w.WriteHeader(http.StatusTooManyRequests)
 		views.LoginCode(r.FormValue("pending"), views.Flash{Msg: views.T("flash.ratelimited")}).Render(r.Context(), w)
@@ -1213,6 +1214,46 @@ func (s *Server) handleCacheDetail(w http.ResponseWriter, r *http.Request) {
 		PathPager: makePager("/admin/cache/"+c.Ref(), r.URL.Query(), "page", page, pages),
 		PathSort: views.SortCtx{
 			Path: "/admin/cache/" + c.Ref(), Query: r.URL.Query(),
+			SortParam: "sort", DirParam: "dir", PageParam: "page[number]",
+			Key: skey, Dir: sdir,
+		},
+	}).Render(r.Context(), w)
+}
+
+// handleAudit renders the instance-wide action log: a searchable, sortable,
+// paginated table. Admin-only, like the status page.
+func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	page, perPage := pageParams(r, "page", 50)
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	skey, sdir := sortParams(r, "sort", "dir", "time", "actor", "method", "path", "status")
+	entries, total, err := s.db.SearchAudit(q, perPage, (page-1)*perPage, skey, sdir)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	pages := int((total + int64(perPage) - 1) / int64(perPage))
+	if pages < 1 {
+		pages = 1
+	}
+	if page > pages && total > 0 {
+		page = pages
+		entries, total, err = s.db.SearchAudit(q, perPage, (page-1)*perPage, skey, sdir)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	views.AuditPage(views.AuditData{
+		Nav:     s.nav(r, s.currentUser(r)),
+		Entries: entries,
+		Query:   q,
+		Total:   total,
+		Pager:   makePager("/admin/audit", r.URL.Query(), "page", page, pages),
+		Sort: views.SortCtx{
+			Path: "/admin/audit", Query: r.URL.Query(),
 			SortParam: "sort", DirParam: "dir", PageParam: "page[number]",
 			Key: skey, Dir: sdir,
 		},

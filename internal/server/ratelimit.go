@@ -3,6 +3,7 @@ package server
 import (
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -63,11 +64,26 @@ func (l *loginLimiter) allow(ip string) bool {
 	return true
 }
 
-// clientIP extracts the remote IP. Deliberately ignores X-Forwarded-For: it
-// is client-forgeable unless a trusted proxy strips it, and rate limiting on
-// a forgeable key is no rate limiting at all. Behind a reverse proxy all
-// logins share the proxy's IP — burst 5/10s still leaves a human plenty.
-func clientIP(r *http.Request) string {
+// clientIP extracts the remote IP. X-Forwarded-For / X-Real-IP are honored
+// only when trustProxy is set (security.trusted_proxy): those headers are
+// client-forgeable unless a trusted proxy overwrites them, and rate limiting
+// on a forgeable key is no rate limiting at all. Without it, all logins behind
+// a reverse proxy share the proxy's IP — burst 5/10s still leaves a human plenty.
+func clientIP(r *http.Request, trustProxy bool) string {
+	if trustProxy {
+		if xr := strings.TrimSpace(r.Header.Get("X-Real-Ip")); xr != "" {
+			return xr
+		}
+		// Leftmost entry is the original client; the rest are proxy hops.
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			if i := strings.IndexByte(xff, ','); i >= 0 {
+				xff = xff[:i]
+			}
+			if xff = strings.TrimSpace(xff); xff != "" {
+				return xff
+			}
+		}
+	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr

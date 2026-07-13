@@ -70,7 +70,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	// Registrations share the login limiter bucket: same bcrypt cost, same
 	// abuse profile.
-	if !s.logins.allow(clientIP(r)) {
+	if !s.logins.allow(clientIP(r, s.cfg.Security.TrustedProxy)) {
 		http.Error(w, "too many attempts — wait a moment", http.StatusTooManyRequests)
 		return
 	}

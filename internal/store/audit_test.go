@@ -3,17 +3,18 @@ package store
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestAuditRoundTrip(t *testing.T) {
 	db := openTest(t)
-	if err := db.Audit(7, "alice", "POST", "/admin/caches", 201); err != nil {
+	if err := db.Audit(AuditEntry{UserID: 7, Actor: "alice", Method: "POST", Path: "/admin/caches", Status: 201, IP: "10.0.0.1", UserAgent: "curl", DurationMs: 12}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Audit(0, "", "DELETE", "/api/v1/caches/x/y", 200); err != nil {
+	if err := db.Audit(AuditEntry{Method: "DELETE", Path: "/api/v1/caches/x/y", Status: 200, IP: "10.0.0.2"}); err != nil {
 		t.Fatal(err)
 	}
-	es, err := db.ListAudit(10)
+	es, _, err := db.SearchAudit("", 10, 0, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,8 +25,45 @@ func TestAuditRoundTrip(t *testing.T) {
 	if es[0].Method != "DELETE" || es[0].Path != "/api/v1/caches/x/y" {
 		t.Fatalf("newest entry wrong: %+v", es[0])
 	}
-	if es[1].Actor != "alice" || es[1].UserID != 7 || es[1].Status != 201 {
+	if es[1].Actor != "alice" || es[1].UserID != 7 || es[1].Status != 201 || es[1].IP != "10.0.0.1" || es[1].DurationMs != 12 {
 		t.Fatalf("oldest entry wrong: %+v", es[1])
+	}
+
+	// Search filters by term across actor/method/path/ip, newest first.
+	m, total, err := db.SearchAudit("alice", 10, 0, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 || len(m) != 1 || m[0].Actor != "alice" {
+		t.Fatalf("search alice: total=%d got=%+v", total, m)
+	}
+	if m, total, _ := db.SearchAudit("10.0.0.2", 10, 0, "", ""); total != 1 || m[0].Path != "/api/v1/caches/x/y" {
+		t.Fatalf("search by ip: total=%d got=%+v", total, m)
+	}
+}
+
+func TestPruneAuditBatch(t *testing.T) {
+	db := openTest(t)
+	// Two entries stamped "now"; cutoff in the future removes both. Batch of 1
+	// drains one per call, so the second call reports the tail then zero.
+	for i := 0; i < 2; i++ {
+		if err := db.Audit(AuditEntry{Method: "POST", Path: "/x", Status: 200}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cutoff := time.Now().Add(time.Hour).Unix()
+	if n, err := db.PruneAuditBatch(cutoff, 1); err != nil || n != 1 {
+		t.Fatalf("first batch: n=%d err=%v", n, err)
+	}
+	if n, err := db.PruneAuditBatch(cutoff, 1); err != nil || n != 1 {
+		t.Fatalf("second batch: n=%d err=%v", n, err)
+	}
+	if n, err := db.PruneAuditBatch(cutoff, 1); err != nil || n != 0 {
+		t.Fatalf("drained batch: n=%d err=%v", n, err)
+	}
+	es, _, err := db.SearchAudit("", 10, 0, "", "")
+	if err != nil || len(es) != 0 {
+		t.Fatalf("audit_log should be empty: len=%d err=%v", len(es), err)
 	}
 }
 
