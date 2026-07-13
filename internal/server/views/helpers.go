@@ -78,7 +78,7 @@ func authAlertVariant(f Flash) alert.Variant {
 
 // statusVariant maps a token status to a badge variant.
 // auditMethodVariant colors an HTTP method badge so destructive actions stand
-// out in the action log at a glance.
+// out in activities at a glance.
 func auditMethodVariant(method string) badge.Variant {
 	switch method {
 	case "DELETE":
@@ -270,7 +270,7 @@ func Ago(ts int64) string {
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
 
 // stamp renders a unix timestamp as an absolute local datetime — used where the
-// exact moment matters (the action log), paired with Ago for the coarse view.
+// exact moment matters (activities), paired with Ago for the coarse view.
 func stamp(ts int64) string {
 	if ts <= 0 {
 		return ""

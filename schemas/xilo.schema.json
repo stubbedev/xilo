@@ -304,7 +304,7 @@
         },
         "audit_retention": {
           "type": "string",
-          "description": "Delete action-log entries older than this on each sweep. Empty defaults\nto one year (\"8760h\"); \"0\" keeps entries forever."
+          "description": "Delete activity entries older than this on each sweep. Empty defaults\nto one year (\"8760h\"); \"0\" keeps entries forever."
         }
       },
       "additionalProperties": false,

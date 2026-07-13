@@ -1220,7 +1220,7 @@ func (s *Server) handleCacheDetail(w http.ResponseWriter, r *http.Request) {
 	}).Render(r.Context(), w)
 }
 
-// handleAudit renders the instance-wide action log: a searchable, sortable,
+// handleAudit renders the instance-wide activities page: a searchable, sortable,
 // paginated table. Admin-only, like the status page.
 func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {

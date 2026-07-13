@@ -101,8 +101,8 @@ var en = map[string]string{
 	"status.thru":        "NAR throughput (MiB/s)",
 	"status.storedchart": "Stored (MiB)",
 
-	// action log
-	"audit.title":    "Action log",
+	// activities
+	"audit.title":    "Activities",
 	"audit.subtitle": "Every admin and API mutation, newest first — instance-wide.",
 	"audit.search":   "Search actor, path or IP",
 	"audit.empty":    "No actions recorded yet.",

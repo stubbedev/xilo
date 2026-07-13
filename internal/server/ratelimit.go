@@ -64,7 +64,7 @@ func (l *loginLimiter) allow(ip string) bool {
 	return true
 }
 
-// clientIP extracts the real client IP for rate limiting and the action log.
+// clientIP extracts the real client IP for rate limiting and activities.
 // X-Real-IP / X-Forwarded-For are honored only when the direct peer is a
 // loopback or private address — i.e. a reverse proxy colocated with xilo, the
 // default deployment. A client connecting directly from a public address can't

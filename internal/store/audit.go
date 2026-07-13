@@ -36,7 +36,7 @@ func (db *DB) Audit(e AuditEntry) error {
 	})
 }
 
-// SearchAudit lists a page of action-log entries. The query is split on
+// SearchAudit lists a page of activity entries. The query is split on
 // whitespace; every term must substring-match the actor, method or path
 // (case-insensitive). sortKey (time|actor|method|path|status) + sortDir
 // (asc|desc) pick the order; the default is newest first. total is the match
@@ -86,7 +86,7 @@ func (db *DB) SearchAudit(q string, limit, offset int, sortKey, sortDir string) 
 	return entries, total, rows.Err()
 }
 
-// PruneAuditBatch deletes up to limit action-log entries older than cutoff
+// PruneAuditBatch deletes up to limit activity entries older than cutoff
 // (unix seconds) in a single write transaction, returning the number removed.
 // Callers loop it with pauses between calls so a large backlog never holds the
 // writer goroutine for long. The subquery form is portable across SQLite and

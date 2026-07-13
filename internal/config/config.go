@@ -210,7 +210,7 @@ type GC struct {
 	// a chunk uploaded during an in-flight push is never collected before its
 	// path is registered. Must exceed your longest single push. Default 1h.
 	Grace string `yaml:"grace" json:"grace"`
-	// Delete action-log entries older than this on each sweep. Empty defaults
+	// Delete activity entries older than this on each sweep. Empty defaults
 	// to one year ("8760h"); "0" keeps entries forever.
 	AuditRetention string `yaml:"audit_retention" json:"audit_retention"`
 }

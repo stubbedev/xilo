@@ -311,7 +311,7 @@ func migrate(w *sql.DB, pg bool) error {
 			bps    REAL NOT NULL,
 			stored INTEGER NOT NULL
 		)`,
-		// Action log: one row per admin/API mutation. user_id is kept as a plain
+		// Activities: one row per admin/API mutation. user_id is kept as a plain
 		// column (no FK) — users and accounts soft-delete so the referenced row
 		// always survives to answer "who did this".
 		`CREATE TABLE IF NOT EXISTS audit_log (

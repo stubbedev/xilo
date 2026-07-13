@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TestAuditMiddleware checks which requests the action log records: only
+// TestAuditMiddleware checks which requests get recorded as activities: only
 // successful mutating admin/API calls — not reads, auth handshakes, cache
 // traffic, or failed attempts.
 func TestAuditMiddleware(t *testing.T) {

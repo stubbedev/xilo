@@ -8,7 +8,7 @@ import (
 	"github.com/templui/templui/components/table"
 )
 
-// AuditData is everything the action-log page renders.
+// AuditData is everything the activity page renders.
 type AuditData struct {
 	Nav     Nav
 	Entries []store.AuditEntry
@@ -27,7 +27,7 @@ templ AuditPage(d AuditData) {
 	}
 }
 
-// auditResults is the swap target for live action-log search.
+// auditResults is the swap target for live activity search.
 templ auditResults(d AuditData) {
 	<div id="audit-results" hx-target="#audit-results" hx-select="#audit-results" hx-swap="outerHTML show:none">
 		if len(d.Entries) == 0 {

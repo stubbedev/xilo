@@ -12,7 +12,7 @@ Self-hosted [Nix binary cache](https://nix.dev/manual/nix/latest/store/types/htt
 - is **multi-tenant**: every user gets a personal account, organizations group
   teams (`/c/{account}/{cache}`), and optional self-registration offers
   super-admin-defined plans with storage/cache/member quotas
-- ships a **cachix-style admin dashboard** to manage caches, tokens, users and accounts, with live status and a searchable action log
+- ships a **cachix-style admin dashboard** to manage caches, tokens, users and accounts, with live status and searchable activities
 - can **revoke push/pull tokens** instantly
 - does **content-addressed chunked dedup** (FastCDC) per storage backend
 - stores chunks on **local disk or any S3-compatible bucket** (AWS, [Garage](https://garagehq.deuxfleurs.fr/), R2, …) — several named backends at once, assignable per cache
@@ -50,7 +50,7 @@ Feature parity, and where xilo goes further:
 | token scopes | `*`, `ns/*`, `ns/cache` + mgmt perms | JWT cache patterns |
 | retention / GC | time **and size caps** (per cache + global LRU) | time only |
 | missing data | fails closed (clean error) | can serve truncated 200s |
-| web dashboard | ✓ (users, accounts, tokens, live status, action log) | ✗ |
+| web dashboard | ✓ (users, accounts, tokens, live status, activities) | ✗ |
 | Prometheus metrics | ✓ | ✗ |
 | store-watch auto-push | ✓ | ✓ |
 | integrity fsck + repair | ✓ | ✗ |
@@ -203,7 +203,7 @@ xilo speaks plain HTTP; terminate TLS with Caddy/nginx and set
 [`examples/Caddyfile`](./examples/Caddyfile). When the proxy sits on a
 loopback/private address (the usual colocated setup), xilo automatically reads
 the real client IP from `X-Forwarded-For`/`X-Real-IP` — used for login
-rate-limiting and the action log — with no configuration.
+rate-limiting and activities — with no configuration.
 `narinfo`/`nar` responses are `immutable` with `ETag`, so a CDN in front caches
 them hard.
 
@@ -211,7 +211,7 @@ them hard.
 
 - `GET /healthz` — readiness probe (does a DB read).
 - `GET /metrics` — Prometheus counters (narinfo hit/miss, NAR bytes, chunk dedup, pushes, auth failures) plus Go runtime gauges (goroutines, heap). A ready-made Grafana dashboard is in [`examples/grafana-dashboard.json`](./examples/grafana-dashboard.json).
-- **Action log** — every successful admin/API mutation is recorded (actor, method, path, source IP, user-agent, latency, status) and browsable under `/admin/audit`: searchable, sortable, paginated. A low-priority background job trims entries past `gc.audit_retention` (default 1 year).
+- **Activities** — every successful admin/API mutation is recorded (actor, method, path, source IP, user-agent, latency, status) and browsable under `/admin/audit`: searchable, sortable, paginated. A low-priority background job trims entries past `gc.audit_retention` (default 1 year).
 - Request logging + graceful shutdown (drains in-flight transfers on SIGTERM) are built in. Set `logging: quiet` to log only errors and slow requests on busy instances.
 
 ## Backups

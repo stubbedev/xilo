@@ -83,7 +83,7 @@ func (db *DB) createUser(name, email, passHash, role, status string) (*User, err
 }
 
 // GetUser resolves a live user; a soft-deleted one reads as ErrNotFound. The
-// action log keeps the actor's name at write time, so it needs no lookup here.
+// activity entries keep the actor's name at write time, so it needs no lookup here.
 func (db *DB) GetUser(id int64) (*User, error) {
 	u, err := scanUser(db.r.QueryRow(`SELECT `+userCols+` FROM users WHERE id=? AND status<>'deleted'`, id))
 	if errors.Is(err, sql.ErrNoRows) {
