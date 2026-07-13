@@ -12,7 +12,7 @@ Self-hosted [Nix binary cache](https://nix.dev/manual/nix/latest/store/types/htt
 - is **multi-tenant**: every user gets a personal account, organizations group
   teams (`/c/{account}/{cache}`), and optional self-registration offers
   super-admin-defined plans with storage/cache/member quotas
-- ships a **cachix-style admin dashboard** to manage caches, tokens, users and namespaces
+- ships a **cachix-style admin dashboard** to manage caches, tokens, users and accounts, with live status and a searchable action log
 - can **revoke push/pull tokens** instantly
 - does **content-addressed chunked dedup** (FastCDC) per storage backend
 - stores chunks on **local disk or any S3-compatible bucket** (AWS, [Garage](https://garagehq.deuxfleurs.fr/), R2, …) — several named backends at once, assignable per cache
@@ -50,7 +50,7 @@ Feature parity, and where xilo goes further:
 | token scopes | `*`, `ns/*`, `ns/cache` + mgmt perms | JWT cache patterns |
 | retention / GC | time **and size caps** (per cache + global LRU) | time only |
 | missing data | fails closed (clean error) | can serve truncated 200s |
-| web dashboard | ✓ (users, namespaces, tokens, live status) | ✗ |
+| web dashboard | ✓ (users, accounts, tokens, live status, action log) | ✗ |
 | Prometheus metrics | ✓ | ✗ |
 | store-watch auto-push | ✓ | ✓ |
 | integrity fsck + repair | ✓ | ✗ |
@@ -173,7 +173,7 @@ cached and `xilo push` needs no env:
 
 ```yaml
 - uses: DeterminateSystems/nix-installer-action@main
-- uses: stubbedev/xilo@v0
+- uses: stubbedev/xilo@v1
   with:
     url: https://cache.example.com
     cache: mycache
@@ -182,7 +182,7 @@ cached and `xilo push` needs no env:
 - run: xilo push mycache ./result
 ```
 
-The `v0` tag floats to the newest release automatically on every tag push.
+The `v1` tag floats to the newest release automatically on every tag push (pin a full `v1.2.3` tag if you'd rather opt into upgrades).
 
 Full workflow in [`examples/github-actions.yml`](./examples/github-actions.yml).
 
@@ -200,13 +200,17 @@ xilo use mycache --remove                                # undo nix.conf
 
 xilo speaks plain HTTP; terminate TLS with Caddy/nginx and set
 `base_url: "https://…"` so session cookies are `Secure`. See
-[`examples/Caddyfile`](./examples/Caddyfile). `narinfo`/`nar` responses are
-`immutable` with `ETag`, so a CDN in front caches them hard.
+[`examples/Caddyfile`](./examples/Caddyfile). Set `security.trusted_proxy: true`
+so xilo reads the real client address from `X-Forwarded-For`/`X-Real-IP` (used
+for login rate-limiting and the action log) rather than the proxy's own IP.
+`narinfo`/`nar` responses are `immutable` with `ETag`, so a CDN in front caches
+them hard.
 
 ## Observability
 
 - `GET /healthz` — readiness probe (does a DB read).
 - `GET /metrics` — Prometheus counters (narinfo hit/miss, NAR bytes, chunk dedup, pushes, auth failures) plus Go runtime gauges (goroutines, heap). A ready-made Grafana dashboard is in [`examples/grafana-dashboard.json`](./examples/grafana-dashboard.json).
+- **Action log** — every successful admin/API mutation is recorded (actor, method, path, source IP, user-agent, latency, status) and browsable under `/admin/audit`: searchable, sortable, paginated. A low-priority background job trims entries past `gc.audit_retention` (default 1 year).
 - Request logging + graceful shutdown (drains in-flight transfers on SIGTERM) are built in. Set `logging: quiet` to log only errors and slow requests on busy instances.
 
 ## Backups
@@ -354,9 +358,9 @@ YAML (see [`xilo.example.yaml`](./xilo.example.yaml)). A JSON schema is publishe
 The 1.0 schema migrations run automatically on first start — SQLite databases
 from any earlier version come forward in place. Two changes need action:
 
-- **Cache URLs move** from `/{cache}` to `/{namespace}/{cache}`. Existing
-  caches land in the `default` namespace, so every substituter, netrc-adjacent
-  URL and CI config changes `…/mycache` → `…/default/mycache`. Signing keys
+- **Cache URLs move** from `/{cache}` to `/c/{account}/{cache}`. Existing
+  caches land in the `default` account, so every substituter, netrc-adjacent
+  URL and CI config changes `…/mycache` → `…/c/default/mycache`. Signing keys
   and tokens keep working (token scopes are rewritten to `default/…`
   automatically); pull/push against the old URLs 404s until updated.
 - **Dashboard login now asks for a username.** The old admin password belongs
@@ -373,15 +377,16 @@ nix develop          # go, templ, air, just, golangci-lint …
 just                 # list recipes
 just dev             # live-reload server (air)
 just generate        # regenerate templ views
-just check           # lint + test + templ/schema in sync
+just check           # everything CI runs: lint, test, schema + nix build in sync
 ```
 
-The admin UI is [templ](https://templ.guide/) components styled with [Pico CSS](https://picocss.com/) (vendored, no CDN). Generated `*_templ.go` and `schemas/xilo.schema.json` are committed and verified in sync by CI.
+The admin UI is [templ](https://templ.guide/) components (the [templUI](https://templui.io/) library) styled with [Tailwind CSS v4](https://tailwindcss.com/), compiled to a single embedded stylesheet at build time — no CDN, no runtime JS framework. The generated `*_templ.go` and CSS are rebuilt by `just` and git-ignored; `schemas/xilo.schema.json` is committed and verified in sync by CI.
 
 ## How it works
 
 A push runs `nix path-info` for the closure, chunks each NAR client-side (FastCDC),
 uploads only the chunks the server lacks, then registers the path metadata. Serving
-speaks the standard Nix binary-cache protocol: `/{ns}/{cache}/nix-cache-info`,
-`/{ns}/{cache}/{hash}.narinfo` (signed on the fly with the cache's ed25519 key so pushers
-never hold the signing key), and `/{cache}/nar/{hash}.nar` (reassembled from chunks).
+speaks the standard Nix binary-cache protocol under the `/c/{account}/{cache}` mount:
+`/c/{account}/{cache}/nix-cache-info`, `/c/{account}/{cache}/{hash}.narinfo` (signed on
+the fly with the cache's ed25519 key so pushers never hold the signing key), and
+`/c/{account}/{cache}/nar/{hash}.nar` (reassembled from chunks).
