@@ -130,8 +130,6 @@ export default function () {
   must(res, "healthz 200 ok", (r) => r.status === 200 && r.body.includes("ok"));
   res = http.get(`${BASE}/healthz?format=json`);
   must(res, "healthz json", (r) => r.status === 200 && JSON.parse(r.body).status === "ok");
-  res = http.get(`${BASE}/metrics`);
-  must(res, "metrics exposes counters", (r) => r.status === 200 && r.body.includes("xilo_"));
   res = http.get(`${BASE}/`, { redirects: 0 });
   must(res, "index redirects to /admin", (r) => r.status === 302);
   res = http.get(`${BASE}/definitely/not/a/route.narinfo`);
@@ -141,6 +139,9 @@ export default function () {
   res = http.post(`${BASE}/admin/login`, { username: "admin", password: "wrong-password" });
   must(res, "bad password rejected", (r) => r.status === 200 && r.body.includes("Invalid username or password"));
   adminLogin();
+  // /metrics is admin-only; the owner session from adminLogin authorizes it.
+  res = http.get(`${BASE}/metrics`);
+  must(res, "metrics exposes counters", (r) => r.status === 200 && r.body.includes("xilo_"));
   // Operate inside the target account so cache creation and token scoping
   // resolve against it (the owner's default context is their own namespace).
   setContext(NS);

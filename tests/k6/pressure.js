@@ -25,7 +25,7 @@ import crypto from "k6/crypto";
 import { check, sleep, fail } from "k6";
 import exec from "k6/execution";
 import { Trend, Counter } from "k6/metrics";
-import { BASE, cachePrefix, pushPath, storePathFor, waitHealthy, provisionTenants } from "./lib.js";
+import { BASE, cachePrefix, pushPath, storePathFor, waitHealthy, provisionTenants, adminLogin } from "./lib.js";
 
 const STORM_VUS = parseInt(__ENV.STORM_VUS || "512");
 const FLOOD_RPS = parseInt(__ENV.FLOOD_RPS || "5000");
@@ -214,7 +214,14 @@ export function abortStorm(data) {
   });
 }
 
+// /metrics is admin-only; this single-VU scenario logs in once, then reuses
+// the owner session in its per-VU cookie jar for every scrape.
+let leakAuthed = false;
 export function leakwatch() {
+  if (!leakAuthed) {
+    adminLogin();
+    leakAuthed = true;
+  }
   const res = http.get(`${BASE}/metrics`, { tags: { name: "metrics" } });
   if (res.status === 200) {
     const g = String(res.body).match(/^go_goroutines (\d+)/m);
@@ -230,6 +237,7 @@ export function teardown(data) {
   // the server must drain back to an idle goroutine count and still serve
   // byte-exact NARs.
   sleep(15);
+  adminLogin(); // /metrics is admin-only; teardown runs in its own VU jar
   const res = http.get(`${BASE}/metrics`);
   const g = String(res.body).match(/^go_goroutines (\d+)/m);
   if (!g) fail("metrics endpoint dead after pressure run");

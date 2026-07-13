@@ -68,11 +68,14 @@ func runtimeGauges() []struct {
 
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	// Operational counters (auth failures, traffic, heap) are not public.
-	// Prometheus scrapes with an admin bearer token (authorization config).
+	// Allow an instance-admin token (Prometheus/automation, via authorization
+	// config) or a signed-in owner (the dashboard, a human).
 	if !s.db.AuthorizeAdmin(extractToken(r), time.Now().Unix()) {
-		w.Header().Set("WWW-Authenticate", `Bearer realm="xilo"`)
-		http.Error(w, "admin token required", http.StatusUnauthorized)
-		return
+		if u := s.currentUser(r); u == nil || u.Role != "owner" {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="xilo"`)
+			http.Error(w, "admin token or owner session required", http.StatusUnauthorized)
+			return
+		}
 	}
 	m := &s.metrics
 	if wantsJSON(r) {
