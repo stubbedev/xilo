@@ -44,10 +44,16 @@ func tokenCreateCmd() *cobra.Command {
 			if ttl > 0 {
 				expires = time.Now().Add(ttl).Unix()
 			}
-			// A token is valid for exactly one cache; bare names mean default/.
+			// A token is valid for exactly one cache and belongs to the
+			// account owning it, so it shows in that account's dashboard
+			// view. Bare cache names mean default/. Admin-only tokens carry
+			// no cache and are instance-wide.
 			var caches []string
+			var account string
 			if cache != "" {
-				caches = []string{normRef(cache)}
+				var bare string
+				account, bare = splitRef(cache)
+				caches = []string{bare}
 			}
 			apic, _, db, err := adminTarget(adminServer, adminToken)
 			if err != nil {
@@ -58,20 +64,31 @@ func tokenCreateCmd() *cobra.Command {
 			if apic != nil {
 				var resp api.CreateTokenResp
 				if err := apic.do(http.MethodPost, "/api/v1/tokens",
-					api.CreateTokenReq{Name: args[0], Caches: caches, Perms: perms, Expires: expires}, &resp); err != nil {
+					api.CreateTokenReq{Name: args[0], Account: account, Caches: caches, Perms: perms, Expires: expires}, &resp); err != nil {
 					return err
 				}
 				secret, t = resp.Secret, resp.Token
 			} else {
 				defer db.Close()
-				sec, st, err := db.CreateToken(0, args[0], caches, perms, expires)
+				var accountID int64
+				if account != "" {
+					acct, err := db.GetAccount(account)
+					if err != nil {
+						return fmt.Errorf("account %q: %w", account, err)
+					}
+					accountID = acct.ID
+				}
+				sec, st, err := db.CreateToken(accountID, args[0], caches, perms, expires)
 				if err != nil {
 					return err
 				}
 				secret = sec
-				t = api.Token{ID: st.ID, Name: st.Name, Caches: st.Caches, Perms: st.Perms, Expires: st.Expires}
+				t = api.Token{ID: st.ID, Account: account, Name: st.Name, Caches: st.Caches, Perms: st.Perms, Expires: st.Expires}
 			}
 			scope := strings.Join(t.Caches, ",")
+			if t.Account != "" {
+				scope = t.Account + "/" + scope
+			}
 			fmt.Printf("%s token %s (id=%d) perms=%s scope=%s\n\n", styleOK("created"), styleAccent(t.Name), t.ID, strings.Join(perms, ","), scope)
 			fmt.Printf("  %s\n\n", styleAccent(secret))
 			fmt.Println(styleDim("Store it now — it is not recoverable."))
@@ -130,7 +147,7 @@ func tokenListCmd() *cobra.Command {
 				}
 				scope := strings.Join(t.Caches, ",")
 				if t.Account != "" {
-					scope = t.Account + ": " + scope
+					scope = t.Account + "/" + scope
 				}
 				trows = append(trows, []string{
 					strconv.FormatInt(t.ID, 10), t.Name, state,
