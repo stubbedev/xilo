@@ -496,7 +496,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	if !s.logins.allow(clientIP(r, s.cfg.Security.TrustedProxy)) {
+	if !s.logins.allow(clientIP(r)) {
 		s.metrics.authFailures.Add(1)
 		w.WriteHeader(http.StatusTooManyRequests)
 		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T("flash.ratelimited")}).Render(r.Context(), w)
@@ -543,7 +543,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 // handleLoginCode is step two: a valid pre-auth ticket plus a TOTP code.
 func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
 	// Same bucket as passwords: a 6-digit TOTP is brute-forceable without it.
-	if !s.logins.allow(clientIP(r, s.cfg.Security.TrustedProxy)) {
+	if !s.logins.allow(clientIP(r)) {
 		s.metrics.authFailures.Add(1)
 		w.WriteHeader(http.StatusTooManyRequests)
 		views.LoginCode(r.FormValue("pending"), views.Flash{Msg: views.T("flash.ratelimited")}).Render(r.Context(), w)

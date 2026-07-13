@@ -200,9 +200,10 @@ xilo use mycache --remove                                # undo nix.conf
 
 xilo speaks plain HTTP; terminate TLS with Caddy/nginx and set
 `base_url: "https://…"` so session cookies are `Secure`. See
-[`examples/Caddyfile`](./examples/Caddyfile). Set `security.trusted_proxy: true`
-so xilo reads the real client address from `X-Forwarded-For`/`X-Real-IP` (used
-for login rate-limiting and the action log) rather than the proxy's own IP.
+[`examples/Caddyfile`](./examples/Caddyfile). When the proxy sits on a
+loopback/private address (the usual colocated setup), xilo automatically reads
+the real client IP from `X-Forwarded-For`/`X-Real-IP` — used for login
+rate-limiting and the action log — with no configuration.
 `narinfo`/`nar` responses are `immutable` with `ETag`, so a CDN in front caches
 them hard.
 

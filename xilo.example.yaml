@@ -91,7 +91,6 @@ gc:
 security:
   skip_upload_verify: false # false = verify reassembly == NarHash on push (proof of possession)
   allow_open_bootstrap: false # false = push always needs a token; true = open until first token
-  trusted_proxy: false # true = honor X-Forwarded-For / X-Real-IP (only behind a proxy that sets them)
 
 # Server-wide storage cap. When total stored (compressed) size exceeds this,
 # least-recently-pulled paths are evicted on the GC tick until back under.

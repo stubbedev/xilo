@@ -64,13 +64,18 @@ func (l *loginLimiter) allow(ip string) bool {
 	return true
 }
 
-// clientIP extracts the remote IP. X-Forwarded-For / X-Real-IP are honored
-// only when trustProxy is set (security.trusted_proxy): those headers are
-// client-forgeable unless a trusted proxy overwrites them, and rate limiting
-// on a forgeable key is no rate limiting at all. Without it, all logins behind
-// a reverse proxy share the proxy's IP — burst 5/10s still leaves a human plenty.
-func clientIP(r *http.Request, trustProxy bool) string {
-	if trustProxy {
+// clientIP extracts the real client IP for rate limiting and the action log.
+// X-Real-IP / X-Forwarded-For are honored only when the direct peer is a
+// loopback or private address — i.e. a reverse proxy colocated with xilo, the
+// default deployment. A client connecting directly from a public address can't
+// forge its IP: its peer address is public, so its forwarding headers are
+// ignored and rate limiting keys on the real socket peer.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if ip := net.ParseIP(host); ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()) {
 		if xr := strings.TrimSpace(r.Header.Get("X-Real-Ip")); xr != "" {
 			return xr
 		}
@@ -83,10 +88,6 @@ func clientIP(r *http.Request, trustProxy bool) string {
 				return xff
 			}
 		}
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
 	}
 	return host
 }

@@ -213,7 +213,7 @@ func (s *Server) recordAudit(r *http.Request, status int, elapsed time.Duration)
 	}
 	if err := s.db.Audit(store.AuditEntry{
 		UserID: uid, Actor: actor, Method: r.Method, Path: r.URL.Path, Status: status,
-		IP: clientIP(r, s.cfg.Security.TrustedProxy), UserAgent: r.UserAgent(), DurationMs: elapsed.Milliseconds(),
+		IP: clientIP(r), UserAgent: r.UserAgent(), DurationMs: elapsed.Milliseconds(),
 	}); err != nil {
 		log.Printf("audit: %v", err)
 	}

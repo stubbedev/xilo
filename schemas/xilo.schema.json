@@ -337,18 +337,13 @@
         "allow_open_bootstrap": {
           "type": "boolean",
           "description": "Allow anonymous push before the first token exists. Convenient for a\ntrusted single-user setup, but on a fresh public deploy it means anyone\ncan push until you mint a token. Default false: push requires a token."
-        },
-        "trusted_proxy": {
-          "type": "boolean",
-          "description": "Trust X-Forwarded-For / X-Real-IP for the client address (login rate\nlimiting and action-log IPs). Enable ONLY behind a reverse proxy that\nsets these headers — otherwise a client can forge its IP. Default false:\nthe direct socket peer is used."
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
         "skip_upload_verify",
-        "allow_open_bootstrap",
-        "trusted_proxy"
+        "allow_open_bootstrap"
       ],
       "description": "Security hardening."
     },
