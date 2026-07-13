@@ -311,6 +311,18 @@ func migrate(w *sql.DB, pg bool) error {
 			bps    REAL NOT NULL,
 			stored INTEGER NOT NULL
 		)`,
+		// Action log: one row per admin/API mutation. user_id is kept as a plain
+		// column (no FK) — users and accounts soft-delete so the referenced row
+		// always survives to answer "who did this".
+		`CREATE TABLE IF NOT EXISTS audit_log (
+			id      INTEGER PRIMARY KEY,
+			ts      INTEGER NOT NULL,
+			user_id INTEGER NOT NULL DEFAULT 0,
+			actor   TEXT NOT NULL DEFAULT '',
+			method  TEXT NOT NULL DEFAULT '',
+			path    TEXT NOT NULL,
+			status  INTEGER NOT NULL DEFAULT 0
+		)`,
 	}
 	for _, s := range stmts {
 		if pg {
@@ -338,6 +350,7 @@ func migrate(w *sql.DB, pg bool) error {
 		{"users", "status", "TEXT NOT NULL DEFAULT 'active'"},
 		{"accounts", "kind", "TEXT NOT NULL DEFAULT 'org'"},
 		{"accounts", "plan_id", "INTEGER NOT NULL DEFAULT 0"},
+		{"accounts", "status", "TEXT NOT NULL DEFAULT 'active'"},
 	}
 	for _, a := range adds {
 		if err := addColumnIfMissing(w, pg, a.table, a.col, a.def); err != nil {

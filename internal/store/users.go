@@ -82,16 +82,20 @@ func (db *DB) createUser(name, email, passHash, role, status string) (*User, err
 	return u, nil
 }
 
+// GetUser resolves a live user; a soft-deleted one reads as ErrNotFound. The
+// action log keeps the actor's name at write time, so it needs no lookup here.
 func (db *DB) GetUser(id int64) (*User, error) {
-	u, err := scanUser(db.r.QueryRow(`SELECT `+userCols+` FROM users WHERE id=?`, id))
+	u, err := scanUser(db.r.QueryRow(`SELECT `+userCols+` FROM users WHERE id=? AND status<>'deleted'`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	return u, err
 }
 
+// GetUserByName resolves a live (not soft-deleted) user by username. Used only
+// by the sign-in path, which must never match a deleted account.
 func (db *DB) GetUserByName(name string) (*User, error) {
-	u, err := scanUser(db.r.QueryRow(`SELECT `+userCols+` FROM users WHERE username=?`, name))
+	u, err := scanUser(db.r.QueryRow(`SELECT `+userCols+` FROM users WHERE username=? AND status<>'deleted'`, name))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -102,7 +106,7 @@ func (db *DB) GetUserByName(name string) (*User, error) {
 // contains an @.
 func (db *DB) GetUserByLogin(login string) (*User, error) {
 	if strings.Contains(login, "@") {
-		u, err := scanUser(db.r.QueryRow(`SELECT `+userCols+` FROM users WHERE email=?`, login))
+		u, err := scanUser(db.r.QueryRow(`SELECT `+userCols+` FROM users WHERE email=? AND status<>'deleted'`, login))
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -112,7 +116,7 @@ func (db *DB) GetUserByLogin(login string) (*User, error) {
 }
 
 func (db *DB) ListUsers() ([]User, error) {
-	rows, err := db.r.Query(`SELECT ` + userCols + ` FROM users ORDER BY username`)
+	rows, err := db.r.Query(`SELECT ` + userCols + ` FROM users WHERE status<>'deleted' ORDER BY username`)
 	if err != nil {
 		return nil, err
 	}
@@ -161,9 +165,13 @@ func (db *DB) SetUserEmail(id int64, email string) error {
 	})
 }
 
-// DeleteUser removes a user along with their passkeys, sessions and org
-// memberships. Their personal account is removed only when empty; with caches
-// it stays (orphaned, super-admin managed) rather than cascading data away.
+// DeleteUser soft-deletes a user: their access is revoked for real (passkeys,
+// sessions, org memberships and personal-account tokens all go), but the users
+// row and personal account are kept, flagged status='deleted', so audit-log
+// references to them still resolve. The email is cleared to free the unique
+// index for a future signup; the username/slug stays reserved (the row keeps
+// it). Personal-account caches are left in place (orphaned, super-admin
+// managed) rather than cascading data away.
 func (db *DB) DeleteUser(id int64) error {
 	return db.write(func(tx *sql.Tx) error {
 		if _, err := tx.Exec(`DELETE FROM passkeys WHERE user_id=?`, id); err != nil {
@@ -185,11 +193,10 @@ func (db *DB) DeleteUser(id int64) error {
 			(SELECT id FROM accounts WHERE slug=? AND kind='user')`, name); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`DELETE FROM accounts WHERE slug=? AND kind='user'
-			AND NOT EXISTS (SELECT 1 FROM caches WHERE account_id = accounts.id)`, name); err != nil {
+		if _, err := tx.Exec(`UPDATE accounts SET status='deleted' WHERE slug=? AND kind='user'`, name); err != nil {
 			return err
 		}
-		_, err := tx.Exec(`DELETE FROM users WHERE id=?`, id)
+		_, err := tx.Exec(`UPDATE users SET status='deleted', email=NULL WHERE id=?`, id)
 		return err
 	})
 }

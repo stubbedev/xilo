@@ -55,7 +55,12 @@ func (db *DB) EnsureAccount(slug, kind string) (*Account, error) {
 	a := &Account{Slug: slug, Kind: kind, Created: time.Now().Unix()}
 	err := db.write(func(tx *sql.Tx) error {
 		// Concurrent creators race benignly: ON CONFLICT keeps the winner.
-		if _, err := tx.Exec(`INSERT INTO accounts (slug, kind, created) VALUES (?,?,?) ON CONFLICT (slug) DO NOTHING`,
+		// Reusing a soft-deleted slug reactivates that row (its old caches and
+		// tokens were already purged at delete) rather than colliding on the
+		// UNIQUE slug — the WHERE makes it a no-op for a live account.
+		if _, err := tx.Exec(`INSERT INTO accounts (slug, kind, created) VALUES (?,?,?)
+			ON CONFLICT (slug) DO UPDATE SET status='active', kind=excluded.kind, created=excluded.created
+			WHERE accounts.status='deleted'`,
 			a.Slug, a.Kind, a.Created); err != nil {
 			return err
 		}
@@ -68,9 +73,12 @@ func (db *DB) EnsureAccount(slug, kind string) (*Account, error) {
 	return a, nil
 }
 
+// GetAccount and GetAccountByID resolve only live accounts; a soft-deleted one
+// reads as ErrNotFound everywhere in the app (its row survives solely to keep
+// historical id references intact).
 func (db *DB) GetAccount(slug string) (*Account, error) {
 	var a Account
-	err := db.r.QueryRow(`SELECT id, slug, kind, plan_id, created FROM accounts WHERE slug=?`, slug).
+	err := db.r.QueryRow(`SELECT id, slug, kind, plan_id, created FROM accounts WHERE slug=? AND status<>'deleted'`, slug).
 		Scan(&a.ID, &a.Slug, &a.Kind, &a.PlanID, &a.Created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -80,7 +88,7 @@ func (db *DB) GetAccount(slug string) (*Account, error) {
 
 func (db *DB) GetAccountByID(id int64) (*Account, error) {
 	var a Account
-	err := db.r.QueryRow(`SELECT id, slug, kind, plan_id, created FROM accounts WHERE id=?`, id).
+	err := db.r.QueryRow(`SELECT id, slug, kind, plan_id, created FROM accounts WHERE id=? AND status<>'deleted'`, id).
 		Scan(&a.ID, &a.Slug, &a.Kind, &a.PlanID, &a.Created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -96,14 +104,16 @@ func (db *DB) SetAccountPlan(id, planID int64) error {
 	})
 }
 
+// ListAccounts and UserAccounts hide soft-deleted accounts — a deleted org
+// must not surface in nav, token scoping, or the admin listings.
 func (db *DB) ListAccounts() ([]Account, error) {
-	return db.listAccounts(`SELECT id, slug, kind, plan_id, created FROM accounts ORDER BY slug`)
+	return db.listAccounts(`SELECT id, slug, kind, plan_id, created FROM accounts WHERE status<>'deleted' ORDER BY slug`)
 }
 
 // UserAccounts lists the accounts a user belongs to.
 func (db *DB) UserAccounts(userID int64) ([]Account, error) {
 	return db.listAccounts(`SELECT a.id, a.slug, a.kind, a.plan_id, a.created FROM accounts a
-		JOIN account_members m ON m.account_id = a.id WHERE m.user_id=? ORDER BY a.slug`, userID)
+		JOIN account_members m ON m.account_id = a.id WHERE m.user_id=? AND a.status<>'deleted' ORDER BY a.slug`, userID)
 }
 
 func (db *DB) listAccounts(q string, args ...any) ([]Account, error) {
@@ -123,11 +133,13 @@ func (db *DB) listAccounts(q string, args ...any) ([]Account, error) {
 	return out, rows.Err()
 }
 
-// DeleteOrg removes an organization and everything it holds: memberships,
-// tokens, caches and their paths (FK cascade), and its egress ledger.
-// Personal accounts are refused — they die with their user. Chunk blobs are
-// NOT touched here: dedup means a chunk may back other accounts' paths, so
-// only the GC mark-sweep decides what actually leaves disk.
+// DeleteOrg soft-deletes an organization. Everything it held is really gone —
+// memberships, tokens, caches and their paths (FK cascade), egress ledger — so
+// the caches stop serving; only the accounts row survives, flagged
+// status='deleted', so audit-log references to it still resolve. Personal
+// accounts are refused — they die with their user. Chunk blobs are NOT touched
+// here: dedup means a chunk may back other accounts' paths, so only the GC
+// mark-sweep decides what actually leaves disk.
 func (db *DB) DeleteOrg(id int64) error {
 	return db.write(func(tx *sql.Tx) error {
 		var kind string
@@ -146,7 +158,7 @@ func (db *DB) DeleteOrg(id int64) error {
 			`DELETE FROM tokens WHERE account_id=?`,
 			`DELETE FROM caches WHERE account_id=?`,
 			`DELETE FROM account_egress WHERE account_id=?`,
-			`DELETE FROM accounts WHERE id=?`,
+			`UPDATE accounts SET status='deleted' WHERE id=?`,
 		} {
 			if _, err := tx.Exec(q, id); err != nil {
 				return err

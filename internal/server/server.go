@@ -175,9 +175,44 @@ func (s *Server) middleware(h http.Handler) http.Handler {
 			if s.cfg.Logging != "quiet" || lw.status >= 400 || elapsed > time.Second {
 				log.Printf("%s %s %d %s", r.Method, r.URL.Path, lw.status, elapsed.Round(time.Millisecond))
 			}
+			// Action log: successful admin/API mutations only.
+			if lw.status < 400 && auditable(r) {
+				s.recordAudit(r, lw.status)
+			}
 		}()
 		h.ServeHTTP(lw, r)
 	})
+}
+
+// auditable reports whether a request is an admin/API action worth recording
+// in the action log. Only mutating methods on the admin UI, JSON API and
+// registration count; the high-volume cache protocol and read-only handshakes
+// (live password strength `/check`, WebAuthn challenge `/begin`) are excluded.
+func auditable(r *http.Request) bool {
+	switch r.Method {
+	case http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch:
+	default:
+		return false
+	}
+	p := r.URL.Path
+	if strings.HasSuffix(p, "/check") || strings.HasSuffix(p, "/begin") {
+		return false
+	}
+	return strings.HasPrefix(p, "/admin/") || strings.HasPrefix(p, "/api/v1/") || p == "/register"
+}
+
+// recordAudit writes one action-log row, resolving the acting user from the
+// session cookie (absent for token/CLI-driven API calls). Best-effort: a miss
+// is logged, never surfaced to the request.
+func (s *Server) recordAudit(r *http.Request, status int) {
+	var uid int64
+	var actor string
+	if u := s.currentUser(r); u != nil {
+		uid, actor = u.ID, u.Name
+	}
+	if err := s.db.Audit(uid, actor, r.Method, r.URL.Path, status); err != nil {
+		log.Printf("audit: %v", err)
+	}
 }
 
 // isCacheTraffic reports whether a request is real binary-cache work (pull
