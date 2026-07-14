@@ -208,7 +208,7 @@ them hard.
 ## Observability
 
 - `GET /healthz` — readiness probe (does a DB read).
-- `GET /metrics` — Prometheus counters (narinfo hit/miss, NAR bytes, chunk dedup, pushes, auth failures) plus Go runtime gauges (goroutines, heap). A ready-made Grafana dashboard is in [`examples/grafana-dashboard.json`](./examples/grafana-dashboard.json).
+- `GET /metrics` — Prometheus counters (narinfo hit/miss, NAR bytes, chunk dedup, pushes, auth failures; pull-serving and push-upload latency counted separately) plus Go runtime gauges (goroutines, heap). Counters are persisted alongside the metadata DB, so totals and the dashboard KPIs survive restarts. A ready-made Grafana dashboard is in [`examples/grafana-dashboard.json`](./examples/grafana-dashboard.json).
 - **Activities** — every successful admin/API mutation is recorded (actor, method, path, source IP, user-agent, latency, status) and browsable under `/admin/audit`: searchable, sortable, paginated. A low-priority background job trims entries past `gc.audit_retention` (default 1 year).
 - Request logging + graceful shutdown (drains in-flight transfers on SIGTERM) are built in. Set `logging: quiet` to log only errors and slow requests on busy instances.
 

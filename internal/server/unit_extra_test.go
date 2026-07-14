@@ -231,6 +231,9 @@ func TestSmallHelpers(t *testing.T) {
 	if hitPct(0, 0) != "—" || hitPct(3, 1) != "75%" {
 		t.Errorf("hitPct: %q %q", hitPct(0, 0), hitPct(3, 1))
 	}
+	if hitPct(999, 1) != "99.9%" || hitPct(1, 2) != "33.3%" {
+		t.Errorf("hitPct decimals: %q %q", hitPct(999, 1), hitPct(1, 2))
+	}
 	// hostOf
 	if hostOf("https://x.example.com/") != "x.example.com" || hostOf("bare") != "bare" {
 		t.Errorf("hostOf: %q %q", hostOf("https://x.example.com/"), hostOf("bare"))
@@ -294,13 +297,19 @@ func TestMiddlewarePanicAndLogging(t *testing.T) {
 		t.Fatalf("late panic → %d %q", rr.Code, rr.Body.String())
 	}
 
-	// cache traffic counts toward metrics, admin traffic doesn't
-	before := s.metrics.reqTotal.Load()
+	// pull traffic counts as pull, push API as push; admin and scanner junk
+	// count as neither
+	before, beforePush := s.metrics.reqTotal.Load(), s.metrics.pushReq.Load()
 	ok := s.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("hi")) }))
 	ok.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/c/default/c/nix-cache-info", nil))
+	ok.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/c/default/c/api/config", nil))
 	ok.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/admin", nil))
+	ok.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/robots.txt", nil))
 	if got := s.metrics.reqTotal.Load(); got != before+1 {
 		t.Fatalf("reqTotal delta = %d want 1", got-before)
+	}
+	if got := s.metrics.pushReq.Load(); got != beforePush+1 {
+		t.Fatalf("pushReq delta = %d want 1", got-beforePush)
 	}
 }
 

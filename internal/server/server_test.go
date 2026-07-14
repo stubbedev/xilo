@@ -154,6 +154,55 @@ func getNar(t *testing.T, ts *httptest.Server, path, accept string) []byte {
 	}
 }
 
+// TestStatsAccuracy pins the stats contract: HEAD probes aren't downloads,
+// narBytes means uncompressed bytes on every encoding path, and counters
+// survive a restart via the settings table.
+func TestStatsAccuracy(t *testing.T) {
+	s, db, ts := newTestServer(t, true)
+	if _, err := db.CreateCache("default", "c", true, 40); err != nil {
+		t.Fatal(err)
+	}
+	data := bytes.Repeat([]byte("nar-content-"), 1000)
+	pushFake(t, ts, "c", h32, data, "")
+
+	req, _ := http.NewRequest(http.MethodHead, ts.URL+"/c/default/c/nar/"+h32+".nar", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("HEAD nar status %d", resp.StatusCode)
+	}
+	if n := s.metrics.narServed.Load(); n != 0 {
+		t.Errorf("HEAD counted as a served NAR: %d", n)
+	}
+
+	getNar(t, ts, "/c/default/c/nar/"+h32+".nar", "zstd")
+	if n := s.metrics.narBytes.Load(); n != int64(len(data)) {
+		t.Errorf("zstd narBytes = %d, want uncompressed %d", n, len(data))
+	}
+	getNar(t, ts, "/c/default/c/nar/"+h32+".nar", "")
+	if n := s.metrics.narBytes.Load(); n != 2*int64(len(data)) {
+		t.Errorf("identity narBytes = %d, want %d", n, 2*len(data))
+	}
+	if n := s.metrics.narServed.Load(); n != 2 {
+		t.Errorf("narServed = %d, want 2", n)
+	}
+
+	s.persistCounters()
+	s2, err := New(s.cfg, db, s.sts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := s2.metrics.narServed.Load(), s.metrics.narServed.Load(); got != want {
+		t.Errorf("narServed after restart = %d, want %d", got, want)
+	}
+	if s2.stat.lastNar != s2.metrics.narBytes.Load() {
+		t.Errorf("sampler baseline %d != restored narBytes %d", s2.stat.lastNar, s2.metrics.narBytes.Load())
+	}
+}
+
 func verifyNarinfoSig(t *testing.T, db *store.DB, cache, narinfoText string) {
 	t.Helper()
 	c, err := db.GetCache("default", cache)

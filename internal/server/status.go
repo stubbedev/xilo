@@ -33,11 +33,13 @@ type statusPoint struct {
 }
 
 type statusRing struct {
-	mu                          sync.Mutex
-	pts                         []statusPoint
-	lastReq, lastDurNs, lastNar int64
-	global                      store.Global // cached; refreshed every globalEveryTicks
-	tick                        int
+	mu  sync.Mutex
+	pts []statusPoint
+	// lastReq is pull+push (the rate chart shows all cache traffic);
+	// lastPull/lastDurNs feed the latency chart, which is pull-only.
+	lastReq, lastPull, lastDurNs, lastNar int64
+	global                                store.Global // cached; refreshed every globalEveryTicks
+	tick                                  int
 	// current-minute accumulator, flushed to the store on minute rollover
 	curMin                 int64
 	minReq, minLat, minBps float64
@@ -56,10 +58,12 @@ func (s *Server) startStatusSampler(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
+				s.persistCounters() // final flush: a graceful restart loses ≤5s
 				return
 			case <-t.C:
 				s.sampleStatus()
 				s.flushEgress()
+				s.persistCounters()
 			}
 		}
 	}()
@@ -67,7 +71,8 @@ func (s *Server) startStatusSampler(ctx context.Context) {
 
 func (s *Server) sampleStatus() {
 	m := &s.metrics
-	req, dur, nar := m.reqTotal.Load(), m.reqDurNs.Load(), m.narBytes.Load()
+	pull, dur, nar := m.reqTotal.Load(), m.reqDurNs.Load(), m.narBytes.Load()
+	req := pull + m.pushReq.Load()
 
 	r := &s.stat
 	r.mu.Lock()
@@ -89,10 +94,12 @@ func (s *Server) sampleStatus() {
 	dreq := req - r.lastReq
 	secs := statusEvery.Seconds()
 	p := statusPoint{ReqPerSec: float64(dreq) / secs, NarBps: float64(nar-r.lastNar) / secs, Stored: g.StoredBytes}
-	if dreq > 0 {
-		p.LatMs = float64(dur-r.lastDurNs) / float64(dreq) / 1e6
+	// Latency is pull-only: a chunk upload legitimately takes seconds and
+	// would drown the sub-ms serving latency this chart is for.
+	if dpull := pull - r.lastPull; dpull > 0 {
+		p.LatMs = float64(dur-r.lastDurNs) / float64(dpull) / 1e6
 	}
-	r.lastReq, r.lastDurNs, r.lastNar = req, dur, nar
+	r.lastReq, r.lastPull, r.lastDurNs, r.lastNar = req, pull, dur, nar
 	r.pts = append(r.pts, p)
 	if len(r.pts) > ringCap {
 		r.pts = r.pts[len(r.pts)-ringCap:]
@@ -229,7 +236,7 @@ func (s *Server) statusData(q statusRangeQ) views.StatusData {
 		Global:    g,
 		AuthFails: m.authFailures.Load(),
 		NarServed: m.narServed.Load(),
-		Requests:  m.reqTotal.Load(),
+		Requests:  m.reqTotal.Load() + m.pushReq.Load(),
 		Bytes:     humanBytes,
 		Updated:   time.Now().Format("15:04:05"),
 		Window:    q.WinMin,
@@ -312,7 +319,7 @@ func (s *Server) buildStatusJSON(q statusRangeQ) statusJSON {
 		Stored:    humanBytes(g.StoredBytes),
 		Paths:     views.Count(g.Paths),
 		Nars:      views.Count(m.narServed.Load()),
-		Requests:  views.Count(m.reqTotal.Load()),
+		Requests:  views.Count(m.reqTotal.Load() + m.pushReq.Load()),
 		AuthFails: views.Count(m.authFailures.Load()),
 		Updated:   time.Now().Format("15:04:05"),
 		MinT:      set.minT * 1000,
@@ -416,10 +423,16 @@ func statusChartData(id, label string, vals []float64, times []int64, f func(flo
 	c := views.ChartData{ID: id, Label: label, Color: meta.Color}
 	c.Points = make([]float64, len(vals))
 	c.Labels = make([]string, len(vals))
+	// Windows longer than two days need the date on the axis — bare HH:MM
+	// repeats meaninglessly across a 7d/30d span.
+	layout := "15:04"
+	if len(times) > 1 && times[len(times)-1]-times[0] > 48*3600 {
+		layout = "2/1 15:04"
+	}
 	for i, v := range vals {
 		c.Points[i] = v / meta.Scale
 		if i < len(times) {
-			c.Labels[i] = time.Unix(times[i], 0).Format("15:04")
+			c.Labels[i] = time.Unix(times[i], 0).Format(layout)
 		}
 	}
 	if len(vals) == 0 {
@@ -458,12 +471,14 @@ func statusRate(r *http.Request) int {
 	}
 }
 
-// hitPct formats the narinfo hit ratio, "—" before any traffic.
+// hitPct formats the narinfo hit ratio, "—" before any traffic. One decimal
+// where it matters: truncating 99.9% to 99% misreads a healthy cache.
 func hitPct(hits, misses int64) string {
 	if hits+misses == 0 {
 		return "—"
 	}
-	return fmt.Sprintf("%d%%", hits*100/(hits+misses))
+	p := 100 * float64(hits) / float64(hits+misses)
+	return strings.TrimSuffix(fmt.Sprintf("%.1f", p), ".0") + "%"
 }
 
 // humanDur renders an uptime coarsely: 45s, 12m, 3h 20m, 5d 4h.

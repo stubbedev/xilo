@@ -50,7 +50,11 @@
       "targets": [
         {
           "expr": "rate(xilo_http_request_duration_ns_total[5m]) / rate(xilo_http_requests_total[5m])",
-          "legendFormat": "avg latency"
+          "legendFormat": "pull (serving)"
+        },
+        {
+          "expr": "rate(xilo_push_request_duration_ns_total[5m]) / rate(xilo_push_requests_total[5m])",
+          "legendFormat": "push (uploads)"
         }
       ]
     },

@@ -232,13 +232,16 @@ templ statusPollScript() {
 				var el = document.getElementById(id);
 				if (el) el.textContent = v;
 			}
-			function hhmm(ms) {
+			function fmtLabel(ms, longSpan) {
 				var t = new Date(ms);
-				return (
+				var hm =
 					('0' + t.getHours()).slice(-2) +
 					':' +
-					('0' + t.getMinutes()).slice(-2)
-				);
+					('0' + t.getMinutes()).slice(-2);
+				// Mirror the server render: date + time past two days.
+				return longSpan
+					? t.getDate() + '/' + (t.getMonth() + 1) + ' ' + hm
+					: hm;
 			}
 			function apply(d) {
 				var h = document.getElementById('st-health');
@@ -255,6 +258,7 @@ templ statusPollScript() {
 				setText('st-req', d.requests);
 				setText('st-auth', d.authFails);
 				setText('status-updated', cfg.updated + ' ' + d.updated);
+				var longSpan = d.maxT - d.minT > 48 * 3600 * 1000;
 				Object.keys(d.charts || {}).forEach(function (k) {
 					var c = d.charts[k];
 					setText('cur-' + k, c.cur);
@@ -266,7 +270,7 @@ templ statusPollScript() {
 					var inst = window.Chart && Chart.getChart('chart-' + k + '-canvas');
 					if (!inst) return;
 					inst.data.labels = c.points.map(function (p) {
-						return hhmm(p[0]);
+						return fmtLabel(p[0], longSpan);
 					});
 					inst.data.datasets[0].data = c.points.map(function (p) {
 						return p[1];

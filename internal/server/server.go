@@ -45,6 +45,9 @@ type Server struct {
 	metrics   metrics
 	stat      statusRing
 	started   time.Time
+	// lastSavedCounters is the JSON of the last persisted metrics snapshot;
+	// only the status-sampler goroutine touches it.
+	lastSavedCounters string
 }
 
 func New(cfg *config.Config, db *store.DB, sts map[string]storage.Storage) (*Server, error) {
@@ -56,14 +59,16 @@ func New(cfg *config.Config, db *store.DB, sts map[string]storage.Storage) (*Ser
 	if err != nil {
 		return nil, err
 	}
-	return &Server{
+	s := &Server{
 		cfg: cfg, db: db, sts: sts, enc: enc, dec: dec,
 		sess:      newSessions(db),
 		started:   time.Now(),
 		uploadSem: make(chan struct{}, max(4, 2*runtime.NumCPU())),
 		logins:    newLoginLimiter(),
 		niCache:   newNarinfoCache(16384), // ~64B/key + body ~600B ⇒ ~10MB cap
-	}, nil
+	}
+	s.restoreCounters()
+	return s, nil
 }
 
 // zstdLevel maps a config level name to a klauspost encoder level.
@@ -183,8 +188,13 @@ func (s *Server) middleware(h http.Handler) http.Handler {
 			}
 			elapsed := time.Since(start)
 			if isCacheTraffic(r.URL.Path) {
-				s.metrics.reqTotal.Add(1)
-				s.metrics.reqDurNs.Add(elapsed.Nanoseconds())
+				if isPushAPI(r.URL.Path) {
+					s.metrics.pushReq.Add(1)
+					s.metrics.pushDurNs.Add(elapsed.Nanoseconds())
+				} else {
+					s.metrics.reqTotal.Add(1)
+					s.metrics.reqDurNs.Add(elapsed.Nanoseconds())
+				}
 			}
 			// logging=quiet: only errors and slow requests — the synchronous
 			// log write (global mutex + stderr) is measurable at 10k+ rps.
@@ -235,16 +245,17 @@ func (s *Server) recordAudit(r *http.Request, status int, elapsed time.Duration)
 }
 
 // isCacheTraffic reports whether a request is real binary-cache work (pull
-// protocol or push API). The dashboard, static assets and monitoring probes
-// would otherwise drown the stats in their own polling noise.
+// protocol or push API). Every protocol route lives under /c/, so matching
+// the mount is exact — dashboard polling, static assets, monitoring probes
+// and scanner junk (/robots.txt, /wp-login.php, …) all stay out of the stats.
 func isCacheTraffic(path string) bool {
-	return path != "/" &&
-		!strings.HasPrefix(path, "/admin") &&
-		!strings.HasPrefix(path, "/register") &&
-		!strings.HasPrefix(path, "/api/v1/") &&
-		!strings.HasPrefix(path, "/static/") &&
-		path != "/healthz" && path != "/metrics" &&
-		path != "/favicon.ico"
+	return strings.HasPrefix(path, "/c/")
+}
+
+// isPushAPI splits the push API off the pull protocol within /c/: pull paths
+// have no /api/ segment (a narinfo/nar name is a single path element).
+func isPushAPI(path string) bool {
+	return strings.Contains(path, "/api/")
 }
 
 type logWriter struct {

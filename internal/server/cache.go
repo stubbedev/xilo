@@ -130,6 +130,13 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-nix-nar")
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.Header().Set("ETag", contentETag(p.NarHash, "")) // NAR bytes ⇔ NarHash
+
+	// Existence probes are not downloads: don't read a single chunk (net/http
+	// would discard the body) and don't count them as served NARs/bytes.
+	if r.Method == http.MethodHead {
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", p.NarSize))
+		return
+	}
 	s.metrics.narServed.Add(1)
 	// Egress metering: the logical NAR size is what leaves regardless of
 	// transfer encoding; counting it here (not per-write) keeps the hot loop
@@ -147,8 +154,14 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Encoding", "zstd")
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", clen))
+		// Count the chunk's UNCOMPRESSED size (frames are delivered strictly in
+		// order, so an index walk matches refs to frames): narBytes must mean
+		// the same thing on every encoding path, and the identity/gzip path
+		// below counts uncompressed bytes.
+		i := 0
 		_ = s.eachChunkOrderedRaw(r.Context(), refs, s.readAhead(), func(frame []byte) error {
-			s.metrics.narBytes.Add(int64(len(frame)))
+			s.metrics.narBytes.Add(refs[i].Size)
+			i++
 			_, werr := w.Write(frame)
 			return werr
 		})
