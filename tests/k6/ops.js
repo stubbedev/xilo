@@ -454,7 +454,8 @@ export default function () {
   must(res, "2fa login completes", (r) => r.status === 200);
   // context is per-session; re-select it before the TOTP disable POST.
   setContext(NS);
-  res = http.post(`${BASE}/admin/account/totp/disable`);
+  // Disabling 2FA is a security step-up: it requires the current password.
+  res = http.post(`${BASE}/admin/account/totp/disable`, { current: ADMIN });
   must(res, "totp disable", (r) => r.status === 200 && r.body.includes("disabled"));
   http.post(`${BASE}/admin/logout`);
   res = http.post(`${BASE}/admin/login`, { username: "admin", password: ADMIN });
