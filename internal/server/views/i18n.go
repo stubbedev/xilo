@@ -26,6 +26,7 @@ var en = map[string]string{
 	"flash.emailreq":      "A valid email address is required on this instance.",
 	"flash.pwwrong":       "Current password is incorrect.",
 	"flash.pwshort":       "Password must be at least 8 characters.",
+	"flash.pwlong":        "Password must be at most 72 characters.",
 	"flash.pwmismatch":    "Passwords do not match.",
 	"flash.pwchanged":     "Password changed.",
 	"flash.pwreset":       "Password reset for %s.",

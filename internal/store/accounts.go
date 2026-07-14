@@ -44,8 +44,20 @@ func ValidSlug(s string) bool {
 	return true
 }
 
+// ErrSlugReserved means the slug is held by a soft-deleted account of a
+// different kind and must not be adopted (see EnsureAccount).
+var ErrSlugReserved = errors.New("account name is reserved")
+
 // EnsureAccount returns the account with the given slug, creating it (with
 // the given kind) if missing.
+//
+// A soft-deleted row keeps its slug and id (for audit refs). Reactivating it
+// in place is only safe when the kind matches: DeleteOrg purges an org's
+// caches and tokens, so a deleted org can be recreated cleanly, but DeleteUser
+// deliberately LEAVES a personal account's caches orphaned. Flipping such a
+// deleted user-account into an org would silently re-parent those private
+// caches to the new org's owner — a cross-tenant takeover. Refuse that with
+// ErrSlugReserved.
 func (db *DB) EnsureAccount(slug, kind string) (*Account, error) {
 	if a, err := db.GetAccount(slug); err == nil {
 		return a, nil
@@ -54,17 +66,27 @@ func (db *DB) EnsureAccount(slug, kind string) (*Account, error) {
 	}
 	a := &Account{Slug: slug, Kind: kind, Created: time.Now().Unix()}
 	err := db.write(func(tx *sql.Tx) error {
-		// Concurrent creators race benignly: ON CONFLICT keeps the winner.
-		// Reusing a soft-deleted slug reactivates that row (its old caches and
-		// tokens were already purged at delete) rather than colliding on the
-		// UNIQUE slug — the WHERE makes it a no-op for a live account.
+		var curKind, curStatus string
+		switch err := tx.QueryRow(`SELECT kind, status FROM accounts WHERE slug=?`, slug).
+			Scan(&curKind, &curStatus); {
+		case errors.Is(err, sql.ErrNoRows):
+			// No row — fall through to a fresh insert.
+		case err != nil:
+			return err
+		case curStatus == "deleted" && curKind != kind:
+			return ErrSlugReserved
+		}
+		// Concurrent creators race benignly: ON CONFLICT keeps the winner. The
+		// WHERE reactivates only a same-kind soft-deleted row and is a no-op for
+		// a live account; plan_id resets so a reactivated row does not inherit
+		// the deleted account's plan.
 		if _, err := tx.Exec(`INSERT INTO accounts (slug, kind, created) VALUES (?,?,?)
-			ON CONFLICT (slug) DO UPDATE SET status='active', kind=excluded.kind, created=excluded.created
-			WHERE accounts.status='deleted'`,
+			ON CONFLICT (slug) DO UPDATE SET status='active', created=excluded.created, plan_id=0
+			WHERE accounts.status='deleted' AND accounts.kind=excluded.kind`,
 			a.Slug, a.Kind, a.Created); err != nil {
 			return err
 		}
-		return tx.QueryRow(`SELECT id, kind, plan_id, created FROM accounts WHERE slug=?`, slug).
+		return tx.QueryRow(`SELECT id, kind, plan_id, created FROM accounts WHERE slug=? AND status<>'deleted'`, slug).
 			Scan(&a.ID, &a.Kind, &a.PlanID, &a.Created)
 	})
 	if err != nil {

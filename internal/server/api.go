@@ -232,10 +232,33 @@ func (s *Server) handlePutPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The narinfo format is newline-delimited; reject any store path/reference/
+	// deriver that isn't well-formed so a push can't inject extra header lines
+	// (e.g. a second Sig or a bogus URL) into every served narinfo for this path.
+	if !narinfo.ValidStorePath(req.StorePath) {
+		http.Error(w, "invalid storePath", http.StatusBadRequest)
+		return
+	}
+	for _, ref := range req.References {
+		if !narinfo.ValidStorePath(ref) {
+			http.Error(w, "invalid reference", http.StatusBadRequest)
+			return
+		}
+	}
+	if req.Deriver != "" && !narinfo.ValidStoreName(narinfo.BaseName(req.Deriver)) {
+		http.Error(w, "invalid deriver", http.StatusBadRequest)
+		return
+	}
+
 	// Proof of possession: the chunk list must actually reassemble to the
 	// claimed NarHash. A client without the real NAR cannot produce a chunk
 	// list that hashes correctly, so it cannot claim someone else's path.
-	if !s.cfg.Security.SkipUploadVerify {
+	//
+	// The dedup pool is shared across tenants, so this check is the ONLY thing
+	// stopping one tenant from registering a path that references another
+	// tenant's chunk hashes and reading their private bytes. Never skip it in
+	// multi-tenant mode, regardless of the operator's SkipUploadVerify setting.
+	if s.cfg.MultiTenant || !s.cfg.Security.SkipUploadVerify {
 		if err := s.verifyReassembly(r, c.Storage, req.Chunks, narHash, req.NarSize); err != nil {
 			http.Error(w, "upload verification failed: "+err.Error(), http.StatusBadRequest)
 			return

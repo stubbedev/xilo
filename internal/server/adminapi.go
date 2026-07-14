@@ -187,6 +187,10 @@ func (s *Server) apiCreateNamespace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ns, err := s.db.EnsureAccount(req.Name, "org")
+	if errors.Is(err, store.ErrSlugReserved) {
+		apiError(w, http.StatusConflict, "namespace name is reserved")
+		return
+	}
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return

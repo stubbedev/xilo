@@ -437,8 +437,17 @@ func TestTOTPEnrollAndTwoStepLogin(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// disable
-	resp, _ = c2.PostForm(ts.URL+"/admin/account/totp/disable", nil)
+	// disable — requires re-auth with the current password
+	if resp, _ := c2.PostForm(ts.URL+"/admin/account/totp/disable", nil); func() bool {
+		b := body(t, resp)
+		return !strings.Contains(b, "incorrect")
+	}() {
+		t.Fatal("disable without password should be refused")
+	}
+	if _, on, _ := db.UserTOTP(adminID(t, db)); !on {
+		t.Fatal("totp disabled without password")
+	}
+	resp, _ = c2.PostForm(ts.URL+"/admin/account/totp/disable", url.Values{"current": {adminPass}})
 	if b := body(t, resp); !strings.Contains(b, "disabled") {
 		t.Fatalf("disable: %.200q", b)
 	}

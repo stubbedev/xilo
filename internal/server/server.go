@@ -158,13 +158,21 @@ func (s *Server) RunContext(ctx context.Context) error {
 func (s *Server) middleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		// Baseline hardening headers. No CSP: the admin UI relies on inline
-		// scripts and onclick handlers, so frame-ancestors via X-Frame-Options
-		// is the pragmatic clickjacking defense.
+		// Baseline hardening headers. The admin UI relies on inline scripts and
+		// onclick handlers, so script/style stay 'unsafe-inline'; the CSP still
+		// locks down object/base-uri/frame-ancestors and confines everything
+		// else to same-origin, giving a second layer under templ's escaping.
 		hdr := w.Header()
 		hdr.Set("X-Frame-Options", "DENY")
 		hdr.Set("X-Content-Type-Options", "nosniff")
 		hdr.Set("Referrer-Policy", "same-origin")
+		hdr.Set("Content-Security-Policy",
+			"default-src 'self'; script-src 'self' 'unsafe-inline'; "+
+				"style-src 'self' 'unsafe-inline'; img-src 'self' data:; "+
+				"object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+		if s.secureCookies() {
+			hdr.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		}
 		lw := &logWriter{ResponseWriter: w, status: http.StatusOK}
 		defer func() {
 			if rec := recover(); rec != nil {

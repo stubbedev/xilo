@@ -130,3 +130,28 @@ func TestNarInfoString(t *testing.T) {
 		}
 	}
 }
+
+func TestValidStorePathRejectsInjection(t *testing.T) {
+	good := "/nix/store/00000000000000000000000000000000-foo-1.0"
+	if !ValidStorePath(good) {
+		t.Fatalf("ValidStorePath(%q) = false, want true", good)
+	}
+	for _, bad := range []string{
+		"/nix/store/00000000000000000000000000000000-foo\nSig: evil:sig", // newline injection
+		"/nix/store/short-foo",                          // hash too short
+		"/nix/store/0000000000000000000000000000000e-x", // 'e' not in nixbase32
+		"/etc/passwd",
+		"00000000000000000000000000000000-foo", // missing prefix
+		"",
+	} {
+		if ValidStorePath(bad) {
+			t.Errorf("ValidStorePath(%q) = true, want false", bad)
+		}
+	}
+	if !ValidStoreName("00000000000000000000000000000000-foo") {
+		t.Fatal("ValidStoreName rejected a valid base name")
+	}
+	if ValidStoreName("00000000000000000000000000000000-foo bar") {
+		t.Fatal("ValidStoreName accepted a name with a space")
+	}
+}

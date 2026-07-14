@@ -23,6 +23,11 @@ type User struct {
 	Created     int64
 }
 
+// ErrNameTaken means the username/account slug is already in use. The slug
+// namespace is public (caches mount at /c/{slug}), so surfacing this to the
+// client is fine — unlike an email collision, which must stay generic.
+var ErrNameTaken = errors.New("name already taken")
+
 const userCols = `id,username,COALESCE(email,''),password_hash,role,status,totp_enabled,created`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
@@ -55,7 +60,7 @@ func (db *DB) createUser(name, email, passHash, role, status string) (*User, err
 	err := db.write(func(tx *sql.Tx) error {
 		var taken int
 		if err := tx.QueryRow(`SELECT 1 FROM accounts WHERE slug=?`, name).Scan(&taken); err == nil {
-			return errors.New("name already taken")
+			return ErrNameTaken
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}

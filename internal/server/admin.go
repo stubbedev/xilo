@@ -765,6 +765,10 @@ func (s *Server) renderOrg(w http.ResponseWriter, r *http.Request, u *store.User
 		}
 		for _, cand := range users {
 			if !member[cand.ID] && cand.Status == "active" {
+				// Picker needs only id + username; don't hand an org admin every
+				// other user's email/hash across the whole instance.
+				cand.Email = ""
+				cand.PassHash = ""
 				d.AllUsers = append(d.AllUsers, cand)
 			}
 		}
@@ -782,6 +786,12 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next := r.FormValue("new")
+	if len(next) > 72 {
+		// bcrypt rejects inputs past 72 bytes; catch it as a validation error
+		// rather than a 500 from GenerateFromPassword below.
+		s.accountFlash(w, r, views.T("flash.pwlong"))
+		return
+	}
 	switch pwState(next, r.FormValue("confirm")) {
 	case "short", "":
 		s.accountFlash(w, r, views.T("flash.pwshort"))
@@ -907,6 +917,13 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 	u := s.requireUser(w, r)
 	if u == nil {
+		return
+	}
+	// Step-up: dropping the second factor is a security downgrade, so require
+	// the current password (as changing it does). A borrowed/hijacked session
+	// alone must not be able to strip 2FA.
+	if bcrypt.CompareHashAndPassword([]byte(u.PassHash), []byte(r.FormValue("current"))) != nil {
+		s.accountFlash(w, r, views.T("flash.pwwrong"))
 		return
 	}
 	if err := s.db.SetUserTOTPEnabled(u.ID, false); err != nil {
@@ -1619,6 +1636,10 @@ func (s *Server) handleUserReset(w http.ResponseWriter, r *http.Request) {
 		s.instanceFlash(w, r, views.T("flash.pwshort"))
 		return
 	}
+	if len(pw) > 72 {
+		s.instanceFlash(w, r, views.T("flash.pwlong"))
+		return
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1676,6 +1697,10 @@ func (s *Server) handleCreateOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	org, err := s.db.EnsureAccount(name, "org")
+	if errors.Is(err, store.ErrSlugReserved) {
+		s.instanceFlash(w, r, views.T("flash.nametaken"))
+		return
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	netmail "net/mail"
 	"strconv"
@@ -100,6 +101,10 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		fail("Password must be at least 8 characters.")
 		return
 	}
+	if len(password) > 72 {
+		fail("Password must be at most 72 characters.")
+		return
+	}
 
 	var plan *store.Plan
 	if pid, _ := strconv.ParseInt(r.FormValue("plan"), 10, 64); pid != 0 {
@@ -141,8 +146,16 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	} else {
 		u, err = s.db.CreateUser(username, email, string(hash), "user")
 	}
+	if errors.Is(err, store.ErrNameTaken) {
+		fail("That name is taken.")
+		return
+	}
 	if err != nil {
-		fail("Could not register: " + err.Error())
+		// Generic message for anything else (notably an email collision): the
+		// raw driver error would confirm the email is registered (account
+		// enumeration) and leak schema/engine strings to an anonymous client.
+		log.Printf("register %q: %v", username, err)
+		fail("Could not complete registration.")
 		return
 	}
 	// Plan lands on the personal account (and the org, if any).
@@ -328,6 +341,10 @@ func (s *Server) handleUserCreateOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	org, err := s.db.EnsureAccount(name, "org")
+	if errors.Is(err, store.ErrSlugReserved) {
+		s.accountFlash(w, r, views.T("flash.nametaken"))
+		return
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

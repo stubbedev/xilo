@@ -6,10 +6,27 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
 const StoreDir = "/nix/store"
+
+// Store-path shapes: 32 nixbase32 hash chars, a dash, then a name. The narinfo
+// wire format is newline-delimited, so StorePath/References/Deriver must be
+// validated on ingest — an embedded newline or space would otherwise let a
+// push inject extra header lines into every served narinfo.
+var (
+	reStorePath = regexp.MustCompile(`^/nix/store/[0-9a-df-np-sv-z]{32}-[a-zA-Z0-9+._?=-]+$`)
+	reStoreName = regexp.MustCompile(`^[0-9a-df-np-sv-z]{32}-[a-zA-Z0-9+._?=-]+$`)
+)
+
+// ValidStorePath reports whether s is a well-formed full Nix store path.
+func ValidStorePath(s string) bool { return reStorePath.MatchString(s) }
+
+// ValidStoreName reports whether s is a well-formed store-path base name
+// (hash-name, no /nix/store prefix), as used for References and Deriver.
+func ValidStoreName(s string) bool { return reStoreName.MatchString(s) }
 
 // NarInfo is one store path's cache metadata. References/Deriver are base names
 // (no /nix/store prefix), matching the on-the-wire narinfo format.

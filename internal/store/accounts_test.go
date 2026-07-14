@@ -44,6 +44,42 @@ func TestAccountLifecycle(t *testing.T) {
 	}
 }
 
+// A soft-deleted user's slug must not be adoptable as an org: doing so would
+// re-parent the user's orphaned private caches to the new org's owner.
+func TestDeletedUserSlugNotAdoptableAsOrg(t *testing.T) {
+	db := openTest(t)
+	u, err := db.CreateUser("alice", "a@x.test", "hash", "user")
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	personal, err := db.GetAccount("alice")
+	if err != nil {
+		t.Fatalf("GetAccount: %v", err)
+	}
+	if err := db.DeleteUser(u.ID); err != nil {
+		t.Fatalf("DeleteUser: %v", err)
+	}
+	// The personal account is soft-deleted but its row (and any caches) survive.
+	if _, err := db.EnsureAccount("alice", "org"); !errors.Is(err, ErrSlugReserved) {
+		t.Fatalf("EnsureAccount(alice, org) = %v, want ErrSlugReserved", err)
+	}
+	// The dead row must not have been flipped live.
+	if _, err := db.GetAccountByID(personal.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted account resurfaced: %v", err)
+	}
+	// A deleted org of the same kind can still be recreated cleanly.
+	org, err := db.EnsureAccount("beta", "org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DeleteOrg(org.ID); err != nil {
+		t.Fatalf("DeleteOrg: %v", err)
+	}
+	if again, err := db.EnsureAccount("beta", "org"); err != nil || again.ID != org.ID {
+		t.Fatalf("recreate deleted org: %+v %v", again, err)
+	}
+}
+
 func TestUserAccountsAndMembers(t *testing.T) {
 	db := openTest(t)
 	org, err := db.EnsureAccount("acme", "org")

@@ -134,7 +134,11 @@ templ Account(d AccountData) {
 								TriggerLabel:   T("set.2fa.disable"),
 								TriggerIcon:    "shield-off",
 								TriggerVariant: button.VariantOutline,
-							})
+							}) {
+								@Field("totp-off-current", T("set.current")) {
+									@input.Input(input.Props{ID: "totp-off-current", Name: "current", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "current-password"}})
+								}
+							}
 						</div>
 					} else {
 						<div class="flex items-center justify-between">
