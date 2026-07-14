@@ -122,10 +122,8 @@ home-manager — user-level CLI, optionally with a user config:
 }
 ```
 
-`xilo serve` resolves its config as: `--config` / `XILO_CONFIG` →
-`./xilo.yaml` → `$XDG_CONFIG_HOME/xilo/xilo.yaml` → `/etc/xilo/xilo.yaml`.
-Dependency bumps and the flake's `vendorHash` are managed by `just update`
-(never edit by hand).
+Full module examples, the environment-file format and the config lookup
+order are in [Configuration](#configuration).
 
 ### Pull (substitute)
 
@@ -349,10 +347,165 @@ xilo fsck --repair    # drop bad rows + broken paths; the next push re-uploads t
 
 ## Configuration
 
-YAML (see [`xilo.example.yaml`](./xilo.example.yaml)). A JSON schema is published at
+The server takes its configuration from three layers; each overrides the
+one below it:
+
+1. **Environment variables** (highest — secrets and container deployments)
+2. **YAML config file** (`xilo.yaml`)
+3. Built-in defaults (a bare `xilo serve` with no config at all works)
+
+The Nix modules are frontends to these layers: `settings` renders the YAML
+file, `environmentFile` feeds the environment.
+
+### Config file (`xilo.yaml`)
+
+`xilo serve` looks for the file in this order and uses the first that exists:
+
+1. `--config <path>` flag, or `XILO_CONFIG=<path>`
+2. `./xilo.yaml` (current working directory)
+3. `$XDG_CONFIG_HOME/xilo/xilo.yaml` — usually `~/.config/xilo/xilo.yaml`
+   (this is what the home-manager module writes)
+4. `/etc/xilo/xilo.yaml`
+
+A missing file is not an error — defaults plus env still yield a working
+server. Every key is optional; [`xilo.example.yaml`](./xilo.example.yaml) is
+the full annotated reference with all defaults. A JSON schema is published at
 [`schemas/xilo.schema.json`](./schemas/xilo.schema.json) and referenced by a
-`yaml-language-server` modeline for editor autocompletion. Secrets can come from env
-(`XILO_ADMIN_PASSWORD`, `XILO_S3_ACCESS_KEY`, `XILO_S3_SECRET_KEY`).
+`yaml-language-server` modeline for editor autocompletion. A typical
+production file:
+
+```yaml
+listen: ":8080"
+base_url: "https://cache.example.com" # https so session cookies are Secure
+data_dir: "/var/lib/xilo"
+
+multi_tenant: false
+
+gc:
+  interval: "12h"    # background sweep
+  retention: "720h"  # evict paths not pulled in 30 days
+
+upstream_keys: ["cache.nixos.org-1"] # don't re-cache nixpkgs
+
+# Secrets (admin.password, database.salt, storage.s3.*_key, smtp.password)
+# are better supplied via environment — see below.
+```
+
+### Environment variables
+
+Env overrides the corresponding YAML key. Intended for secrets (keep them
+out of config files and the Nix store) and for file-less Docker deployments:
+
+| variable | overrides |
+|---|---|
+| `XILO_CONFIG` | config file path (same as `--config`) |
+| `XILO_LISTEN` | `listen` |
+| `XILO_BASE_URL` | `base_url` |
+| `XILO_DATA_DIR` | `data_dir` |
+| `XILO_ADMIN_PASSWORD` | `admin.password` |
+| `XILO_DATABASE_URL` | `database.url` |
+| `XILO_SALT` | `database.salt` |
+| `XILO_SMTP_PASSWORD` | `smtp.password` |
+| `XILO_S3_ENDPOINT` | `storage.s3.endpoint` |
+| `XILO_S3_BUCKET` | `storage.s3.bucket` (also selects the s3 backend, unless the YAML set `storage.backend` explicitly) |
+| `XILO_S3_REGION` | `storage.s3.region` |
+| `XILO_S3_ACCESS_KEY` | `storage.s3.access_key` |
+| `XILO_S3_SECRET_KEY` | `storage.s3.secret_key` |
+| `XILO_S3_INSECURE` | `storage.s3.insecure` (`true`/`1` enables; cannot turn a YAML `true` back off) |
+
+(The client CLI reads its own set: `XILO_URL`, `XILO_TOKEN`, `XILO_CACHE`.)
+
+### Environment file
+
+For systemd (`services.xilo.environmentFile`) or Docker (`--env-file`,
+compose `env_file:`) the variables go in a plain env file — one
+`KEY=value` per line, no `export`, no quotes, `#` starts a comment:
+
+```ini
+# /run/secrets/xilo.env
+XILO_ADMIN_PASSWORD=change-me
+XILO_SALT=a-long-random-string-never-changed-once-set
+
+# Only for the S3 backend:
+XILO_S3_ACCESS_KEY=GK31c2f218a2e44f485b94239e
+XILO_S3_SECRET_KEY=b892c0665f0ada8a4755dae98baa3b13
+
+# Only for PostgreSQL:
+XILO_DATABASE_URL=postgres://xilo:secret@db.internal/xilo
+```
+
+### NixOS module
+
+`settings` is rendered to `xilo.yaml` (any key from
+[`xilo.example.yaml`](./xilo.example.yaml) goes here — but never secrets,
+the Nix store is world-readable) and passed to the service via `--config`;
+`environmentFile` becomes the unit's systemd `EnvironmentFile` and holds
+the secrets, in the format above:
+
+```nix
+{ inputs, ... }: {
+  imports = [ inputs.xilo.nixosModules.default ];
+
+  services.xilo = {
+    enable = true; # systemd unit + client CLI in systemPackages
+
+    settings = {
+      # listen defaults to ":8080", data_dir to /var/lib/xilo.
+      base_url = "https://cache.example.com";
+      gc = {
+        interval = "12h";
+        retention = "720h";
+      };
+      upstream_keys = [ "cache.nixos.org-1" ];
+      # S3 storage — keys come from environmentFile:
+      storage = {
+        backend = "s3";
+        s3 = {
+          endpoint = "s3.amazonaws.com";
+          bucket = "xilo";
+          region = "us-east-1";
+        };
+      };
+    };
+
+    # Path to an env file that exists on the target machine, outside the
+    # Nix store — deployed by hand or by a secrets tool:
+    environmentFile = "/run/secrets/xilo.env";
+    # sops-nix:  environmentFile = config.sops.secrets."xilo.env".path;
+    # agenix:    environmentFile = config.age.secrets."xilo.env".path;
+  };
+}
+```
+
+### home-manager module
+
+Installs the CLI; `settings` optionally writes
+`~/.config/xilo/xilo.yaml`, which `xilo serve` picks up via the lookup
+order above:
+
+```nix
+{ inputs, ... }: {
+  imports = [ inputs.xilo.homeModules.default ];
+
+  programs.xilo = {
+    enable = true; # the CLI — enough for client-only machines
+
+    # Only for running a user-level server (`xilo serve`):
+    settings = {
+      listen = ":8090";
+      base_url = "http://localhost:8090";
+      data_dir = "/home/me/.local/share/xilo";
+    };
+  };
+}
+```
+
+### Client config
+
+`xilo login` saves server profiles to `~/.config/xilo/config.yaml`
+(`$XDG_CONFIG_HOME` respected) — a different file from the server's `xilo.yaml`, and
+managed entirely by the CLI. Overridable per-invocation with `XILO_URL` /
+`XILO_TOKEN`, or per-command flags.
 
 ## Development
 
@@ -362,6 +515,7 @@ just                 # list recipes
 just dev             # live-reload server (air)
 just generate        # regenerate templ views
 just check           # everything CI runs: lint, test, schema + nix build in sync
+just update          # bump deps + the flake vendorHash together (never edit hashes by hand)
 ```
 
 The admin UI is [templ](https://templ.guide/) components (the [templUI](https://templui.io/) library) styled with [Tailwind CSS v4](https://tailwindcss.com/), compiled to a single embedded stylesheet at build time — no CDN, no runtime JS framework. The generated `*_templ.go` and CSS are rebuilt by `just` and git-ignored; `schemas/xilo.schema.json` is committed and verified in sync by CI.
