@@ -53,8 +53,9 @@ lint: css generate
     gofmt -l .
     go vet ./...
 
+# -race matches CI exactly — a push must never learn about a race from CI.
 test: css generate
-    go test ./...
+    go test -race ./...
 
 # ─────────────────────────── Codegen ───────────────────────────
 

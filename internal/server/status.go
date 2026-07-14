@@ -58,7 +58,10 @@ func (s *Server) startStatusSampler(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
-				s.persistCounters() // final flush: a graceful restart loses ≤5s
+				// No final flush: ctx cancels at shutdown, and a DB write here
+				// races the caller closing the DB right after RunContext
+				// returns. The 5s tick already persisted everything but the
+				// last interval — losing ≤5s of totals beats a shutdown panic.
 				return
 			case <-t.C:
 				s.sampleStatus()
