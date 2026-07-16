@@ -3,12 +3,12 @@ module github.com/stubbedev/xilo
 go 1.26.4
 
 require (
-	github.com/Oudwins/tailwind-merge-go v0.2.0
+	github.com/Oudwins/tailwind-merge-go v0.2.1
 	github.com/a-h/templ v0.3.1020
 	github.com/aws/aws-sdk-go-v2 v1.42.1
-	github.com/aws/aws-sdk-go-v2/credentials v1.19.28
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.105.0
-	github.com/aws/smithy-go v1.27.3
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.29
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.105.2
+	github.com/aws/smithy-go v1.27.4
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/go-webauthn/webauthn v0.17.4
 	github.com/invopop/jsonschema v0.14.0
@@ -21,7 +21,7 @@ require (
 	golang.org/x/crypto v0.54.0
 	golang.org/x/term v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.53.0
+	modernc.org/sqlite v1.54.0
 )
 
 require (
