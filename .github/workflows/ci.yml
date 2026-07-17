@@ -77,6 +77,15 @@ jobs:
       - name: run CLI e2e suite
         run: ./tests/e2e/cli.sh
 
+  flake:
+    name: nix flake builds (vendorHash in sync)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: DeterminateSystems/nix-installer-action@v22
+      # Fails if flake.nix vendorHash is stale after a go.mod/go.sum bump.
+      - run: nix build .#default -L
+
   ops:
     name: k6 operations conformance
     runs-on: ubuntu-latest
