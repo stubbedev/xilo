@@ -55,7 +55,18 @@ func New(cfg *config.Config, db *store.DB, sts map[string]storage.Storage) (*Ser
 	if err != nil {
 		return nil, err
 	}
-	dec, err := zstd.NewReader(nil)
+	// Cap decoder memory: chunk bodies decode to at most one max-sized chunk,
+	// so a hostile (push-authed) client can't send a zstd bomb that blows the
+	// heap. Floor at the klauspost minimum window.
+	decMax := uint64(cfg.Chunking.MaxSize)
+	if t := uint64(cfg.Chunking.NarThreshold); t > decMax {
+		decMax = t
+	}
+	decMax += 1 << 20 // match maxChunkBody slack
+	if decMax < 1<<20 {
+		decMax = 1 << 20
+	}
+	dec, err := zstd.NewReader(nil, zstd.WithDecoderMaxMemory(decMax))
 	if err != nil {
 		return nil, err
 	}

@@ -14,6 +14,10 @@ type ConfigResp struct {
 	UpstreamKeys []string `json:"upstreamKeys"`
 	PublicKey    string   `json:"publicKey"` // "<cache>:<base64>" for trusted-public-keys
 	Public       bool     `json:"public"`    // false → pull needs a token (netrc)
+	// AcceptZstd advertises that the server decodes zstd-compressed chunk
+	// bodies (Content-Encoding: zstd). Clients only compress the wire when set,
+	// so a new client stays compatible with an old server that omits it.
+	AcceptZstd bool `json:"acceptZstd"`
 }
 
 // MissingReq is the body for get-missing-paths / get-missing-chunks.

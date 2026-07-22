@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/stubbedev/xilo/internal/api"
 	"github.com/stubbedev/xilo/internal/config"
@@ -299,6 +302,69 @@ func TestPutChunkDedupAndMetrics(t *testing.T) {
 	}
 	if _, ok := m["uptime_seconds"]; !ok {
 		t.Fatal("json metrics missing uptime")
+	}
+}
+
+// TestPutChunkZstdWire covers the Content-Encoding: zstd upload path: the
+// server decodes the wire body, verifies the RAW chunk hash, and stores the
+// blob so it decodes back to the original.
+func TestPutChunkZstdWire(t *testing.T) {
+	s, db, ts := newTestServerCfg(t, nil)
+	db.CreateCache("default", "c", true, 40)
+
+	data := bytes.Repeat([]byte("compress me well "), 512) // ~8.5KiB, compresses hard
+	sum := sha256.Sum256(data)
+	ch := hex.EncodeToString(sum[:])
+
+	enc, _ := zstd.NewWriter(nil)
+	compressed := enc.EncodeAll(data, nil)
+	if len(compressed) >= len(data) {
+		t.Fatalf("test data didn't compress: %d >= %d", len(compressed), len(data))
+	}
+
+	putEnc := func(hash string, body []byte, encoding string) int {
+		req, _ := http.NewRequest(http.MethodPut, ts.URL+"/c/default/c/api/chunk/"+hash, bytes.NewReader(body))
+		if encoding != "" {
+			req.Header.Set("Content-Encoding", encoding)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	if code := putEnc(ch, compressed, "zstd"); code != 200 {
+		t.Fatalf("put zstd chunk: %d", code)
+	}
+
+	// Stored blob must decode back to the raw chunk (verifies store-as-is).
+	if !db.HasChunk("default", ch) {
+		t.Fatal("chunk not recorded")
+	}
+	rc, err := s.stOf("default").Get(context.Background(), storage.ChunkKey(ch))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rc.Close()
+	blob, _ := io.ReadAll(rc)
+	dec, _ := zstd.NewReader(nil)
+	got, err := dec.DecodeAll(blob, nil)
+	if err != nil {
+		t.Fatalf("stored blob decode: %v", err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Fatal("stored chunk != original raw")
+	}
+
+	// Server hashes the RAW chunk, not the wire body: wrong hash → 400.
+	if code := putEnc(strings.Repeat("00", 32), compressed, "zstd"); code != 400 {
+		t.Fatalf("bad hash want 400 got %d", code)
+	}
+	// Unsupported encoding → 400.
+	if code := putEnc(ch, data, "br"); code != 400 {
+		t.Fatalf("unsupported encoding want 400 got %d", code)
 	}
 }
 

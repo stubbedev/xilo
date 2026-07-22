@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/klauspost/compress/zstd"
 	"golang.org/x/term"
 
 	"github.com/stubbedev/xilo/internal/api"
@@ -37,9 +38,15 @@ type Client struct {
 	DryRun       bool // plan only, upload nothing
 	Quiet        bool // suppress progress output
 
+	// enc compresses each chunk on the wire. The client (a fat laptop/CI box)
+	// spends the CPU so the server just verifies + stores — far fewer uplink
+	// bytes on the slow home connection where pushes actually bottleneck.
+	enc *zstd.Encoder
+
 	// populated from the server's /api/config at push time:
 	jobs         int
 	narThreshold int
+	acceptZstd   bool // server decodes Content-Encoding: zstd chunk bodies
 	upstreamKeys []string
 	sem          chan struct{} // ONE shared upload gate, sized to jobs
 }
@@ -47,7 +54,11 @@ type Client struct {
 // NewClient builds a push client. jobsOverride of 0 means "auto" — use the
 // parallelism the server advertises (its CPU capacity).
 func NewClient(base, cache, token string, jobsOverride int) *Client {
+	// SpeedDefault (~zstd -3): cheap, and the uplink — not client CPU — is the
+	// bottleneck. EncodeAll on a shared encoder is concurrency-safe.
+	enc, _ := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedDefault))
 	return &Client{
+		enc: enc,
 		// Default transport keeps only 2 idle conns per host — at jobs=NumCPU
 		// that means re-dialing (and re-TLS-handshaking) on nearly every chunk.
 		// The overall timeout bounds every request: the largest body is one

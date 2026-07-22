@@ -59,6 +59,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		UpstreamKeys: s.cfg.UpstreamKeys,
 		PublicKey:    c.PubKey,
 		Public:       c.Public,
+		AcceptZstd:   true,
 	})
 }
 
@@ -129,8 +130,12 @@ func present(hashes, missing []string) []string {
 	return out
 }
 
-// handlePutChunk stores one chunk. Body is the raw (uncompressed) chunk; the
-// server verifies the content hash, then compresses it at rest. Idempotent.
+// handlePutChunk stores one chunk. The body is the raw chunk, or — when the
+// client sets Content-Encoding: zstd — a zstd frame the fat client compressed
+// so the wire carries far fewer bytes. Either way the server verifies the
+// content hash of the RAW chunk. A pre-compressed body is stored as-is (the
+// server skips its own encode, saving CPU on small boxes); a raw body is
+// compressed at rest as before. Idempotent.
 func (s *Server) handlePutChunk(w http.ResponseWriter, r *http.Request) {
 	c, ok := s.cache(w, r)
 	if !ok {
@@ -141,9 +146,30 @@ func (s *Server) handlePutChunk(w http.ResponseWriter, r *http.Request) {
 	}
 	want := r.PathValue("hash")
 
-	raw, err := io.ReadAll(io.LimitReader(r.Body, s.maxChunkBody()))
+	body, err := io.ReadAll(io.LimitReader(r.Body, s.maxChunkBody()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// raw is what we hash; compressed (if non-nil) is the blob to store as-is.
+	var raw, compressed []byte
+	switch enc := r.Header.Get("Content-Encoding"); enc {
+	case "":
+		raw = body
+	case "zstd":
+		// s.dec is capped via WithDecoderMaxMemory, so a bomb can't blow the
+		// heap; the explicit length check backstops it. Endpoint is push-authed.
+		compressed = body
+		if raw, err = s.dec.DecodeAll(body, nil); err != nil {
+			http.Error(w, "zstd decode: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if int64(len(raw)) > s.maxChunkBody() {
+			http.Error(w, "chunk too large", http.StatusBadRequest)
+			return
+		}
+	default:
+		http.Error(w, "unsupported Content-Encoding: "+enc, http.StatusBadRequest)
 		return
 	}
 	sum := sha256.Sum256(raw)
@@ -169,7 +195,9 @@ func (s *Server) handlePutChunk(w http.ResponseWriter, r *http.Request) {
 	defer func() { <-s.uploadSem }()
 
 	key := storage.ChunkKey(want)
-	compressed := s.enc.EncodeAll(raw, nil)
+	if compressed == nil { // raw upload: compress at rest ourselves
+		compressed = s.enc.EncodeAll(raw, nil)
+	}
 	if err := s.stOf(c.Storage).Put(r.Context(), key, bytes.NewReader(compressed)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

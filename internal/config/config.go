@@ -332,7 +332,11 @@ func (c *Config) applyDefaults() {
 		c.Compression.Level = "default"
 	}
 	if c.Parallelism <= 0 {
-		c.Parallelism = runtime.NumCPU()
+		// Pushes are network-bound: to keep the uplink full and the server's
+		// upload slots (2×NumCPU) busy, clients need several in-flight chunks
+		// per core to hide RTT. NumCPU alone left a fast link idle waiting on
+		// round-trips. Server-side CPU is separately gated by uploadSem.
+		c.Parallelism = 4 * runtime.NumCPU()
 	}
 	if c.GC.Grace == "" {
 		c.GC.Grace = "1h"

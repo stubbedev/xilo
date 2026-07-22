@@ -55,6 +55,7 @@ func (c *Client) loadConfig(ctx context.Context) (chunk.Params, error) {
 		c.jobs = 1
 	}
 	c.narThreshold = cfg.NarThreshold
+	c.acceptZstd = cfg.AcceptZstd && c.enc != nil
 	c.upstreamKeys = cfg.UpstreamKeys
 	return chunk.Params{MinSize: cfg.MinSize, AvgSize: cfg.AvgSize, MaxSize: cfg.MaxSize}, nil
 }
@@ -84,11 +85,22 @@ func (c *Client) missing(ctx context.Context, endpoint string, hashes []string) 
 }
 
 func (c *Client) putChunk(ctx context.Context, ch chunk.Chunk) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.url("api", "chunk", ch.Hash), bytes.NewReader(ch.Data))
+	// The chunk hash addresses the RAW bytes; the server verifies that after
+	// decoding, so compressing the wire is transparent to dedup.
+	body := ch.Data
+	encoding := ""
+	if c.acceptZstd {
+		body = c.enc.EncodeAll(ch.Data, nil)
+		encoding = "zstd"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.url("api", "chunk", ch.Hash), bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
+	if encoding != "" {
+		req.Header.Set("Content-Encoding", encoding)
+	}
 	resp, err := c.do(req)
 	if err != nil {
 		return err
