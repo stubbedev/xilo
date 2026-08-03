@@ -504,6 +504,10 @@ the secrets, in the format above:
 }
 ```
 
+`package` defaults to `packages.default` for the host's system. On riscv64 that
+is the client-only build, so a riscv64 server needs `package` pointed at the
+cross-built `xilo-riscv64` as shown [above](#nix--nixos).
+
 ### home-manager module
 
 Installs the CLI; `settings` optionally writes
@@ -543,6 +547,7 @@ just dev             # live-reload server (air)
 just generate        # regenerate templ views
 just check           # everything CI runs: lint, test, schema + nix build in sync
 just update          # bump deps + the flake vendorHash together (never edit hashes by hand)
+just release-patch   # tag and push a release (see RELEASING.md); -minor / -major too
 ```
 
 The admin UI is [templ](https://templ.guide/) components (the [templUI](https://templui.io/) library) styled with [Tailwind CSS v4](https://tailwindcss.com/), compiled to a single embedded stylesheet at build time — no CDN, no runtime JS framework. The generated `*_templ.go` and CSS are rebuilt by `just` and git-ignored; `schemas/xilo.schema.json` is committed and verified in sync by CI.

@@ -12,8 +12,9 @@ Everything goes through `just` (run `just` to list recipes):
 
 - `just build` — css + templ generate + `go build` into `./bin/xilo`
 - `just test` — css + generate + `go test ./...`
-- `just lint` — css + generate + `gofmt -l .` + `go vet ./...`
+- `just lint` — css + generate + `gofmt -l .` + `go vet ./...` + a `-tags noserver` build
 - `just check` — everything CI runs (lint, test, schema-check, nix-check)
+- `just release-patch` / `-minor` / `-major` — gate on the default branch, resync schema/lock/vendorHash, tag and push; the tag push publishes the release (RELEASING.md). `just release-preview` is the dry run.
 - `just dev` — live-reload dev server via `air` (rebuilds on .go/.templ/.css change; copy `xilo.example.yaml` to `xilo.yaml` first)
 - Single test: `go test ./internal/server/ -run TestName` — but run `just generate` (templ) first if any `.templ` changed, and `just css` if classes changed.
 
@@ -22,7 +23,7 @@ Generated artifacts are **regenerated, never hand-edited, and mostly git-ignored
 - `internal/server/views/*_templ.go` — from `.templ` via `templ generate` (never committed)
 - `internal/server/static/xilo-tw.css` — Tailwind v4 build via `just css` (scripts/build-css.sh; scans `views/*.templ`, `views/icon.go`, and the templui module)
 - `schemas/xilo.schema.json` — `just sync-schema` after changing `config.Config`
-- `flake.nix` vendorHash — `just sync-vendor-hash` after any dep change (`just update` does deps + hash together; never edit hashes by hand)
+- `flake.nix` vendorHash — `just sync-vendor-hash` after any dep change (`just update` does deps + hash together; never edit hashes by hand). One hash covers every package because `proxyVendor = true` hashes the module cache; do not switch to vendor mode, whose contents depend on the generated `_templ.go` and on build tags.
 
 ## Architecture
 
@@ -31,7 +32,7 @@ Request path: `cmd/xilo` → `internal/server` (one `http.ServeMux`, routes regi
 - **`internal/store`** — all writes funnel through a single writer goroutine (`db.go`), so SQLITE_BUSY cannot happen; never open a second write path. `pgdriver.go` adapts the same queries to PostgreSQL.
 - **`internal/storage`** — named backends (local/S3), assignable per cache. Chunk bytes never touch the DB.
 - **`internal/server`** — three surfaces: the Nix binary-cache protocol (`/c/{account}/{cache}/…`, `cache.go`, fails closed on missing data), a token-authed JSON API (`/api/v1/…`, `api.go`/`adminapi.go`), and the session-authed admin UI (`/admin/…`).
-- **`internal/cli`** — the client subcommands (push/pull/login/cache/fsck) speaking to the JSON API.
+- **`internal/cli`** — the client subcommands (push/pull/login/cache/fsck) speaking to the JSON API. `serve.go` is the *only* file here allowed to import `internal/server`: it is behind `//go:build !noserver`, with a stub in `serve_noserver.go`, so the `noserver` tag drops the server (and the templ/Tailwind build) from the graph. That tag is what makes `packages.xilo-cli` buildable where nixpkgs has no `tailwindcss_4` (riscv64-linux). Any new server import outside `serve.go` breaks it — `just lint` and CI both compile the tag to catch that.
 - Multi-tenancy: `config.MultiTenant` gates registration, plans, quotas, user org-creation. Accounts are personal or org; caches live at `account/cache`.
 
 ## Admin UI conventions (internal/server/views)

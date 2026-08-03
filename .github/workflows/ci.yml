@@ -30,6 +30,9 @@ jobs:
           if [ -n "$out" ]; then echo "unformatted:"; echo "$out"; exit 1; fi
       - run: go vet ./...
       - run: go build ./...
+      # Client-only build (flake packages.xilo-cli): fails if anything outside
+      # internal/cli/serve.go starts importing internal/server.
+      - run: go build -tags noserver -o /dev/null ./cmd/xilo
       - run: go test -race ./...
 
   postgres:

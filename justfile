@@ -53,7 +53,7 @@ lint: css generate
     gofmt -l .
     go vet ./...
     # The client-only build (flake packages.xilo-cli, no internal/server) must
-    # keep compiling — nothing else exercises the `noserver` tag.
+    # keep compiling; CI runs the same build.
     go build -tags noserver -o /dev/null ./cmd/xilo
 
 # -race matches CI exactly — a push must never learn about a race from CI.
