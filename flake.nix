@@ -7,10 +7,16 @@
   };
 
   outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachSystem
-      # riscv64 gets the client only: nixpkgs has no tailwindcss_4 there, and
-      # the admin CSS is a build-time input of the server.
-      (flake-utils.lib.defaultSystems ++ [ "riscv64-linux" ]) (system:
+    # Explicit list, not flake-utils.lib.defaultSystems: that one still has
+    # x86_64-darwin, which nixpkgs 26.11 dropped (it throws on eval). riscv64
+    # gets the client only, since nixpkgs has no tailwindcss_4 there and the
+    # admin CSS is a build-time input of the server.
+    flake-utils.lib.eachSystem [
+      "x86_64-linux"
+      "aarch64-linux"
+      "aarch64-darwin"
+      "riscv64-linux"
+    ] (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         lib = nixpkgs.lib;
