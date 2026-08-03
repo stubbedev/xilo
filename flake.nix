@@ -7,31 +7,63 @@
   };
 
   outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+    flake-utils.lib.eachSystem
+      # riscv64 gets the client only: nixpkgs has no tailwindcss_4 there, and
+      # the admin CSS is a build-time input of the server.
+      (flake-utils.lib.defaultSystems ++ [ "riscv64-linux" ]) (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-      in {
-        # The xilo binary: client CLI and server (`xilo serve`) in one.
-        packages.default = pkgs.buildGoModule {
-          pname = "xilo";
+        lib = nixpkgs.lib;
+
+        # Can we build the admin UI assets here? tailwindcss_4 throws on
+        # platforms it has no binary for (riscv64-linux), so probe it.
+        hasWebToolchain = (builtins.tryEval pkgs.tailwindcss_4.drvPath).success;
+
+        # client = drop `xilo serve` (build tag `noserver`), which takes
+        # internal/server out of the import graph and with it the need for
+        # templ/Tailwind at build time.
+        mkXilo = { client }: pkgs.buildGoModule {
+          pname = if client then "xilo-cli" else "xilo";
           version = "0-unstable-${self.shortRev or "dirty"}";
           src = self;
-          vendorHash = "sha256-9AOwC/rB5Wg699feZSOfinXQx2F+dc/UCpH7uXaF//w=";
+          vendorHash = "sha256-wBflrxxGT6PgB+krJAsrk+uxlRztlI6U5B7Fo0flRzY=";
+          # Hash the module cache (go mod download), not a vendor tree: `go mod
+          # vendor` walks the import graph, so its output would depend on the
+          # generated _templ.go (templui is imported only from codegen) and on
+          # `tags` below — i.e. one vendorHash per package. This way both
+          # packages share the single hash `just sync-vendor-hash` maintains.
+          proxyVendor = true;
           subPackages = [ "cmd/xilo" ];
-          nativeBuildInputs = [ pkgs.templ pkgs.tailwindcss_4 ];
+          tags = lib.optional client "noserver";
+          nativeBuildInputs = lib.optionals (!client) [ pkgs.templ pkgs.tailwindcss_4 ];
           # Build the admin CSS (embedded via go:embed) then generate views.
-          preBuild = ''
+          preBuild = lib.optionalString (!client) ''
             sh scripts/build-css.sh
             templ generate
           '';
           env.CGO_ENABLED = 0; # sqlite via modernc.org, pure Go
           ldflags = [ "-s" "-w" "-X main.version=${self.shortRev or "dev"}" ];
           meta = {
-            description = "Self-hosted Nix binary cache";
+            description =
+              if client
+              then "Self-hosted Nix binary cache (client CLI only)"
+              else "Self-hosted Nix binary cache";
             homepage = "https://github.com/stubbedev/xilo";
             mainProgram = "xilo";
           };
         };
+        # The xilo binary: client CLI and server (`xilo serve`) in one.
+        xilo = mkXilo { client = false; };
+        # Client CLI only (push/watch/login/use/…), no `xilo serve`, no admin
+        # dashboard. Builds anywhere Go builds.
+        xilo-cli = mkXilo { client = true; };
+      in {
+        packages = {
+          inherit xilo-cli;
+          # `default` is the full binary wherever it can be built, so the NixOS
+          # and home-manager modules keep working unchanged.
+          default = if hasWebToolchain then xilo else xilo-cli;
+        } // lib.optionalAttrs hasWebToolchain { inherit xilo; };
 
         # Dev shell: everything `just` recipes need.
         devShells.default = pkgs.mkShell {
@@ -41,12 +73,11 @@
             gotools # goimports
             golangci-lint
             templ # regenerate views: `just generate`
-            tailwindcss_4 # admin CSS: `just css`
             air # live reload: `just dev`
             just
             sqlite # inspect the metadata db
             curl
-          ];
+          ] ++ lib.optional hasWebToolchain tailwindcss_4; # admin CSS: `just css`
           shellHook = ''
             echo "xilo dev shell — run 'just' to list recipes"
           '';

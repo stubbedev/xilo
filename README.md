@@ -88,6 +88,15 @@ nix run github:stubbedev/xilo -- --help    # try it
 nix profile install github:stubbedev/xilo  # just the CLI
 ```
 
+Client-only machines can install `packages.xilo-cli` instead: same CLI without
+`xilo serve`, and without templ/Tailwind as build inputs. That is the only
+option on platforms nixpkgs has no `tailwindcss_4` for (`riscv64-linux`, where
+`packages.default` *is* `xilo-cli`):
+
+```sh
+nix profile install github:stubbedev/xilo#xilo-cli
+```
+
 NixOS — server as a systemd unit plus the CLI in `systemPackages`:
 
 ```nix

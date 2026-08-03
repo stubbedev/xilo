@@ -1,3 +1,5 @@
+//go:build !noserver
+
 package cli
 
 import (
