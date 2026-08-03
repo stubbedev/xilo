@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 
@@ -88,7 +89,13 @@ func activeProfile() serverProfile {
 	return cc.Servers[name]
 }
 
-// resolveServer picks URL + token: flag > env > saved profile > default URL.
+// errNoServer is what client commands report when no server was configured.
+// Defaulting to localhost:8080 instead only turned "you never told me where the
+// server is" into a connection-refused further down.
+var errNoServer = errors.New("no server configured. Pass --url <url>, set XILO_URL, or run `xilo login <url>`")
+
+// resolveServer picks URL + token: flag > env > saved profile. The URL comes
+// back empty when none of those is set; callers report errNoServer.
 func resolveServer(urlFlag, tokenFlag string) (url, token string) {
 	p := activeProfile()
 	url = urlFlag
@@ -97,9 +104,6 @@ func resolveServer(urlFlag, tokenFlag string) (url, token string) {
 	}
 	if url == "" {
 		url = p.URL
-	}
-	if url == "" {
-		url = "http://localhost:8080"
 	}
 	token = tokenFlag
 	if token == "" {

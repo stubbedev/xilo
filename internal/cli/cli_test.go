@@ -183,12 +183,13 @@ func TestResolveServer(t *testing.T) {
 	t.Setenv("HOME", tmp)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "config"))
 
-	// default URL when nothing set
+	// no URL when nothing is set, so callers can report errNoServer instead of
+	// quietly dialing localhost
 	t.Setenv("XILO_URL", "")
 	t.Setenv("XILO_TOKEN", "")
 	url, token := resolveServer("", "")
-	if url != "http://localhost:8080" || token != "" {
-		t.Fatalf("default: url=%q token=%q", url, token)
+	if url != "" || token != "" {
+		t.Fatalf("unconfigured: url=%q token=%q", url, token)
 	}
 
 	// env beats default

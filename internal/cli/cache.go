@@ -73,8 +73,8 @@ func openDB() (*config.Config, *store.DB, error) {
 		return nil, nil, err
 	}
 	if !localServer(cfg) {
-		return nil, nil, fmt.Errorf("no xilo server on this machine (no %s, no %s) — "+
-			"manage a remote one with --server <url> or `xilo login <url>`, "+
+		return nil, nil, fmt.Errorf("no xilo server on this machine (no %s, no %s). "+
+			"Manage a remote one with --server <url> or `xilo login <url>`, "+
 			"or run this where the server's config lives", configPath, cfg.DBPath())
 	}
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {

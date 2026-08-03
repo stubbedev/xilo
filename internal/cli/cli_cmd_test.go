@@ -410,7 +410,7 @@ func TestPushCmdEmptyStdin(t *testing.T) {
 	defer func() { os.Stdin = orig }()
 
 	// "-" with empty stdin resolves to zero paths -> nil without any network
-	if _, err := runRoot(t, "push", "somecache", "-"); err != nil {
+	if _, err := runRoot(t, "push", "--url", "http://127.0.0.1:1", "somecache", "-"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -510,6 +510,23 @@ func TestAdminCommandsDoNotCreateDataDirOnClient(t *testing.T) {
 			names = append(names, e.Name())
 		}
 		t.Fatalf("client commands created %v in the working directory", names)
+	}
+}
+
+// Client commands with no --url, no XILO_URL and no saved login must say so,
+// not dial localhost and surface a connection error.
+func TestClientCommandsWithoutServer(t *testing.T) {
+	isolateEnv(t)
+	t.Chdir(t.TempDir())
+
+	for _, args := range [][]string{
+		{"push", "mycache", "/nix/store/whatever"},
+		{"use", "mycache"},
+	} {
+		_, err := runRoot(t, args...)
+		if err == nil || !strings.Contains(err.Error(), "no server configured") {
+			t.Errorf("%v: err = %v, want no-server error", args, err)
+		}
 	}
 }
 

@@ -67,8 +67,8 @@ For a VPS, [`examples/docker-compose.yml`](./examples/docker-compose.yml) is the
 same thing with a restart policy and an optional S3 block; add
 [`examples/Caddyfile`](./examples/Caddyfile) for TLS.
 
-Open <http://localhost:8080/admin>, log in, create a cache. Or from the CLI —
-admin commands run against the server's API, so point them at it once:
+Open <http://localhost:8080/admin>, log in, create a cache. Or from the CLI.
+Admin commands run against the server's API, so point them at it once:
 
 ```sh
 xilo login http://localhost:8080 --token <admin-token>

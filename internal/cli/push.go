@@ -26,6 +26,9 @@ func pushCmd() *cobra.Command {
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			url, token = resolveServer(url, token)
+			if url == "" {
+				return errNoServer
+			}
 			cache, rest := splitCacheArg(args)
 			if cache == "" {
 				return fmt.Errorf("no cache given and no default saved — `xilo push <ns/cache> <path>` or `xilo use <ns/cache> --default`")
@@ -46,7 +49,7 @@ func pushCmd() *cobra.Command {
 			return cl.Push(cmd.Context(), paths)
 		},
 	}
-	c.Flags().StringVar(&url, "url", "", "server base URL (env XILO_URL, default http://localhost:8080)")
+	c.Flags().StringVar(&url, "url", "", "server base URL (env XILO_URL / saved login)")
 	c.Flags().StringVar(&token, "token", "", "auth token (env XILO_TOKEN)")
 	c.Flags().IntVar(&jobs, "jobs", 0, "parallel uploads (0 = auto, use server capacity)")
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "show what would be pushed, upload nothing")

@@ -27,6 +27,9 @@ func watchCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			url, token = resolveServer(url, token)
+			if url == "" {
+				return errNoServer
+			}
 			cl := push.NewClient(url, normRef(args[0]), token, 0)
 			cl.Quiet = true
 			fmt.Printf("watching %s → pushing to %s\n", storeDir, args[0])

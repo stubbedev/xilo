@@ -29,6 +29,9 @@ func useCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			url, token = resolveServer(url, token)
+			if url == "" {
+				return errNoServer
+			}
 			cache := normRef(args[0])
 
 			if remove {
