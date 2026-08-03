@@ -48,7 +48,13 @@
             templ generate
           '';
           env.CGO_ENABLED = 0; # sqlite via modernc.org, pure Go
-          ldflags = [ "-s" "-w" "-X main.version=${self.shortRev or "dev"}" ];
+          ldflags = [ "-s" "-w" "-X main.version=${self.shortRev or "dev"}" ]
+            # Cross builds otherwise link externally through the target cc and
+            # come out needing libc.so.6, unlike every native build here. Both
+            # are pure Go (CGO off above), so ask for the internal linker and
+            # get the same static binary on both paths.
+            ++ lib.optional (pkgs.stdenv.hostPlatform != pkgs.stdenv.buildPlatform)
+              "-linkmode=internal";
           meta = {
             description =
               if client
