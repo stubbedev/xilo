@@ -28,7 +28,7 @@
         # client = drop `xilo serve` (build tag `noserver`), which takes
         # internal/server out of the import graph and with it the need for
         # templ/Tailwind at build time.
-        mkXilo = { client }: pkgs.buildGoModule {
+        mkXilo = { client, pkgs }: pkgs.buildGoModule {
           pname = if client then "xilo-cli" else "xilo";
           version = "0-unstable-${self.shortRev or "dirty"}";
           src = self;
@@ -59,17 +59,28 @@
           };
         };
         # The xilo binary: client CLI and server (`xilo serve`) in one.
-        xilo = mkXilo { client = false; };
+        xilo = mkXilo { client = false; inherit pkgs; };
         # Client CLI only (push/watch/login/use/…), no `xilo serve`, no admin
         # dashboard. Builds anywhere Go builds.
-        xilo-cli = mkXilo { client = true; };
+        xilo-cli = mkXilo { client = true; inherit pkgs; };
+        # Full binary for riscv64, cross-compiled. templ and tailwindcss are
+        # nativeBuildInputs, so they run on this (x86_64/aarch64) builder and
+        # only Go targets riscv64 — which is how riscv64 gets the server
+        # despite nixpkgs having no riscv64 tailwindcss_4. Needs a non-riscv64
+        # builder (local, or a remote builder / substituter).
+        xilo-riscv64 = mkXilo { client = false; pkgs = pkgs.pkgsCross.riscv64; };
       in {
         packages = {
           inherit xilo-cli;
           # `default` is the full binary wherever it can be built, so the NixOS
           # and home-manager modules keep working unchanged.
           default = if hasWebToolchain then xilo else xilo-cli;
-        } // lib.optionalAttrs hasWebToolchain { inherit xilo; };
+        } // lib.optionalAttrs hasWebToolchain { inherit xilo; }
+          # Cross to riscv64-linux only from a Linux builder: a darwin -> linux
+          # cross set needs a whole foreign toolchain for no gain here.
+          // lib.optionalAttrs (hasWebToolchain && pkgs.stdenv.hostPlatform.isLinux) {
+            inherit xilo-riscv64;
+          };
 
         # Dev shell: everything `just` recipes need.
         devShells.default = pkgs.mkShell {

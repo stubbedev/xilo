@@ -97,6 +97,19 @@ option on platforms nixpkgs has no `tailwindcss_4` for (`riscv64-linux`, where
 nix profile install github:stubbedev/xilo#xilo-cli
 ```
 
+riscv64 machines that want the server too can take `xilo-riscv64`, the full
+binary cross-compiled from an x86_64 or aarch64 builder (templ and Tailwind run
+on the builder, only Go targets riscv64). Build it there and `nix copy` it over,
+or point a riscv64 host at it with a remote builder configured:
+
+```nix
+{ inputs, ... }: {
+  imports = [ inputs.xilo.nixosModules.default ];
+  services.xilo.package = inputs.xilo.packages.x86_64-linux.xilo-riscv64;
+  services.xilo.enable = true;
+}
+```
+
 NixOS — server as a systemd unit plus the CLI in `systemPackages`:
 
 ```nix
