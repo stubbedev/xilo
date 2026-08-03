@@ -227,3 +227,83 @@ bench-attic:
 
 clean:
     rm -rf bin/
+
+# ─────────────────────────── Release ───────────────────────────
+
+# Pre-release gate: on the default branch, everything CI checks passing, and
+# any generated-artifact / lock / vendorHash drift resynced and committed —
+# so a release can never ship something `just check` would have caught.
+_release-checks:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    DEFAULT_BRANCH=$(git rev-parse --abbrev-ref origin/HEAD 2>/dev/null | sed 's|^origin/||' || true)
+    DEFAULT_BRANCH=${DEFAULT_BRANCH:-master}
+    if [ "$BRANCH" != "$DEFAULT_BRANCH" ]; then
+        echo "Error: not on default branch '$DEFAULT_BRANCH' (currently on '$BRANCH')." >&2
+        exit 1
+    fi
+    # check only *verifies* the schema, so regenerate it first: drift becomes a
+    # commit instead of a failed release.
+    just sync-schema
+    just check
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "Changes detected (formatting / generated artifacts / schema). Committing..."
+        git add -A
+        git commit -m "chore: sync generated artifacts for release"
+    fi
+    echo "Updating flake.lock..."
+    nix flake update
+    if [ -n "$(git status --porcelain flake.lock)" ]; then
+        git add flake.lock
+        git commit -m "chore: update flake.lock for release"
+    fi
+    # Re-pins vendorHash against the new lock and re-runs the nix build.
+    just sync-vendor-hash
+    if [ -n "$(git status --porcelain flake.nix)" ]; then
+        git add flake.nix
+        git commit -m "chore: update vendorHash for release"
+    fi
+
+# Bump the tag and push. That push does the rest (see RELEASING.md): binaries,
+# the GitHub release with generated notes, Docker images, floating major tag —
+# so this deliberately does NOT run `gh release create`.
+_release LEVEL: _release-checks
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Not `git describe`: the floating major tag (v1) sits on the same commit as
+    # the newest release, which makes describe fall back to its long form.
+    cur=$(git tag --sort=-v:refname --list 'v[0-9]*.[0-9]*.[0-9]*' | head -1)
+    cur=${cur:-v0.0.0}
+    IFS=. read -r major minor patch <<<"${cur#v}"
+    case "{{ LEVEL }}" in
+        major) new="v$((major + 1)).0.0" ;;
+        minor) new="v${major}.$((minor + 1)).0" ;;
+        patch) new="v${major}.${minor}.$((patch + 1))" ;;
+        *) echo "unknown release level: {{ LEVEL }}" >&2; exit 1 ;;
+    esac
+    echo "Bumping from $cur to $new"
+    git tag -a "$new" -m "Release $new"
+    git push origin HEAD
+    git push origin "$new"
+    echo "Pushed $new — watch it with: gh run list --workflow Release"
+
+# Release a new major version (X.y.z -> X+1.0.0).
+release-major: (_release "major")
+
+# Release a new minor version (x.Y.z -> x.Y+1.0).
+release-minor: (_release "minor")
+
+# Release a new patch version (x.y.Z -> x.y.Z+1).
+release-patch: (_release "patch")
+
+# Preview what versions would be created (dry-run).
+release-preview:
+    #!/usr/bin/env bash
+    cur=$(git tag --sort=-v:refname --list 'v[0-9]*.[0-9]*.[0-9]*' | head -1)
+    cur=${cur:-v0.0.0}
+    IFS=. read -r major minor patch <<<"${cur#v}"
+    echo "Current: $cur"
+    echo "  major: v$((major + 1)).0.0"
+    echo "  minor: v${major}.$((minor + 1)).0"
+    echo "  patch: v${major}.${minor}.$((patch + 1))"

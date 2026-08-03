@@ -1,12 +1,23 @@
 # Releasing
 
 ```sh
+just release-patch   # or release-minor / release-major
+```
+
+It refuses to run off the default branch, runs `just check`, resyncs the schema,
+`flake.lock` and `vendorHash` (committing any drift), then tags and pushes.
+`just release-preview` shows the next version numbers without doing anything.
+
+By hand it is just the tag:
+
+```sh
 git tag v1.2.3 && git push origin v1.2.3
 ```
 
 That one push does everything automatable:
 
-- **Release workflow** builds linux/darwin × amd64/arm64 tarballs (version-less
+- **Release workflow** builds linux (amd64/arm64/riscv64) and darwin
+  (amd64/arm64) tarballs (version-less
   asset names, so `releases/latest/download/xilo-<os>-<arch>.tar.gz` stays a
   stable install URL) and publishes the GitHub release with generated notes.
 - **Docker workflow** publishes `ghcr.io/stubbedev/xilo` tagged `latest`,
