@@ -16,7 +16,7 @@
           pname = "xilo";
           version = "0-unstable-${self.shortRev or "dirty"}";
           src = self;
-          vendorHash = "sha256-xYjceuuFnS3ls/LqpQI1LAbzJ8/M4xjLSmVXT8IuZpc=";
+          vendorHash = "sha256-9AOwC/rB5Wg699feZSOfinXQx2F+dc/UCpH7uXaF//w=";
           subPackages = [ "cmd/xilo" ];
           nativeBuildInputs = [ pkgs.templ pkgs.tailwindcss_4 ];
           # Build the admin CSS (embedded via go:embed) then generate views.
