@@ -76,7 +76,9 @@ func (c *apiClient) do(method, path string, in, out any) error {
 //   - --server flag set → remote API
 //   - the local metadata DB exists → open it directly (operator on the box)
 //   - a server URL is known (XILO_URL or `xilo login`) → remote API
-//   - otherwise → local DB, created fresh (bootstrap on a new box)
+//   - otherwise → local DB, created fresh, but only on a box that has a config
+//     file (bootstrap on a new server); elsewhere openDB refuses rather than
+//     littering the working directory with a data dir
 //
 // Exactly one of (apic) or (db) is returned non-nil.
 func adminTarget(serverFlag, tokenFlag string) (apic *apiClient, cfg *config.Config, db *store.DB, err error) {

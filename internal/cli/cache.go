@@ -49,6 +49,21 @@ func cacheCmd() *cobra.Command {
 	return addAdminFlags(c)
 }
 
+// localServer reports whether this box runs (or is being set up to run) a xilo
+// server, i.e. whether an admin command may create the data dir. Without this
+// a client machine with no saved login got a stray ./data/xilo.db from a
+// read-only command like `xilo cache list`.
+func localServer(cfg *config.Config) bool {
+	if cfg.Database.URL != "" || os.Getenv("XILO_DATA_DIR") != "" {
+		return true // Postgres or an env-configured deployment
+	}
+	if _, err := os.Stat(cfg.DBPath()); err == nil {
+		return true // the DB is already here
+	}
+	_, err := os.Stat(configPath) // a config file means "server lives here"
+	return err == nil
+}
+
 // openDB opens the metadata DB directly for one-shot admin commands.
 // ponytail: rare manual op; busy_timeout covers the brief overlap with a
 // running server. Concurrent *pushes* all go through the single server process.
@@ -56,6 +71,11 @@ func openDB() (*config.Config, *store.DB, error) {
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return nil, nil, err
+	}
+	if !localServer(cfg) {
+		return nil, nil, fmt.Errorf("no xilo server on this machine (no %s, no %s) — "+
+			"manage a remote one with --server <url> or `xilo login <url>`, "+
+			"or run this where the server's config lives", configPath, cfg.DBPath())
 	}
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 		return nil, nil, err

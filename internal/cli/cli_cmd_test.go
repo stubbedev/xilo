@@ -479,6 +479,40 @@ func TestBootstrapAdmin(t *testing.T) {
 	}
 }
 
+// Regression (issue #14): on a client machine — no config file, no saved login
+// — admin commands must fail with an explanatory error instead of creating a
+// data dir with a sqlite DB in the working directory.
+func TestAdminCommandsDoNotCreateDataDirOnClient(t *testing.T) {
+	isolateEnv(t)
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+
+	for _, args := range [][]string{
+		{"cache", "list"},
+		{"cache", "create", "foo"},
+		{"token", "list"},
+		{"gc"},
+		{"fsck"},
+	} {
+		_, err := runRoot(t, args...)
+		if err == nil || !strings.Contains(err.Error(), "no xilo server on this machine") {
+			t.Errorf("%v: err = %v, want no-local-server error", args, err)
+		}
+	}
+
+	ents, err := os.ReadDir(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ents) != 0 {
+		names := make([]string, 0, len(ents))
+		for _, e := range ents {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("client commands created %v in the working directory", names)
+	}
+}
+
 func TestDefaultConfig(t *testing.T) {
 	isolateEnv(t)
 
