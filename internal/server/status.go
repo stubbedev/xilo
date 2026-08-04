@@ -240,11 +240,17 @@ func (s *Server) statusData(q statusRangeQ) views.StatusData {
 		AuthFails: m.authFailures.Load(),
 		NarServed: m.narServed.Load(),
 		Requests:  m.reqTotal.Load() + m.pushReq.Load(),
-		Bytes:     humanBytes,
-		Updated:   time.Now().Format("15:04:05"),
-		Window:    q.WinMin,
-		From:      set.fromStr,
-		To:        set.toStr,
+
+		PathsPushed:  m.pathsPushed.Load(),
+		PathsAdopted: m.pathsAdopted.Load(),
+		ChunksRecv:   m.chunksRecv.Load(),
+		ChunksDedup:  m.chunksDedup.Load(),
+
+		Bytes:   humanBytes,
+		Updated: time.Now().Format("15:04:05"),
+		Window:  q.WinMin,
+		From:    set.fromStr,
+		To:      set.toStr,
 	}
 	d.Charts = []views.ChartData{
 		statusChartData("req", views.T("status.req"), set.req, set.times, fmtReq),
@@ -278,18 +284,23 @@ type statusChartJSON struct {
 // statusJSON is the poll payload: formatted KPI strings plus raw chart
 // points. The client only places these values; every number is computed here.
 type statusJSON struct {
-	Healthy   bool                       `json:"healthy"`
-	Uptime    string                     `json:"uptime"`
-	HitPct    string                     `json:"hitPct"`
-	Stored    string                     `json:"stored"`
-	Paths     string                     `json:"paths"`
-	Nars      string                     `json:"nars"`
-	Requests  string                     `json:"requests"`
-	AuthFails string                     `json:"authFails"`
-	Updated   string                     `json:"updated"`
-	MinT      int64                      `json:"minT"` // unix ms, chart x range
-	MaxT      int64                      `json:"maxT"`
-	Charts    map[string]statusChartJSON `json:"charts"`
+	Healthy   bool   `json:"healthy"`
+	Uptime    string `json:"uptime"`
+	HitPct    string `json:"hitPct"`
+	Stored    string `json:"stored"`
+	Paths     string `json:"paths"`
+	Nars      string `json:"nars"`
+	Requests  string `json:"requests"`
+	AuthFails string `json:"authFails"`
+	// Push side, mirroring the tiles the poller refreshes.
+	PathsPushed  string                     `json:"pathsPushed"`
+	PathsAdopted string                     `json:"pathsAdopted"`
+	ChunksRecv   string                     `json:"chunksRecv"`
+	ChunksDedup  string                     `json:"chunksDedup"`
+	Updated      string                     `json:"updated"`
+	MinT         int64                      `json:"minT"` // unix ms, chart x range
+	MaxT         int64                      `json:"maxT"`
+	Charts       map[string]statusChartJSON `json:"charts"`
 }
 
 func (s *Server) buildStatusJSON(q statusRangeQ) statusJSON {
@@ -324,9 +335,15 @@ func (s *Server) buildStatusJSON(q statusRangeQ) statusJSON {
 		Nars:      views.Count(m.narServed.Load()),
 		Requests:  views.Count(m.reqTotal.Load() + m.pushReq.Load()),
 		AuthFails: views.Count(m.authFailures.Load()),
-		Updated:   time.Now().Format("15:04:05"),
-		MinT:      set.minT * 1000,
-		MaxT:      set.maxT * 1000,
+
+		PathsPushed:  views.Count(m.pathsPushed.Load()),
+		PathsAdopted: views.Count(m.pathsAdopted.Load()),
+		ChunksRecv:   views.Count(m.chunksRecv.Load()),
+		ChunksDedup:  views.Count(m.chunksDedup.Load()),
+
+		Updated: time.Now().Format("15:04:05"),
+		MinT:    set.minT * 1000,
+		MaxT:    set.maxT * 1000,
 		Charts: map[string]statusChartJSON{
 			"req":    chart("req", set.req, fmtReq),
 			"lat":    chart("lat", set.lat, fmtLat),

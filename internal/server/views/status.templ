@@ -31,6 +31,11 @@ type StatusData struct {
 	AuthFails int64
 	NarServed int64 // NAR downloads since start
 	Requests  int64 // HTTP requests since start
+	// Push side: what pushers sent, and what the server managed not to store.
+	PathsPushed  int64
+	PathsAdopted int64 // registered by copying an identical path (no upload)
+	ChunksRecv   int64
+	ChunksDedup  int64 // uploads that were already present
 	Bytes     func(int64) string
 	Charts    []ChartData
 }
@@ -92,6 +97,10 @@ templ StatusPage(d StatusData) {
 			@StatTile("download", Count(d.NarServed), T("status.nars"), "st-nars", "")
 			@StatTile("network", Count(d.Requests), T("status.reqs"), "st-req", "")
 			@StatTile("shield", Count(d.AuthFails), T("status.authfail"), "st-auth", "")
+			@StatTile("upload", Count(d.PathsPushed), T("status.pushed"), "st-pushed", "")
+			@StatTile("copy", Count(d.PathsAdopted), T("status.adopted"), "st-adopted", "")
+			@StatTile("boxes", Count(d.ChunksRecv), T("status.chunks"), "st-chunks", "")
+			@StatTile("layers", Count(d.ChunksDedup), T("status.deduped"), "st-dedup", "")
 		</div>
 		<div class="grid gap-6 lg:grid-cols-2">
 			for _, c := range d.Charts {
@@ -257,6 +266,10 @@ templ statusPollScript() {
 				setText('st-nars', d.nars);
 				setText('st-req', d.requests);
 				setText('st-auth', d.authFails);
+				setText('st-pushed', d.pathsPushed);
+				setText('st-adopted', d.pathsAdopted);
+				setText('st-chunks', d.chunksRecv);
+				setText('st-dedup', d.chunksDedup);
 				setText('status-updated', cfg.updated + ' ' + d.updated);
 				var longSpan = d.maxT - d.minT > 48 * 3600 * 1000;
 				Object.keys(d.charts || {}).forEach(function (k) {

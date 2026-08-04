@@ -185,11 +185,15 @@ func TestSmokeStatusPage(t *testing.T) {
 		Rate: 5, Window: 60,
 		Global:    store.Global{Caches: 1, Paths: 2, Chunks: 3, StoredBytes: 100, LogicalBytes: 200},
 		AuthFails: 1, NarServed: 2, Requests: 3,
+		PathsPushed: 7, PathsAdopted: 8, ChunksRecv: 9, ChunksDedup: 10,
 		Bytes:  bytesFn,
 		Charts: []views.ChartData{{ID: "req", Label: "Requests / second", Cur: "1.0", Peak: "2.0"}},
 	}
 	out := render(t, "StatusPage", views.StatusPage(d))
-	for _, want := range []string{"1h2m", "50%", "Requests / second"} {
+	for _, want := range []string{"1h2m", "50%", "Requests / second",
+		// The push-side row: label and value for each tile.
+		"Paths pushed", "Paths adopted", "Chunks received", "Chunks deduped",
+		"st-adopted", ">8<", ">10<"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("StatusPage missing %q", want)
 		}

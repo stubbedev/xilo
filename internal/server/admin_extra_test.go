@@ -577,12 +577,21 @@ func TestStatusPagesAndData(t *testing.T) {
 	resp.Body.Close()
 	resp, _ = c.Get(ts.URL + "/admin/status/data?window=10")
 	var sj struct {
-		Healthy bool                       `json:"healthy"`
-		Charts  map[string]json.RawMessage `json:"charts"`
+		Healthy      bool                       `json:"healthy"`
+		Charts       map[string]json.RawMessage `json:"charts"`
+		PathsPushed  string                     `json:"pathsPushed"`
+		PathsAdopted string                     `json:"pathsAdopted"`
+		ChunksRecv   string                     `json:"chunksRecv"`
+		ChunksDedup  string                     `json:"chunksDedup"`
 	}
 	json.NewDecoder(resp.Body).Decode(&sj)
 	resp.Body.Close()
 	if !sj.Healthy || len(sj.Charts) != 4 {
 		t.Fatalf("status json: healthy=%v charts=%d", sj.Healthy, len(sj.Charts))
+	}
+	// The poller refreshes the push-side tiles from these fields, so they must
+	// always be present (a missing one would blank its tile on first refresh).
+	if sj.PathsPushed == "" || sj.PathsAdopted == "" || sj.ChunksRecv == "" || sj.ChunksDedup == "" {
+		t.Fatalf("status json missing push counters: %+v", sj)
 	}
 }

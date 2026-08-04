@@ -23,9 +23,7 @@ func putTestPath(t *testing.T, db *DB, cacheID int64, storeHash, narHash string,
 	}
 }
 
-// CreateCache returns a Cache whose Storage field is empty; the column default
-// is "default", which is what every server read sees. Use that name here.
-const testStorage = "default"
+const testStorage = DefaultStorage
 
 func TestAdoptCandidates(t *testing.T) {
 	db := openTest(t)
@@ -194,4 +192,37 @@ func TestCountAndEachChunkHash(t *testing.T) {
 			t.Fatalf("err = %v, want boom", err)
 		}
 	})
+}
+
+// The struct CreateCache returns must describe the row it wrote: a caller that
+// used it for storage lookups with Storage empty would silently read the
+// default backend, even for a cache that lives somewhere else.
+func TestCreateCacheReturnsItsStorage(t *testing.T) {
+	db := openTest(t)
+	created, err := db.CreateCache("acme", "web", true, 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.Storage != DefaultStorage {
+		t.Fatalf("returned Storage = %q, want %q", created.Storage, DefaultStorage)
+	}
+	read, err := db.GetCache("acme", "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.Storage != created.Storage {
+		t.Fatalf("row says %q, CreateCache returned %q", read.Storage, created.Storage)
+	}
+	// Moving the cache must be visible on the next read (and not to the stale
+	// struct, which is why the field has to be honest in the first place).
+	if err := db.SetCacheStorage(created.ID, "elsewhere"); err != nil {
+		t.Fatal(err)
+	}
+	read, err = db.GetCache("acme", "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if read.Storage != "elsewhere" {
+		t.Fatalf("after move, storage = %q", read.Storage)
+	}
 }

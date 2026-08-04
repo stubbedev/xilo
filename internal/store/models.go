@@ -12,6 +12,11 @@ import (
 
 var ErrNotFound = errors.New("not found")
 
+// DefaultStorage is the blob backend a cache lands on unless moved, and the
+// `caches.storage` column default. Named so the Go side and the schema can't
+// drift apart.
+const DefaultStorage = "default"
+
 type Cache struct {
 	ID        int64
 	AccountID int64
@@ -66,11 +71,16 @@ func (db *DB) CreateCache(account, name string, public bool, priority int) (*Cac
 		AccountID: acc.ID,
 		Account:   acc.Slug,
 		Name:      name,
-		Public:    public,
-		Priority:  priority,
-		PubKey:    narinfo.PublicKeyString(name, pub),
-		PrivKey:   priv,
-		Created:   time.Now().Unix(),
+		// Named explicitly, and inserted explicitly below, so the returned
+		// struct can't disagree with the row: a caller that used this Cache for
+		// storage lookups with Storage empty would silently resolve to the
+		// default backend even after the cache was moved elsewhere.
+		Storage:  DefaultStorage,
+		Public:   public,
+		Priority: priority,
+		PubKey:   narinfo.PublicKeyString(name, pub),
+		PrivKey:  priv,
+		Created:  time.Now().Unix(),
 	}
 	sealed, err := db.seal(c.PrivKey)
 	if err != nil {
@@ -80,8 +90,8 @@ func (db *DB) CreateCache(account, name string, public bool, priority int) (*Cac
 		// RETURNING instead of LastInsertId — works on both SQLite and
 		// Postgres (pgx does not implement LastInsertId).
 		return tx.QueryRow(
-			`INSERT INTO caches (account_id, name, public, priority, pubkey, privkey, created) VALUES (?,?,?,?,?,?,?) RETURNING id`,
-			c.AccountID, c.Name, b2i(c.Public), c.Priority, c.PubKey, sealed, c.Created).Scan(&c.ID)
+			`INSERT INTO caches (account_id, name, storage, public, priority, pubkey, privkey, created) VALUES (?,?,?,?,?,?,?,?) RETURNING id`,
+			c.AccountID, c.Name, c.Storage, b2i(c.Public), c.Priority, c.PubKey, sealed, c.Created).Scan(&c.ID)
 	})
 	if err != nil {
 		return nil, err
