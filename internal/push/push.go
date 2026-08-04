@@ -7,6 +7,7 @@ package push
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +28,7 @@ import (
 	"github.com/stubbedev/xilo/internal/api"
 	"github.com/stubbedev/xilo/internal/bloom"
 	"github.com/stubbedev/xilo/internal/chunk"
+	"github.com/stubbedev/xilo/internal/nar"
 	"github.com/stubbedev/xilo/internal/narinfo"
 )
 
@@ -49,6 +51,10 @@ type Client struct {
 	narThreshold int
 	acceptZstd   bool // server decodes Content-Encoding: zstd chunk bodies
 	hasFilter    bool // server serves api/chunk-filter
+	// externalDump forces `nix-store --dump` instead of serializing the NAR
+	// in-process (XILO_EXTERNAL_DUMP=1). An escape hatch for a store holding
+	// something our serializer refuses, and what the fake-nix tests use.
+	externalDump bool
 	upstreamKeys []string
 	sem          chan struct{} // ONE shared upload gate, sized to jobs
 	win          chan struct{} // bounds in-flight negotiation windows (and so buffered bytes)
@@ -85,6 +91,7 @@ func NewClient(base, cache, token string, jobsOverride int) *Client {
 		cache:        cache,
 		token:        token,
 		jobsOverride: jobsOverride,
+		externalDump: os.Getenv("XILO_EXTERNAL_DUMP") == "1",
 	}
 }
 
@@ -236,12 +243,30 @@ const (
 // exercise the filter path without generating 16 MiB of NAR.
 var filterMinBytes uint64 = 16 << 20
 
-// pushOne uploads one path. Three shortcuts, cheapest first: a cached manifest
-// (no dump at all), the presence filter (dump, but no negotiation round trips),
-// then plain windowed negotiation. Each shortcut is optimistic and each is
-// caught by the same backstop — put-path re-stamps the referenced chunks, then
-// re-checks them, so a path can never register against chunks that aren't
-// there. On its 409 we redo the path with every shortcut off.
+// dumpOpts turns the optimistic shortcuts off one at a time, each in response to
+// a specific failure (see pushOne).
+type dumpOpts struct {
+	// external serializes the NAR by shelling out to `nix-store --dump` instead
+	// of walking the tree in-process.
+	external bool
+	// pessimistic ignores the chunk presence filter, confirming every chunk
+	// with the server before put-path.
+	pessimistic bool
+}
+
+// pushOne uploads one path. Shortcuts, cheapest first: a cached manifest (no
+// dump at all), an in-process NAR dump (no nix-store subprocess), and the
+// presence filter (no negotiation round trips). Each is optimistic, and each has
+// a check that fails safe:
+//
+//   - our own serialization is compared against the NAR hash nix recorded for
+//     the path, so bytes we produced can never be pushed under a hash they
+//     don't have; a mismatch re-dumps with nix itself;
+//   - put-path re-stamps and re-checks every referenced chunk, so a path can
+//     never register against chunks that aren't there; its 409 redoes the path
+//     with the filter off.
+//
+// At most three attempts, and each transition is driven by a distinct cause.
 func (c *Client) pushOne(ctx context.Context, in pathInfo, params chunk.Params) error {
 	storeHash := narinfo.StoreHash(in.Path)
 	if order := loadManifest(params, storeHash, in.NarHash); order != nil {
@@ -253,24 +278,34 @@ func (c *Client) pushOne(ctx context.Context, in pathInfo, params chunk.Params) 
 			return err // a real failure (auth, server down): don't mask it
 		}
 	}
-	err := c.dumpPush(ctx, in, params, false)
-	if isConflict(err) {
-		return c.dumpPush(ctx, in, params, true)
+	o := dumpOpts{external: c.externalDump}
+	for attempt := 0; ; attempt++ {
+		err := c.dumpPush(ctx, in, params, o)
+		switch {
+		case err == nil:
+			return nil
+		case errors.Is(err, errNarMismatch) && !o.external:
+			o.external = true // our archive disagreed with nix; let nix write it
+		case isConflict(err) && !o.pessimistic:
+			o.pessimistic = true // a chunk we assumed present is gone
+		default:
+			return err
+		}
+		if attempt >= 2 {
+			return err
+		}
 	}
-	return err
 }
 
-// dumpPush dumps the NAR once and uploads what the server needs. pessimistic
-// disables the presence filter, so every chunk's fate is confirmed with the
-// server before put-path — the retry path after a 409.
-func (c *Client) dumpPush(ctx context.Context, in pathInfo, params chunk.Params, pessimistic bool) error {
+// dumpPush dumps the NAR once and uploads what the server needs.
+func (c *Client) dumpPush(ctx context.Context, in pathInfo, params chunk.Params, o dumpOpts) error {
 	filter := c.filter
-	if pessimistic {
+	if o.pessimistic {
 		filter = nil
 	}
 	// Small NARs are stored as a single chunk — skip CDC overhead entirely.
 	if in.NarSize < uint64(c.narThreshold) {
-		return c.pushWhole(ctx, in, params, filter)
+		return c.pushWhole(ctx, in, params, filter, o)
 	}
 
 	p := &pathPush{c: c}
@@ -280,9 +315,12 @@ func (c *Client) dumpPush(ctx context.Context, in pathInfo, params chunk.Params,
 	seen := map[string]bool{} // hashes already handled once for this NAR
 
 	// ONE dump: hash every chunk as it streams by and copy bytes only for
-	// chunks that may actually need uploading.
-	dumpErr := runDump(ctx, in.Path, func(r io.Reader) error {
-		return chunk.SplitRaw(r, params, func(hash string, data []byte) error {
+	// chunks that may actually need uploading. The whole stream also goes
+	// through sha256 so our serialization can be checked against the NAR hash
+	// nix recorded for this path (free next to the per-chunk hashing).
+	narSum := sha256.New()
+	dumpErr := runDump(ctx, in.Path, o.external, func(r io.Reader) error {
+		return chunk.SplitRaw(io.TeeReader(r, narSum), params, func(hash string, data []byte) error {
 			if p.failed() {
 				return errAbort // stop dumping once an upload has failed
 			}
@@ -317,6 +355,9 @@ func (c *Client) dumpPush(ctx context.Context, in pathInfo, params chunk.Params,
 	}
 	if dumpErr != nil && dumpErr != errAbort {
 		return dumpErr
+	}
+	if err := checkNarHash(o, in, narSum.Sum(nil)); err != nil {
+		return err
 	}
 
 	if err := c.putPath(ctx, in.pathReq(order)); err != nil {
@@ -411,9 +452,13 @@ func (p *pathPush) flush(ctx context.Context, window []chunk.Chunk) {
 var errAbort = errors.New("aborted")
 
 // pushWhole uploads a small NAR as one chunk.
-func (c *Client) pushWhole(ctx context.Context, in pathInfo, params chunk.Params, filter *bloom.Filter) error {
-	data, err := dumpAll(ctx, in.Path)
+func (c *Client) pushWhole(ctx context.Context, in pathInfo, params chunk.Params, filter *bloom.Filter, o dumpOpts) error {
+	data, err := dumpAll(ctx, in.Path, o.external)
 	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(data)
+	if err := checkNarHash(o, in, sum[:]); err != nil {
 		return err
 	}
 	ch := chunk.Chunk{Hash: chunk.Hash(data), Data: data}
@@ -517,7 +562,60 @@ func parsePathInfo(out []byte) ([]pathInfo, error) {
 	return arr, nil
 }
 
-func runDump(ctx context.Context, path string, consume func(io.Reader) error) error {
+// errNarMismatch means our own NAR serialization did not reproduce the hash nix
+// recorded for the path. Never fatal on its own: the caller re-dumps with
+// `nix-store --dump`, whose output is authoritative by definition.
+var errNarMismatch = errors.New("locally serialized NAR does not match the recorded NarHash")
+
+// checkNarHash compares a dump we produced against nix's recorded NarHash (and
+// size). Skipped for external dumps: those ARE nix's output, so a disagreement
+// there means the store itself is inconsistent and put-path should say so.
+func checkNarHash(o dumpOpts, in pathInfo, sum []byte) error {
+	if o.external {
+		return nil
+	}
+	want, err := narinfo.NarHash(in.NarHash)
+	if err != nil {
+		return nil // unparseable record: let the server be the judge
+	}
+	if got := "sha256:" + narinfo.Base32Encode(sum); got != want {
+		return fmt.Errorf("%w: %s (got %s, nix says %s)", errNarMismatch, in.Path, got, want)
+	}
+	return nil
+}
+
+// runDump streams the path's NAR to consume. In-process by default — a closure
+// is thousands of paths, and that many `nix-store --dump` subprocesses is pure
+// overhead — falling back to nix's own serializer when asked.
+func runDump(ctx context.Context, path string, external bool, consume func(io.Reader) error) error {
+	if !external {
+		return dumpLocal(ctx, path, consume)
+	}
+	return dumpExternal(ctx, path, consume)
+}
+
+// dumpLocal serializes in-process, streaming through a pipe so the consumer sees
+// bytes as they are produced and neither side buffers the archive.
+func dumpLocal(ctx context.Context, path string, consume func(io.Reader) error) error {
+	pr, pw := io.Pipe()
+	go func() {
+		err := nar.Dump(pw, path)
+		if ctxErr := ctx.Err(); err == nil && ctxErr != nil {
+			err = ctxErr
+		}
+		pw.CloseWithError(err)
+	}()
+	consumeErr := consume(pr)
+	// Unblock the writer if the consumer stopped early (an upload failed), then
+	// drain so its goroutine always finishes.
+	pr.CloseWithError(consumeErr)
+	if consumeErr != nil {
+		return consumeErr
+	}
+	return nil
+}
+
+func dumpExternal(ctx context.Context, path string, consume func(io.Reader) error) error {
 	cmd := exec.CommandContext(ctx, "nix-store", "--dump", path)
 	// If the process (or a child holding the pipe) lingers after Kill/ctx
 	// cancel, give up on its I/O rather than blocking Wait forever.
@@ -549,7 +647,14 @@ func runDump(ctx context.Context, path string, consume func(io.Reader) error) er
 }
 
 // dumpAll returns the whole NAR (for small paths below the chunk threshold).
-func dumpAll(ctx context.Context, path string) ([]byte, error) {
+func dumpAll(ctx context.Context, path string, external bool) ([]byte, error) {
+	if !external {
+		var buf bytes.Buffer
+		if err := nar.Dump(&buf, path); err != nil {
+			return nil, err
+		}
+		return buf.Bytes(), nil
+	}
 	out, err := exec.CommandContext(ctx, "nix-store", "--dump", path).Output()
 	if err != nil {
 		return nil, fmt.Errorf("nix-store --dump: %w", cmdErr(err))

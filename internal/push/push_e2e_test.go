@@ -55,6 +55,11 @@ exec cat "$XILO_TEST_NARDIR/$(basename "$2")"`)
 	// Isolate the client state cache (manifests, filters) per test: the real one
 	// lives in the user cache dir and would leak between tests and runs.
 	t.Setenv("XILO_CACHE_DIR", filepath.Join(dir, "state"))
+	// These tests hand the client store paths that exist only as canned bytes
+	// behind the fake nix-store, so they exercise the external dumper. The
+	// in-process serializer is covered against real trees (internal/nar, and
+	// TestPushRealTree* below).
+	t.Setenv("XILO_EXTERNAL_DUMP", "1")
 	t.Setenv("XILO_TEST_PATHINFO", filepath.Join(dir, "pathinfo.json"))
 	t.Setenv("XILO_TEST_NARDIR", narDir)
 	t.Setenv("XILO_TEST_DUMPLOG", filepath.Join(dir, "dumplog"))
@@ -965,7 +970,7 @@ func TestRunDumpKillsWriterOnConsumeError(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- runDump(context.Background(), "/nix/store/whatever", func(r io.Reader) error {
+		done <- runDump(context.Background(), "/nix/store/whatever", true, func(r io.Reader) error {
 			buf := make([]byte, 1024)
 			r.Read(buf) // take one bite, then abandon the stream
 			return errAbort
