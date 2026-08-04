@@ -39,6 +39,7 @@ type Server struct {
 	uploadSem chan struct{} // bounds concurrent server-side chunk encode+store
 	logins    *loginLimiter // throttles bcrypt attempts per IP
 	niCache   *narinfoCache // rendered+signed narinfo bodies
+	vfCache   *verifyCache  // chunk lists already proven to reassemble
 	gzipPool  sync.Pool     // *gzip.Writer for NAR wire compression
 	touched   sync.Map      // "<cacheID>/<storeHash>" → unix secs of last LRU bump
 	// chunkFilters memoizes the per-storage chunk presence filter served to
@@ -80,6 +81,7 @@ func New(cfg *config.Config, db *store.DB, sts map[string]storage.Storage) (*Ser
 		uploadSem: make(chan struct{}, max(4, 2*runtime.NumCPU())),
 		logins:    newLoginLimiter(),
 		niCache:   newNarinfoCache(16384), // ~64B/key + body ~600B ⇒ ~10MB cap
+		vfCache:   newVerifyCache(8192),   // 32B keys ⇒ well under 1MB
 	}
 	s.restoreCounters()
 	return s, nil

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/stubbedev/xilo/internal/api"
@@ -377,9 +379,25 @@ func (s *Server) handlePutPath(w http.ResponseWriter, r *http.Request) {
 	// tenant's chunk hashes and reading their private bytes. Never skip it in
 	// multi-tenant mode, regardless of the operator's SkipUploadVerify setting.
 	if s.cfg.MultiTenant || !s.cfg.Security.SkipUploadVerify {
-		if err := s.verifyReassembly(r, c.Storage, req.Chunks, narHash, req.NarSize); err != nil {
-			http.Error(w, "upload verification failed: "+err.Error(), http.StatusBadRequest)
-			return
+		// A chunk list already proven to hash to this NarHash on this backend
+		// cannot stop hashing to it, so the re-read is skippable — but the
+		// blobs behind it can still go missing, and the reassembly stream is
+		// what would have noticed. Confirm they exist (metadata only, no bytes)
+		// and fall through to the full check if anything is gone.
+		vk := verifyKey(c.Storage, narHash, req.Chunks)
+		verified := false
+		if s.vfCache.has(vk) {
+			if err := s.blobsPresent(r.Context(), c.Storage, req.Chunks); err == nil {
+				verified = true
+				s.metrics.verifySkipped.Add(1)
+			}
+		}
+		if !verified {
+			if err := s.verifyReassembly(r, c.Storage, req.Chunks, narHash, req.NarSize); err != nil {
+				http.Error(w, "upload verification failed: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			s.vfCache.add(vk)
 		}
 	}
 
@@ -397,6 +415,60 @@ func (s *Server) handlePutPath(w http.ResponseWriter, r *http.Request) {
 	}
 	s.metrics.pathsPushed.Add(1)
 	w.WriteHeader(http.StatusOK)
+}
+
+// blobsPresent checks that every referenced chunk still has bytes behind it,
+// without reading them: on S3 that is a HEAD per chunk instead of downloading
+// the whole NAR again. Used on a verify-cache hit, where the arithmetic is known
+// good and only "did a blob disappear" is left to establish.
+func (s *Server) blobsPresent(ctx context.Context, storageName string, chunkHashes []string) error {
+	refs, err := s.db.ChunkKeys(storageName, chunkHashes)
+	if err != nil {
+		return err
+	}
+	// A NAR can reference the same chunk many times; check each key once.
+	keys := make([]string, 0, len(refs))
+	seen := make(map[string]bool, len(refs))
+	for _, ref := range refs {
+		if !seen[ref.Key] {
+			seen[ref.Key] = true
+			keys = append(keys, ref.Key)
+		}
+	}
+	st := s.stOf(storageName)
+	sem := make(chan struct{}, s.readAhead())
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var firstErr error
+	for _, key := range keys {
+		mu.Lock()
+		stop := firstErr != nil
+		mu.Unlock()
+		if stop {
+			break
+		}
+		sem <- struct{}{}
+		wg.Add(1)
+		go func(key string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			ok, err := st.Has(ctx, key)
+			if err == nil && ok {
+				return
+			}
+			mu.Lock()
+			if firstErr == nil {
+				if err != nil {
+					firstErr = err
+				} else {
+					firstErr = fmt.Errorf("chunk blob missing: %s", key)
+				}
+			}
+			mu.Unlock()
+		}(key)
+	}
+	wg.Wait()
+	return firstErr
 }
 
 // verifyReassembly streams the referenced chunks through sha256 (fetched with

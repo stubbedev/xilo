@@ -45,15 +45,16 @@ func (s *Server) persistCounters() {
 // metrics holds process counters exposed at /metrics in Prometheus text format.
 // Hand-rolled to keep the zero-runtime-dependency guarantee.
 type metrics struct {
-	narinfoHit   atomic.Int64
-	narinfoMiss  atomic.Int64
-	narServed    atomic.Int64
-	narBytes     atomic.Int64
-	chunksRecv   atomic.Int64
-	chunksDedup  atomic.Int64 // uploads that were already present
-	pathsPushed  atomic.Int64
-	pathsAdopted atomic.Int64 // registered by copying an identical path in another cache
-	authFailures atomic.Int64
+	narinfoHit    atomic.Int64
+	narinfoMiss   atomic.Int64
+	narServed     atomic.Int64
+	narBytes      atomic.Int64
+	chunksRecv    atomic.Int64
+	chunksDedup   atomic.Int64 // uploads that were already present
+	pathsPushed   atomic.Int64
+	pathsAdopted  atomic.Int64 // registered by copying an identical path in another cache
+	verifySkipped atomic.Int64 // put-path reassembly re-reads avoided by the verify cache
+	authFailures  atomic.Int64
 	// Pull protocol (narinfo/nar/cache-info) and push API (/c/…/api/…) are
 	// counted separately: chunk uploads legitimately take seconds and would
 	// otherwise drown the sub-ms serving latency the dashboard charts.
@@ -80,6 +81,7 @@ func (m *metrics) defs() []counterDef {
 		{"xilo_chunks_deduped_total", "chunk uploads already present (deduped)", &m.chunksDedup},
 		{"xilo_paths_pushed_total", "store paths registered", &m.pathsPushed},
 		{"xilo_paths_adopted_total", "store paths registered by copying an identical path from another cache on the same storage", &m.pathsAdopted},
+		{"xilo_verify_skipped_total", "put-path reassembly verifications served from the verified-chunk-list cache", &m.verifySkipped},
 		{"xilo_auth_failures_total", "rejected auth attempts", &m.authFailures},
 		{"xilo_http_requests_total", "pull-protocol HTTP requests handled (push API, admin, static and probes excluded)", &m.reqTotal},
 		{"xilo_http_request_duration_ns_total", "summed pull-protocol request wall time in nanoseconds", &m.reqDurNs},
