@@ -10,7 +10,13 @@
 #        XILO_TOKEN=<a push token>
 #        XILO_CACHE=mycache
 #
+# Nix runs this hook synchronously: without --detach the build waits for the
+# upload, which is painful for a big closure (a dev shell, say). --detach hands
+# the push to a background process and returns at once; progress and errors land
+# in ~/.cache/xilo/push.log (the Nix daemon's cache dir when the daemon runs it).
+# Drop --detach if you'd rather have the build fail when a push fails.
+#
 # Nix sets $OUT_PATHS to the space-separated built paths.
 set -eu
 [ -n "${OUT_PATHS:-}" ] || exit 0
-printf '%s\n' $OUT_PATHS | xilo push "${XILO_CACHE:?set XILO_CACHE}" - --quiet
+printf '%s\n' $OUT_PATHS | xilo push "${XILO_CACHE:?set XILO_CACHE}" - --quiet --detach

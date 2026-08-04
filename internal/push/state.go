@@ -8,6 +8,7 @@ package push
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -117,6 +118,32 @@ func pruneState(p chunk.Params) {
 		}
 		os.Remove(filepath.Join(dir, e.Name()))
 	}
+}
+
+// logMax caps the detached-push log: it is append-only across runs, and a
+// build machine pushing all day would otherwise grow it forever. Truncated (not
+// rotated) — it is a debugging aid, not an audit trail.
+const logMax = 4 << 20
+
+// OpenLog opens the log a detached push writes to, creating the state dir and
+// truncating the file if it has outgrown logMax. Returns the file and its path.
+func OpenLog() (*os.File, string, error) {
+	dir := stateDir()
+	if dir == "" {
+		return nil, "", errors.New("no user cache directory for the push log")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, "", err
+	}
+	path := filepath.Join(dir, "push.log")
+	if fi, err := os.Stat(path); err == nil && fi.Size() > logMax {
+		os.Remove(path)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, "", err
+	}
+	return f, path, nil
 }
 
 // ---- chunk presence filter ----

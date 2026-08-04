@@ -14,7 +14,7 @@ import (
 func pushCmd() *cobra.Command {
 	var url, token string
 	var jobs int
-	var dryRun, quiet bool
+	var dryRun, quiet, detach bool
 	c := &cobra.Command{
 		Use:   "push [ns/cache] <path>...",
 		Short: "Push store paths (and their closure) to a cache",
@@ -22,7 +22,11 @@ func pushCmd() *cobra.Command {
 			"The cache argument is optional once a default is saved (`xilo use <ns/cache>\n" +
 			"--default` or `xilo login --cache`). Parallelism is automatic (the server\n" +
 			"advertises its capacity); override with --jobs. Pass '-' as the path to read\n" +
-			"newline-separated store paths from stdin (handy for a Nix post-build-hook).",
+			"newline-separated store paths from stdin (handy for a Nix post-build-hook).\n\n" +
+			"Nix runs a post-build-hook synchronously, so the build waits for the push.\n" +
+			"--detach hands the work to a background process and returns immediately;\n" +
+			"progress and errors go to the log it prints. `xilo watch` (Linux) is the\n" +
+			"other way to keep pushes off the build's critical path.",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			url, token = resolveServer(url, token)
@@ -43,6 +47,15 @@ func pushCmd() *cobra.Command {
 			if len(paths) == 0 {
 				return nil
 			}
+			if detach && dryRun {
+				return fmt.Errorf("--detach and --dry-run are mutually exclusive")
+			}
+			// The re-exec carries the marker so the child pushes for real.
+			if detach && os.Getenv(detachEnv) == "" {
+				return detachPush(detachReq{
+					cache: cache, paths: paths, url: url, token: token, jobs: jobs, quiet: quiet,
+				})
+			}
 			cl := push.NewClient(url, normRef(cache), token, jobs)
 			cl.DryRun = dryRun
 			cl.Quiet = quiet
@@ -54,6 +67,7 @@ func pushCmd() *cobra.Command {
 	c.Flags().IntVar(&jobs, "jobs", 0, "parallel uploads (0 = auto, use server capacity)")
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "show what would be pushed, upload nothing")
 	c.Flags().BoolVar(&quiet, "quiet", false, "suppress progress output (for post-build-hook)")
+	c.Flags().BoolVar(&detach, "detach", false, "push in the background and return immediately (keeps a post-build-hook off the build's critical path)")
 	c.Flags().StringVarP(&profileFlag, "profile", "p", "", "saved server profile to use")
 	return c
 }
