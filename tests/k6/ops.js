@@ -233,9 +233,18 @@ export default function () {
   must(res, "missing-chunks after push empty", (r) =>
     r.status === 200 && (JSON.parse(r.body).missing || []).length === 0);
 
-  // put-path rejections: unknown chunk / wrong hash / wrong size / bad hash format
-  putPath("pub", seed, [h0, h1, crypto.sha256(chunkBytes(9, 9, 10), "hex")], narHex, 131072,
-    bearer(pushTok), 400, "put-path unknown chunk 400");
+  // put-path rejections: unknown chunk / wrong hash / wrong size / bad hash format.
+  // An absent chunk is 409 + the hashes, not a flat 400: that is what tells an
+  // optimistic pusher (one that skipped asking) to redo the path pessimistically.
+  const absentChunk = crypto.sha256(chunkBytes(9, 9, 10), "hex");
+  res = http.put(`${c("pub")}/api/path`,
+    JSON.stringify({
+      storePath: storePathFor(seed), narHash: `sha256:${narHex}`, narSize: 131072,
+      deriver: "", references: [], chunks: [h0, h1, absentChunk],
+    }),
+    { headers: Object.assign({ "Content-Type": "application/json" }, bearer(pushTok)) });
+  must(res, "put-path unknown chunk 409 names it", (r) =>
+    r.status === 409 && (JSON.parse(r.body).missing || []).includes(absentChunk));
   putPath("pub", seed, [h0, h1], crypto.sha256(c0, "hex"), 131072,
     bearer(pushTok), 400, "put-path wrong narHash 400");
   putPath("pub", seed, [h0, h1], narHex, 999,
@@ -263,6 +272,59 @@ export default function () {
     const miss = JSON.parse(r.body).missing || [];
     return r.status === 200 && miss.length === 1 && miss[0] === "0000000000000000000000000000000a";
   });
+
+  // ---------- chunk presence filter ----------
+  // Push-authed, ETag-revalidated bloom filter of the backend's chunk hashes.
+  res = http.get(`${c("pub")}/api/chunk-filter`, { headers: bearer(pushTok) });
+  const filterEtag = res.headers["Etag"];
+  must(res, "chunk-filter served", (r) =>
+    r.status === 200 && String(r.body).slice(0, 4) === "xbf1" && r.body.length > 16 &&
+    r.headers["Etag"].length > 2 && r.headers["Cache-Control"].includes("max-age"));
+  res = http.get(`${c("pub")}/api/chunk-filter`,
+    { headers: Object.assign({ "If-None-Match": filterEtag }, bearer(pushTok)) });
+  must(res, "chunk-filter 304 on matching etag", (r) => r.status === 304 && !r.body);
+  res = http.get(`${c("pub")}/api/chunk-filter`,
+    { headers: Object.assign({ "If-None-Match": '"stale"' }, bearer(pushTok)) });
+  must(res, "chunk-filter 200 on stale etag", (r) => r.status === 200 && r.body.length > 16);
+  res = http.get(`${c("pub")}/api/chunk-filter`);
+  must(res, "chunk-filter needs auth", (r) => r.status === 401);
+  res = http.get(`${c("pub")}/api/chunk-filter`, { headers: bearer(pullTok) });
+  must(res, "chunk-filter rejects pull-only token", (r) => r.status === 401);
+
+  // ---------- path adoption ----------
+  // A NAR hash sent with get-missing-paths lets the server copy an identical
+  // path from another cache on the same backend: no upload, and the adopting
+  // cache serves the real bytes afterwards.
+  res = http.post(`${BASE}/admin/caches`, { name: "adopt", namespace: NS, priority: "40" });
+  must(res, "create cache adopt", okOrFlash);
+  const adoptTok = createToken("k6-adopt", ["push", "pull"], "adopt");
+  const adoptURL = `${BASE}/c/${NS}/adopt/api/get-missing-paths`;
+  const adoptHdrs = Object.assign({ "Content-Type": "application/json" }, bearer(adoptTok));
+
+  res = http.post(adoptURL, JSON.stringify({ hashes: [storeHash] }), { headers: adoptHdrs });
+  must(res, "path missing without a narHash", (r) =>
+    r.status === 200 && (JSON.parse(r.body).missing || []).length === 1);
+  res = http.post(adoptURL,
+    JSON.stringify({ hashes: [storeHash], paths: [{ hash: storeHash, narHash: `sha256:${narHex}` }] }),
+    { headers: adoptHdrs });
+  must(res, "path adopted with a narHash", (r) =>
+    r.status === 200 && (JSON.parse(r.body).missing || []).length === 0);
+  res = http.get(`${BASE}/c/${NS}/adopt/nar/${storeHash}.nar`,
+    { headers: { "Accept-Encoding": "identity" }, responseType: "binary" });
+  must(res, "adopted nar byte-exact", (r) =>
+    r.status === 200 && r.body.byteLength === 131072 && crypto.sha256(r.body, "hex") === narHex);
+  res = http.get(`${BASE}/c/${NS}/adopt/${storeHash}.narinfo`);
+  must(res, "adopted narinfo signed by the adopting cache", (r) =>
+    r.status === 200 && r.body.includes("Sig: adopt:"));
+  // A NAR hash that doesn't match what's stored must not adopt anything.
+  res = http.post(adoptURL,
+    JSON.stringify({
+      hashes: ["0000000000000000000000000000000b"],
+      paths: [{ hash: "0000000000000000000000000000000b", narHash: `sha256:${narHex}` }],
+    }),
+    { headers: adoptHdrs });
+  must(res, "unknown path not adopted", (r) =>
+    r.status === 200 && (JSON.parse(r.body).missing || []).length === 1);
 
   // ---------- narinfo correctness ----------
   res = http.get(`${c("pub")}/${storeHash}.narinfo`);
@@ -344,6 +406,14 @@ export default function () {
   // ...but not to priv
   res = http.put(`${c("priv")}/api/chunk/${ph}`, pc, { headers: bearer(scopedTok) });
   must(res, "priv push wrong-scope 401", (r) => r.status === 401);
+
+  // Adoption is not a read primitive: a path in a PRIVATE cache stays missing
+  // for a token that can't pull it, even with the right store hash + NAR hash.
+  res = http.post(adoptURL,
+    JSON.stringify({ hashes: [privHash], paths: [{ hash: privHash, narHash: `sha256:${pnar}` }] }),
+    { headers: adoptHdrs });
+  must(res, "private path not adopted without pull rights", (r) =>
+    r.status === 200 && (JSON.parse(r.body).missing || []).length === 1);
 
   // ---------- admin: configure / rotate / GC / delete ----------
   res = http.post(`${BASE}/admin/cache/${NS}/pub/configure`,
