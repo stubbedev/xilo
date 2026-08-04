@@ -225,7 +225,7 @@ func (f *fakeServer) handle(w http.ResponseWriter, r *http.Request) {
 				f.mu.Unlock()
 			}()
 			if f.missingChunksBarrier != nil {
-				f.missingChunksBarrier.wait(5 * time.Second)
+				f.missingChunksBarrier.wait(30 * time.Second)
 			}
 			if f.missingChunksDelay > 0 {
 				time.Sleep(f.missingChunksDelay)

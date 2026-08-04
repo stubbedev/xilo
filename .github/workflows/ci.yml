@@ -144,7 +144,13 @@ jobs:
       # humans maintain.
       - name: regenerate coverage badge
         run: |
-          go test -count=1 -coverprofile=cover.out ./internal/... > /dev/null
+          # Keep the output: discarding it turns any test failure here into a
+          # bare "exit code 1" with nothing to debug.
+          if ! go test -count=1 -coverprofile=cover.out ./internal/... > test.log 2>&1; then
+            echo "::error::tests failed while measuring coverage"
+            tail -200 test.log
+            exit 1
+          fi
           grep -v "_templ.go:" cover.out > cover-filtered.out
           pct=$(go tool cover -func=cover-filtered.out | tail -1 | grep -oE '[0-9.]+%' | tr -d '%')
           color=orange

@@ -78,7 +78,7 @@ func TestDetachPushSpawnsAndReturns(t *testing.T) {
 	}
 
 	var data []byte
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
 		if data, err = os.ReadFile(out); err == nil {
 			break
 		}

@@ -489,6 +489,8 @@ func TestWindowNegotiationIsPipelined(t *testing.T) {
 		t.Fatalf("test NAR produced %d chunks; need >= %d for two windows", len(want), 2*missingWindow)
 	}
 	f := newFakeServer(t, baseCfg())
+	// Generous: the timeout only bounds how long a NON-pipelined client takes to
+	// fail the assertion, so a slow shared runner must not turn it into a flake.
 	f.missingChunksBarrier = newBarrier(2)
 
 	// jobs=1: even with a single upload slot the negotiation must overlap.
