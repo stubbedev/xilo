@@ -145,16 +145,35 @@ docker-run: docker-build
 
 # ─────────────────────────── k6 (tests/k6/) ───────────────────────────
 
+# Rebuild the server image the k6 rig runs, from the working tree, and drop any
+# state from a previous run. `docker compose run` happily reuses a stale image,
+# so without this a k6 suite can pass (or fail) against a binary that is not
+# the code you just changed. Every conformance recipe below depends on it.
+k6-image:
+    docker compose -f tests/k6/compose.yaml down -v
+    docker compose -f tests/k6/compose.yaml build xilo
+
 # Operations conformance: every wire + admin operation with correctness
 # assertions (auth matrix, TOTP cycle, byte-exact NARs on all encodings).
-k6-ops:
+k6-ops: k6-image
     docker compose -f tests/k6/compose.yaml run --rm k6 run /scripts/ops.js
     docker compose -f tests/k6/compose.yaml down -v
 
 # Multi-tenant conformance: registration + approval, plans, the three quotas
 # (caches/storage/members), plan-gated org creation, cross-account isolation,
 # and the registration rate limit. Runs against the multi_tenant config.
-k6-mt:
+k6-mt: k6-image
+    XILO_E2E_CONFIG=server-mt.yaml docker compose -f tests/k6/compose.yaml \
+        run --rm k6 run /scripts/mt.js
+    docker compose -f tests/k6/compose.yaml down -v
+
+# The exact conformance trio CI's `ops` job runs, in the same order. Run this
+# before pushing anything that changes the wire contract (a status code, a
+# request or response field): `just check` does NOT cover the k6 suites, and CI
+# is where you'd otherwise find out.
+k6-conformance: k6-ops
+    docker compose -f tests/k6/compose.yaml run --rm k6 run /scripts/deep.js
+    docker compose -f tests/k6/compose.yaml down -v
     XILO_E2E_CONFIG=server-mt.yaml docker compose -f tests/k6/compose.yaml \
         run --rm k6 run /scripts/mt.js
     docker compose -f tests/k6/compose.yaml down -v
@@ -165,26 +184,26 @@ e2e:
     ./tests/e2e/cli.sh
 
 # Perf numbers: narinfo QPS, NAR pull, push pipeline. Tracked per release.
-k6-perf:
+k6-perf: k6-image
     docker compose -f tests/k6/compose.yaml run --rm k6
     docker compose -f tests/k6/compose.yaml down -v
 
 # Perf with load spread across 4 accounts on a multi_tenant server: same
 # scenarios, per-account scoped push tokens, tenant chosen per VU.
-k6-perf-mt:
+k6-perf-mt: k6-image
     XILO_E2E_CONFIG=server-mt.yaml docker compose -f tests/k6/compose.yaml \
         run --rm -e TENANTS=4 k6
     docker compose -f tests/k6/compose.yaml down -v
 
 # Integrity soak: hostile GC vs concurrent dedup pushes; any dropped or
 # corrupt NAR fails. DURATION=10m just k6-churn for a longer run.
-k6-churn:
+k6-churn: k6-image
     XILO_E2E_CONFIG=server-churn.yaml docker compose -f tests/k6/compose.yaml \
         run --rm k6 run --summary-export=/out/summary.json /scripts/churn.js
     docker compose -f tests/k6/compose.yaml down -v
 
 # Integrity soak across 4 accounts on a multi_tenant server with hostile GC.
-k6-churn-mt:
+k6-churn-mt: k6-image
     XILO_E2E_CONFIG=server-mt-churn.yaml docker compose -f tests/k6/compose.yaml \
         run --rm -e TENANTS=4 k6 run --summary-export=/out/summary.json /scripts/churn.js
     docker compose -f tests/k6/compose.yaml down -v

@@ -96,8 +96,12 @@ jobs:
       - uses: actions/checkout@v7
       - name: run ops suite (single-tenant)
         run: docker compose -f tests/k6/compose.yaml run --rm k6 run /scripts/ops.js
+      # Fresh server per suite: ops ends with tokens in the DB (bootstrap
+      # closed), which deep's anonymous pushes must not inherit.
       - name: run deep suite (edge dimensions)
-        run: docker compose -f tests/k6/compose.yaml run --rm k6 run /scripts/deep.js
+        run: |
+          docker compose -f tests/k6/compose.yaml down -v
+          docker compose -f tests/k6/compose.yaml run --rm k6 run /scripts/deep.js
       - name: run mt suite (multi-tenant conformance)
         run: |
           docker compose -f tests/k6/compose.yaml down -v

@@ -190,9 +190,12 @@ inotify watcher:
 xilo watch mycache   # auto-pushes newly-built store paths
 ```
 
-Nix runs a `post-build-hook` synchronously, so the build waits for the push. The
-watcher pushes out of band instead — the better choice when a big closure (a dev
-shell, say) would otherwise hold up every build.
+Nix runs a `post-build-hook` synchronously, so the build waits for the push.
+Two ways to keep it off the build's critical path — `xilo push --detach`, which
+hands the work to a background process and returns immediately (progress and
+errors go to `~/.cache/xilo/push.log`), or the watcher above, which pushes out
+of band entirely. The example hook uses `--detach`; drop it if you'd rather have
+a failed push fail the build.
 
 ### GitHub Actions
 
@@ -542,9 +545,11 @@ order above:
 managed entirely by the CLI. Overridable per-invocation with `XILO_URL` /
 `XILO_TOKEN`, or per-command flags.
 
-Pushes also keep a throwaway cache in `~/.cache/xilo` (chunk manifests and the
-server's chunk presence filter — see [What a push avoids doing](#what-a-push-avoids-doing)).
-`XILO_CACHE_DIR` relocates it; deleting it is always safe.
+Pushes also keep a throwaway cache in `~/.cache/xilo` (chunk manifests, the
+server's chunk presence filter, and `push.log` from `--detach` — see
+[What a push avoids doing](#what-a-push-avoids-doing)). `XILO_CACHE_DIR`
+relocates it; deleting it is always safe. `XILO_EXTERNAL_DUMP=1` makes the client
+serialize NARs by running `nix-store --dump` instead of doing it itself.
 
 ## Development
 
@@ -593,9 +598,20 @@ down, cheapest first:
 - **Pipelined negotiation.** Without a filter, chunk windows are resolved
   concurrently with the dump instead of blocking it, so a round trip no longer
   stalls the stream every 32 chunks.
+- **No subprocess per path.** The NAR is serialized in-process rather than by
+  running `nix-store --dump` for every path in the closure — for a closure of
+  many small paths that is the difference between seconds of fork+exec and
+  milliseconds of filesystem walk. Each archive is checked against the NarHash
+  nix recorded before anything is uploaded, and a mismatch re-dumps with nix
+  itself; `XILO_EXTERNAL_DUMP=1` forces that path always.
 
-All four are optimistic, and one thing makes that safe: `put-path` re-stamps and
-re-checks every referenced chunk, answering `409` with the hashes that aren't
-there. On a 409 the client redoes that path with every shortcut off, so a stale
+Server-side, `put-path`'s reassembly check (which streams every referenced chunk
+back out of the blob store to confirm the claimed NarHash) is remembered per
+chunk list, so a re-push, a push to a second cache, or a retry no longer
+re-reads the whole NAR — it only confirms the blobs still exist.
+
+The shortcuts are optimistic, and one thing makes that safe: `put-path`
+re-stamps and re-checks every referenced chunk, answering `409` with the hashes
+that aren't there. On a 409 the client redoes that path with every shortcut off, so a stale
 manifest, a filter false positive or a chunk swept mid-push costs one extra dump
 and never a corrupt or dangling path.
