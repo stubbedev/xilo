@@ -60,6 +60,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		PublicKey:    c.PubKey,
 		Public:       c.Public,
 		AcceptZstd:   true,
+		ChunkFilter:  true,
 	})
 }
 
@@ -84,7 +85,92 @@ func (s *Server) handleMissingPaths(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, api.MissingResp{Missing: missing})
+	writeJSON(w, api.MissingResp{Missing: s.adopt(r, c, missing, req.Paths)})
+}
+
+// adopt copies, for each still-missing path the client offered a NarHash for, a
+// bit-identical path another cache on the same storage backend already holds.
+// The chunks are already stored there (dedup is per-backend), so this turns a
+// full dump + chunk + upload into one row insert. Returns the paths still
+// missing.
+//
+// Two things keep it safe. The NarHash must equal the stored one, and a NAR
+// hash is a content hash: the copy is exactly what the client would have
+// uploaded. And the caller must already be able to read the source cache —
+// it's public, the token may pull it, or the token is an admin token. Without
+// that check adoption would be a read primitive: knowing a store path and its
+// NarHash would import another tenant's bytes, a far lower bar than put-path's
+// proof of possession (which needs the exact chunk list, derivable only from
+// the real NAR). Tokens are scoped to a single cache, so in practice this
+// fires for public source caches and for admin-token pushes.
+//
+// Best-effort throughout: any failure just leaves the path in the missing list
+// and the client pushes it the normal way.
+func (s *Server) adopt(r *http.Request, c *store.Cache, missing []string, refs []api.PathRef) []string {
+	if len(missing) == 0 || len(refs) == 0 {
+		return missing
+	}
+	stillMissing := make(map[string]bool, len(missing))
+	for _, h := range missing {
+		stillMissing[h] = true
+	}
+	want := make(map[string]string, len(refs)) // store hash -> normalized NAR hash
+	for _, ref := range refs {
+		if !stillMissing[ref.Hash] {
+			continue
+		}
+		if nh, err := narinfo.NarHash(ref.NarHash); err == nil {
+			want[ref.Hash] = nh
+		}
+	}
+	if len(want) == 0 {
+		return missing
+	}
+	hashes := make([]string, 0, len(want))
+	for h := range want {
+		hashes = append(hashes, h)
+	}
+	cands, err := s.db.AdoptCandidates(c.Storage, c.ID, hashes)
+	if err != nil {
+		return missing
+	}
+	tok := extractToken(r)
+	now := timeNow()
+	isAdmin := tok != "" && s.db.AuthorizeAdmin(tok, now)
+	adopted := 0
+	for _, cd := range cands {
+		if !stillMissing[cd.StoreHash] || want[cd.StoreHash] != cd.Path.NarHash {
+			continue
+		}
+		if !cd.Public && !isAdmin && !s.db.Authorize(tok, cd.Account, cd.Cache, "pull", now) {
+			continue
+		}
+		// Stamp before checking, like put-path: a chunk the sweeper takes in
+		// between then reads as missing and we decline to adopt, rather than
+		// registering a dangling path.
+		if err := s.db.TouchChunks(c.Storage, cd.Path.Chunks, now); err != nil {
+			continue
+		}
+		if miss, err := s.db.MissingChunks(c.Storage, cd.Path.Chunks); err != nil || len(miss) > 0 {
+			continue
+		}
+		if err := s.db.PutPath(c.ID, cd.StoreHash, &cd.Path); err != nil {
+			continue
+		}
+		stillMissing[cd.StoreHash] = false
+		adopted++
+		s.metrics.pathsAdopted.Add(1)
+	}
+	if adopted == 0 {
+		return missing
+	}
+	out := make([]string, 0, len(missing)-adopted)
+	for _, h := range missing {
+		if stillMissing[h] {
+			out = append(out, h)
+		}
+	}
+	return out
 }
 
 func (s *Server) handleMissingChunks(w http.ResponseWriter, r *http.Request) {
@@ -250,7 +336,11 @@ func (s *Server) handlePutPath(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(missing) > 0 {
-		http.Error(w, fmt.Sprintf("path references %d unuploaded chunks", len(missing)), http.StatusBadRequest)
+		// 409 + the actual hashes, so an optimistic pusher (one that skipped
+		// asking, trusting the presence filter or a cached manifest) can tell
+		// this apart from a real error and retry the path pessimistically.
+		// Capped: a client only needs to know that it guessed wrong.
+		writeJSONStatus(w, http.StatusConflict, api.MissingResp{Missing: missing[:min(len(missing), 1000)]})
 		return
 	}
 
@@ -349,5 +439,13 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
+}
+
+// writeJSONStatus is writeJSON with an explicit status; the header has to be
+// set before WriteHeader or it's dropped.
+func writeJSONStatus(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(v)
 }

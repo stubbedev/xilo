@@ -286,6 +286,35 @@ func (db *DB) MissingChunks(storage string, hashes []string) ([]string, error) {
 	return diff(hashes, present), nil
 }
 
+// CountChunks returns how many chunks a storage backend holds.
+func (db *DB) CountChunks(storage string) (int64, error) {
+	var n int64
+	err := db.r.QueryRow(`SELECT COUNT(*) FROM chunks WHERE storage=?`, storage).Scan(&n)
+	return n, err
+}
+
+// EachChunkHash streams every chunk hash in a storage backend to fn. Streamed
+// rather than returned as a slice: the caller (the presence-filter builder)
+// folds millions of hashes into a fixed-size bloom filter and never needs them
+// all in memory at once.
+func (db *DB) EachChunkHash(storage string, fn func(hash string) error) error {
+	rows, err := db.r.Query(`SELECT hash FROM chunks WHERE storage=?`, storage)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var h string
+		if err := rows.Scan(&h); err != nil {
+			return err
+		}
+		if err := fn(h); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
 // ---- paths ----
 
 // MissingPaths returns the subset of storeHashes not present in the cache.
@@ -312,6 +341,55 @@ func (db *DB) MissingPaths(cacheID int64, storeHashes []string) ([]string, error
 		return nil, err
 	}
 	return diff(storeHashes, present), nil
+}
+
+// AdoptCandidate is a path another cache on the same storage backend already
+// holds, offered as a copy source: its chunks are already stored, so the
+// pusher can skip the dump, the chunking and the upload entirely.
+type AdoptCandidate struct {
+	StoreHash string
+	Account   string // source cache's account slug, for the pull-permission check
+	Cache     string // source cache's name
+	Public    bool   // source cache is public: anyone may pull it
+	Path      Path
+}
+
+// AdoptCandidates finds paths with the given store hashes in *other* caches
+// sharing the storage backend. Callers must still check the NarHash matches
+// and that the requester may pull the source cache — this only finds the rows.
+func (db *DB) AdoptCandidates(storage string, excludeCacheID int64, storeHashes []string) ([]AdoptCandidate, error) {
+	var out []AdoptCandidate
+	err := db.eachBatch(storeHashes, func(batch []string) error {
+		q := `SELECT p.store_hash,p.store_path,p.nar_hash,p.nar_size,p.deriver,p.refs,p.chunks,a.slug,c.name,c.public` +
+			cacheFrom + `JOIN paths p ON p.cache_id = c.id
+			 WHERE c.storage=? AND c.id<>? AND p.store_hash IN (` + placeholders(len(batch)) + `)`
+		args := append([]any{storage, excludeCacheID}, toArgs(batch)...)
+		rows, err := db.r.Query(q, args...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var cd AdoptCandidate
+			var narSize int64
+			var pub int // stored as INTEGER, like every other read of caches.public
+			var refs, chunks string
+			if err := rows.Scan(&cd.StoreHash, &cd.Path.StorePath, &cd.Path.NarHash, &narSize,
+				&cd.Path.Deriver, &refs, &chunks, &cd.Account, &cd.Cache, &pub); err != nil {
+				return err
+			}
+			cd.Public = pub != 0
+			cd.Path.NarSize = uint64(narSize)
+			cd.Path.Refs = splitLines(refs)
+			cd.Path.Chunks = splitLines(chunks)
+			out = append(out, cd)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // PutPath registers a store path in a cache. store_hash is the 32-char hash part

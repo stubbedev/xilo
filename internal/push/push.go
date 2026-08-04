@@ -25,6 +25,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/stubbedev/xilo/internal/api"
+	"github.com/stubbedev/xilo/internal/bloom"
 	"github.com/stubbedev/xilo/internal/chunk"
 	"github.com/stubbedev/xilo/internal/narinfo"
 )
@@ -47,8 +48,16 @@ type Client struct {
 	jobs         int
 	narThreshold int
 	acceptZstd   bool // server decodes Content-Encoding: zstd chunk bodies
+	hasFilter    bool // server serves api/chunk-filter
 	upstreamKeys []string
 	sem          chan struct{} // ONE shared upload gate, sized to jobs
+	win          chan struct{} // bounds in-flight negotiation windows (and so buffered bytes)
+
+	// filter is the server's chunk presence filter, when one was worth
+	// fetching. Non-nil turns the negotiation off: a chunk it doesn't hold is
+	// uploaded immediately, one it does hold is skipped, and put-path catches
+	// the rare false positive (see loadFilter / pushOne).
+	filter *bloom.Filter
 }
 
 // NewClient builds a push client. jobsOverride of 0 means "auto" — use the
@@ -127,7 +136,7 @@ func (c *Client) Push(ctx context.Context, paths []string) error {
 	}
 
 	byHash := map[string]pathInfo{}
-	var hashes []string
+	var refs []api.PathRef
 	skipped := 0
 	for _, in := range infos {
 		if c.signedByUpstream(in) {
@@ -136,9 +145,9 @@ func (c *Client) Push(ctx context.Context, paths []string) error {
 		}
 		h := narinfo.StoreHash(in.Path)
 		byHash[h] = in
-		hashes = append(hashes, h)
+		refs = append(refs, api.PathRef{Hash: h, NarHash: in.NarHash})
 	}
-	missing, err := c.missing(ctx, "get-missing-paths", hashes)
+	missing, err := c.missingPaths(ctx, refs)
 	if err != nil {
 		return err
 	}
@@ -150,18 +159,32 @@ func (c *Client) Push(ctx context.Context, paths []string) error {
 		return nil
 	}
 
+	var todo uint64
+	for _, h := range missing {
+		todo += byHash[h].NarSize
+	}
 	if c.DryRun {
-		var bytes uint64
-		for _, h := range missing {
-			bytes += byHash[h].NarSize
-		}
-		c.logf("dry-run: would push %d/%d paths (%d uncompressed NAR bytes)\n", len(missing), len(hashes), bytes)
+		c.logf("dry-run: would push %d/%d paths (%d uncompressed NAR bytes)\n", len(missing), len(refs), todo)
 		return nil
 	}
+
+	// Worth a filter? Below filterMinBytes the download costs more than the
+	// round trips it saves — but a copy already on disk is free, and loadFilter
+	// uses it without a request while it's fresh.
+	if c.hasFilter && todo >= filterMinBytes {
+		c.loadFilter(ctx)
+	}
+	// Synchronous: it's one Stat unless a day has passed, and a goroutine here
+	// would outlive the push.
+	pruneState(params)
 
 	// One shared upload gate across all paths + chunks, so total in-flight
 	// uploads never exceed jobs (avoids the jobs² blow-up of a per-path gate).
 	c.sem = make(chan struct{}, c.jobs)
+	// At least two windows in flight even at jobs=1: one resolving while the
+	// dump fills the next is the whole point — otherwise the dump stalls for a
+	// full round trip every window, which is what this replaced.
+	c.win = make(chan struct{}, max(2, c.jobs))
 
 	var done atomic.Int64
 	err = eachParallel(missing, c.jobs, func(h string) error {
@@ -193,73 +216,74 @@ func (c *Client) signedByUpstream(in pathInfo) bool {
 	return false
 }
 
-// missingWindow is how many chunks pushOne buffers before asking the server
-// which of them are missing. It bounds retained chunk bytes per in-flight
-// path to missingWindow × MaxSize (32 × 1MiB = 32MiB with default params);
-// chunks handed off for upload are additionally bounded by the shared jobs
-// semaphore.
-const missingWindow = 32
+const (
+	// missingWindow is how many chunks a negotiation window holds before it is
+	// handed off to be resolved. Only used when there's no presence filter.
+	missingWindow = 32
+	// windowBytes caps a window by size too: with a 1 MiB max chunk, counting
+	// alone would let one window retain 32 MiB, times jobs in-flight windows.
+	windowBytes = 4 << 20
+	// filterFresh reuses a downloaded filter without even revalidating it; the
+	// server memoizes on the same window, so a request would only ever 304.
+	filterFresh = 10 * time.Minute
+	// filterMaxBytes bounds the download (the server caps its own filter well
+	// under this; the limit is only here so a hostile response can't OOM us).
+	filterMaxBytes = 64 << 20
+)
 
+// filterMinBytes is the smallest push worth fetching a presence filter for (a
+// fresh on-disk copy is used regardless — see loadFilter). A var so tests can
+// exercise the filter path without generating 16 MiB of NAR.
+var filterMinBytes uint64 = 16 << 20
+
+// pushOne uploads one path. Three shortcuts, cheapest first: a cached manifest
+// (no dump at all), the presence filter (dump, but no negotiation round trips),
+// then plain windowed negotiation. Each shortcut is optimistic and each is
+// caught by the same backstop — put-path re-stamps the referenced chunks, then
+// re-checks them, so a path can never register against chunks that aren't
+// there. On its 409 we redo the path with every shortcut off.
 func (c *Client) pushOne(ctx context.Context, in pathInfo, params chunk.Params) error {
+	storeHash := narinfo.StoreHash(in.Path)
+	if order := loadManifest(params, storeHash, in.NarHash); order != nil {
+		err := c.putPath(ctx, in.pathReq(order))
+		if err == nil {
+			return nil
+		}
+		if !isConflict(err) {
+			return err // a real failure (auth, server down): don't mask it
+		}
+	}
+	err := c.dumpPush(ctx, in, params, false)
+	if isConflict(err) {
+		return c.dumpPush(ctx, in, params, true)
+	}
+	return err
+}
+
+// dumpPush dumps the NAR once and uploads what the server needs. pessimistic
+// disables the presence filter, so every chunk's fate is confirmed with the
+// server before put-path — the retry path after a 409.
+func (c *Client) dumpPush(ctx context.Context, in pathInfo, params chunk.Params, pessimistic bool) error {
+	filter := c.filter
+	if pessimistic {
+		filter = nil
+	}
 	// Small NARs are stored as a single chunk — skip CDC overhead entirely.
 	if in.NarSize < uint64(c.narThreshold) {
-		return c.pushWhole(ctx, in)
+		return c.pushWhole(ctx, in, params, filter)
 	}
 
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	var firstErr error
-	failed := func() bool { mu.Lock(); defer mu.Unlock(); return firstErr != nil }
-	setErr := func(e error) {
-		mu.Lock()
-		defer mu.Unlock()
-		if firstErr == nil {
-			firstErr = e
-		}
-	}
-
+	p := &pathPush{c: c}
 	var order []string        // full ordered chunk list for put-path
 	var window []chunk.Chunk  // chunks whose fate (missing or not) is unknown
-	seen := map[string]bool{} // hashes already windowed once for this NAR
+	var winBytes int          // bytes retained in window
+	seen := map[string]bool{} // hashes already handled once for this NAR
 
-	// flush asks the server which windowed chunks it lacks, uploads those in
-	// parallel via the SHARED gate, and drops the rest immediately.
-	flush := func() error {
-		hashes := make([]string, len(window))
-		for i, ch := range window {
-			hashes[i] = ch.Hash
-		}
-		need, err := c.missing(ctx, "get-missing-chunks", hashes)
-		if err != nil {
-			return err
-		}
-		needSet := map[string]bool{}
-		for _, h := range need {
-			needSet[h] = true
-		}
-		for _, ch := range window {
-			if !needSet[ch.Hash] {
-				continue
-			}
-			c.sem <- struct{}{}
-			wg.Add(1)
-			go func(ch chunk.Chunk) {
-				defer wg.Done()
-				defer func() { <-c.sem }()
-				if err := c.putChunk(ctx, ch); err != nil {
-					setErr(err)
-				}
-			}(ch)
-		}
-		window = nil // drop buffered bytes; upload goroutines hold their own
-		return nil
-	}
-
-	// ONE dump: hash every chunk as it streams by, copy bytes only while a
-	// chunk's fate is unknown, resolving fates window by window.
+	// ONE dump: hash every chunk as it streams by and copy bytes only for
+	// chunks that may actually need uploading.
 	dumpErr := runDump(ctx, in.Path, func(r io.Reader) error {
 		return chunk.SplitRaw(r, params, func(hash string, data []byte) error {
-			if failed() {
+			if p.failed() {
 				return errAbort // stop dumping once an upload has failed
 			}
 			order = append(order, hash)
@@ -267,47 +291,150 @@ func (c *Client) pushOne(ctx context.Context, in pathInfo, params chunk.Params) 
 				return nil // duplicate within this NAR; first copy decides
 			}
 			seen[hash] = true
+			if filter != nil {
+				if filter.Has(hash) {
+					return nil // server has it; put-path verifies that claim
+				}
+				// Definitely absent — upload straight away, no round trip. The
+				// shared gate is the dump's backpressure.
+				p.upload(ctx, chunk.Chunk{Hash: hash, Data: bytes.Clone(data)})
+				return nil
+			}
 			window = append(window, chunk.Chunk{Hash: hash, Data: bytes.Clone(data)})
-			if len(window) >= missingWindow {
-				return flush()
+			winBytes += len(data)
+			if len(window) >= missingWindow || winBytes >= windowBytes {
+				p.flush(ctx, window)
+				window, winBytes = nil, 0
 			}
 			return nil
 		})
 	})
 	if dumpErr == nil && len(window) > 0 {
-		dumpErr = flush() // tail window
+		p.flush(ctx, window) // tail window
 	}
-	wg.Wait()
-	if firstErr != nil {
-		return firstErr
+	if err := p.wait(); err != nil {
+		return err
 	}
 	if dumpErr != nil && dumpErr != errAbort {
 		return dumpErr
 	}
 
-	return c.putPath(ctx, in.pathReq(order))
+	if err := c.putPath(ctx, in.pathReq(order)); err != nil {
+		return err
+	}
+	saveManifest(params, narinfo.StoreHash(in.Path), in.NarHash, order)
+	return nil
+}
+
+// pathPush owns the in-flight work for one path. The dump goroutine hands
+// chunks and windows off and keeps reading: a negotiation round trip used to
+// block the dump for a full RTT every 32 chunks, which on a high-latency link
+// was most of the wall clock for a large NAR.
+type pathPush struct {
+	c   *Client
+	wg  sync.WaitGroup
+	mu  sync.Mutex
+	err error
+}
+
+func (p *pathPush) fail(err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.err == nil {
+		p.err = err
+	}
+}
+
+func (p *pathPush) failed() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.err != nil
+}
+
+// wait blocks until every upload and window this path started has finished.
+func (p *pathPush) wait() error {
+	p.wg.Wait()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.err
+}
+
+// upload sends one chunk through the shared jobs gate. Acquiring the gate
+// before spawning is what bounds retained chunk bytes: at most jobs bodies are
+// ever in flight, so the dump blocks rather than the heap growing.
+func (p *pathPush) upload(ctx context.Context, ch chunk.Chunk) {
+	p.c.sem <- struct{}{}
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		defer func() { <-p.c.sem }()
+		if err := p.c.putChunk(ctx, ch); err != nil {
+			p.fail(err)
+		}
+	}()
+}
+
+// flush resolves one window off the dump goroutine: ask which of its chunks the
+// server lacks, upload those, drop the rest. c.win bounds how many windows are
+// resolving at once, and so how many window bodies stay buffered.
+//
+// The wg.Add here is always paired with a counter this goroutine already holds,
+// so it can never race an in-progress wait().
+func (p *pathPush) flush(ctx context.Context, window []chunk.Chunk) {
+	p.c.win <- struct{}{}
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		defer func() { <-p.c.win }()
+		hashes := make([]string, len(window))
+		for i, ch := range window {
+			hashes[i] = ch.Hash
+		}
+		need, err := p.c.missing(ctx, "get-missing-chunks", hashes)
+		if err != nil {
+			p.fail(err)
+			return
+		}
+		needSet := make(map[string]bool, len(need))
+		for _, h := range need {
+			needSet[h] = true
+		}
+		for _, ch := range window {
+			if needSet[ch.Hash] {
+				p.upload(ctx, ch)
+			}
+		}
+	}()
 }
 
 // errAbort signals the dump to stop early after an upload failure.
 var errAbort = errors.New("aborted")
 
 // pushWhole uploads a small NAR as one chunk.
-func (c *Client) pushWhole(ctx context.Context, in pathInfo) error {
+func (c *Client) pushWhole(ctx context.Context, in pathInfo, params chunk.Params, filter *bloom.Filter) error {
 	data, err := dumpAll(ctx, in.Path)
 	if err != nil {
 		return err
 	}
 	ch := chunk.Chunk{Hash: chunk.Hash(data), Data: data}
-	miss, err := c.missing(ctx, "get-missing-chunks", []string{ch.Hash})
-	if err != nil {
-		return err
+	have := filter != nil && filter.Has(ch.Hash)
+	if filter == nil {
+		miss, err := c.missing(ctx, "get-missing-chunks", []string{ch.Hash})
+		if err != nil {
+			return err
+		}
+		have = len(miss) == 0
 	}
-	if len(miss) > 0 {
+	if !have {
 		if err := c.putChunk(ctx, ch); err != nil {
 			return err
 		}
 	}
-	return c.putPath(ctx, in.pathReq([]string{ch.Hash}))
+	if err := c.putPath(ctx, in.pathReq([]string{ch.Hash})); err != nil {
+		return err
+	}
+	saveManifest(params, narinfo.StoreHash(in.Path), in.NarHash, []string{ch.Hash})
+	return nil
 }
 
 func (in pathInfo) pathReq(chunks []string) api.PathReq {

@@ -52,6 +52,9 @@ func fakeNix(t *testing.T, pathInfoJSON string, nars map[string][]byte) {
 	// each dump invocation is logged so tests can assert dump counts
 	writeScript("nix-store", `echo "$(basename "$2")" >> "$XILO_TEST_DUMPLOG"
 exec cat "$XILO_TEST_NARDIR/$(basename "$2")"`)
+	// Isolate the client state cache (manifests, filters) per test: the real one
+	// lives in the user cache dir and would leak between tests and runs.
+	t.Setenv("XILO_CACHE_DIR", filepath.Join(dir, "state"))
 	t.Setenv("XILO_TEST_PATHINFO", filepath.Join(dir, "pathinfo.json"))
 	t.Setenv("XILO_TEST_NARDIR", narDir)
 	t.Setenv("XILO_TEST_DUMPLOG", filepath.Join(dir, "dumplog"))
@@ -84,14 +87,82 @@ type fakeServer struct {
 	failPathPut       bool
 	failMissingChunks bool
 
-	mu          sync.Mutex
-	chunks      map[string][]byte // hash -> uploaded bytes
-	paths       []api.PathReq
-	auths       map[string]bool // seen Authorization header values
-	pathsAsked  [][]string      // hashes sent to get-missing-paths
-	chunksAsked [][]string      // hashes sent to get-missing-chunks
+	// filter, when set, is served from api/chunk-filter with filterETag.
+	filter     []byte
+	filterETag string
+
+	// pathPutConflicts is how many put-path calls answer 409 (naming
+	// conflictMissing) before the endpoint starts accepting — the optimistic
+	// pusher's backstop.
+	pathPutConflicts int
+	conflictMissing  []string
+
+	// missingChunksDelay/missingChunksBarrier shape the negotiation endpoint so
+	// tests can observe pipelining.
+	missingChunksDelay   time.Duration
+	missingChunksBarrier *barrier
+
+	mu           sync.Mutex
+	chunks       map[string][]byte // hash -> uploaded bytes
+	paths        []api.PathReq
+	auths        map[string]bool // seen Authorization header values
+	pathsAsked   [][]string      // hashes sent to get-missing-paths
+	pathRefs     [][]api.PathRef // path+narHash pairs sent to get-missing-paths
+	chunksAsked  [][]string      // hashes sent to get-missing-chunks
+	filterAsked  int             // api/chunk-filter requests
+	filterEtags  []string        // If-None-Match values seen
+	pathPuts     int             // put-path calls, including the 409s
+	maxNegotiate int             // peak concurrent get-missing-chunks requests
+	negotiating  int
 
 	srv *httptest.Server
+}
+
+// barrier releases only once n goroutines are waiting, so a test can prove work
+// overlaps instead of measuring wall clock.
+type barrier struct {
+	n      int
+	mu     sync.Mutex
+	waited int
+	ch     chan struct{}
+	fired  bool // n callers really did overlap
+	closed bool // channel closed (fired, or timed out)
+}
+
+func newBarrier(n int) *barrier { return &barrier{n: n, ch: make(chan struct{})} }
+
+// wait blocks until n callers have arrived, or the timeout expires. A timeout
+// opens the barrier permanently (fired stays false), so a non-pipelined client
+// fails the assertion once instead of stalling on every window.
+func (b *barrier) wait(timeout time.Duration) {
+	b.mu.Lock()
+	b.waited++
+	open := b.closed
+	if b.waited >= b.n && !b.closed {
+		b.fired, b.closed = true, true
+		close(b.ch)
+		open = true
+	}
+	b.mu.Unlock()
+	if open {
+		return
+	}
+	select {
+	case <-b.ch:
+	case <-time.After(timeout):
+		b.mu.Lock()
+		if !b.closed {
+			b.closed = true
+			close(b.ch)
+		}
+		b.mu.Unlock()
+	}
+}
+
+func (b *barrier) reached() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.fired
 }
 
 func newFakeServer(t *testing.T, cfg api.ConfigResp) *fakeServer {
@@ -128,6 +199,7 @@ func (f *fakeServer) handle(w http.ResponseWriter, r *http.Request) {
 		if rest == "get-missing-paths" {
 			f.mu.Lock()
 			f.pathsAsked = append(f.pathsAsked, req.Hashes)
+			f.pathRefs = append(f.pathRefs, req.Paths)
 			f.mu.Unlock()
 		}
 		if rest == "get-missing-chunks" {
@@ -137,7 +209,22 @@ func (f *fakeServer) handle(w http.ResponseWriter, r *http.Request) {
 			}
 			f.mu.Lock()
 			f.chunksAsked = append(f.chunksAsked, req.Hashes)
+			f.negotiating++
+			if f.negotiating > f.maxNegotiate {
+				f.maxNegotiate = f.negotiating
+			}
 			f.mu.Unlock()
+			defer func() {
+				f.mu.Lock()
+				f.negotiating--
+				f.mu.Unlock()
+			}()
+			if f.missingChunksBarrier != nil {
+				f.missingChunksBarrier.wait(5 * time.Second)
+			}
+			if f.missingChunksDelay > 0 {
+				time.Sleep(f.missingChunksDelay)
+			}
 			if f.haveChunks != nil {
 				missing = nil
 				for _, h := range req.Hashes {
@@ -161,6 +248,21 @@ func (f *fakeServer) handle(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.chunks[strings.TrimPrefix(rest, "chunk/")] = body
 		f.mu.Unlock()
+	case rest == "chunk-filter":
+		f.mu.Lock()
+		f.filterAsked++
+		f.filterEtags = append(f.filterEtags, r.Header.Get("If-None-Match"))
+		f.mu.Unlock()
+		if f.filter == nil {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.Header().Set("ETag", f.filterETag)
+		if r.Header.Get("If-None-Match") == f.filterETag && f.filterETag != "" {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Write(f.filter)
 	case rest == "path":
 		if f.failPathPut {
 			http.Error(w, "no", http.StatusInternalServerError)
@@ -169,6 +271,19 @@ func (f *fakeServer) handle(w http.ResponseWriter, r *http.Request) {
 		var p api.PathReq
 		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		f.mu.Lock()
+		f.pathPuts++
+		conflict := f.pathPutConflicts > 0
+		if conflict {
+			f.pathPutConflicts--
+		}
+		f.mu.Unlock()
+		if conflict {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(api.MissingResp{Missing: f.conflictMissing})
 			return
 		}
 		f.mu.Lock()

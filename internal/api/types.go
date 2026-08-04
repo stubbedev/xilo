@@ -18,15 +18,32 @@ type ConfigResp struct {
 	// bodies (Content-Encoding: zstd). Clients only compress the wire when set,
 	// so a new client stays compatible with an old server that omits it.
 	AcceptZstd bool `json:"acceptZstd"`
+	// ChunkFilter advertises GET api/chunk-filter (the chunk presence filter).
+	// Absent on older servers, so clients only try the endpoint when set.
+	ChunkFilter bool `json:"chunkFilter,omitempty"`
+}
+
+// PathRef pairs a store hash with the NAR hash of its contents. Sent with
+// get-missing-paths so the server can adopt a bit-identical path another cache
+// on the same storage backend already holds instead of making the client
+// dump, chunk and upload it again.
+type PathRef struct {
+	Hash    string `json:"hash"`
+	NarHash string `json:"narHash"`
 }
 
 // MissingReq is the body for get-missing-paths / get-missing-chunks.
 type MissingReq struct {
 	// Store hashes (get-missing-paths) or chunk hashes (get-missing-chunks).
 	Hashes []string `json:"hashes"`
+	// Paths mirrors Hashes for get-missing-paths, adding each path's NAR hash.
+	// Optional: an older client sends only Hashes and simply gets no adoption.
+	Paths []PathRef `json:"paths,omitempty"`
 }
 
-// MissingResp lists the subset of the requested hashes the server does NOT have.
+// MissingResp lists the subset of the requested hashes the server does NOT
+// have. Also the 409 body from put-path, naming the referenced chunks that
+// turned out to be absent.
 type MissingResp struct {
 	Missing []string `json:"missing"`
 }

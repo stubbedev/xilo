@@ -41,10 +41,13 @@ type Server struct {
 	niCache   *narinfoCache // rendered+signed narinfo bodies
 	gzipPool  sync.Pool     // *gzip.Writer for NAR wire compression
 	touched   sync.Map      // "<cacheID>/<storeHash>" → unix secs of last LRU bump
-	egress    sync.Map      // accountID (int64) → *atomic.Int64 pending NAR bytes
-	metrics   metrics
-	stat      statusRing
-	started   time.Time
+	// chunkFilters memoizes the per-storage chunk presence filter served to
+	// pushers (storage name → *chunkFilterBody).
+	chunkFilters sync.Map
+	egress       sync.Map // accountID (int64) → *atomic.Int64 pending NAR bytes
+	metrics      metrics
+	stat         statusRing
+	started      time.Time
 	// lastSavedCounters is the JSON of the last persisted metrics snapshot;
 	// only the status-sampler goroutine touches it.
 	lastSavedCounters string
@@ -112,6 +115,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /c/{account}/{cache}/api/config", s.handleConfig)
 	mux.HandleFunc("POST /c/{account}/{cache}/api/get-missing-paths", s.handleMissingPaths)
 	mux.HandleFunc("POST /c/{account}/{cache}/api/get-missing-chunks", s.handleMissingChunks)
+	mux.HandleFunc("GET /c/{account}/{cache}/api/chunk-filter", s.handleChunkFilter)
 	mux.HandleFunc("PUT /c/{account}/{cache}/api/chunk/{hash}", s.handlePutChunk)
 	mux.HandleFunc("PUT /c/{account}/{cache}/api/path", s.handlePutPath)
 

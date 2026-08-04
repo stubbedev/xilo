@@ -190,6 +190,10 @@ inotify watcher:
 xilo watch mycache   # auto-pushes newly-built store paths
 ```
 
+Nix runs a `post-build-hook` synchronously, so the build waits for the push. The
+watcher pushes out of band instead — the better choice when a big closure (a dev
+shell, say) would otherwise hold up every build.
+
 ### GitHub Actions
 
 The repo doubles as a composite action: it installs the CLI, saves the login,
@@ -538,6 +542,10 @@ order above:
 managed entirely by the CLI. Overridable per-invocation with `XILO_URL` /
 `XILO_TOKEN`, or per-command flags.
 
+Pushes also keep a throwaway cache in `~/.cache/xilo` (chunk manifests and the
+server's chunk presence filter — see [What a push avoids doing](#what-a-push-avoids-doing)).
+`XILO_CACHE_DIR` relocates it; deleting it is always safe.
+
 ## Development
 
 ```sh
@@ -560,3 +568,34 @@ speaks the standard Nix binary-cache protocol under the `/c/{account}/{cache}` m
 `/c/{account}/{cache}/nix-cache-info`, `/c/{account}/{cache}/{hash}.narinfo` (signed on
 the fly with the cache's ed25519 key so pushers never hold the signing key), and
 `/c/{account}/{cache}/nar/{hash}.nar` (reassembled from chunks).
+
+### What a push avoids doing
+
+Finding out what the server already has is most of a push, so four things cut it
+down, cheapest first:
+
+- **Path adoption.** The client sends each path's NAR hash with the
+  "what's missing" question. If an identical path already sits in another cache
+  on the same storage backend, the server copies the chunk list over and reports
+  the path present — no dump, no chunking, no upload. Only from caches the
+  caller may already read (public, pullable by the token, or an admin token), so
+  it grants no access it didn't have.
+- **Cached chunk manifests.** `~/.cache/xilo/manifests` remembers each pushed
+  path's chunk list, keyed by store hash, NAR hash and the server's chunking
+  parameters. Pushing the same path again (to a second cache, after a failed
+  run, after a server GC) registers it without reading the NAR at all.
+  `XILO_CACHE_DIR` moves the directory; deleting it only costs work.
+- **The chunk presence filter.** `GET /c/{account}/{cache}/api/chunk-filter`
+  serves a bloom filter of the backend's chunk hashes (memoized ~10 min,
+  ETag-revalidated, cached on disk). With it the client uploads brand-new chunks
+  immediately and skips known ones without a single negotiation round trip.
+  Fetched only when the push is big enough to be worth the download.
+- **Pipelined negotiation.** Without a filter, chunk windows are resolved
+  concurrently with the dump instead of blocking it, so a round trip no longer
+  stalls the stream every 32 chunks.
+
+All four are optimistic, and one thing makes that safe: `put-path` re-stamps and
+re-checks every referenced chunk, answering `409` with the hashes that aren't
+there. On a 409 the client redoes that path with every shortcut off, so a stale
+manifest, a filter false positive or a chunk swept mid-push costs one extra dump
+and never a corrupt or dangling path.

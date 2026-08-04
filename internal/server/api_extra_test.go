@@ -381,9 +381,22 @@ func TestPutPathErrors(t *testing.T) {
 	}
 	sp := "/nix/store/" + h32 + "-x"
 
-	// unknown chunk referenced → 400
-	if c := mk(api.PathReq{StorePath: sp, NarHash: narHash, NarSize: narSize, Chunks: []string{strings.Repeat("cd", 32)}}); c != 400 {
-		t.Errorf("missing chunks → %d want 400", c)
+	// unknown chunk referenced → 409 naming it, so an optimistic pusher can
+	// tell "you guessed wrong, redo this path" from a real error.
+	absent := strings.Repeat("cd", 32)
+	{
+		body, _ := json.Marshal(api.PathReq{StorePath: sp, NarHash: narHash, NarSize: narSize, Chunks: []string{absent}})
+		resp := put(t, ts, "/c/default/c/api/path", body, "")
+		if resp.StatusCode != 409 {
+			t.Errorf("missing chunks → %d want 409", resp.StatusCode)
+		}
+		var out api.MissingResp
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			t.Fatalf("decode 409 body: %v", err)
+		}
+		if len(out.Missing) != 1 || out.Missing[0] != absent {
+			t.Errorf("409 body missing = %v, want [%s]", out.Missing, absent)
+		}
 	}
 	// bad narHash format → 400
 	if c := mk(api.PathReq{StorePath: sp, NarHash: "garbage", NarSize: narSize, Chunks: []string{ch}}); c != 400 {
