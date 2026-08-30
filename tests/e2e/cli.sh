@@ -92,7 +92,7 @@ export XILO_TOKEN=$TOK
 
 echo "== login (saved client config) =="
 assert "login saves config" "$XILO" login $URL --token "$TOK"
-grep -q "$TOK" "$XDG_CONFIG_HOME/xilo/config.yaml" && pass "config file holds token" || fail "config file holds token"
+grep -qF -- "$TOK" "$XDG_CONFIG_HOME/xilo/config.yaml" && pass "config file holds token" || fail "config file holds token"
 
 echo "== push (real nix closure) =="
 CLOSURE_ROOT=$(closure_root)
