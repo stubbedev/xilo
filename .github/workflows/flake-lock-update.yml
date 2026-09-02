@@ -1,0 +1,48 @@
+name: flake-lock-update
+
+# Keeps flake.lock current with the inputs this flake declares.
+# Runs weekly and on demand. Commits straight to master with `[skip ci]`.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Monday 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - uses: DeterminateSystems/nix-installer-action@v22
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/flake.lock', '**/Cargo.lock', '**/go.sum') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-
+          purge-created: 0
+          purge-primary-key: never
+          gc-max-store-size-linux: 5G
+      - name: nix flake update
+        run: |
+          set -euo pipefail
+          nix flake update
+          nix flake check --print-build-logs
+      - name: commit + push if changed
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain flake.lock)" ]; then
+            echo "flake.lock already current."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add flake.lock
+          git commit -m 'chore: weekly flake.lock update [skip ci]'
+          git push origin HEAD:master
