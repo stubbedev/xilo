@@ -63,25 +63,25 @@ export COMPOSE
 export -f exec_srv # bash -c assertions need it too
 
 echo "== cache lifecycle (server-side CLI) =="
-assert "cache create" exec_srv cache create e2e
-assert "cache create private" exec_srv cache create e2e-priv --private
+assert "cache create" exec_srv cache create default/e2e
+assert "cache create private" exec_srv cache create default/e2e-priv --private
 assert "cache list shows both" bash -c "exec_srv cache list | grep -q e2e-priv"
-assert "cache info" bash -c "exec_srv cache info e2e | grep -q 'public key'"
-assert "cache configure" exec_srv cache configure e2e --priority 30
+assert "cache info" bash -c "exec_srv cache info default/e2e | grep -q 'public key'"
+assert "cache configure" exec_srv cache configure default/e2e --priority 30
 assert "configure applied" bash -c "curl -fs $URL/c/default/e2e/nix-cache-info | grep -q 'Priority: 30'"
-KEY_BEFORE=$(exec_srv cache info e2e | grep 'public key')
-assert "cache rotate" exec_srv cache rotate e2e
-KEY_AFTER=$(exec_srv cache info e2e | grep 'public key')
+KEY_BEFORE=$(exec_srv cache info default/e2e | grep 'public key')
+assert "cache rotate" exec_srv cache rotate default/e2e
+KEY_AFTER=$(exec_srv cache info default/e2e | grep 'public key')
 [ "$KEY_BEFORE" != "$KEY_AFTER" ] && pass "rotate changed key" || fail "rotate changed key"
 
 echo "== tokens =="
-TOK=$(exec_srv token create e2e-full --cache e2e --push --pull 2>/dev/null | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
+TOK=$(exec_srv token create e2e-full --cache default/e2e --push --pull 2>/dev/null | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
 [ -n "$TOK" ] && pass "token create prints secret" || fail "token create prints secret"
 # Tokens are scoped to exactly one cache, so the private cache needs its own.
-PRIV_TOK=$(exec_srv token create e2e-priv-full --cache e2e-priv --push --pull 2>/dev/null | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
+PRIV_TOK=$(exec_srv token create e2e-priv-full --cache default/e2e-priv --push --pull 2>/dev/null | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
 [ -n "$PRIV_TOK" ] && pass "private cache token created" || fail "private cache token created"
 assert "token list" bash -c "exec_srv token list | grep -q e2e-full"
-DEAD=$(exec_srv token create e2e-dead --cache e2e --push 2>/dev/null | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
+DEAD=$(exec_srv token create e2e-dead --cache default/e2e --push 2>/dev/null | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
 DEAD_ID=$(exec_srv token list | grep e2e-dead | grep -oE '^[0-9 ]+' | tr -d ' ' | head -1)
 assert "token revoke" exec_srv token revoke "$DEAD_ID"
 export XILO_TOKEN=$TOK
@@ -94,10 +94,10 @@ echo "== push (real nix closure) =="
 CLOSURE_ROOT=$(closure_root)
 [ -n "$CLOSURE_ROOT" ] || { echo "no pushable store path found"; exit 1; }
 echo "closure root: $CLOSURE_ROOT"
-assert "push --dry-run" "$XILO" push e2e "$CLOSURE_ROOT" --dry-run
-assert "push closure" "$XILO" push e2e "$CLOSURE_ROOT" --quiet
-assert "re-push dedups" bash -c "\"$XILO\" push e2e \"$CLOSURE_ROOT\" 2>&1 | grep -q 'already cached'"
-assert "push from stdin" bash -c "echo \"$CLOSURE_ROOT\" | \"$XILO\" push e2e - --quiet"
+assert "push --dry-run" "$XILO" push default/e2e "$CLOSURE_ROOT" --dry-run
+assert "push closure" "$XILO" push default/e2e "$CLOSURE_ROOT" --quiet
+assert "re-push dedups" bash -c "\"$XILO\" push default/e2e \"$CLOSURE_ROOT\" 2>&1 | grep -q 'already cached'"
+assert "push from stdin" bash -c "echo \"$CLOSURE_ROOT\" | \"$XILO\" push default/e2e - --quiet"
 
 echo "== pull (nix verifies hashes itself) =="
 H=${CLOSURE_ROOT#/nix/store/}; H=${H%%-*}
@@ -107,12 +107,12 @@ nix copy --no-check-sigs --from "$URL/c/default/e2e" --to "local?root=$WORK/nixr
 [ -e "$WORK/nixroot$CLOSURE_ROOT" ] && pass "copied path materialized" || fail "copied path materialized"
 
 echo "== use (nix.conf managed block) =="
-assert "use adds substituter" "$XILO" use e2e
+assert "use adds substituter" "$XILO" use default/e2e
 grep -q "$URL/c/default/e2e" "$XDG_CONFIG_HOME/nix/nix.conf" && pass "nix.conf contains substituter" || fail "nix.conf contains substituter"
 grep -q "e2e:" "$XDG_CONFIG_HOME/nix/nix.conf" && pass "nix.conf contains trusted key" || fail "nix.conf contains trusted key"
-assert "use second cache accumulates" "$XILO" use e2e-priv --token "$PRIV_TOK"
+assert "use second cache accumulates" "$XILO" use default/e2e-priv --token "$PRIV_TOK"
 grep -q "machine 127.0.0.1:18080" "$HOME/.netrc" && pass "netrc entry for private cache" || fail "netrc entry for private cache"
-assert "use --remove" "$XILO" use e2e --remove
+assert "use --remove" "$XILO" use default/e2e --remove
 grep -q "$URL/c/default/e2e " "$XDG_CONFIG_HOME/nix/nix.conf" && fail "substituter removed" || pass "substituter removed"
 grep -q "$URL/c/default/e2e-priv" "$XDG_CONFIG_HOME/nix/nix.conf" && pass "sibling substituter kept" || fail "sibling substituter kept"
 
@@ -121,17 +121,17 @@ curl -fs -o /dev/null "$URL/c/default/e2e-priv/nix-cache-info" && fail "private 
 curl -fs -o /dev/null -H "Authorization: Bearer $PRIV_TOK" "$URL/c/default/e2e-priv/nix-cache-info" && pass "private token accepted" || fail "private token accepted"
 
 echo "== cache configure variants =="
-assert "configure --public" exec_srv cache configure e2e-priv --public
+assert "configure --public" exec_srv cache configure default/e2e-priv --public
 assert "flipped public pulls anonymously" bash -c "curl -fs -o /dev/null $URL/c/default/e2e-priv/nix-cache-info"
-assert "configure --private" exec_srv cache configure e2e-priv --private
+assert "configure --private" exec_srv cache configure default/e2e-priv --private
 curl -fs -o /dev/null "$URL/c/default/e2e-priv/nix-cache-info" && fail "flipped back private" || pass "flipped back private"
-assert "configure retention + max-size" exec_srv cache configure e2e --retention 24h --max-size 10GB
-assert "retention shown in info" bash -c "exec_srv cache info e2e | grep -q 24h"
+assert "configure retention + max-size" exec_srv cache configure default/e2e --retention 24h --max-size 10GB
+assert "retention shown in info" bash -c "exec_srv cache info default/e2e | grep -q 24h"
 
 echo "== watch (inotify auto-push) =="
 if [ "$(uname -s)" = "Linux" ]; then
   head -c 1M /dev/urandom > "$WORK/watched.bin"
-  ( "$XILO" watch e2e >/dev/null 2>&1 ) &
+  ( "$XILO" watch default/e2e >/dev/null 2>&1 ) &
   WATCH_PID=$!
   sleep 1
   WPATH=$(nix store add-path "$WORK/watched.bin" --name e2e-watched 2>/dev/null)
@@ -148,8 +148,8 @@ else
 fi
 
 echo "== gc =="
-exec_srv cache destroy e2e-priv >/dev/null 2>&1 && fail "destroy without --yes refused" || pass "destroy without --yes refused"
-assert "cache destroy" exec_srv cache destroy e2e-priv --yes
+exec_srv cache destroy default/e2e-priv >/dev/null 2>&1 && fail "destroy without --yes refused" || pass "destroy without --yes refused"
+assert "cache destroy" exec_srv cache destroy default/e2e-priv --yes
 GC_OUT=$(exec_srv gc 2>&1)
 echo "$GC_OUT" | grep -qE "removed [0-9]+ chunks" && pass "gc reports sweep" || fail "gc reports sweep"
 # everything still pullable after gc
