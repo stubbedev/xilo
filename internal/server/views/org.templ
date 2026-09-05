@@ -26,6 +26,7 @@ type OrgPageData struct {
 // Org renders one organization.
 templ Org(d OrgPageData) {
 	@Layout(d.Info.Account.Slug, "", d.Nav, d.Flash) {
+		@Crumbs(Crumb{T("org.title"), orgParent(d.Nav)}, Crumb{d.Info.Account.Slug, ""})
 		@PageHeader(d.Info.Account.Slug, UsagePhrase(d.Info))
 		<div class="grid gap-6">
 			@card.Card() {
@@ -34,11 +35,11 @@ templ Org(d OrgPageData) {
 						{ T("org.members") }
 					}
 				}
-				@card.Content(card.ContentProps{Class: "space-y-3"}) {
+				@card.Content(card.ContentProps{Class: "space-y-4"}) {
 					if len(d.Info.Members) == 0 {
 						@EmptyState("users", T("org.membersempty"))
 					} else {
-						<div class="overflow-hidden rounded-lg border">
+						@ListBox() {
 							@table.Table() {
 								@table.Body() {
 									for _, m := range d.Info.Members {
@@ -69,18 +70,10 @@ templ Org(d OrgPageData) {
 															<input type="hidden" name="user_id" value={ strconv.FormatInt(m.UserID, 10) }/>
 															if m.Role == "admin" {
 																<input type="hidden" name="role" value="user"/>
-																@WithTooltip(T("users.demote")) {
-																	@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.demote")}}) {
-																		@Icon("user-minus")
-																	}
-																}
+																@RowAction("user-minus", T("users.demote"), true)
 															} else {
 																<input type="hidden" name="role" value="admin"/>
-																@WithTooltip(T("users.promote")) {
-																	@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.promote")}}) {
-																		@Icon("user-plus")
-																	}
-																}
+																@RowAction("user-plus", T("users.promote"), true)
 															}
 														</form>
 														@ConfirmForm(Confirm{
@@ -93,7 +86,7 @@ templ Org(d OrgPageData) {
 															Danger:         true,
 															TriggerIcon:    "trash-2",
 															IconOnly:       true,
-															TriggerTooltip: T("ns.removemember"),
+															TriggerTooltip: T("action.remove"),
 															TriggerVariant: button.VariantGhost,
 														})
 													</div>
@@ -103,7 +96,7 @@ templ Org(d OrgPageData) {
 									}
 								}
 							}
-						</div>
+						}
 					}
 					if d.CanManage {
 						if len(d.AllUsers) > 0 {
@@ -155,11 +148,11 @@ templ Org(d OrgPageData) {
 							}
 						}
 					} else {
-						<div class="divide-y overflow-hidden rounded-lg border">
+						@ListBox() {
 							for _, u := range d.Caches {
 								@cacheRow(u, d.Bytes)
 							}
-						</div>
+						}
 					}
 				}
 			}
@@ -188,8 +181,21 @@ templ roleSelect(name, value string) {
 // plan team · N members".
 func UsagePhrase(o OrgInfo) string {
 	out := o.UsageLine()
-	if n := len(o.Members); n > 0 {
+	switch n := len(o.Members); n {
+	case 0:
+	case 1:
+		out += " · 1 " + T("org.memberword")
+	default:
 		out += " · " + strconv.Itoa(n) + " " + T("org.membersword")
 	}
 	return out
+}
+
+// orgParent is where the organizations list lives for this viewer: the
+// instance settings for admins, the account page for everyone else.
+func orgParent(n Nav) string {
+	if n.IsAdmin {
+		return "/admin/settings"
+	}
+	return "/admin/account"
 }

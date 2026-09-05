@@ -38,13 +38,20 @@ type Nav struct {
 	IsAdmin  bool            // instance admin (shows the Settings link)
 	Contexts []store.Account // the viewer's personal account + orgs
 	Active   string          // active context slug; "" = all accounts
+	Theme    string          // the user's palette id ("" = default), see theme.go
 }
 
 // Layout is the signed-in app shell: top navigation bar, flash banner, and the
 // page body. `section` marks the active nav item ("caches"/"account"/"settings").
 templ Layout(title, section string, nav Nav, flash Flash) {
 	<!DOCTYPE html>
-	<html lang="en" class="h-full">
+	<html
+		lang="en"
+		class="h-full"
+		if nav.Theme != "" {
+			data-palette={ nav.Theme }
+		}
+	>
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -88,12 +95,13 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 			@chart.Script()
 			@sidebar.Script()
 			@webauthnScript()
+			@copyToastScript()
 		</head>
 		<body class="bg-background text-foreground antialiased">
 			if nav.LoggedIn {
 				@sidebar.Layout() {
 					@appSidebar(section, nav)
-					@sidebar.Inset() {
+					@sidebar.Inset(sidebar.InsetProps{Class: "min-w-0"}) {
 						<div class="flex min-h-svh flex-col">
 							<header class="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur">
 								@sidebar.Trigger(sidebar.TriggerProps{Target: "app-sidebar", Class: "-ml-1"})
@@ -235,10 +243,27 @@ templ footer() {
 	</footer>
 }
 
+// copyToastScript makes every copy button confirm itself with a toast: the
+// templui toast script watches the DOM for new toasts, so cloning the
+// template into the body is all it takes. The check-icon swap alone was easy
+// to miss.
+templ copyToastScript() {
+	<template id="copied-toast">
+		@toast.Toast(toast.Props{Description: T("copy.done"), Duration: 2000, Icon: true, Dismissible: true})
+	</template>
+	<script>
+		document.addEventListener('click', function (e) {
+			if (!e.target.closest('[data-copy-button]')) return;
+			var t = document.getElementById('copied-toast');
+			if (t) document.body.appendChild(t.content.cloneNode(true));
+		});
+	</script>
+}
+
 // CopyField shows a value in a monospace box with a copy button.
 templ CopyField(value string) {
-	<div class="mt-3 flex items-center gap-2 rounded-md border bg-muted/50 p-2">
-		<code id={ copyID(value) } class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap px-1 font-mono text-xs">{ value }</code>
+	<div class="flex items-center gap-2 rounded-md border bg-muted/40 p-2">
+		<code id={ copyID(value) } class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap px-1 font-mono text-xs scrollbar-none">{ value }</code>
 		@copybutton.CopyButton(copybutton.Props{TargetID: copyID(value), Class: "shrink-0"})
 	</div>
 }

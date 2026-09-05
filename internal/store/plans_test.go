@@ -217,6 +217,12 @@ func TestUserStatusEmailAndLogin(t *testing.T) {
 		t.Fatalf("email change: %+v %v", got, err)
 	}
 	// Clearing the email removes the sign-in alias.
+	if err := db.SetUserTheme(u.ID, "nord"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := db.GetUser(u.ID); got.Theme != "nord" {
+		t.Fatalf("theme not stored: %+v", got)
+	}
 	if err := db.SetUserEmail(u.ID, ""); err != nil {
 		t.Fatal(err)
 	}

@@ -179,6 +179,20 @@ func TestAdminCacheCRUD(t *testing.T) {
 	}
 	resp.Body.Close()
 
+	// path detail: the pushed path renders (narinfo URL, chunk table, paging
+	// past the end clamps); an unknown hash and an unknown cache are 404s.
+	resp, _ = c.Get(ts.URL + "/admin/cache/default/web/path/" + h32 + "?chunks[number]=9")
+	if b := body(t, resp); resp.StatusCode != http.StatusOK || !contains(b, h32+".narinfo") || !contains(b, "Chunks") {
+		t.Errorf("path detail → %d", resp.StatusCode)
+	}
+	for _, p := range []string{"/admin/cache/default/web/path/" + strings.Repeat("z", 32), "/admin/cache/default/ghost/path/" + h32} {
+		resp, _ = c.Get(ts.URL + p)
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("GET %s → %d want 404", p, resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+
 	// configure: retention 1 day, cap 1 MiB, public again, priority 7
 	resp, _ = c.PostForm(ts.URL+"/admin/cache/default/web/configure", url.Values{
 		"priority":        {"7"},

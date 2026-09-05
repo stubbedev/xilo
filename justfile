@@ -36,7 +36,7 @@ dev:
     # Open the admin UI once the server is accepting; air runs in the
     # foreground, so its hot-reload restarts never re-trigger this.
     url="http://localhost$(awk -F'"' '/^listen:/{print $2}' xilo.yaml)"
-    (until curl -sf -o /dev/null "$url"; do sleep 0.3; done; xdg-open "$url") &
+    (until curl -sf -o /dev/null "$url"; do sleep 0.3; done; "${BROWSER:-xdg-open}" "$url") &
     air
 
 # Install into $GOBIN (or $GOPATH/bin).
@@ -143,6 +143,11 @@ check: lint test schema-check nix-check
 # Run the server against ./xilo.yaml (copy xilo.example.yaml first).
 run: build
     ./bin/xilo serve
+
+# Throwaway instance with dummy data for eyeballing the UI (scripts/demo.sh):
+# `just demo` serves http://localhost:8090, sign in admin / demo. Ctrl-C stops.
+demo port="8090": build
+    ./scripts/demo.sh {{port}}
 
 # Create a cache locally: `just cache-create mycache`.
 cache-create name:

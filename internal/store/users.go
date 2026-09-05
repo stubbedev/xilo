@@ -20,6 +20,7 @@ type User struct {
 	Role        string // "owner" | "user"
 	Status      string // "active" | "pending" (awaiting approval)
 	TOTPEnabled bool
+	Theme       string // dashboard palette id ("" = default); light/dark is a browser choice
 	Created     int64
 }
 
@@ -28,12 +29,12 @@ type User struct {
 // client is fine — unlike an email collision, which must stay generic.
 var ErrNameTaken = errors.New("name already taken")
 
-const userCols = `id,username,COALESCE(email,''),password_hash,role,status,totp_enabled,created`
+const userCols = `id,username,COALESCE(email,''),password_hash,role,status,totp_enabled,theme,created`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	var totp int
-	if err := row.Scan(&u.ID, &u.Name, &u.Email, &u.PassHash, &u.Role, &u.Status, &totp, &u.Created); err != nil {
+	if err := row.Scan(&u.ID, &u.Name, &u.Email, &u.PassHash, &u.Role, &u.Status, &totp, &u.Theme, &u.Created); err != nil {
 		return nil, err
 	}
 	u.TOTPEnabled = totp != 0
@@ -166,6 +167,14 @@ func (db *DB) SetUserEmail(id int64, email string) error {
 			v = email
 		}
 		_, err := tx.Exec(`UPDATE users SET email=? WHERE id=?`, v, id)
+		return err
+	})
+}
+
+// SetUserTheme stores the user's dashboard palette id ("" = default).
+func (db *DB) SetUserTheme(id int64, theme string) error {
+	return db.write(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE users SET theme=? WHERE id=?`, theme, id)
 		return err
 	})
 }

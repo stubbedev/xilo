@@ -142,7 +142,8 @@ func tokenPerm(t *store.Token, perm string) bool {
 }
 
 // tokenPermanent reports whether a token's expiry switch defaults to
-// permanent; new tokens never expire unless a TTL is chosen.
+// permanent. New tokens default to a TTL (30 days preselected); only an
+// existing never-expiring token starts with the switch on.
 func tokenPermanent(t *store.Token) bool {
-	return t == nil || t.Expires == 0
+	return t != nil && t.Expires == 0
 }

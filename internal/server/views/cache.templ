@@ -3,6 +3,7 @@ package views
 import (
 	"github.com/stubbedev/xilo/internal/store"
 
+	"github.com/templui/templui/components/accordion"
 	"github.com/templui/templui/components/button"
 	"github.com/templui/templui/components/card"
 	"github.com/templui/templui/components/copybutton"
@@ -37,19 +38,10 @@ type CacheData struct {
 
 templ CacheView(d CacheData) {
 	@Layout(d.Cache.Ref(), "caches", d.Nav, d.Flash) {
-		<div id="cache-head" class="mb-6 flex flex-wrap items-end justify-between gap-4">
-			<div class="space-y-1">
-				<h1 class="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-					<span><span class="text-muted-foreground">{ d.Cache.Account }/</span>{ d.Cache.Name }</span>
-					@VisBadge(d.Cache.Public)
-				</h1>
-				<p class="font-mono text-sm text-muted-foreground">{ d.BaseURL }/c/{ d.Cache.Ref() }</p>
-			</div>
-			@button.Button(button.Props{Href: "/admin", Variant: button.VariantOutline, Size: button.SizeSm}) {
-				@Icon("arrow-left")
-				<span>{ T("cd.back") }</span>
-			}
-		</div>
+		@Crumbs(Crumb{T("nav.caches"), "/admin"}, Crumb{d.Cache.Ref(), ""})
+		@PageHeader(d.Cache.Ref(), d.BaseURL+"/c/"+d.Cache.Ref()) {
+			@VisBadge(d.Cache.Public)
+		}
 		<div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 			@StatTile("package", Count(d.Stats.Paths), T("kpi.paths"), "", "")
 			@StatTile("database", d.Bytes(d.Stats.LogicalBytes), T("kpi.logical"), "", "")
@@ -71,7 +63,7 @@ templ CacheView(d CacheData) {
 						{ T("cd.usehint") }
 					}
 				}
-				@card.Content() {
+				@card.Content(card.ContentProps{Class: "space-y-4"}) {
 					@tabs.Tabs(tabs.Props{ID: "use"}) {
 						@tabs.List() {
 							@tabs.Trigger(tabs.TriggerProps{Value: "nixconf", IsActive: true}) {
@@ -95,7 +87,7 @@ templ CacheView(d CacheData) {
 						}
 					}
 					if !d.Cache.Public {
-						<div class="mt-4 space-y-2">
+						<div class="space-y-2">
 							<p class="text-xs text-muted-foreground">{ T("cd.private") }</p>
 							<p class="text-sm font-medium">{ T("cd.netrc") }</p>
 							@snippetBlock(snippetNetrc(d))
@@ -103,9 +95,7 @@ templ CacheView(d CacheData) {
 						</div>
 					}
 					if d.CanManage {
-						<div class="mt-4">
-							@cacheTokenDialog(d, "dlg-pulltok", T("cd.pulltoken"), false, true)
-						</div>
+						@cacheTokenDialog(d, "dlg-pulltok", T("cd.pulltoken"), false, true)
 					}
 				}
 			}
@@ -132,68 +122,70 @@ templ CacheView(d CacheData) {
 		<div class="mb-8">
 			@pathResults(d)
 		</div>
-		<div class="grid gap-6 lg:grid-cols-2">
-			@card.Card() {
-				@card.Header() {
-					@card.Title() {
-						{ T("cd.settings") }
+		@card.Card() {
+			@card.Content(card.ContentProps{Class: "py-2"}) {
+				@accordion.Accordion() {
+					@accordion.Item(accordion.ItemProps{Attributes: templ.Attributes{"open": true}}) {
+						@accordion.Trigger() {
+							{ T("cd.settings") }
+						}
+						@accordion.Content() {
+							<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/configure") } class="grid gap-4 sm:grid-cols-3">
+								<div class="sm:col-span-3">
+									@VisibilitySwitch(!d.Cache.Public)
+								</div>
+								@PriorityField(d.Cache.Priority)
+								@Field("", T("cd.retention")) {
+									@DurationInput("retention", d.Cache.Retention)
+								}
+								@Field("", T("cd.maxsize")) {
+									@SizeInput("max", d.Cache.MaxBytes)
+								}
+								<div class="sm:col-span-3">
+									@button.Button(button.Props{Type: button.TypeSubmit}) {
+										@Icon("check")
+										<span>{ T("cd.save") }</span>
+									}
+								</div>
+							</form>
+						}
+					}
+					@accordion.Item() {
+						@accordion.Trigger() {
+							{ T("cd.maint") }
+						}
+						@accordion.Content(accordion.ContentProps{Class: "space-y-4"}) {
+							@ActionRow(T("cd.rotatehint")) {
+								@ConfirmForm(Confirm{
+									ID:           "rotate",
+									Action:       "/admin/cache/" + d.Cache.Ref() + "/rotate",
+									Title:        T("cd.rotatetitle"),
+									Message:      T("confirm.rotate"),
+									ConfirmLabel: T("cd.rotate"),
+									ConfirmIcon:  "key-round",
+									TriggerLabel: T("cd.rotate"),
+									TriggerIcon:  "key-round",
+								})
+							}
+							@separator.Separator()
+							@ActionRow(T("cd.deletehint")) {
+								@ConfirmForm(Confirm{
+									ID:           "delete-cache",
+									Action:       "/admin/cache/" + d.Cache.Ref() + "/delete",
+									Title:        T("cd.deletetitle"),
+									Message:      "“" + d.Cache.Ref() + "” " + T("cd.deletemsg"),
+									ConfirmLabel: T("cd.delete"),
+									ConfirmIcon:  "trash-2",
+									Danger:       true,
+									TriggerLabel: T("action.delete"),
+									TriggerIcon:  "trash-2",
+								})
+							}
+						}
 					}
 				}
-				@card.Content() {
-					<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/configure") } class="space-y-4">
-						@VisibilitySwitch(!d.Cache.Public)
-						@PriorityField(d.Cache.Priority)
-						@Field("", T("cd.retention")) {
-							@DurationInput("retention", d.Cache.Retention)
-						}
-						@Field("", T("cd.maxsize")) {
-							@SizeInput("max", d.Cache.MaxBytes)
-						}
-						@button.Button(button.Props{Type: button.TypeSubmit}) {
-							@Icon("check")
-							<span>{ T("cd.save") }</span>
-						}
-					</form>
-				}
 			}
-			@card.Card() {
-				@card.Header() {
-					@card.Title() {
-						{ T("cd.maint") }
-					}
-				}
-				@card.Content(card.ContentProps{Class: "space-y-4"}) {
-					<div class="flex items-center justify-between gap-3">
-						<p class="text-sm text-muted-foreground">{ T("cd.rotatehint") }</p>
-						@ConfirmForm(Confirm{
-							ID:           "rotate",
-							Action:       "/admin/cache/" + d.Cache.Ref() + "/rotate",
-							Title:        T("cd.rotatetitle"),
-							Message:      T("confirm.rotate"),
-							ConfirmLabel: T("cd.rotate"),
-							ConfirmIcon:  "key-round",
-							TriggerLabel: T("cd.rotate"),
-							TriggerIcon:  "key-round",
-						})
-					</div>
-					@separator.Separator()
-					<div class="flex items-center justify-between gap-3">
-						<p class="text-sm text-muted-foreground">{ T("cd.deletehint") }</p>
-						@ConfirmForm(Confirm{
-							ID:           "delete-cache",
-							Action:       "/admin/cache/" + d.Cache.Ref() + "/delete",
-							Title:        T("cd.deletetitle"),
-							Message:      "“" + d.Cache.Ref() + "” " + T("cd.deletemsg"),
-							ConfirmLabel: T("cd.delete"),
-							ConfirmIcon:  "trash-2",
-							Danger:       true,
-							TriggerLabel: T("action.delete"),
-							TriggerIcon:  "trash-2",
-						})
-					</div>
-				}
-			}
-		</div>
+		}
 	}
 }
 
@@ -203,20 +195,9 @@ templ CacheView(d CacheData) {
 templ cacheTokenDialog(d CacheData, id, label string, push, pull bool) {
 	@dialog.Dialog(dialog.Props{ID: id}) {
 		@dialog.Trigger(dialog.TriggerProps{For: id}) {
-			@button.Button(button.Props{Size: button.SizeSm}) {
-				@Icon("plus")
-				<span>{ label }</span>
-			}
+			@PlusButton(label)
 		}
-		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-lg"}) {
-			@dialog.Header() {
-				@dialog.Title() {
-					{ label }
-				}
-				@dialog.Description() {
-					{ T("cd.tokenhint") }
-				}
-			}
+		@DialogBox(label, T("cd.tokenhint"), true) {
 			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/tokens") } class="mt-2 space-y-4">
 				@Field(id+"-name", T("tokens.name")) {
 					@input.Input(input.Props{ID: id + "-name", Name: "name", Value: d.Cache.Name, Placeholder: T("ph.tokenname"), Required: true})
@@ -231,37 +212,19 @@ templ cacheTokenDialog(d CacheData, id, label string, push, pull bool) {
 						@PermSwitchID(id+"-manage", "manage", "on", T("tokens.manage"), false)
 					</div>
 				}
-				@Field("", T("tokens.expiry")) {
-					<div class="group/expiry space-y-2">
-						@PermSwitchID(id+"-permanent", "permanent", "on", T("tokens.permanent"), false)
-						<div class="group-has-[:checked]/expiry:hidden">
-							@TTLSelect(nil)
-						</div>
-					</div>
-				}
-				@dialog.Footer() {
-					@dialog.Close(dialog.CloseProps{For: id}) {
-						@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
-							{ T("action.cancel") }
-						}
-					}
-					@button.Button(button.Props{Type: button.TypeSubmit}) {
-						@Icon("plus")
-						<span>{ T("tokens.create") }</span>
-					}
-				}
+				@ExpiryField(id, nil)
+				@DialogFooter(id, "plus", T("tokens.create"))
 			</form>
 		}
 	}
 }
 
-// snippetBlock is a code snippet with a copy button.
+// snippetBlock is a multi-line code snippet with a copy button. Flex, not an
+// absolutely placed button: the button never sits on top of long lines.
 templ snippetBlock(text string) {
-	<div class="relative rounded-lg border bg-muted/40">
-		<pre id={ copyID(text) } class="overflow-x-auto p-3 pr-12 font-mono text-xs leading-relaxed">{ text }</pre>
-		<div class="absolute right-2 top-2">
-			@copybutton.CopyButton(copybutton.Props{TargetID: copyID(text)})
-		</div>
+	<div class="flex items-start gap-2 rounded-lg border bg-muted/40 p-2">
+		<pre id={ copyID(text) } class="min-w-0 flex-1 overflow-x-auto p-1 font-mono text-xs leading-relaxed scrollbar-none">{ text }</pre>
+		@copybutton.CopyButton(copybutton.Props{TargetID: copyID(text), Class: "shrink-0"})
 	</div>
 }
 
@@ -275,7 +238,7 @@ templ pathResults(d CacheData) {
 				@EmptyState("package-search", T("cd.pathsempty"))
 			}
 		} else {
-			@card.Card(card.Props{Class: "p-0"}) {
+			@TableCard() {
 				@table.Table(table.Props{Class: "table-fixed"}) {
 					@table.Header() {
 						@table.Row() {
@@ -290,7 +253,7 @@ templ pathResults(d CacheData) {
 							@table.Row() {
 								@table.Cell() {
 									<div class="flex min-w-0 items-center gap-2">
-										<span class="truncate font-medium">{ name }</span>
+										<a href={ templ.SafeURL(pathURL(d.Cache, p.StorePath)) } class="truncate font-medium hover:underline" aria-label={ T("paths.open") }>{ name }</a>
 										if hash != "" {
 											@WithTooltip(p.StorePath) {
 												<code class="font-mono text-xs text-muted-foreground">{ hash }</code>

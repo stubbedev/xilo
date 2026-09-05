@@ -140,6 +140,24 @@ func (s SortCtx) URL(key string) string {
 	return s.Path + "?" + v.Encode()
 }
 
+// With rebuilds the listing URL with one query param set (removed when val is
+// empty) and paging reset: filter chips that compose with the active search
+// and sort.
+func (s SortCtx) With(key, val string) string {
+	v := url.Values{}
+	maps.Copy(v, s.Query)
+	if val == "" {
+		v.Del(key)
+	} else {
+		v.Set(key, val)
+	}
+	v.Del(s.PageParam)
+	if len(v) == 0 {
+		return s.Path
+	}
+	return s.Path + "?" + v.Encode()
+}
+
 // Pager describes one paginated listing: prev/next hrefs (empty = disabled)
 // and the 1-based position. Pages <= 1 renders nothing.
 type Pager struct {

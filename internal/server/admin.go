@@ -23,6 +23,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/stubbedev/xilo/internal/mail"
+	"github.com/stubbedev/xilo/internal/narinfo"
 	"github.com/stubbedev/xilo/internal/server/views"
 	"github.com/stubbedev/xilo/internal/store"
 )
@@ -157,7 +158,7 @@ func (s *Server) nav(r *http.Request, u *store.User) views.Nav {
 	if u == nil {
 		return views.Nav{}
 	}
-	n := views.Nav{LoggedIn: true, UserName: u.Name, IsAdmin: u.Role == "owner", Active: s.activeContext(r, u)}
+	n := views.Nav{LoggedIn: true, UserName: u.Name, IsAdmin: u.Role == "owner", Active: s.activeContext(r, u), Theme: u.Theme}
 	var err error
 	if u.Role == "owner" {
 		n.Contexts, err = s.db.ListAccounts()
@@ -258,6 +259,7 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/logout", s.handleLogout)
 	mux.HandleFunc("POST /admin/caches", s.handleCreateCache)
 	mux.HandleFunc("GET /admin/cache/{account}/{name}", s.handleCacheDetail)
+	mux.HandleFunc("GET /admin/cache/{account}/{name}/path/{hash}", s.handlePathDetail)
 	mux.HandleFunc("POST /admin/cache/{account}/{name}/configure", s.handleConfigureCache)
 	mux.HandleFunc("POST /admin/cache/{account}/{name}/rotate", s.handleRotateKey)
 	mux.HandleFunc("POST /admin/cache/{account}/{name}/delete", s.handleDeleteCache)
@@ -273,6 +275,7 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/settings", s.handleInstancePage)
 	mux.HandleFunc("GET /admin/account", s.handleAccountPage)
 	mux.HandleFunc("POST /admin/account/email", s.handleAccountEmail)
+	mux.HandleFunc("POST /admin/account/theme", s.handleAccountTheme)
 	mux.HandleFunc("POST /admin/context", s.handleContext)
 	mux.HandleFunc("GET /admin/org/{slug}", s.handleOrgPage)
 	mux.HandleFunc("GET /admin/status", s.handleStatus)
@@ -638,6 +641,25 @@ func (s *Server) handleAccountEmail(w http.ResponseWriter, r *http.Request) {
 		msg = "Email cleared."
 	}
 	s.accountFlash(w, r, msg)
+}
+
+// handleAccountTheme saves the user's dashboard palette. Unknown ids fall
+// back to the default rather than erroring: the only way to send one is to
+// edit the form.
+func (s *Server) handleAccountTheme(w http.ResponseWriter, r *http.Request) {
+	u := s.requireUser(w, r)
+	if u == nil {
+		return
+	}
+	theme := r.FormValue("theme")
+	if !views.ValidPalette(theme) {
+		theme = ""
+	}
+	if err := s.db.SetUserTheme(u.ID, theme); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.accountFlash(w, r, views.T("flash.themesaved"))
 }
 
 func (s *Server) handleInstancePage(w http.ResponseWriter, r *http.Request) {
@@ -1272,16 +1294,32 @@ func (s *Server) renderCache(w http.ResponseWriter, r *http.Request, u *store.Us
 	}).Render(r.Context(), w)
 }
 
-// handleAudit renders the instance-wide activities page: a searchable, sortable,
-// paginated table. Admin-only, like the status page.
+// auditMethods / auditStatuses are the filter chips the activities page
+// offers; anything else in the query is ignored.
+var (
+	auditMethods  = []string{"GET", "POST", "PUT", "PATCH", "DELETE"}
+	auditStatuses = []string{"2xx", "3xx", "4xx", "5xx"}
+)
+
+// handleAudit renders the instance-wide activities page: summary tiles plus a
+// searchable, filterable, sortable, paginated table. Admin-only, like the
+// status page.
 func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return
 	}
 	page, perPage := pageParams(r, "page", 50)
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	method := r.URL.Query().Get("method")
+	if !slices.Contains(auditMethods, method) {
+		method = ""
+	}
+	status := r.URL.Query().Get("status")
+	if !slices.Contains(auditStatuses, status) {
+		status = ""
+	}
 	skey, sdir := sortParams(r, "sort", "dir", "time", "actor", "method", "path", "status")
-	entries, total, err := s.db.SearchAudit(q, perPage, (page-1)*perPage, skey, sdir)
+	entries, total, err := s.db.SearchAudit(q, method, status, perPage, (page-1)*perPage, skey, sdir)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1289,16 +1327,26 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	pages := max(int((total+int64(perPage)-1)/int64(perPage)), 1)
 	if page > pages && total > 0 {
 		page = pages
-		entries, total, err = s.db.SearchAudit(q, perPage, (page-1)*perPage, skey, sdir)
+		entries, total, err = s.db.SearchAudit(q, method, status, perPage, (page-1)*perPage, skey, sdir)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
+	stats, err := s.db.AuditStats()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	views.AuditPage(views.AuditData{
 		Nav:     s.nav(r, s.currentUser(r)),
 		Entries: entries,
 		Query:   q,
+		Method:  method,
+		Status:  status,
+		Methods: auditMethods,
+		Classes: auditStatuses,
+		Stats:   stats,
 		Total:   total,
 		Pager:   makePager("/admin/audit", r.URL.Query(), "page", page, pages),
 		Sort: views.SortCtx{
@@ -1306,6 +1354,78 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 			SortParam: "sort", DirParam: "dir", PageParam: "page[number]",
 			Key: skey, Dir: sdir,
 		},
+	}).Render(r.Context(), w)
+}
+
+// handlePathDetail renders one store path: its narinfo fields, references and
+// chunk composition. Visibility follows the cache page (members only, 404
+// otherwise); an unknown hash is a 404 too.
+func (s *Server) handlePathDetail(w http.ResponseWriter, r *http.Request) {
+	u := s.requireUser(w, r)
+	if u == nil {
+		return
+	}
+	c, ok := s.cacheForUser(w, r, u)
+	if !ok {
+		return
+	}
+	p, err := s.db.GetPath(c.ID, r.PathValue("hash"))
+	if errors.Is(err, store.ErrNotFound) {
+		s.notFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// A path whose chunks were lost (what fsck reports) still gets a page: the
+	// hashes render without sizes and the header says so.
+	chunks, err := s.db.ChunkKeys(c.Storage, p.Chunks)
+	broken := errors.Is(err, store.ErrNotFound)
+	if err != nil && !broken {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if broken {
+		chunks = make([]store.ChunkRef, len(p.Chunks))
+		for i, h := range p.Chunks {
+			chunks[i] = store.ChunkRef{Hash: h}
+		}
+	}
+	var csize int64
+	for _, ch := range chunks {
+		csize += ch.CSize
+	}
+	// References that live in this cache too become links.
+	refHashes := make([]string, len(p.Refs))
+	for i, ref := range p.Refs {
+		refHashes[i] = narinfo.StoreHash(ref)
+	}
+	missing, err := s.db.MissingPaths(c.ID, refHashes)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	present := make(map[string]bool, len(refHashes))
+	for _, h := range refHashes {
+		present[h] = true
+	}
+	for _, h := range missing {
+		delete(present, h)
+	}
+	page, perPage := pageParams(r, "chunks", 50)
+	pageChunks, page, pages := views.PageOf(chunks, page, perPage)
+	views.PathDetail(views.PathData{
+		Nav:        s.nav(r, u),
+		Cache:      *c,
+		Path:       *p,
+		Broken:     broken,
+		CSize:      csize,
+		Present:    present,
+		Chunks:     pageChunks,
+		ChunkPager: makePager(r.URL.Path+"#chunks", r.URL.Query(), "chunks", page, pages),
+		BaseURL:    s.cfg.BaseURL,
+		Bytes:      humanBytes,
 	}).Render(r.Context(), w)
 }
 

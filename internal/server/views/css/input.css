@@ -12,8 +12,6 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
-  --breakpoint-3xl: 1600px;
-  --breakpoint-4xl: 2000px;
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji";
@@ -55,10 +53,8 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  --color-surface: var(--surface);
-  --color-surface-foreground: var(--surface-foreground);
-  --color-code: var(--code);
-  --color-code-foreground: var(--code-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-selection: var(--selection);
   --color-selection-foreground: var(--selection-foreground);
 }
@@ -80,6 +76,8 @@
   --accent: oklch(0.967 0.001 286.375);
   --accent-foreground: oklch(0.21 0.006 285.885);
   --destructive: oklch(0.577 0.245 27.325);
+  --success: oklch(0.627 0.194 149.214);
+  --warning: oklch(0.681 0.162 75.834);
   --border: oklch(0.92 0.004 286.32);
   --input: oklch(0.92 0.004 286.32);
   --ring: oklch(0.795 0.184 86.047);
@@ -117,10 +115,11 @@
   --accent: oklch(0.274 0.006 286.033);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --success: oklch(0.723 0.219 149.579);
+  --warning: oklch(0.795 0.184 86.047);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.554 0.135 66.442);
-  --radius: 0.65rem;
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
@@ -138,6 +137,113 @@
   --selection-foreground: oklch(0.21 0.006 285.885);
 }
 
+/* Code boxes scroll sideways without showing a bar (the copy button is the
+   affordance; a bar under one line of text is noise). */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+/* Selectable palettes (per user, <html data-palette>). Each ships a light and
+   a dark half so the top-bar toggle keeps working; only the tokens that make
+   the scheme are overridden, radius and charts stay. */
+html[data-palette="catppuccin"] {
+  --background: #e6e9ef; --foreground: #4c4f69;
+  --card: #eff1f5; --card-foreground: #4c4f69;
+  --popover: #eff1f5; --popover-foreground: #4c4f69;
+  --primary: #fe640b; --primary-foreground: #eff1f5;
+  --secondary: #ccd0da; --secondary-foreground: #4c4f69;
+  --muted: #ccd0da; --muted-foreground: #6c6f85;
+  --accent: #ccd0da; --accent-foreground: #4c4f69;
+  --destructive: #d20f39; --success: #40a02b; --warning: #df8e1d;
+  --border: #bcc0cc; --input: #bcc0cc; --ring: #fe640b;
+  --sidebar: #dce0e8; --sidebar-foreground: #4c4f69;
+  --sidebar-primary: #fe640b; --sidebar-primary-foreground: #eff1f5;
+  --sidebar-accent: #ccd0da; --sidebar-accent-foreground: #4c4f69;
+  --sidebar-border: #bcc0cc; --sidebar-ring: #fe640b;
+  --selection: #4c4f69; --selection-foreground: #eff1f5;
+}
+html.dark[data-palette="catppuccin"] {
+  --background: #181825; --foreground: #cdd6f4;
+  --card: #1e1e2e; --card-foreground: #cdd6f4;
+  --popover: #1e1e2e; --popover-foreground: #cdd6f4;
+  --primary: #fab387; --primary-foreground: #11111b;
+  --secondary: #313244; --secondary-foreground: #cdd6f4;
+  --muted: #313244; --muted-foreground: #a6adc8;
+  --accent: #313244; --accent-foreground: #cdd6f4;
+  --destructive: #f38ba8; --success: #a6e3a1; --warning: #f9e2af;
+  --border: #45475a; --input: #45475a; --ring: #fab387;
+  --sidebar: #11111b; --sidebar-foreground: #cdd6f4;
+  --sidebar-primary: #fab387; --sidebar-primary-foreground: #11111b;
+  --sidebar-accent: #313244; --sidebar-accent-foreground: #cdd6f4;
+  --sidebar-border: #45475a; --sidebar-ring: #fab387;
+  --selection: #cdd6f4; --selection-foreground: #1e1e2e;
+}
+html[data-palette="nord"] {
+  --background: #e5e9f0; --foreground: #2e3440;
+  --card: #eceff4; --card-foreground: #2e3440;
+  --popover: #eceff4; --popover-foreground: #2e3440;
+  --primary: #5e81ac; --primary-foreground: #eceff4;
+  --secondary: #d8dee9; --secondary-foreground: #2e3440;
+  --muted: #d8dee9; --muted-foreground: #4c566a;
+  --accent: #d8dee9; --accent-foreground: #2e3440;
+  --destructive: #bf616a; --success: #a3be8c; --warning: #d08770;
+  --border: #d8dee9; --input: #d8dee9; --ring: #5e81ac;
+  --sidebar: #d8dee9; --sidebar-foreground: #2e3440;
+  --sidebar-primary: #5e81ac; --sidebar-primary-foreground: #eceff4;
+  --sidebar-accent: #cfd6e1; --sidebar-accent-foreground: #2e3440;
+  --sidebar-border: #c8d0dc; --sidebar-ring: #5e81ac;
+  --selection: #2e3440; --selection-foreground: #eceff4;
+}
+html.dark[data-palette="nord"] {
+  --background: #2e3440; --foreground: #eceff4;
+  --card: #3b4252; --card-foreground: #eceff4;
+  --popover: #3b4252; --popover-foreground: #eceff4;
+  --primary: #88c0d0; --primary-foreground: #2e3440;
+  --secondary: #434c5e; --secondary-foreground: #eceff4;
+  --muted: #434c5e; --muted-foreground: #d8dee9;
+  --accent: #434c5e; --accent-foreground: #eceff4;
+  --destructive: #bf616a; --success: #a3be8c; --warning: #ebcb8b;
+  --border: #4c566a; --input: #4c566a; --ring: #88c0d0;
+  --sidebar: #272c36; --sidebar-foreground: #eceff4;
+  --sidebar-primary: #88c0d0; --sidebar-primary-foreground: #2e3440;
+  --sidebar-accent: #3b4252; --sidebar-accent-foreground: #eceff4;
+  --sidebar-border: #4c566a; --sidebar-ring: #88c0d0;
+  --selection: #eceff4; --selection-foreground: #2e3440;
+}
+html[data-palette="gruvbox"] {
+  --background: #fbf1c7; --foreground: #3c3836;
+  --card: #f9f5d7; --card-foreground: #3c3836;
+  --popover: #f9f5d7; --popover-foreground: #3c3836;
+  --primary: #d65d0e; --primary-foreground: #fbf1c7;
+  --secondary: #ebdbb2; --secondary-foreground: #3c3836;
+  --muted: #ebdbb2; --muted-foreground: #7c6f64;
+  --accent: #ebdbb2; --accent-foreground: #3c3836;
+  --destructive: #cc241d; --success: #98971a; --warning: #d79921;
+  --border: #d5c4a1; --input: #d5c4a1; --ring: #d65d0e;
+  --sidebar: #f2e5bc; --sidebar-foreground: #3c3836;
+  --sidebar-primary: #d65d0e; --sidebar-primary-foreground: #fbf1c7;
+  --sidebar-accent: #ebdbb2; --sidebar-accent-foreground: #3c3836;
+  --sidebar-border: #d5c4a1; --sidebar-ring: #d65d0e;
+  --selection: #3c3836; --selection-foreground: #fbf1c7;
+}
+html.dark[data-palette="gruvbox"] {
+  --background: #282828; --foreground: #ebdbb2;
+  --card: #3c3836; --card-foreground: #ebdbb2;
+  --popover: #3c3836; --popover-foreground: #ebdbb2;
+  --primary: #fe8019; --primary-foreground: #282828;
+  --secondary: #504945; --secondary-foreground: #ebdbb2;
+  --muted: #504945; --muted-foreground: #a89984;
+  --accent: #504945; --accent-foreground: #ebdbb2;
+  --destructive: #fb4934; --success: #b8bb26; --warning: #fabd2f;
+  --border: #504945; --input: #504945; --ring: #fe8019;
+  --sidebar: #1d2021; --sidebar-foreground: #ebdbb2;
+  --sidebar-primary: #fe8019; --sidebar-primary-foreground: #282828;
+  --sidebar-accent: #3c3836; --sidebar-accent-foreground: #ebdbb2;
+  --sidebar-border: #504945; --sidebar-ring: #fe8019;
+  --selection: #ebdbb2; --selection-foreground: #282828;
+}
+
 @layer base {
   * {
     @apply border-border;
@@ -152,5 +258,18 @@
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
-  [x-cloak] { display: none !important; }
+  /* Number fields: the native spinner is a tiny, off-theme control that only
+     ever nudges by one; the keyboard and typing do the job. */
+  input[type="number"] { appearance: textfield; }
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button { appearance: none; margin: 0; }
+  /* Every select here is a required choice (unit, account, scope, palette);
+     the clear-selection x would only ever produce an invalid form. */
+  [data-tui-selectbox-clear-trigger] { display: none !important; }
+  /* Grid children default to min-width:auto, so one long <pre> line (or a
+     wide table) widens the column past the viewport instead of scrolling
+     inside its box. Every grid here is a layout grid; let children shrink. */
+  .grid > * { min-width: 0; }
+  /* htmx: dim a list while its swap (search, sort, paging) is in flight. */
+  .htmx-request { @apply opacity-60 transition-opacity; }
 }

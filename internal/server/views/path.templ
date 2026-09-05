@@ -1,0 +1,186 @@
+package views
+
+import (
+	"github.com/stubbedev/xilo/internal/narinfo"
+	"github.com/stubbedev/xilo/internal/store"
+
+	"github.com/templui/templui/components/accordion"
+	"github.com/templui/templui/components/badge"
+	"github.com/templui/templui/components/card"
+	"github.com/templui/templui/components/table"
+)
+
+// PathData is one store path's detail page.
+type PathData struct {
+	Nav    Nav
+	Cache  store.Cache
+	Path   store.Path
+	Broken bool  // some chunks are gone from storage
+	CSize  int64 // compressed bytes across every chunk
+	// Present marks the references (by store hash) that this cache holds too;
+	// those render as links.
+	Present    map[string]bool
+	Chunks     []store.ChunkRef // current page, NAR order
+	ChunkPager Pager
+	BaseURL    string
+	Bytes      func(int64) string
+}
+
+templ PathDetail(d PathData) {
+	{{ _, name := pathParts(d.Path.StorePath) }}
+	{{ narinfoURL := d.BaseURL + "/c/" + d.Cache.Ref() + "/" + narinfo.StoreHash(d.Path.StorePath) + ".narinfo" }}
+	@Layout(name, "caches", d.Nav, Flash{}) {
+		@Crumbs(Crumb{T("nav.caches"), "/admin"}, Crumb{d.Cache.Ref(), "/admin/cache/" + d.Cache.Ref()}, Crumb{name, ""})
+		@PageHeader(name, d.Path.StorePath) {
+			if d.Broken {
+				@WithTooltip(T("path.brokenhint")) {
+					@badge.Badge(badge.Props{Variant: badge.VariantDestructive, Class: "gap-1"}) {
+						@Icon("triangle-alert")
+						<span>{ T("path.broken") }</span>
+					}
+				}
+			}
+		}
+		<div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+			@StatTile("package", d.Bytes(int64(d.Path.NarSize)), T("path.narsize"), "", "")
+			@StatTile("hard-drive", d.Bytes(d.CSize), T("path.ondisk"), "", "")
+			@StatTile("boxes", Count(int64(len(d.Path.Chunks))), T("path.chunks"), "", "")
+			@StatTile("git-fork", Count(int64(len(d.Path.Refs))), T("path.refs"), "", "")
+		</div>
+		<div class="mb-8 grid gap-6 lg:grid-cols-2">
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						{ T("path.narinfo") }
+					}
+					@card.Description() {
+						{ T("path.narinfohint") }
+					}
+				}
+				@card.Content(card.ContentProps{Class: "space-y-4"}) {
+					@kv(T("path.narhash")) {
+						@CopyField(d.Path.NarHash)
+					}
+					@kv(T("path.deriver")) {
+						if d.Path.Deriver != "" {
+							<code class="break-all font-mono text-xs">{ d.Path.Deriver }</code>
+						} else {
+							<span class="text-sm text-muted-foreground">{ T("path.noderiver") }</span>
+						}
+					}
+					@kv(T("path.url")) {
+						@CopyField(narinfoURL)
+					}
+				}
+			}
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						{ T("path.refs") }
+					}
+					@card.Description() {
+						{ T("path.refshint") }
+					}
+				}
+				@card.Content() {
+					if len(d.Path.Refs) == 0 {
+						<p class="text-sm text-muted-foreground">{ T("path.norefs") }</p>
+					} else {
+						@ListBox() {
+							@table.Table() {
+								@table.Body() {
+									for _, ref := range d.Path.Refs {
+										{{ rh, rn := pathParts(ref) }}
+										@table.Row() {
+											@table.Cell() {
+												<div class="flex min-w-0 items-center gap-2">
+													if d.Present[narinfo.StoreHash(ref)] {
+														<a href={ templ.SafeURL(pathURL(d.Cache, ref)) } class="truncate font-medium hover:underline">{ rn }</a>
+													} else {
+														<span class="truncate">{ rn }</span>
+													}
+													@WithTooltip(ref) {
+														<code class="font-mono text-xs text-muted-foreground">{ rh }</code>
+													}
+												</div>
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		</div>
+		@card.Card() {
+			@card.Content(card.ContentProps{Class: "py-2"}) {
+				@accordion.Accordion() {
+					@accordion.Item() {
+						@accordion.Trigger() {
+							<span class="flex items-center gap-2">
+								<span>{ T("path.chunks") }</span>
+								@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
+									{ Count(int64(len(d.Path.Chunks))) }
+								}
+								<span class="font-normal text-muted-foreground">{ T("path.chunkshint") }</span>
+							</span>
+						}
+						@accordion.Content() {
+							@ListBox() {
+								@table.Table(table.Props{Class: "table-fixed"}) {
+									@table.Header() {
+										@table.Row() {
+											@table.Head() {
+												{ T("path.chunk") }
+											}
+											@table.Head(table.HeadProps{Class: "w-28 text-right"}) {
+												{ T("paths.size") }
+											}
+											@table.Head(table.HeadProps{Class: "w-28 text-right"}) {
+												{ T("path.compressed") }
+											}
+										}
+									}
+									@table.Body() {
+										for _, ch := range d.Chunks {
+											@table.Row() {
+												@table.Cell() {
+													<code class="block truncate font-mono text-xs">{ ch.Hash }</code>
+												}
+												@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
+													@chunkBytes(d, ch.Size)
+												}
+												@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
+													@chunkBytes(d, ch.CSize)
+												}
+											}
+										}
+									}
+								}
+							}
+							@PagerNav(d.ChunkPager)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// chunkBytes is a chunk size, or a dash when the chunk row is gone (broken path).
+templ chunkBytes(d PathData, n int64) {
+	if n > 0 {
+		{ d.Bytes(n) }
+	} else {
+		<span class="text-muted-foreground">–</span>
+	}
+}
+
+// kv is one labelled value row of the narinfo card.
+templ kv(label string) {
+	<div class="space-y-1">
+		<p class="text-xs font-medium text-muted-foreground">{ label }</p>
+		{ children... }
+	</div>
+}

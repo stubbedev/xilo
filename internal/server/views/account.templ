@@ -11,6 +11,7 @@ import (
 	"github.com/templui/templui/components/form"
 	"github.com/templui/templui/components/input"
 	"github.com/templui/templui/components/inputotp"
+	"github.com/templui/templui/components/selectbox"
 	"github.com/templui/templui/components/table"
 )
 
@@ -56,17 +57,45 @@ templ Account(d AccountData) {
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
+						{ T("acct.appearance") }
+					}
+					@card.Description() {
+						{ T("acct.appearancehint") }
+					}
+				}
+				@card.Content() {
+					<form method="post" action="/admin/account/theme" class="max-w-md" onchange="if (event.target.name === 'theme') this.submit()">
+						@Field("", T("acct.palette")) {
+							@selectbox.SelectBox() {
+								@selectbox.Trigger(selectbox.TriggerProps{Name: "theme", Attributes: templ.Attributes{"aria-label": T("acct.palette")}}) {
+									@selectbox.Value(selectbox.ValueProps{})
+								}
+								@selectbox.Content() {
+									for _, p := range Palettes {
+										@selectbox.Item(selectbox.ItemProps{Value: p.ID, Selected: p.ID == d.User.Theme}) {
+											{ p.Name }
+										}
+									}
+								}
+							}
+						}
+					</form>
+				}
+			}
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
 						{ T("set.passkeys") }
 					}
 					@card.Description() {
 						{ T("set.passkeys.hint") }
 					}
 				}
-				@card.Content(card.ContentProps{Class: "space-y-3"}) {
+				@card.Content(card.ContentProps{Class: "space-y-4"}) {
 					if len(d.Passkeys) == 0 {
 						@EmptyState("fingerprint-pattern", T("set.passkeys.empty"))
 					} else {
-						<div class="overflow-hidden rounded-lg border">
+						@ListBox() {
 							@table.Table() {
 								@table.Body() {
 									for _, pk := range d.Passkeys {
@@ -89,7 +118,7 @@ templ Account(d AccountData) {
 													Danger:         true,
 													TriggerIcon:    "trash-2",
 													IconOnly:       true,
-													TriggerTooltip: T("pk.remove"),
+													TriggerTooltip: T("action.remove"),
 													TriggerVariant: button.VariantGhost,
 												})
 											}
@@ -97,7 +126,7 @@ templ Account(d AccountData) {
 									}
 								}
 							}
-						</div>
+						}
 					}
 					@button.Button(button.Props{Size: button.SizeSm, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": "xiloPasskeyRegister()"}}) {
 						@Icon("fingerprint-pattern")
@@ -116,7 +145,7 @@ templ Account(d AccountData) {
 				}
 				@card.Content() {
 					if d.TOTPEnabled {
-						<div class="flex items-center justify-between">
+						<div class="flex flex-wrap items-center justify-between gap-3">
 							<div class="flex items-center gap-2 text-sm">
 								@badge.Badge(badge.Props{Variant: badge.VariantDefault, Class: "gap-1"}) {
 									@Icon("shield-check")
@@ -141,24 +170,20 @@ templ Account(d AccountData) {
 							}
 						</div>
 					} else {
-						<div class="flex items-center justify-between">
-							<p class="text-sm text-muted-foreground">{ T("set.2fa.protect") }</p>
+						@ActionRow(T("set.2fa.protect")) {
 							<form method="post" action="/admin/account/totp/enroll">
 								@button.Button(button.Props{Type: button.TypeSubmit}) {
 									@Icon("shield")
 									<span>{ T("set.2fa.enable") }</span>
 								}
 							</form>
-						</div>
+						}
 					}
 				}
 			}
 			if d.CanCreateOrg {
 				@card.Card() {
-					@card.Header(card.HeaderProps{Class: "flex-row items-center justify-between space-y-0"}) {
-						@card.Title() {
-							{ T("acct.orgs") }
-						}
+					@CardHeaderRow(T("acct.orgs")) {
 						@newOrgDialog("/admin/neworg")
 					}
 					@card.Content() {
@@ -186,7 +211,7 @@ templ Account(d AccountData) {
 						@Field("new-pw2", T("set.new2")) {
 							@input.Input(input.Props{ID: "new-pw2", Name: "confirm", Type: input.TypePassword, Required: true, Attributes: pwCheckAttrs()})
 						}
-						<div class="flex items-center justify-between">
+						<div class="flex flex-wrap items-center justify-between gap-3">
 							<span id="pw-hint" class="text-sm"></span>
 							@button.Button(button.Props{Type: button.TypeSubmit}) {
 								@Icon("check")
@@ -218,13 +243,13 @@ func pwCheckAttrs() templ.Attributes {
 templ PwHint(state string) {
 	switch state {
 		case "short":
-			<span class="text-yellow-500">{ T("set.pw.short") }</span>
+			<span class="text-warning">{ T("set.pw.short") }</span>
 		case "mismatch":
-			<span class="text-yellow-500">{ T("set.pw.mismatch") }</span>
+			<span class="text-warning">{ T("set.pw.mismatch") }</span>
 		case "weak":
-			<span class="text-yellow-500">{ T("set.pw.weak") }</span>
+			<span class="text-warning">{ T("set.pw.weak") }</span>
 		case "strong":
-			<span class="text-green-500">{ T("set.pw.strong") }</span>
+			<span class="text-success">{ T("set.pw.strong") }</span>
 	}
 }
 
@@ -241,7 +266,7 @@ templ totpEnrollPage(nav Nav, qrDataURI, secret, errMsg string) {
 		@PageHeader(T("set.enroll"), T("set.enrollhint"))
 		<div class="mx-auto max-w-md">
 			@card.Card() {
-				@card.Content(card.ContentProps{Class: "flex flex-col items-center gap-4 p-6"}) {
+				@card.Content(card.ContentProps{Class: "flex flex-col items-center gap-4"}) {
 					<img class="rounded-lg border bg-white p-2" width="200" height="200" src={ qrDataURI } alt={ T("set.qralt") }/>
 					<div class="text-center text-sm text-muted-foreground">
 						<p>{ T("set.manual") }</p>

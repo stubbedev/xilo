@@ -60,10 +60,13 @@ func TestSmokeAllComponents(t *testing.T) {
 	}{
 		{"Layout", views.Layout("Overview", "caches", views.Nav{LoggedIn: true, UserName: "admin", IsAdmin: true}, views.Flash{}), "Overview"},
 		{"Layout-flash-code", views.Layout("t", "", views.Nav{}, views.Flash{Msg: "created", Code: "secret123"}), "secret123"},
+		{"Layout-palette", views.Layout("t", "caches", views.Nav{LoggedIn: true, Theme: "nord"}, views.Flash{}), `data-palette="nord"`},
+		{"RowAction", views.RowAction("trash-2", "Delete row", true), `type="submit"`},
+		{"TableCard", views.TableCard(), "overflow-x-auto"},
 		{"Login", views.Login(false, false, false, views.Flash{}), "assword"},
 		{"Login-nopw-passkeys", views.Login(true, true, true, views.Flash{Msg: "bad login"}), "passkey"},
 		{"LoginCode", views.LoginCode("pending-id", views.Flash{Msg: "wrong code"}), "code"},
-		{"Account", views.Account(views.AccountData{Nav: views.Nav{LoggedIn: true, UserName: "admin"}, User: &store.User{Name: "admin", Role: "owner"}, Passkeys: []store.Passkey{{ID: 1, Name: "yubikey", Created: 1}}}), "yubikey"},
+		{"Account", views.Account(views.AccountData{Nav: views.Nav{LoggedIn: true, UserName: "admin"}, User: &store.User{Name: "admin", Role: "owner", Theme: "catppuccin"}, Passkeys: []store.Passkey{{ID: 1, Name: "yubikey", Created: 1}}}), "Appearance"},
 		{"Instance", views.Instance(views.InstanceData{Nav: views.Nav{LoggedIn: true, UserName: "admin", IsAdmin: true}, Users: []store.User{{ID: 1, Name: "admin", Role: "owner"}}, Orgs: []views.OrgInfo{{Account: store.Account{ID: 1, Slug: "acme", Kind: "org"}, Members: []store.AccountMember{{UserID: 1, UserName: "admin", Role: "admin"}}}}, SelfService: true, AllowRegs: true, Plans: []store.Plan{{ID: 1, Name: "free", MaxCaches: 3, Public: true}}, Flash: views.Flash{Msg: "saved"}}), "saved"},
 		{"PwHint-empty", views.PwHint(""), ""},
 		{"PwHint-short", views.PwHint("short"), "short"},
@@ -77,11 +80,18 @@ func TestSmokeAllComponents(t *testing.T) {
 		{"StatTile", views.StatTile("box", "42", "things", "kpi1", ""), "42"},
 		{"StatTile-tone", views.StatTile("box", "9", "over", "kpi2", "text-destructive"), "over"},
 		{"EmptyState", views.EmptyState("inbox", "nothing here"), "nothing here"},
-		{"StatusBadge", views.StatusBadge("active"), "active"},
+		{"StatusIcon", views.StatusIcon("active"), "active"},
+		{"StatusIcon-revoked", views.StatusIcon("revoked"), "text-destructive"},
 		{"VisBadge-public", views.VisBadge(true), "Public"},
 		{"VisBadge-private", views.VisBadge(false), "Private"},
 		{"PermBadges", views.PermBadges([]string{"push", "pull"}), "push"},
 		{"CopyField", views.CopyField("copy-me"), "copy-me"},
+		{"Crumbs", views.Crumbs(views.Crumb{Label: "Caches", Href: "/admin"}, views.Crumb{Label: "here"}), "aria-current"},
+		{"PlusButton", views.PlusButton("New thing"), "New thing"},
+		{"DialogFooter", views.DialogFooter("dlg", "plus", "Create"), "Cancel"},
+		{"CardHeaderRow", views.CardHeaderRow("Row title"), "Row title"},
+		{"ListBox", views.ListBox(), "rounded-lg"},
+		{"ExpiryField", views.ExpiryField("dlg", nil), "Never"},
 		{"ConfirmForm", views.ConfirmForm(views.Confirm{ID: "c1", Action: "/admin/gc", Title: "Sure?", Message: "Really?", ConfirmLabel: "Yes", ConfirmIcon: "check", TriggerLabel: "Delete", TriggerIcon: "trash-2"}), "Delete"},
 		{"NotFound-in", views.NotFound(views.Nav{LoggedIn: true}), "not found"},
 		{"NotFound-out", views.NotFound(views.Nav{}), "not found"},
@@ -233,13 +243,20 @@ func TestSmokeAuditPage(t *testing.T) {
 			{ID: 2, TS: now, Actor: "alice", Method: "DELETE", Path: "/admin/cache/default/demo/delete", Status: 303, IP: "10.0.0.1", UserAgent: "Mozilla/5.0", DurationMs: 7},
 			{ID: 1, TS: now, Method: "POST", Path: "/api/v1/caches", Status: 201, IP: "10.0.0.2", DurationMs: 42},
 		},
-		Query: "demo",
-		Total: 2,
-		Pager: views.Pager{Page: 1, Pages: 2, Next: "/admin/audit?page=2"},
-		Sort:  sortCtx(),
+		Query:   "demo",
+		Method:  "DELETE",
+		Status:  "4xx",
+		Methods: []string{"GET", "POST", "DELETE"},
+		Classes: []string{"2xx", "4xx"},
+		Stats:   store.AuditStats{Total: 1234, Failed: 5, Actors: 3, AvgMs: 12},
+		Total:   2,
+		Pager:   views.Pager{Page: 1, Pages: 2, Next: "/admin/audit?page=2"},
+		Sort:    sortCtx(),
 	}
 	out := render(t, "AuditPage", views.AuditPage(d))
-	for _, want := range []string{"alice", "DELETE", "/admin/cache/default/demo/delete", "10.0.0.1", "system", "42"} {
+	for _, want := range []string{"alice", "DELETE", "/admin/cache/default/demo/delete", "10.0.0.1", "system", "42",
+		// summary tiles + filter chips carrying the active search
+		"1.2k", "Failed", "Distinct actors", "method=POST", "status=2xx", "q=x"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("AuditPage missing %q", want)
 		}
@@ -247,6 +264,49 @@ func TestSmokeAuditPage(t *testing.T) {
 	// Empty and no-match branches.
 	render(t, "AuditPage-empty", views.AuditPage(views.AuditData{Nav: d.Nav, Pager: views.Pager{Page: 1, Pages: 1}}))
 	render(t, "AuditPage-nomatch", views.AuditPage(views.AuditData{Nav: d.Nav, Query: "zzz", Pager: views.Pager{Page: 1, Pages: 1}}))
+}
+
+func TestSmokePathDetail(t *testing.T) {
+	d := views.PathData{
+		Cache: demoCache(),
+		Path: store.Path{
+			StorePath: "/nix/store/8kvxvr3pmsypxiypq4g8zy13glnfr7nx-glibc-2.42",
+			NarHash:   "sha256:0000000000000000000000000000000000000000000000000000",
+			NarSize:   300, Deriver: "glibc-2.42.drv",
+			Refs:   []string{"/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-libgcc-14", "/nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-linux-headers"},
+			Chunks: []string{"c1", "c2"},
+		},
+		CSize:      120,
+		Present:    map[string]bool{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": true},
+		Chunks:     []store.ChunkRef{{Hash: "c1", Size: 200, CSize: 80}, {Hash: "c2", Size: 100, CSize: 40}},
+		ChunkPager: views.Pager{Page: 1, Pages: 1},
+		BaseURL:    "http://localhost:8080",
+		Bytes:      bytesFn,
+	}
+	out := render(t, "PathDetail", views.PathDetail(d))
+	for _, want := range []string{"glibc-2.42", "sha256:0000", "glibc-2.42.drv",
+		// present ref is a link, absent one is plain text
+		`href="/admin/cache/default/demo/path/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`, "linux-headers",
+		"8kvxvr3pmsypxiypq4g8zy13glnfr7nx.narinfo", "c1", "200 B", "80 B"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("PathDetail missing %q", want)
+		}
+	}
+	if strings.Contains(out, `path/bbbbbbbb`) {
+		t.Error("absent reference rendered as a link")
+	}
+	// Broken path: no sizes, warning badge, no refs, no deriver.
+	broken := d
+	broken.Broken = true
+	broken.Path.Refs = nil
+	broken.Path.Deriver = ""
+	broken.Chunks = []store.ChunkRef{{Hash: "c1"}, {Hash: "c2"}}
+	out = render(t, "PathDetail-broken", views.PathDetail(broken))
+	for _, want := range []string{"chunks missing", "Depends on nothing", "not recorded"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("broken PathDetail missing %q", want)
+		}
+	}
 }
 
 func TestAsset(t *testing.T) {

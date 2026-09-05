@@ -155,7 +155,7 @@ func BenchmarkUIQueries(b *testing.B) {
 	})
 	b.Run("Activities", func(b *testing.B) {
 		for b.Loop() {
-			if _, _, err := db.SearchAudit("", 25, 0, "ts", "desc"); err != nil {
+			if _, _, err := db.SearchAudit("", "", "", 25, 0, "ts", "desc"); err != nil {
 				b.Fatal(err)
 			}
 		}

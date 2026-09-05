@@ -49,7 +49,7 @@ templ Dashboard(d DashboardData) {
 					@onboarding(d)
 				}
 			} else {
-				@card.Card(card.Props{Class: "divide-y p-0"}) {
+				@card.Card(card.Props{Class: "divide-y overflow-hidden"}) {
 					for _, u := range d.Caches {
 						@cacheRow(u, d.Bytes)
 					}
@@ -73,10 +73,7 @@ templ Dashboard(d DashboardData) {
 					@EmptyState("key-round", T("tokens.empty")) {
 						if canMintToken(d) {
 							@dialog.Trigger(dialog.TriggerProps{For: "dlg-token"}) {
-								@button.Button(button.Props{Size: button.SizeSm}) {
-									@Icon("plus")
-									<span>{ T("tokens.new") }</span>
-								}
+								@PlusButton(T("tokens.new"))
 							}
 						} else {
 							@disabledCreate(T("tokens.new"), T("tokens.needcache"))
@@ -84,7 +81,7 @@ templ Dashboard(d DashboardData) {
 					}
 				}
 			} else {
-				@card.Card(card.Props{Class: "p-0"}) {
+				@TableCard() {
 					@table.Table(table.Props{Class: "table-fixed"}) {
 						@table.Header() {
 							@table.Row() {
@@ -92,7 +89,7 @@ templ Dashboard(d DashboardData) {
 								@SortHead(d.TokenSort, "perms", T("tokens.perms"), "w-36")
 								@SortHead(d.TokenSort, "scope", T("tokens.scope"), "w-36")
 								@SortHead(d.TokenSort, "expires", T("tokens.expires"), "w-28")
-								@SortHead(d.TokenSort, "status", T("tokens.status"), "w-24")
+								@SortHead(d.TokenSort, "status", T("tokens.status"), "w-20")
 								@table.Head(table.HeadProps{Class: "w-24 text-right"}) {
 									{ T("tokens.actions") }
 								}
@@ -128,10 +125,7 @@ templ onboarding(d DashboardData) {
 			@onboardStep("1", T("onb.step1"), T("onb.step1hint")) {
 				if len(d.Accounts) > 0 {
 					@dialog.Trigger(dialog.TriggerProps{For: "dlg-cache"}) {
-						@button.Button(button.Props{Size: button.SizeSm}) {
-							@Icon("plus")
-							<span>{ T("caches.new") }</span>
-						}
+						@PlusButton(T("caches.new"))
 					}
 				} else {
 					@disabledCreate(T("caches.new"), T("caches.needaccount"))
@@ -214,7 +208,7 @@ templ tokenRow(d DashboardData, t store.Token) {
 			{ TokenExpiry(t) }
 		}
 		@table.Cell() {
-			@StatusBadge(TokenStatus(t))
+			@StatusIcon(TokenStatus(t))
 		}
 		@table.Cell(table.CellProps{Class: "text-right"}) {
 			<div class="flex justify-end gap-1">
@@ -256,20 +250,9 @@ templ disabledCreate(label, why string) {
 templ newCacheDialog(d DashboardData) {
 	@dialog.Dialog(dialog.Props{ID: "dlg-cache"}) {
 		@dialog.Trigger(dialog.TriggerProps{For: "dlg-cache"}) {
-			@button.Button(button.Props{Size: button.SizeSm}) {
-				@Icon("plus")
-				<span>{ T("caches.new") }</span>
-			}
+			@PlusButton(T("caches.new"))
 		}
-		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-lg"}) {
-			@dialog.Header() {
-				@dialog.Title() {
-					{ T("caches.new") }
-				}
-				@dialog.Description() {
-					{ T("caches.newhint") }
-				}
-			}
+		@DialogBox(T("caches.new"), T("caches.newhint"), true) {
 			<form method="post" action="/admin/caches" class="mt-2 space-y-4">
 				@Field("", T("caches.account")) {
 					@AccountSelect("namespace", defaultAccount(d), T("caches.pickaccount"), d.Accounts)
@@ -284,17 +267,7 @@ templ newCacheDialog(d DashboardData) {
 				}
 				@VisibilitySwitch(false)
 				@PriorityField(40)
-				@dialog.Footer() {
-					@dialog.Close(dialog.CloseProps{For: "dlg-cache"}) {
-						@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
-							{ T("action.cancel") }
-						}
-					}
-					@button.Button(button.Props{Type: button.TypeSubmit}) {
-						@Icon("plus")
-						<span>{ T("caches.create") }</span>
-					}
-				}
+				@DialogFooter("dlg-cache", "plus", T("caches.create"))
 			</form>
 		}
 	}
@@ -304,20 +277,9 @@ templ newCacheDialog(d DashboardData) {
 templ newTokenDialog(d DashboardData) {
 	@dialog.Dialog(dialog.Props{ID: "dlg-token"}) {
 		@dialog.Trigger(dialog.TriggerProps{For: "dlg-token"}) {
-			@button.Button(button.Props{Size: button.SizeSm}) {
-				@Icon("plus")
-				<span>{ T("tokens.new") }</span>
-			}
+			@PlusButton(T("tokens.new"))
 		}
-		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-lg"}) {
-			@dialog.Header() {
-				@dialog.Title() {
-					{ T("tokens.newtitle") }
-				}
-				@dialog.Description() {
-					{ T("tokens.newhint") }
-				}
-			}
+		@DialogBox(T("tokens.newtitle"), T("tokens.newhint"), true) {
 			@tokenFormBody("/admin/tokens", nil, d, "plus", T("tokens.create"), "dlg-token")
 		}
 	}
@@ -328,21 +290,9 @@ templ editTokenDialog(d DashboardData, t store.Token) {
 	{{ id := "dlg-token-edit-" + strconv.FormatInt(t.ID, 10) }}
 	@dialog.Dialog(dialog.Props{ID: id}) {
 		@dialog.Trigger(dialog.TriggerProps{For: id}) {
-			@WithTooltip(T("tokens.edit")) {
-				@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton, Attributes: templ.Attributes{"aria-label": T("tokens.edit")}}) {
-					@Icon("square-pen")
-				}
-			}
+			@RowAction("square-pen", T("action.edit"), false)
 		}
-		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-lg"}) {
-			@dialog.Header() {
-				@dialog.Title() {
-					{ T("tokens.edittitle") }
-				}
-				@dialog.Description() {
-					{ T("tokens.edithint") }
-				}
-			}
+		@DialogBox(T("tokens.edittitle"), T("tokens.edithint"), true) {
 			@tokenFormBody("/admin/tokens/"+strconv.FormatInt(t.ID, 10)+"/edit", &t, d, "check", T("action.savechanges"), id)
 		}
 	}
@@ -364,24 +314,7 @@ templ tokenFormBody(action string, t *store.Token, d DashboardData, submitIcon, 
 				@PermSwitchID(dlgID+"-manage", "manage", "on", T("tokens.manage"), tokenPerm(t, "manage"))
 			</div>
 		}
-		@Field("", T("tokens.expiry")) {
-			<div class="group/expiry space-y-2">
-				@PermSwitchID(dlgID+"-permanent", "permanent", "on", T("tokens.permanent"), tokenPermanent(t))
-				<div class="group-has-[:checked]/expiry:hidden">
-					@TTLSelect(t)
-				</div>
-			</div>
-		}
-		@dialog.Footer() {
-			@dialog.Close(dialog.CloseProps{For: dlgID}) {
-				@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
-					{ T("action.cancel") }
-				}
-			}
-			@button.Button(button.Props{Type: button.TypeSubmit}) {
-				@Icon(submitIcon)
-				<span>{ submitLabel }</span>
-			}
-		}
+		@ExpiryField(dlgID, t)
+		@DialogFooter(dlgID, submitIcon, submitLabel)
 	</form>
 }

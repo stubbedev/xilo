@@ -36,8 +36,8 @@ type StatusData struct {
 	PathsAdopted int64 // registered by copying an identical path (no upload)
 	ChunksRecv   int64
 	ChunksDedup  int64 // uploads that were already present
-	Bytes     func(int64) string
-	Charts    []ChartData
+	Bytes        func(int64) string
+	Charts       []ChartData
 }
 
 // ChartData is one chart: header strings plus the drawn series. Color must be
@@ -84,9 +84,9 @@ templ StatusPage(d StatusData) {
 		@PageHeader(T("status.title"), T("status.subtitle")) {
 			@statusSettings(d)
 		}
-		<div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+		<div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
 			if d.Healthy {
-				@StatTile("activity", T("status.ok"), T("status.health"), "st-health", "text-green-500")
+				@StatTile("activity", T("status.ok"), T("status.health"), "st-health", "text-success")
 			} else {
 				@StatTile("activity", T("status.err"), T("status.health"), "st-health", "text-destructive")
 			}
@@ -189,7 +189,8 @@ templ statusChart(c ChartData) {
 				}
 			</div>
 		}
-		@card.Content() {
+		@card.Content(card.ContentProps{Class: "relative"}) {
+			<p id={ "empty-" + c.ID } class={ "absolute inset-0 flex items-center justify-center text-sm text-muted-foreground", sparseClass(c.Points) }>{ T("status.collecting") }</p>
 			@chart.Chart(chart.Props{
 				ID:          "chart-" + c.ID,
 				Variant:     chart.VariantLine,
@@ -212,6 +213,14 @@ templ statusChart(c ChartData) {
 			})
 		}
 	}
+}
+
+// sparseClass hides the "collecting" overlay once a chart has a line to draw.
+func sparseClass(points []float64) string {
+	if len(points) >= 2 {
+		return "hidden"
+	}
+	return ""
 }
 
 // peakClass hides the peak badge until there is a peak; the poll script
@@ -256,7 +265,7 @@ templ statusPollScript() {
 				var h = document.getElementById('st-health');
 				if (h) {
 					h.textContent = d.healthy ? cfg.ok : cfg.err;
-					h.classList.toggle('text-green-500', d.healthy);
+					h.classList.toggle('text-success', d.healthy);
 					h.classList.toggle('text-destructive', !d.healthy);
 				}
 				setText('st-uptime', d.uptime);
@@ -275,6 +284,8 @@ templ statusPollScript() {
 				Object.keys(d.charts || {}).forEach(function (k) {
 					var c = d.charts[k];
 					setText('cur-' + k, c.cur);
+					var em = document.getElementById('empty-' + k);
+					if (em) em.classList.toggle('hidden', c.points.length >= 2);
 					var pk = document.getElementById('peak-' + k);
 					if (pk) {
 						pk.classList.toggle('hidden', !c.peak);

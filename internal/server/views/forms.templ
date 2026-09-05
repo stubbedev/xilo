@@ -224,12 +224,15 @@ templ PermSwitchID(id, name, value, text string, checked bool) {
 	}
 }
 
-// PermSwitchVal is a labelled switch row posting `value` when checked.
-templ PermSwitchVal(name, value, text string, checked bool) {
-	@PermSwitchID("perm-"+name, name, value, text, checked)
-}
-
-// PermSwitch is one token-permission switch row ("on" when checked).
-templ PermSwitch(name, text string, checked bool) {
-	@PermSwitchVal(name, "on", text, checked)
+// ExpiryField is the token expiry control: a "never" switch that hides the
+// TTL presets while on. t is nil on create.
+templ ExpiryField(dlgID string, t *store.Token) {
+	@Field("", T("tokens.expiry")) {
+		<div class="group/expiry space-y-2">
+			@PermSwitchID(dlgID+"-permanent", "permanent", "on", T("tokens.permanent"), tokenPermanent(t))
+			<div class="group-has-[:checked]/expiry:hidden">
+				@TTLSelect(t)
+			</div>
+		</div>
+	}
 }

@@ -81,24 +81,18 @@ templ policyCard(d InstanceData) {
 // plansCard lists plans and holds the create-plan dialog.
 templ plansCard(plans []store.Plan) {
 	@card.Card() {
-		@card.Header(card.HeaderProps{Class: "flex-row items-center justify-between space-y-0"}) {
-			@card.Title() {
-				{ T("set.plans") }
-			}
+		@CardHeaderRow(T("set.plans")) {
 			@newPlanDialog()
 		}
 		@card.Content(card.ContentProps{Class: "space-y-2"}) {
 			if len(plans) == 0 {
 				@EmptyState("layers", T("plan.empty")) {
 					@dialog.Trigger(dialog.TriggerProps{For: "dlg-plan-new"}) {
-						@button.Button(button.Props{Size: button.SizeSm}) {
-							@Icon("plus")
-							<span>{ T("plan.new") }</span>
-						}
+						@PlusButton(T("plan.new"))
 					}
 				}
 			} else {
-				<div class="overflow-hidden rounded-lg border">
+				@ListBox() {
 					@table.Table() {
 						@table.Body() {
 							for _, p := range plans {
@@ -130,7 +124,7 @@ templ plansCard(plans []store.Plan) {
 												Danger:         true,
 												TriggerIcon:    "trash-2",
 												IconOnly:       true,
-												TriggerTooltip: T("plan.delete"),
+												TriggerTooltip: T("action.delete"),
 												TriggerVariant: button.VariantGhost,
 											})
 										</div>
@@ -139,7 +133,7 @@ templ plansCard(plans []store.Plan) {
 							}
 						}
 					}
-				</div>
+				}
 			}
 		}
 	}
@@ -148,20 +142,9 @@ templ plansCard(plans []store.Plan) {
 templ newPlanDialog() {
 	@dialog.Dialog(dialog.Props{ID: "dlg-plan-new"}) {
 		@dialog.Trigger(dialog.TriggerProps{For: "dlg-plan-new"}) {
-			@button.Button(button.Props{Size: button.SizeSm}) {
-				@Icon("plus")
-				<span>{ T("plan.new") }</span>
-			}
+			@PlusButton(T("plan.new"))
 		}
-		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-lg"}) {
-			@dialog.Header() {
-				@dialog.Title() {
-					{ T("plan.new") }
-				}
-				@dialog.Description() {
-					{ T("plan.hint") }
-				}
-			}
+		@DialogBox(T("plan.new"), T("plan.hint"), true) {
 			@planFormBody("/admin/plans", nil, "plus", T("plan.create"), "dlg-plan-new")
 		}
 	}
@@ -172,21 +155,9 @@ templ editPlanDialog(p store.Plan) {
 	{{ id := "dlg-plan-edit-" + strconv.FormatInt(p.ID, 10) }}
 	@dialog.Dialog(dialog.Props{ID: id}) {
 		@dialog.Trigger(dialog.TriggerProps{For: id}) {
-			@WithTooltip(T("plan.edit")) {
-				@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton, Attributes: templ.Attributes{"aria-label": T("plan.edit")}}) {
-					@Icon("square-pen")
-				}
-			}
+			@RowAction("square-pen", T("action.edit"), false)
 		}
-		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-lg"}) {
-			@dialog.Header() {
-				@dialog.Title() {
-					{ T("plan.edit") }
-				}
-				@dialog.Description() {
-					{ T("plan.hint") }
-				}
-			}
+		@DialogBox(T("plan.edit"), T("plan.hint"), true) {
 			@planFormBody("/admin/plans/"+strconv.FormatInt(p.ID, 10)+"/edit", &p, "check", T("action.savechanges"), id)
 		}
 	}
@@ -214,31 +185,18 @@ templ planFormBody(action string, p *store.Plan, submitIcon, submitLabel, dlgID 
 		}
 		@PermSwitchID(dlgID+"-orgs_allowed", "orgs_allowed", "on", T("plan.orgsallowed"), p != nil && p.OrgsAllowed)
 		@PermSwitchID(dlgID+"-public", "public", "on", T("plan.public"), p == nil || p.Public)
-		@dialog.Footer() {
-			@dialog.Close(dialog.CloseProps{For: dlgID}) {
-				@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
-					{ T("action.cancel") }
-				}
-			}
-			@button.Button(button.Props{Type: button.TypeSubmit}) {
-				@Icon(submitIcon)
-				<span>{ submitLabel }</span>
-			}
-		}
+		@DialogFooter(dlgID, submitIcon, submitLabel)
 	</form>
 }
 
 // usersCard is the user administration block.
 templ usersCard(actingName string, multiTenant bool, users []store.User) {
 	@card.Card() {
-		@card.Header(card.HeaderProps{Class: "flex-row items-center justify-between space-y-0"}) {
-			@card.Title() {
-				{ T("set.users") }
-			}
+		@CardHeaderRow(T("set.users")) {
 			@newUserDialog(multiTenant)
 		}
 		@card.Content() {
-			<div class="overflow-hidden rounded-lg border">
+			@ListBox() {
 				@table.Table() {
 					@table.Body() {
 						for _, u := range users {
@@ -270,11 +228,7 @@ templ usersCard(actingName string, multiTenant bool, users []store.User) {
 									<div class="flex justify-end gap-1">
 										if u.Status == "pending" {
 											<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/approve") }>
-												@WithTooltip(T("users.approve")) {
-													@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeSubmit, Attributes: templ.Attributes{"aria-label": T("users.approve")}}) {
-														@Icon("user-check")
-													}
-												}
+												@RowAction("user-check", T("users.approve"), true)
 											</form>
 										}
 										@resetUserDialog(u)
@@ -289,7 +243,7 @@ templ usersCard(actingName string, multiTenant bool, users []store.User) {
 												Danger:         true,
 												TriggerIcon:    "trash-2",
 												IconOnly:       true,
-												TriggerTooltip: T("users.delete"),
+												TriggerTooltip: T("action.delete"),
 												TriggerVariant: button.VariantGhost,
 											})
 										}
@@ -299,7 +253,7 @@ templ usersCard(actingName string, multiTenant bool, users []store.User) {
 						}
 					}
 				}
-			</div>
+			}
 		}
 	}
 }
@@ -308,36 +262,14 @@ templ resetUserDialog(u store.User) {
 	{{ id := "dlg-user-reset-" + strconv.FormatInt(u.ID, 10) }}
 	@dialog.Dialog(dialog.Props{ID: id}) {
 		@dialog.Trigger(dialog.TriggerProps{For: id}) {
-			@WithTooltip(T("users.reset")) {
-				@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton, Attributes: templ.Attributes{"aria-label": T("users.reset")}}) {
-					@Icon("key-round")
-				}
-			}
+			@RowAction("key-round", T("users.reset"), false)
 		}
-		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-md"}) {
-			@dialog.Header() {
-				@dialog.Title() {
-					{ T("users.resetfor") } { u.Name }
-				}
-				@dialog.Description() {
-					{ T("users.resethint") }
-				}
-			}
+		@DialogBox(T("users.resetfor")+" "+u.Name, T("users.resethint"), false) {
 			<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/reset") } class="mt-2 space-y-4">
 				@Field("reset-pw-"+strconv.FormatInt(u.ID, 10), T("users.newpw")) {
 					@input.Input(input.Props{ID: "reset-pw-" + strconv.FormatInt(u.ID, 10), Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "8"}})
 				}
-				@dialog.Footer() {
-					@dialog.Close(dialog.CloseProps{For: id}) {
-						@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
-							{ T("action.cancel") }
-						}
-					}
-					@button.Button(button.Props{Type: button.TypeSubmit}) {
-						@Icon("key-round")
-						<span>{ T("users.reset") }</span>
-					}
-				}
+				@DialogFooter(id, "key-round", T("users.reset"))
 			</form>
 		}
 	}
@@ -346,20 +278,9 @@ templ resetUserDialog(u store.User) {
 templ newUserDialog(multiTenant bool) {
 	@dialog.Dialog(dialog.Props{ID: "dlg-user-new"}) {
 		@dialog.Trigger(dialog.TriggerProps{For: "dlg-user-new"}) {
-			@button.Button(button.Props{Size: button.SizeSm}) {
-				@Icon("plus")
-				<span>{ T("users.new") }</span>
-			}
+			@PlusButton(T("users.new"))
 		}
-		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-md"}) {
-			@dialog.Header() {
-				@dialog.Title() {
-					{ T("users.new") }
-				}
-				@dialog.Description() {
-					{ T("users.hint") }
-				}
-			}
+		@DialogBox(T("users.new"), T("users.hint"), false) {
 			<form method="post" action="/admin/users" class="mt-2 space-y-4">
 				@Field("nu-name", T("users.name")) {
 					@input.Input(input.Props{ID: "nu-name", Name: "username", Placeholder: T("ph.newuser"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
@@ -370,17 +291,7 @@ templ newUserDialog(multiTenant bool) {
 				@Field("nu-pw", T("login.password")) {
 					@input.Input(input.Props{ID: "nu-pw", Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "8"}})
 				}
-				@dialog.Footer() {
-					@dialog.Close(dialog.CloseProps{For: "dlg-user-new"}) {
-						@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
-							{ T("action.cancel") }
-						}
-					}
-					@button.Button(button.Props{Type: button.TypeSubmit}) {
-						@Icon("plus")
-						<span>{ T("users.create") }</span>
-					}
-				}
+				@DialogFooter("dlg-user-new", "plus", T("users.create"))
 			</form>
 		}
 	}
@@ -389,24 +300,18 @@ templ newUserDialog(multiTenant bool) {
 // orgsCard lists organizations with usage and holds the create-org dialog.
 templ orgsCard(orgs []OrgInfo) {
 	@card.Card() {
-		@card.Header(card.HeaderProps{Class: "flex-row items-center justify-between space-y-0"}) {
-			@card.Title() {
-				{ T("org.title") }
-			}
+		@CardHeaderRow(T("org.title")) {
 			@newOrgDialog("/admin/orgs")
 		}
-		@card.Content(card.ContentProps{Class: "space-y-3"}) {
+		@card.Content(card.ContentProps{Class: "space-y-4"}) {
 			if len(orgs) == 0 {
 				@EmptyState("building-2", T("org.empty")) {
 					@dialog.Trigger(dialog.TriggerProps{For: "dlg-org-new"}) {
-						@button.Button(button.Props{Size: button.SizeSm}) {
-							@Icon("plus")
-							<span>{ T("org.new") }</span>
-						}
+						@PlusButton(T("org.new"))
 					}
 				}
 			} else {
-				<div class="overflow-hidden rounded-lg border">
+				@ListBox() {
 					@table.Table() {
 						@table.Body() {
 							for _, info := range orgs {
@@ -429,7 +334,7 @@ templ orgsCard(orgs []OrgInfo) {
 											Danger:         true,
 											TriggerIcon:    "trash-2",
 											IconOnly:       true,
-											TriggerTooltip: T("org.delete"),
+											TriggerTooltip: T("action.delete"),
 											TriggerVariant: button.VariantGhost,
 										})
 									}
@@ -437,7 +342,7 @@ templ orgsCard(orgs []OrgInfo) {
 							}
 						}
 					}
-				</div>
+				}
 			}
 		}
 	}
@@ -446,35 +351,14 @@ templ orgsCard(orgs []OrgInfo) {
 templ newOrgDialog(action string) {
 	@dialog.Dialog(dialog.Props{ID: "dlg-org-new"}) {
 		@dialog.Trigger(dialog.TriggerProps{For: "dlg-org-new"}) {
-			@button.Button(button.Props{Size: button.SizeSm}) {
-				@Icon("plus")
-				<span>{ T("org.new") }</span>
-			}
+			@PlusButton(T("org.new"))
 		}
-		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-md"}) {
-			@dialog.Header() {
-				@dialog.Title() {
-					{ T("org.new") }
-				}
-				@dialog.Description() {
-					{ T("org.newhint") }
-				}
-			}
+		@DialogBox(T("org.new"), T("org.newhint"), false) {
 			<form method="post" action={ templ.SafeURL(action) } class="mt-2 space-y-4">
 				@Field("org-name", T("org.name")) {
 					@input.Input(input.Props{ID: "org-name", Name: "name", Placeholder: T("ph.orgname"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
 				}
-				@dialog.Footer() {
-					@dialog.Close(dialog.CloseProps{For: "dlg-org-new"}) {
-						@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
-							{ T("action.cancel") }
-						}
-					}
-					@button.Button(button.Props{Type: button.TypeSubmit}) {
-						@Icon("plus")
-						<span>{ T("org.create") }</span>
-					}
-				}
+				@DialogFooter("dlg-org-new", "plus", T("org.create"))
 			</form>
 		}
 	}
@@ -487,12 +371,9 @@ templ maintCard() {
 			@card.Title() {
 				{ T("inst.maint") }
 			}
-			@card.Description() {
-				{ T("inst.gcdesc") }
-			}
 		}
 		@card.Content() {
-			<div class="flex justify-end">
+			@ActionRow(T("inst.gcdesc")) {
 				@ConfirmForm(Confirm{
 					ID:           "gc",
 					Action:       "/admin/gc",
@@ -504,7 +385,7 @@ templ maintCard() {
 					TriggerLabel: T("inst.gcrun"),
 					TriggerIcon:  "recycle",
 				})
-			</div>
+			}
 		}
 	}
 }

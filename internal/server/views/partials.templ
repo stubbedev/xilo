@@ -2,6 +2,7 @@ package views
 
 import (
 	"github.com/templui/templui/components/badge"
+	"github.com/templui/templui/components/breadcrumb"
 	"github.com/templui/templui/components/button"
 	"github.com/templui/templui/components/card"
 	"github.com/templui/templui/components/copybutton"
@@ -50,7 +51,7 @@ templ FlashToast(flash Flash) {
 templ SecretCard(code string) {
 	@card.Card(card.Props{Class: "mb-6 border-primary/40"}) {
 		@card.Content(card.ContentProps{Class: "flex items-center gap-3 p-4"}) {
-			<code id={ copyID(code) } class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs">{ code }</code>
+			<code id={ copyID(code) } class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs scrollbar-none">{ code }</code>
 			@copybutton.CopyButton(copybutton.Props{TargetID: copyID(code), Class: "shrink-0"})
 		}
 	}
@@ -61,13 +62,14 @@ templ SecretCard(code string) {
 templ SearchInput(action, name, value, placeholder, target string) {
 	@input.Input(input.Props{
 		Name: name, Value: value, Type: input.TypeSearch, Placeholder: placeholder,
-		Class: "w-full sm:w-64",
+		Class: "h-8 w-full sm:w-64",
 		Attributes: templ.Attributes{
 			"hx-get":       action,
 			"hx-trigger":   "input changed delay:300ms, search",
 			"hx-target":    target,
 			"hx-select":    target,
 			"hx-swap":      "outerHTML",
+			"hx-indicator": target,
 			"hx-push-url":  "true",
 			"autocomplete": "off",
 			"aria-label":   placeholder,
@@ -78,13 +80,133 @@ templ SearchInput(action, name, value, placeholder, target string) {
 // PageHeader is a page title + optional subtitle, with a right-aligned actions
 // slot (children).
 templ PageHeader(title, subtitle string) {
-	<div class="mb-6 flex flex-wrap items-end justify-between gap-4">
+	<div class="mb-6 flex flex-wrap items-center justify-between gap-4">
 		<div class="space-y-1">
 			<h1 class="text-2xl font-semibold tracking-tight">{ title }</h1>
 			if subtitle != "" {
 				<p class="text-sm text-muted-foreground">{ subtitle }</p>
 			}
 		</div>
+		<div class="flex items-center gap-2">
+			{ children... }
+		</div>
+	</div>
+}
+
+// Crumb is one step of a Crumbs trail; the last item's Href is ignored.
+type Crumb struct {
+	Label, Href string
+}
+
+// Crumbs is the location trail above deep pages (cache, store path): every
+// step but the last is a link back up.
+templ Crumbs(items ...Crumb) {
+	@breadcrumb.Breadcrumb(breadcrumb.Props{Class: "mb-4"}) {
+		@breadcrumb.List() {
+			for i, c := range items {
+				@breadcrumb.Item() {
+					if i > 0 {
+						@breadcrumb.Separator()
+					}
+					if i == len(items)-1 {
+						@breadcrumb.Page() {
+							{ c.Label }
+						}
+					} else {
+						@breadcrumb.Link(breadcrumb.LinkProps{Href: c.Href}) {
+							{ c.Label }
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// CardHeaderRow is a card title with a right-aligned action (children).
+templ CardHeaderRow(title string) {
+	@card.Header(card.HeaderProps{Class: "flex-row items-center justify-between space-y-0"}) {
+		@card.Title() {
+			{ title }
+		}
+		{ children... }
+	}
+}
+
+// ListBox is the in-card list shell: one bordered, rounded box around a
+// table or divided rows. Not a nested card. Wide tables scroll sideways
+// inside it instead of pushing the page.
+templ ListBox() {
+	<div class="divide-y overflow-x-auto rounded-lg border">
+		{ children... }
+	</div>
+}
+
+// TableCard is a card holding nothing but a table. Sortable tables are
+// table-fixed with sized meta columns, so below a floor the primary column
+// would collapse to nothing: the floor makes the table scroll inside the
+// card instead.
+templ TableCard() {
+	@card.Card(card.Props{Class: "overflow-x-auto [&_table]:min-w-[48rem]"}) {
+		{ children... }
+	}
+}
+
+// RowAction is the icon-only ghost button used in table rows and card
+// corners: tooltip plus aria-label, one size everywhere. submit makes it a
+// one-click form action; otherwise it is a plain button (dialog triggers).
+templ RowAction(icon, label string, submit bool) {
+	@WithTooltip(label) {
+		@button.Button(button.Props{Variant: button.VariantGhost, Size: button.SizeIcon, Type: rowActionType(submit), Class: "size-8", Attributes: templ.Attributes{"aria-label": label}}) {
+			@Icon(icon)
+		}
+	}
+}
+
+// PlusButton is the house create-trigger: primary, small, plus icon.
+templ PlusButton(label string) {
+	@button.Button(button.Props{Size: button.SizeSm}) {
+		@Icon("plus")
+		<span>{ label }</span>
+	}
+}
+
+// DialogBox is a form dialog's body: title, one-line hint, then the form
+// (children). wide picks the lg width used by multi-field forms.
+templ DialogBox(title, hint string, wide bool) {
+	@dialog.Content(dialog.ContentProps{Class: dialogWidth(wide)}) {
+		@dialog.Header() {
+			@dialog.Title() {
+				{ title }
+			}
+			@dialog.Description() {
+				{ hint }
+			}
+		}
+		{ children... }
+	}
+}
+
+// DialogFooter is the cancel + submit row every form dialog ends with.
+templ DialogFooter(dlgID, icon, label string) {
+	@dialog.Footer() {
+		@dialog.Close(dialog.CloseProps{For: dlgID}) {
+			@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
+				{ T("action.cancel") }
+			}
+		}
+		@button.Button(button.Props{Type: button.TypeSubmit}) {
+			@Icon(icon)
+			<span>{ label }</span>
+		}
+	}
+}
+
+// ActionRow is a sentence with its action on the right: "Rotate the key" +
+// button, "Protect your account" + Enable. Wraps on narrow screens.
+templ ActionRow(text string) {
+	<div class="flex flex-wrap items-center justify-between gap-3">
+		<p class="text-sm text-muted-foreground">{ text }</p>
 		<div class="flex items-center gap-2">
 			{ children... }
 		</div>
@@ -104,7 +226,7 @@ templ SectionHeader(title string) {
 // StatTile is one KPI: icon, big value, label. A non-empty id marks the value
 // for live updates; tone adds a text color class to the value.
 templ StatTile(icon, value, label, id, tone string) {
-	@card.Card(card.Props{Class: "p-0"}) {
+	@card.Card() {
 		@card.Content(card.ContentProps{Class: "flex items-center gap-4 p-4"}) {
 			<div class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground">
 				@IconClass(icon, 20, "")
@@ -124,7 +246,7 @@ templ StatTile(icon, value, label, id, tone string) {
 
 // EmptyState is the shared empty-list block: icon, message, optional action.
 templ EmptyState(icon, msg string) {
-	@card.Card(card.Props{Class: "flex flex-col items-center gap-3 border-dashed bg-transparent py-12 text-center shadow-none"}) {
+	@card.Card(card.Props{Class: "flex flex-col items-center gap-3 border-dashed bg-transparent px-6 py-12 text-center shadow-none"}) {
 		<span class="text-muted-foreground">
 			@IconClass(icon, 32, "")
 		</span>
@@ -205,15 +327,7 @@ templ ConfirmForm(c Confirm) {
 				@confirmTriggerButton(c)
 			}
 		}
-		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-md"}) {
-			@dialog.Header() {
-				@dialog.Title() {
-					{ c.Title }
-				}
-				@dialog.Description() {
-					{ c.Message }
-				}
-			}
+		@DialogBox(c.Title, c.Message, false) {
 			<form method="post" action={ templ.SafeURL(c.Action) } class="mt-2">
 				{ children... }
 				@dialog.Footer() {
@@ -244,10 +358,13 @@ templ confirmTriggerButton(c Confirm) {
 	}
 }
 
-// StatusBadge renders a token's status as a colored badge.
-templ StatusBadge(status string) {
-	@badge.Badge(badge.Props{Variant: statusVariant(status)}) {
-		{ T("tok." + status) }
+// StatusIcon renders a token's status as one glyph (check, clock, ban); the
+// word rides in the tooltip and the aria-label.
+templ StatusIcon(status string) {
+	@WithTooltip(T("tok." + status)) {
+		<span class={ "inline-flex", statusTone(status) } role="img" aria-label={ T("tok." + status) }>
+			@Icon(statusIcon(status))
+		</span>
 	}
 }
 

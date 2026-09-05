@@ -38,12 +38,21 @@ func (db *DB) Audit(e AuditEntry) error {
 
 // SearchAudit lists a page of activity entries. The query is split on
 // whitespace; every term must substring-match the actor, method or path
-// (case-insensitive). sortKey (time|actor|method|path|status) + sortDir
-// (asc|desc) pick the order; the default is newest first. total is the match
-// count before limit/offset.
-func (db *DB) SearchAudit(q string, limit, offset int, sortKey, sortDir string) (entries []AuditEntry, total int64, err error) {
+// (case-insensitive). method ("" = any) narrows to one HTTP method; status
+// ("" = any, else "2xx".."5xx") narrows to one status class. sortKey
+// (time|actor|method|path|status) + sortDir (asc|desc) pick the order; the
+// default is newest first. total is the match count before limit/offset.
+func (db *DB) SearchAudit(q, method, status string, limit, offset int, sortKey, sortDir string) (entries []AuditEntry, total int64, err error) {
 	where := `1=1`
 	var args []any
+	if method != "" {
+		where += ` AND method=?`
+		args = append(args, method)
+	}
+	if lo, ok := statusClass(status); ok {
+		where += ` AND status>=? AND status<?`
+		args = append(args, lo, lo+100)
+	}
 	var whereSb47 strings.Builder
 	for term := range strings.FieldsSeq(q) {
 		whereSb47.WriteString(` AND (lower(actor) LIKE ? ESCAPE '\' OR lower(method) LIKE ? ESCAPE '\' OR lower(path) LIKE ? ESCAPE '\' OR lower(ip) LIKE ? ESCAPE '\')`)
@@ -93,6 +102,39 @@ func (db *DB) SearchAudit(q string, limit, offset int, sortKey, sortDir string) 
 		entries = append(entries, e)
 	}
 	return entries, total, rows.Err()
+}
+
+// statusClass maps a "2xx".."5xx" filter to its lower bound.
+func statusClass(s string) (int, bool) {
+	switch s {
+	case "2xx":
+		return 200, true
+	case "3xx":
+		return 300, true
+	case "4xx":
+		return 400, true
+	case "5xx":
+		return 500, true
+	}
+	return 0, false
+}
+
+// AuditStats is the activity page's summary: everything ever recorded (within
+// retention), how much of it failed, how many distinct signed-in actors, and
+// the mean request duration.
+type AuditStats struct {
+	Total, Failed, Actors, AvgMs int64
+}
+
+// AuditStats aggregates the whole audit_log in one scan.
+func (db *DB) AuditStats() (AuditStats, error) {
+	var st AuditStats
+	err := db.r.QueryRow(`SELECT COUNT(*),
+		COALESCE(SUM(CASE WHEN status>=400 THEN 1 ELSE 0 END),0),
+		COUNT(DISTINCT NULLIF(actor,'')),
+		COALESCE(CAST(AVG(duration_ms) AS INTEGER),0) FROM audit_log`).
+		Scan(&st.Total, &st.Failed, &st.Actors, &st.AvgMs)
+	return st, err
 }
 
 // PruneAuditBatch deletes up to limit activity entries older than cutoff

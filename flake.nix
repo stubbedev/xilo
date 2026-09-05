@@ -108,7 +108,10 @@
             curl
           ] ++ lib.optional hasWebToolchain tailwindcss_4; # admin CSS: `just css`
           shellHook = ''
-            echo "xilo dev shell — run 'just' to list recipes"
+            # A GOROOT inherited from an older shell points the toolchain at a
+            # go that is not the one on PATH ("compile: version ... does not
+            # match"). The nix go finds its own root; never carry one over.
+            unset GOROOT
           '';
         };
       }) // {
@@ -136,7 +139,7 @@
             };
 
             settings = lib.mkOption {
-              type = settingsFormat.type;
+              inherit (settingsFormat) type;
               default = { };
               description = ''
                 Server configuration written to
@@ -172,7 +175,7 @@
             };
 
             settings = lib.mkOption {
-              type = settingsFormat.type;
+              inherit (settingsFormat) type;
               default = { };
               example = lib.literalExpression ''
                 {

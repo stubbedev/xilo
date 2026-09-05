@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/a-h/templ"
+	"github.com/stubbedev/xilo/internal/narinfo"
 	"github.com/stubbedev/xilo/internal/store"
 	"github.com/templui/templui/components/alert"
 	"github.com/templui/templui/components/badge"
@@ -45,6 +46,7 @@ func confirmTriggerProps(c Confirm) button.Props {
 	p := button.Props{Variant: v, Type: button.TypeButton, Size: button.SizeSm}
 	if c.IconOnly {
 		p.Size = button.SizeIcon
+		p.Class = "size-8"
 		if c.TriggerTooltip != "" {
 			p.Attributes = templ.Attributes{"aria-label": c.TriggerTooltip}
 		}
@@ -77,15 +79,39 @@ func authAlertVariant(f Flash) alert.Variant {
 	return alert.VariantDestructive
 }
 
-// statusVariant maps a token status to a badge variant.
+// dialogWidth is the DialogBox content class: md for confirms and one-field
+// forms, lg for multi-field forms.
+func dialogWidth(wide bool) string {
+	if wide {
+		return "text-left sm:max-w-lg"
+	}
+	return "text-left sm:max-w-md"
+}
+
+// rowActionType picks submit vs plain button for a RowAction.
+func rowActionType(submit bool) button.Type {
+	if submit {
+		return button.TypeSubmit
+	}
+	return button.TypeButton
+}
+
+// failTone colors the failed-requests tile once there is anything to see.
+func failTone(failed int64) string {
+	if failed > 0 {
+		return "text-destructive"
+	}
+	return ""
+}
+
 // auditMethodVariant colors an HTTP method badge so destructive actions stand
 // out in activities at a glance.
 func auditMethodVariant(method string) badge.Variant {
 	switch method {
 	case "DELETE":
 		return badge.VariantDestructive
-	case "POST", "PUT", "PATCH":
-		return badge.VariantDefault
+	case "GET":
+		return badge.VariantOutline
 	default:
 		return badge.VariantSecondary
 	}
@@ -104,16 +130,26 @@ func auditStatusVariant(status int) badge.Variant {
 	}
 }
 
-func statusVariant(status string) badge.Variant {
+// statusIcon / statusTone map a token status to its glyph and color.
+func statusIcon(status string) string {
 	switch status {
 	case "active":
-		return badge.VariantDefault
-	case "expired":
-		return badge.VariantOutline
+		return "circle-check"
 	case "revoked":
-		return badge.VariantDestructive
+		return "ban"
 	default:
-		return badge.VariantOutline
+		return "clock"
+	}
+}
+
+func statusTone(status string) string {
+	switch status {
+	case "active":
+		return "text-success"
+	case "revoked":
+		return "text-destructive"
+	default:
+		return "text-muted-foreground"
 	}
 }
 
@@ -138,6 +174,11 @@ func pathParts(p string) (hash, name string) {
 		hash = hash[:8]
 	}
 	return hash, name
+}
+
+// pathURL is the admin detail page for a store path in a cache.
+func pathURL(c store.Cache, storePath string) string {
+	return "/admin/cache/" + c.Ref() + "/path/" + narinfo.StoreHash(storePath)
 }
 
 // parseDate parses a yyyy-mm-dd query value; zero time when empty/invalid.
@@ -219,11 +260,12 @@ func hxSwapAttrs(url, target string) templ.Attributes {
 		return nil
 	}
 	return templ.Attributes{
-		"hx-get":      url,
-		"hx-target":   target,
-		"hx-select":   target,
-		"hx-swap":     "outerHTML show:none",
-		"hx-push-url": "true",
+		"hx-get":       url,
+		"hx-target":    target,
+		"hx-select":    target,
+		"hx-swap":      "outerHTML show:none",
+		"hx-indicator": target,
+		"hx-push-url":  "true",
 	}
 }
 

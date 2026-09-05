@@ -15,7 +15,7 @@ func TestAuditRoundTrip(t *testing.T) {
 	if err := db.Audit(AuditEntry{Method: "DELETE", Path: "/api/v1/caches/x/y", Status: 200, IP: "10.0.0.2"}); err != nil {
 		t.Fatal(err)
 	}
-	es, _, err := db.SearchAudit("", 10, 0, "", "")
+	es, _, err := db.SearchAudit("", "", "", 10, 0, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,15 +31,32 @@ func TestAuditRoundTrip(t *testing.T) {
 	}
 
 	// Search filters by term across actor/method/path/ip, newest first.
-	m, total, err := db.SearchAudit("alice", 10, 0, "", "")
+	m, total, err := db.SearchAudit("alice", "", "", 10, 0, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if total != 1 || len(m) != 1 || m[0].Actor != "alice" {
 		t.Fatalf("search alice: total=%d got=%+v", total, m)
 	}
-	if m, total, _ := db.SearchAudit("10.0.0.2", 10, 0, "", ""); total != 1 || m[0].Path != "/api/v1/caches/x/y" {
+	if m, total, _ := db.SearchAudit("10.0.0.2", "", "", 10, 0, "", ""); total != 1 || m[0].Path != "/api/v1/caches/x/y" {
 		t.Fatalf("search by ip: total=%d got=%+v", total, m)
+	}
+	// Method and status-class filters compose with the term search.
+	if _, total, _ := db.SearchAudit("", "DELETE", "", 10, 0, "", ""); total != 1 {
+		t.Fatalf("method filter: total=%d", total)
+	}
+	if _, total, _ := db.SearchAudit("", "", "2xx", 10, 0, "", ""); total != 2 {
+		t.Fatalf("2xx filter: total=%d", total)
+	}
+	if _, total, _ := db.SearchAudit("alice", "", "4xx", 10, 0, "", ""); total != 0 {
+		t.Fatalf("4xx filter: total=%d", total)
+	}
+	st, err := db.AuditStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Total != 2 || st.Failed != 0 || st.Actors != 1 || st.AvgMs != 6 {
+		t.Fatalf("stats: %+v", st)
 	}
 }
 
@@ -62,7 +79,7 @@ func TestPruneAuditBatch(t *testing.T) {
 	if n, err := db.PruneAuditBatch(cutoff, 1); err != nil || n != 0 {
 		t.Fatalf("drained batch: n=%d err=%v", n, err)
 	}
-	es, _, err := db.SearchAudit("", 10, 0, "", "")
+	es, _, err := db.SearchAudit("", "", "", 10, 0, "", "")
 	if err != nil || len(es) != 0 {
 		t.Fatalf("audit_log should be empty: len=%d err=%v", len(es), err)
 	}
