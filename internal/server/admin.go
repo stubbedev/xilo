@@ -401,14 +401,14 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 	}
 	usages := make([]views.CacheUsage, 0, len(caches))
 	for _, c := range caches {
-		st, err := s.db.CacheStats(c.ID)
+		st, err := s.db.StatsFor(c.ID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		usages = append(usages, views.CacheUsage{Cache: c, Bytes: st.PhysicalBytes, Logical: st.LogicalBytes, Paths: st.Paths})
 	}
-	global, err := s.db.GlobalStats()
+	global, err := s.db.GlobalStatsFor()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -747,7 +747,7 @@ func (s *Server) renderOrg(w http.ResponseWriter, r *http.Request, u *store.User
 		Bytes: humanBytes, Flash: flash,
 	}
 	for _, c := range caches {
-		st, err := s.db.CacheStats(c.ID)
+		st, err := s.db.StatsFor(c.ID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -1222,7 +1222,7 @@ func (s *Server) cacheForUser(w http.ResponseWriter, r *http.Request, u *store.U
 // exactly once: it is spliced into the setup snippets so the reader copies a
 // working command instead of one with a <token> placeholder in it.
 func (s *Server) renderCache(w http.ResponseWriter, r *http.Request, u *store.User, c *store.Cache, flash views.Flash, secret string) {
-	st, err := s.db.CacheStats(c.ID)
+	st, err := s.db.StatsFor(c.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

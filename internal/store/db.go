@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -24,6 +26,14 @@ type DB struct {
 	// key encrypts sensitive columns and keys token hashes; nil = plaintext.
 	// Derived from the configured database.salt via SetSalt.
 	key []byte
+	// statsMu guards refreshing, the set of caches whose stored summary is
+	// being recomputed right now (see StatsFor).
+	statsMu    sync.Mutex
+	refreshing map[int64]bool
+	// global is the memoised instance-wide summary behind GlobalStatsFor.
+	global           Global
+	globalAt         time.Time
+	globalRefreshing atomic.Bool
 }
 
 type wtask struct {
@@ -299,6 +309,23 @@ func migrate(w *sql.DB, pg bool) error {
 			month      TEXT NOT NULL,
 			bytes      INTEGER NOT NULL DEFAULT 0,
 			PRIMARY KEY (account_id, month)
+		)`,
+		// A cache's dashboard summary, stored rather than recomputed. Deriving
+		// it means reading every path's chunk list and pricing each hash, which
+		// grows with the cache and cannot be indexed away; the UI needs it on
+		// every page load. Written by StatsFor's background refresh, never by
+		// the push transaction, and dropped with its cache by the FK cascade.
+		// cache_id is a table-level PRIMARY KEY on purpose: the Postgres
+		// translation turns a column-level "INTEGER PRIMARY KEY" into an
+		// identity column, which a foreign key must not be.
+		`CREATE TABLE IF NOT EXISTS cache_stats (
+			cache_id       INTEGER NOT NULL REFERENCES caches(id) ON DELETE CASCADE,
+			paths          INTEGER NOT NULL DEFAULT 0,
+			logical_bytes  INTEGER NOT NULL DEFAULT 0,
+			chunks         INTEGER NOT NULL DEFAULT 0,
+			physical_bytes INTEGER NOT NULL DEFAULT 0,
+			computed       INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (cache_id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS settings (
 			key   TEXT PRIMARY KEY,

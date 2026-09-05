@@ -98,6 +98,17 @@ func BenchmarkUIQueries(b *testing.B) {
 	db := openBench(b)
 	id := seedScale(b, db, benchScale, 50_000)
 
+	b.Run("StatsFor", func(b *testing.B) {
+		if _, err := db.RefreshStats(id); err != nil {
+			b.Fatal(err)
+		}
+		b.ResetTimer()
+		for b.Loop() {
+			if _, err := db.StatsFor(id); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 	b.Run("CacheStats", func(b *testing.B) {
 		for b.Loop() {
 			if _, err := db.CacheStats(id); err != nil {
