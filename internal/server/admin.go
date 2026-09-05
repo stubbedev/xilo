@@ -1,6 +1,7 @@
 package server
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -8,11 +9,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
 	"net/url"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -959,7 +960,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 // as a case-insensitive subsequence — the in-memory twin of the SQL search.
 func fuzzyMatch(s, q string) bool {
 	s = strings.ToLower(s)
-	for _, term := range strings.Fields(strings.ToLower(q)) {
+	for term := range strings.FieldsSeq(strings.ToLower(q)) {
 		si := 0
 		for _, r := range term {
 			idx := strings.IndexRune(s[si:], r)
@@ -976,11 +977,8 @@ func fuzzyMatch(s, q string) bool {
 func sortParams(r *http.Request, keyParam, dirParam string, allowed ...string) (key, dir string) {
 	q := r.URL.Query()
 	k := q.Get(keyParam)
-	for _, a := range allowed {
-		if k == a {
-			key = k
-			break
-		}
+	if slices.Contains(allowed, k) {
+		key = k
 	}
 	dir = "desc"
 	if q.Get(dirParam) == "asc" {
@@ -994,12 +992,12 @@ func sortTokens(tokens []store.Token, key, dir string) {
 	if key == "" {
 		return
 	}
-	less := func(a, b store.Token) bool {
+	order := func(a, b store.Token) int {
 		switch key {
 		case "perms":
-			return strings.Join(a.Perms, ",") < strings.Join(b.Perms, ",")
+			return cmp.Compare(strings.Join(a.Perms, ","), strings.Join(b.Perms, ","))
 		case "scope":
-			return strings.Join(a.Caches, ",") < strings.Join(b.Caches, ",")
+			return cmp.Compare(strings.Join(a.Caches, ","), strings.Join(b.Caches, ","))
 		case "expires":
 			// never (0) sorts after every real date
 			ae, be := a.Expires, b.Expires
@@ -1009,18 +1007,18 @@ func sortTokens(tokens []store.Token, key, dir string) {
 			if be == 0 {
 				be = math.MaxInt64
 			}
-			return ae < be
+			return cmp.Compare(ae, be)
 		case "status":
-			return views.TokenStatus(a) < views.TokenStatus(b)
+			return cmp.Compare(views.TokenStatus(a), views.TokenStatus(b))
 		default: // name
-			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+			return cmp.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name))
 		}
 	}
-	sort.SliceStable(tokens, func(i, j int) bool {
+	slices.SortStableFunc(tokens, func(a, b store.Token) int {
 		if dir == "asc" {
-			return less(tokens[i], tokens[j])
+			return order(a, b)
 		}
-		return less(tokens[j], tokens[i])
+		return order(b, a)
 	})
 }
 
@@ -1054,9 +1052,7 @@ func pageParams(r *http.Request, group string, defSize int) (number, size int) {
 func makePager(path string, params url.Values, group string, page, pages int) views.Pager {
 	mk := func(n int) string {
 		v := url.Values{}
-		for k, vs := range params {
-			v[k] = vs
-		}
+		maps.Copy(v, params)
 		v.Set(group+"[number]", strconv.Itoa(n))
 		return path + "?" + v.Encode()
 	}
@@ -1223,10 +1219,7 @@ func (s *Server) handleCacheDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	pages := int((total + int64(perPage) - 1) / int64(perPage))
-	if pages < 1 {
-		pages = 1
-	}
+	pages := max(int((total+int64(perPage)-1)/int64(perPage)), 1)
 	if page > pages && total > 0 {
 		// Past the end (e.g. stale link): show the last page instead of nothing.
 		page = pages
@@ -1271,10 +1264,7 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	pages := int((total + int64(perPage) - 1) / int64(perPage))
-	if pages < 1 {
-		pages = 1
-	}
+	pages := max(int((total+int64(perPage)-1)/int64(perPage)), 1)
 	if page > pages && total > 0 {
 		page = pages
 		entries, total, err = s.db.SearchAudit(q, perPage, (page-1)*perPage, skey, sdir)

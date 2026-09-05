@@ -48,7 +48,7 @@ func (db *DB) PathsWithMissingChunks(extraBad []string) ([]BrokenPath, error) {
 		if err := prows.Scan(&p.ID, &p.StorePath, &chunks, &st); err != nil {
 			return nil, err
 		}
-		for _, h := range splitLines(chunks) {
+		for h := range seqLines(chunks) {
 			if !present[st+"/"+h] {
 				out = append(out, p)
 				break

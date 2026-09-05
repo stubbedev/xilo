@@ -81,7 +81,7 @@ func (f *Filter) probes(s string) (h1, h2 uint64) {
 
 func (f *Filter) Add(s string) error {
 	h1, h2 := f.probes(s)
-	for i := uint64(0); i < uint64(f.k); i++ {
+	for i := range uint64(f.k) {
 		bit := (h1 + i*h2) & (f.m - 1)
 		f.bits[bit/64] |= 1 << (bit % 64)
 	}
@@ -91,7 +91,7 @@ func (f *Filter) Add(s string) error {
 // Has reports whether s may be present: false is certain, true is probable.
 func (f *Filter) Has(s string) bool {
 	h1, h2 := f.probes(s)
-	for i := uint64(0); i < uint64(f.k); i++ {
+	for i := range uint64(f.k) {
 		bit := (h1 + i*h2) & (f.m - 1)
 		if f.bits[bit/64]&(1<<(bit%64)) == 0 {
 			return false

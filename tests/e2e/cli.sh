@@ -62,10 +62,6 @@ exec_srv() { $COMPOSE exec -T xilo /xilo "$@"; }
 export COMPOSE
 export -f exec_srv # bash -c assertions need it too
 
-echo "== schema =="
-"$XILO" schema dump --out "$WORK/schema.json" && python3 -c "import json;json.load(open('$WORK/schema.json'))" 2>/dev/null \
-  && pass "schema dump valid json" || fail "schema dump valid json"
-
 echo "== cache lifecycle (server-side CLI) =="
 assert "cache create" exec_srv cache create e2e
 assert "cache create private" exec_srv cache create e2e-priv --private

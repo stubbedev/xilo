@@ -38,7 +38,7 @@ func TestChunkFilterServesPresentChunks(t *testing.T) {
 	pushFake(t, ts, "c", h32, data, "")
 
 	resp, body := getFilter(t, ts.URL+"/c/default/c/api/chunk-filter", "", "")
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d %s", resp.StatusCode, body)
 	}
 	if resp.Header.Get("ETag") == "" {
@@ -69,7 +69,7 @@ func TestChunkFilterRevalidates(t *testing.T) {
 
 	resp, body := getFilter(t, url, "", "")
 	etag := resp.Header.Get("ETag")
-	if resp.StatusCode != 200 || len(body) == 0 {
+	if resp.StatusCode != http.StatusOK || len(body) == 0 {
 		t.Fatalf("first fetch: %d, %d bytes", resp.StatusCode, len(body))
 	}
 
@@ -82,7 +82,7 @@ func TestChunkFilterRevalidates(t *testing.T) {
 	}
 
 	resp, _ = getFilter(t, url, "", `"deadbeefdeadbeef"`)
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("stale ETag → %d, want a fresh 200", resp.StatusCode)
 	}
 }
@@ -115,7 +115,7 @@ func TestChunkFilterMemoized(t *testing.T) {
 	fb.mu.Unlock()
 
 	resp, third := getFilter(t, url, "", "")
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("rebuild: %d", resp.StatusCode)
 	}
 	if resp.Header.Get("ETag") == etag || bytes.Equal(second, third) {
@@ -154,7 +154,7 @@ func TestChunkFilterEmptyCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp, body := getFilter(t, ts.URL+"/c/default/c/api/chunk-filter", "", "")
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200 with an empty filter", resp.StatusCode)
 	}
 	f, err := bloom.Unmarshal(body)
@@ -178,20 +178,20 @@ func TestChunkFilterRequiresPush(t *testing.T) {
 	pullTok, _, _ := db.CreateToken(0, "rd", []string{"default/pub"}, []string{"pull"}, 0)
 	url := ts.URL + "/c/default/pub/api/chunk-filter"
 
-	if resp, _ := getFilter(t, url, "", ""); resp.StatusCode != 401 {
+	if resp, _ := getFilter(t, url, "", ""); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("anonymous → %d, want 401", resp.StatusCode)
 	}
-	if resp, _ := getFilter(t, url, pullTok, ""); resp.StatusCode != 401 {
+	if resp, _ := getFilter(t, url, pullTok, ""); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("pull-only token → %d, want 401", resp.StatusCode)
 	}
-	if resp, _ := getFilter(t, url, pushTok, ""); resp.StatusCode != 200 {
+	if resp, _ := getFilter(t, url, pushTok, ""); resp.StatusCode != http.StatusOK {
 		t.Fatalf("push token → %d, want 200", resp.StatusCode)
 	}
 }
 
 func TestChunkFilterUnknownCache(t *testing.T) {
 	_, _, ts := newTestServerCfg(t, nil)
-	if resp, _ := getFilter(t, ts.URL+"/c/default/nope/api/chunk-filter", "", ""); resp.StatusCode != 404 {
+	if resp, _ := getFilter(t, ts.URL+"/c/default/nope/api/chunk-filter", "", ""); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown cache → %d, want 404", resp.StatusCode)
 	}
 }

@@ -19,7 +19,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 )
 
 // Magic is the archive header string.
@@ -163,6 +163,6 @@ func dirNames(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names, nil
 }

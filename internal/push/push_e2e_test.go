@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -74,7 +75,7 @@ func dumpCounts(t *testing.T) map[string]int {
 		t.Fatal(err)
 	}
 	counts := map[string]int{}
-	for _, l := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+	for l := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
 		counts[l]++
 	}
 	return counts
@@ -978,7 +979,7 @@ func TestRunDumpKillsWriterOnConsumeError(t *testing.T) {
 	}()
 	select {
 	case err := <-done:
-		if err != errAbort {
+		if !errors.Is(err, errAbort) {
 			t.Fatalf("err = %v, want errAbort", err)
 		}
 	case <-time.After(10 * time.Second):

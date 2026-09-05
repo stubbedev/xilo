@@ -11,7 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -26,16 +26,15 @@ import (
 )
 
 type Server struct {
-	cfg       *config.Config
-	db        *store.DB
-	sts       map[string]storage.Storage // named blob backends
-	enc       *zstd.Encoder              // EncodeAll — safe for concurrent use
-	dec       *zstd.Decoder              // DecodeAll — safe for concurrent use
-	sess      *sessions
-	ceremony  ceremonies // in-flight WebAuthn challenges
-	wanOnce   sync.Once
-	wan       *webauthn.WebAuthn
-	wanErr    error
+	cfg      *config.Config
+	db       *store.DB
+	sts      map[string]storage.Storage // named blob backends
+	enc      *zstd.Encoder              // EncodeAll — safe for concurrent use
+	dec      *zstd.Decoder              // DecodeAll — safe for concurrent use
+	sess     *sessions
+	ceremony ceremonies // in-flight WebAuthn challenges
+	// webAuthn builds the relying party on first use (memoized).
+	webAuthn  func() (*webauthn.WebAuthn, error)
 	uploadSem chan struct{} // bounds concurrent server-side chunk encode+store
 	logins    *loginLimiter // throttles bcrypt attempts per IP
 	niCache   *narinfoCache // rendered+signed narinfo bodies
@@ -87,6 +86,7 @@ func New(cfg *config.Config, db *store.DB, sts map[string]storage.Storage) (*Ser
 		logins:    newLoginLimiter(),
 		niCache:   newNarinfoCache(16384), // ~64B/key + body ~600B ⇒ ~10MB cap
 		vfCache:   newVerifyCache(8192),   // 32B keys ⇒ well under 1MB
+		webAuthn:  newWebAuthn(cfg),
 	}
 	s.restoreCounters()
 	return s, nil
@@ -477,7 +477,7 @@ func (s *Server) storageNames() []string {
 			names = append(names, n)
 		}
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return append([]string{s.cfg.DefaultStorage}, names...)
 }
 

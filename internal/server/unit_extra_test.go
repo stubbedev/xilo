@@ -38,7 +38,7 @@ func TestFormSeconds(t *testing.T) {
 		{"Inf", "d", 0, false},
 	}
 	for _, c := range cases {
-		r := httptest.NewRequest("GET", "/?"+url.Values{"x_value": {c.value}, "x_unit": {c.unit}}.Encode(), nil)
+		r := httptest.NewRequest(http.MethodGet, "/?"+url.Values{"x_value": {c.value}, "x_unit": {c.unit}}.Encode(), nil)
 		got, ok := formSeconds(r, "x")
 		if got != c.want || ok != c.ok {
 			t.Errorf("formSeconds(%q,%q) = %d,%v want %d,%v", c.value, c.unit, got, ok, c.want, c.ok)
@@ -64,7 +64,7 @@ func TestFormBytes(t *testing.T) {
 		{"+Inf", "GiB", 0, false},
 	}
 	for _, c := range cases {
-		r := httptest.NewRequest("GET", "/?"+url.Values{"x_value": {c.value}, "x_unit": {c.unit}}.Encode(), nil)
+		r := httptest.NewRequest(http.MethodGet, "/?"+url.Values{"x_value": {c.value}, "x_unit": {c.unit}}.Encode(), nil)
 		got, ok := formBytes(r, "x")
 		if got != c.want || ok != c.ok {
 			t.Errorf("formBytes(%q,%q) = %d,%v want %d,%v", c.value, c.unit, got, ok, c.want, c.ok)
@@ -159,11 +159,11 @@ func TestSortTokensAndParams(t *testing.T) {
 		}
 	}
 
-	r := httptest.NewRequest("GET", "/?s=perms&d=asc", nil)
+	r := httptest.NewRequest(http.MethodGet, "/?s=perms&d=asc", nil)
 	if k, d := sortParams(r, "s", "d", "name", "perms"); k != "perms" || d != "asc" {
 		t.Errorf("sortParams = %q,%q", k, d)
 	}
-	r = httptest.NewRequest("GET", "/?s=evil&d=up", nil)
+	r = httptest.NewRequest(http.MethodGet, "/?s=evil&d=up", nil)
 	if k, d := sortParams(r, "s", "d", "name", "perms"); k != "" || d != "desc" {
 		t.Errorf("sortParams whitelist = %q,%q", k, d)
 	}
@@ -181,7 +181,7 @@ func TestPageParams(t *testing.T) {
 		{"/?g[number]=abc", 1, 25},
 	}
 	for _, c := range cases {
-		r := httptest.NewRequest("GET", c.url, nil)
+		r := httptest.NewRequest(http.MethodGet, c.url, nil)
 		n, s := pageParams(r, "g", 25)
 		if n != c.wantN || s != c.wantS {
 			t.Errorf("pageParams(%q) = %d,%d want %d,%d", c.url, n, s, c.wantN, c.wantS)
@@ -280,7 +280,7 @@ func TestMiddlewarePanicAndLogging(t *testing.T) {
 		panic("boom")
 	}))
 	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest("GET", "/c/default/c/nar/x.nar", nil))
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/c/default/c/nar/x.nar", nil))
 	if rr.Code != 500 {
 		t.Fatalf("panic → %d want 500", rr.Code)
 	}
@@ -292,7 +292,7 @@ func TestMiddlewarePanicAndLogging(t *testing.T) {
 		panic("late boom")
 	}))
 	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest("GET", "/c/default/c/nar/x.nar", nil))
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/c/default/c/nar/x.nar", nil))
 	if rr.Code != 201 || rr.Body.String() != "partial" {
 		t.Fatalf("late panic → %d %q", rr.Code, rr.Body.String())
 	}
@@ -301,10 +301,10 @@ func TestMiddlewarePanicAndLogging(t *testing.T) {
 	// count as neither
 	before, beforePush := s.metrics.reqTotal.Load(), s.metrics.pushReq.Load()
 	ok := s.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("hi")) }))
-	ok.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/c/default/c/nix-cache-info", nil))
-	ok.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/c/default/c/api/config", nil))
-	ok.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/admin", nil))
-	ok.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/robots.txt", nil))
+	ok.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/c/default/c/nix-cache-info", nil))
+	ok.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/c/default/c/api/config", nil))
+	ok.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/admin", nil))
+	ok.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/robots.txt", nil))
 	if got := s.metrics.reqTotal.Load(); got != before+1 {
 		t.Fatalf("reqTotal delta = %d want 1", got-before)
 	}
@@ -480,7 +480,7 @@ func TestBucketMax(t *testing.T) {
 
 func TestStatusRangeAndRate(t *testing.T) {
 	get := func(q string) statusRangeQ {
-		return statusRange(httptest.NewRequest("GET", "/?"+q, nil))
+		return statusRange(httptest.NewRequest(http.MethodGet, "/?"+q, nil))
 	}
 	if q := get("window=30"); q.WinMin != 30 || q.Custom {
 		t.Errorf("preset: %+v", q)
@@ -503,7 +503,7 @@ func TestStatusRangeAndRate(t *testing.T) {
 	}
 
 	for qs, want := range map[string]int{"rate=2": 2, "rate=10": 10, "rate=30": 30, "rate=60": 60, "rate=7": 5, "": 5} {
-		if got := statusRate(httptest.NewRequest("GET", "/?"+qs, nil)); got != want {
+		if got := statusRate(httptest.NewRequest(http.MethodGet, "/?"+qs, nil)); got != want {
 			t.Errorf("statusRate(%q) = %d want %d", qs, got, want)
 		}
 	}
@@ -525,7 +525,7 @@ func TestStatusSeriesWindows(t *testing.T) {
 
 	// rollup path: seed persisted minutes inside a custom window
 	base := time.Now().Add(-24 * time.Hour).Truncate(time.Minute).Unix()
-	for i := int64(0); i < 5; i++ {
+	for i := range int64(5) {
 		if err := db.AddMetricMinute(store.MetricMinute{TS: base + i*60, Req: float64(i + 1), Lat: 2, Bps: 3, Stored: 4}); err != nil {
 			t.Fatal(err)
 		}

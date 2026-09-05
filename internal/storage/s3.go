@@ -111,8 +111,7 @@ func (s *S3) DeleteMany(ctx context.Context, keys []string) error {
 }
 
 func isNotFound(err error) bool {
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[smithy.APIError](err); ok {
 		switch apiErr.ErrorCode() {
 		case "NotFound", "NoSuchKey":
 			return true

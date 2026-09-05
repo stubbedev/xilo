@@ -54,7 +54,7 @@ func adminClient(t *testing.T, ts *httptest.Server) *http.Client {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 || resp.Request.URL.Path != "/admin" {
+	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin" {
 		t.Fatalf("login → %d at %s", resp.StatusCode, resp.Request.URL)
 	}
 	return c
@@ -75,7 +75,7 @@ func TestAdminLoginLogout(t *testing.T) {
 
 	// no admin yet: login POST re-renders the bootstrap login page
 	resp, _ := http.PostForm(ts.URL+"/admin/login", url.Values{"username": {"admin"}, "password": {"x"}})
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("pre-bootstrap login → %d", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -90,7 +90,7 @@ func TestAdminLoginLogout(t *testing.T) {
 
 	// anonymous GET /admin shows the login page, not the dashboard
 	resp, _ = http.Get(ts.URL + "/admin")
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("anon /admin → %d", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -99,7 +99,7 @@ func TestAdminLoginLogout(t *testing.T) {
 
 	// logged in: settings reachable
 	resp, _ = c.Get(ts.URL + "/admin/settings")
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("settings → %d", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -121,7 +121,7 @@ func TestAdminCSRF(t *testing.T) {
 	c := adminClient(t, ts)
 
 	// cross-origin POST → 403
-	req, _ := http.NewRequest("POST", ts.URL+"/admin/caches", strings.NewReader("name=x"))
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/admin/caches", strings.NewReader("name=x"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", "http://evil.example")
 	resp, _ := c.Do(req)
@@ -131,7 +131,7 @@ func TestAdminCSRF(t *testing.T) {
 	resp.Body.Close()
 
 	// same-origin POST → cache created
-	req, _ = http.NewRequest("POST", ts.URL+"/admin/caches", strings.NewReader(url.Values{"name": {"csrf-ok"}}.Encode()))
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/admin/caches", strings.NewReader(url.Values{"name": {"csrf-ok"}}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", ts.URL)
 	resp, _ = c.Do(req)
@@ -160,7 +160,7 @@ func TestAdminCacheCRUD(t *testing.T) {
 	// duplicate name → flash + redirect back to the dashboard (PRG), and the
 	// landing page carries the error message.
 	resp, _ = c.PostForm(ts.URL+"/admin/caches", url.Values{"name": {"web"}})
-	if b := body(t, resp); resp.StatusCode != 200 || resp.Request.URL.Path != "/admin" || !contains(b, "Could not create cache") {
+	if b := body(t, resp); resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin" || !contains(b, "Could not create cache") {
 		t.Errorf("duplicate cache name → %d at %s", resp.StatusCode, resp.Request.URL.Path)
 	}
 
@@ -168,13 +168,13 @@ func TestAdminCacheCRUD(t *testing.T) {
 	pushFake(t, ts, "web", h32, []byte("some path data"), "")
 	for _, q := range []string{"", "?q=pkg&sort=size&dir=asc", "?page[number]=99&page[size]=5", "?q=zzznomatch"} {
 		resp, _ := c.Get(ts.URL + "/admin/cache/default/web" + q)
-		if resp.StatusCode != 200 {
+		if resp.StatusCode != http.StatusOK {
 			t.Errorf("cache detail %q → %d", q, resp.StatusCode)
 		}
 		resp.Body.Close()
 	}
 	resp, _ = c.Get(ts.URL + "/admin/cache/default/ghost")
-	if resp.StatusCode != 404 {
+	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("unknown cache detail → %d want 404", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -191,7 +191,7 @@ func TestAdminCacheCRUD(t *testing.T) {
 		t.Fatalf("configured cache: %+v", cc)
 	}
 	resp, _ = c.PostForm(ts.URL+"/admin/cache/default/ghost/configure", nil)
-	if resp.StatusCode != 404 {
+	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("configure unknown cache → %d want 404", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -256,7 +256,7 @@ func TestAdminTokenCRUD(t *testing.T) {
 
 	// edit unknown id → 404
 	resp, _ = c.PostForm(ts.URL+"/admin/tokens/99999/edit", nil)
-	if resp.StatusCode != 404 {
+	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("edit missing token → %d want 404", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -271,7 +271,7 @@ func TestAdminTokenCRUD(t *testing.T) {
 
 	// dashboard with search/sort/pagination params still renders
 	resp, _ = c.Get(ts.URL + "/admin?caches[q]=c&tokens[q]=ci&tokens[sort]=expires&tokens[dir]=asc&tokens[number]=1&tokens[size]=5")
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("filtered dashboard → %d", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -296,7 +296,7 @@ func TestAdminGC(t *testing.T) {
 	if b := body(t, resp); !strings.Contains(b, "GC done") {
 		t.Fatalf("gc response: %q", b)
 	}
-	if resp, _ := http.Get(ts.URL + "/c/default/c/" + h32 + ".narinfo"); resp.StatusCode != 404 {
+	if resp, _ := http.Get(ts.URL + "/c/default/c/" + h32 + ".narinfo"); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("path survived GC: %d", resp.StatusCode)
 	}
 	g, _ := db.GlobalStats()
@@ -332,19 +332,19 @@ func TestChangePassword(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	c2 := &http.Client{Jar: jar}
 	resp, _ := c2.PostForm(ts.URL+"/admin/login", url.Values{"username": {"admin"}, "password": {"NewPass123456"}})
-	if resp.StatusCode != 200 || resp.Request.URL.Path != "/admin" {
+	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin" {
 		t.Fatalf("login with new password → %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
 	// live hint endpoint: anon 401, logged-in 200
 	resp, _ = http.PostForm(ts.URL+"/admin/account/password/check", url.Values{"new": {"x"}})
-	if resp.StatusCode != 401 {
+	if resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("anon password check → %d want 401", resp.StatusCode)
 	}
 	resp.Body.Close()
 	resp, _ = c2.PostForm(ts.URL+"/admin/account/password/check", url.Values{"new": {"NewPass123456"}, "confirm": {""}})
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Errorf("password check → %d", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -427,12 +427,12 @@ func TestTOTPEnrollAndTwoStepLogin(t *testing.T) {
 	}
 	pending = m[1]
 	resp, _ = c2.PostForm(ts.URL+"/admin/login/code", url.Values{"pending": {pending}, "code": {totpCode(secret, time.Now())}})
-	if resp.StatusCode != 200 || resp.Request.URL.Path != "/admin" {
+	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin" {
 		t.Fatalf("2fa login → %d at %s", resp.StatusCode, resp.Request.URL)
 	}
 	resp.Body.Close()
 	resp, _ = c2.Get(ts.URL + "/admin/settings")
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("post-2fa settings → %d", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -476,7 +476,7 @@ func TestLoginCodeAfterTOTPDisabledMidFlight(t *testing.T) {
 	// admin disables 2FA while the second step is pending
 	db.SetUserTOTPEnabled(adminID(t, db), false)
 	resp, _ = c2.PostForm(ts.URL+"/admin/login/code", url.Values{"pending": {m[1]}, "code": {"whatever"}})
-	if resp.StatusCode != 200 || resp.Request.URL.Path != "/admin" {
+	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin" {
 		t.Fatalf("mid-flight disabled login → %d at %s", resp.StatusCode, resp.Request.URL)
 	}
 	resp.Body.Close()
@@ -490,7 +490,7 @@ func TestPasskeyEndpoints(t *testing.T) {
 
 	// no passkeys: login begin refuses
 	resp, _ := http.Post(ts.URL+"/admin/login/passkey/begin", "", nil)
-	if resp.StatusCode != 400 {
+	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("login begin sans passkeys → %d want 400", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -499,7 +499,7 @@ func TestPasskeyEndpoints(t *testing.T) {
 
 	// register begin returns creation options
 	resp, _ = c.PostForm(ts.URL+"/admin/passkeys/register/begin", nil)
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("register begin → %d", resp.StatusCode)
 	}
 	var opts map[string]any
@@ -511,12 +511,12 @@ func TestPasskeyEndpoints(t *testing.T) {
 
 	// finish with garbage body → 400; second finish → ceremony gone → 400
 	resp, _ = c.Post(ts.URL+"/admin/passkeys/register/finish", "application/json", strings.NewReader("{}"))
-	if resp.StatusCode != 400 {
+	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("garbage register finish → %d want 400", resp.StatusCode)
 	}
 	resp.Body.Close()
 	resp, _ = c.Post(ts.URL+"/admin/passkeys/register/finish", "application/json", strings.NewReader("{}"))
-	if b := body(t, resp); resp.StatusCode != 400 || !strings.Contains(b, "expired") {
+	if b := body(t, resp); resp.StatusCode != http.StatusBadRequest || !strings.Contains(b, "expired") {
 		t.Fatalf("stale register finish → %d %q", resp.StatusCode, b)
 	}
 
@@ -526,17 +526,17 @@ func TestPasskeyEndpoints(t *testing.T) {
 	db.AddPasskey(adminID(t, db), "bad", []byte("not-json"))
 
 	resp, _ = http.Post(ts.URL+"/admin/login/passkey/begin", "", nil)
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("login begin with passkey → %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 	resp, _ = http.Post(ts.URL+"/admin/login/passkey/finish", "application/json", strings.NewReader("{}"))
-	if resp.StatusCode != 400 {
+	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("garbage login finish → %d want 400 (unparsable body)", resp.StatusCode)
 	}
 	resp.Body.Close()
 	resp, _ = http.Post(ts.URL+"/admin/login/passkey/finish", "application/json", strings.NewReader("{}"))
-	if resp.StatusCode != 400 {
+	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("stale login finish → %d want 400", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -563,7 +563,7 @@ func TestStatusPagesAndData(t *testing.T) {
 	c := adminClient(t, ts)
 	for _, q := range []string{"", "?window=30&rate=2", "?window=720", "?from=2026-01-01&to=2026-01-02", "?window=junk&rate=junk"} {
 		resp, _ := c.Get(ts.URL + "/admin/status" + q)
-		if resp.StatusCode != 200 {
+		if resp.StatusCode != http.StatusOK {
 			t.Errorf("status %q → %d", q, resp.StatusCode)
 		}
 		resp.Body.Close()
@@ -571,7 +571,7 @@ func TestStatusPagesAndData(t *testing.T) {
 
 	// data endpoint: anon 401, session 200 with 4 charts
 	resp, _ := http.Get(ts.URL + "/admin/status/data")
-	if resp.StatusCode != 401 {
+	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("anon status data → %d want 401", resp.StatusCode)
 	}
 	resp.Body.Close()

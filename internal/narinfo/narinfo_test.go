@@ -1,7 +1,6 @@
 package narinfo
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"encoding/base64"
 	"strings"
@@ -125,7 +124,7 @@ func TestNarInfoString(t *testing.T) {
 	}
 	out := ni.String()
 	for _, want := range []string{"StorePath: /nix/store/aaa-foo", "Compression: none", "Sig: c:sig", "Deriver: ccc-foo.drv"} {
-		if !bytes.Contains([]byte(out), []byte(want)) {
+		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
 	}

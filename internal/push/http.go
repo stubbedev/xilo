@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/stubbedev/xilo/internal/api"
 	"github.com/stubbedev/xilo/internal/chunk"
@@ -15,9 +16,11 @@ import (
 
 func (c *Client) url(parts ...string) string {
 	u := c.base + "/c/" + c.cache
+	var uSb18 strings.Builder
 	for _, p := range parts {
-		u += "/" + p
+		uSb18.WriteString("/" + p)
 	}
+	u += uSb18.String()
 	return u
 }
 

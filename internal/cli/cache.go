@@ -23,8 +23,8 @@ var adminServer, adminToken string
 // splitRef splits a "ns/name" cache reference; a bare name lands in the
 // "default" namespace.
 func splitRef(s string) (ns, name string) {
-	if i := strings.IndexByte(s, '/'); i >= 0 {
-		return s[:i], s[i+1:]
+	if before, after, ok := strings.Cut(s, "/"); ok {
+		return before, after
 	}
 	return "default", s
 }

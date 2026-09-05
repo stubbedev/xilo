@@ -199,7 +199,7 @@ func TestMetricsAddRangePrune(t *testing.T) {
 	if err := db.AddMetricMinute(old); err != nil {
 		t.Fatal(err)
 	}
-	for i := int64(0); i < 3; i++ {
+	for i := range int64(3) {
 		m := MetricMinute{TS: base + i*60, Req: float64(i), Lat: 0.5, Bps: 100, Stored: 42}
 		if err := db.AddMetricMinute(m); err != nil {
 			t.Fatal(err)
@@ -589,7 +589,7 @@ func TestGCBatchSweep(t *testing.T) {
 
 	const orphans = 1200
 	var wantFreed int64
-	for i := 0; i < orphans; i++ {
+	for i := range orphans {
 		h := fmt.Sprintf("orph%04d", i)
 		if err := db.PutChunk("default", h, 10, int64(i%7+1), storage.ChunkKey(h), 100); err != nil {
 			t.Fatal(err)

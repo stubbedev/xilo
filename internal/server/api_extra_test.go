@@ -71,7 +71,7 @@ func pushChunked(t *testing.T, ts *httptest.Server, cache, storeHash string, par
 		chunks = append(chunks, ch)
 		h.Write(p)
 		size += uint64(len(p))
-		if r := put(t, ts, "/c/default/"+cache+"/api/chunk/"+ch, p, ""); r.StatusCode != 200 {
+		if r := put(t, ts, "/c/default/"+cache+"/api/chunk/"+ch, p, ""); r.StatusCode != http.StatusOK {
 			b, _ := io.ReadAll(r.Body)
 			t.Fatalf("put chunk: %d %s", r.StatusCode, b)
 		}
@@ -85,7 +85,7 @@ func pushChunked(t *testing.T, ts *httptest.Server, cache, storeHash string, par
 		Chunks:     chunks,
 	}
 	body, _ := json.Marshal(pr)
-	if r := put(t, ts, "/c/default/"+cache+"/api/path", body, ""); r.StatusCode != 200 {
+	if r := put(t, ts, "/c/default/"+cache+"/api/path", body, ""); r.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(r.Body)
 		t.Fatalf("put path: %d %s", r.StatusCode, b)
 	}
@@ -190,7 +190,7 @@ func TestConfigEndpoint(t *testing.T) {
 
 	// public cache: anonymous config is fine and carries the pubkey.
 	resp := rawGet(t, ts, "/c/default/pub/api/config", "", "")
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("public config: %d", resp.StatusCode)
 	}
 	var cr api.ConfigResp
@@ -213,7 +213,7 @@ func TestConfigEndpoint(t *testing.T) {
 			t.Errorf("priv config token=%q → %d want %d", c.token, resp.StatusCode, c.code)
 		}
 	}
-	if resp := rawGet(t, ts, "/c/default/nope/api/config", "", ""); resp.StatusCode != 404 {
+	if resp := rawGet(t, ts, "/c/default/nope/api/config", "", ""); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("unknown cache config → %d want 404", resp.StatusCode)
 	}
 }
@@ -256,7 +256,7 @@ func TestMissingPathsAndChunks(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if resp.StatusCode != 400 {
+		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("%s bad json → %d want 400", p, resp.StatusCode)
 		}
 	}
@@ -279,8 +279,8 @@ func TestPutChunkDedupAndMetrics(t *testing.T) {
 	db.CreateCache("default", "c", true, 40)
 	data := []byte("dedup me")
 	ch, _, _ := fakeNar(data)
-	for i := 0; i < 2; i++ {
-		if r := put(t, ts, "/c/default/c/api/chunk/"+ch, data, ""); r.StatusCode != 200 {
+	for i := range 2 {
+		if r := put(t, ts, "/c/default/c/api/chunk/"+ch, data, ""); r.StatusCode != http.StatusOK {
 			t.Fatalf("upload %d: %d", i, r.StatusCode)
 		}
 	}
@@ -387,7 +387,7 @@ func TestPutPathErrors(t *testing.T) {
 	{
 		body, _ := json.Marshal(api.PathReq{StorePath: sp, NarHash: narHash, NarSize: narSize, Chunks: []string{absent}})
 		resp := put(t, ts, "/c/default/c/api/path", body, "")
-		if resp.StatusCode != 409 {
+		if resp.StatusCode != http.StatusConflict {
 			t.Errorf("missing chunks → %d want 409", resp.StatusCode)
 		}
 		var out api.MissingResp
@@ -407,7 +407,7 @@ func TestPutPathErrors(t *testing.T) {
 		t.Errorf("size mismatch → %d want 400", c)
 	}
 	// bad json → 400
-	if r := put(t, ts, "/c/default/c/api/path", []byte("{nope"), ""); r.StatusCode != 400 {
+	if r := put(t, ts, "/c/default/c/api/path", []byte("{nope"), ""); r.StatusCode != http.StatusBadRequest {
 		t.Errorf("bad json → %d want 400", r.StatusCode)
 	}
 	// happy path still works after all that
@@ -429,7 +429,7 @@ func TestSkipUploadVerify(t *testing.T) {
 		NarSize:   999, Chunks: []string{ch},
 	}
 	body, _ := json.Marshal(pr)
-	if r := put(t, ts, "/c/default/c/api/path", body, ""); r.StatusCode != 200 {
+	if r := put(t, ts, "/c/default/c/api/path", body, ""); r.StatusCode != http.StatusOK {
 		t.Fatalf("skip-verify push → %d want 200", r.StatusCode)
 	}
 }
@@ -440,7 +440,7 @@ func TestOversizedChunkRejected(t *testing.T) {
 	big := bytes.Repeat([]byte("x"), int(s.maxChunkBody())+1)
 	sum := sha256.Sum256(big)
 	// The body is truncated at the cap, so the hash can't match → 400.
-	if r := put(t, ts, "/c/default/c/api/chunk/"+hex.EncodeToString(sum[:]), big, ""); r.StatusCode != 400 {
+	if r := put(t, ts, "/c/default/c/api/chunk/"+hex.EncodeToString(sum[:]), big, ""); r.StatusCode != http.StatusBadRequest {
 		t.Fatalf("oversized chunk → %d want 400", r.StatusCode)
 	}
 }
@@ -450,15 +450,15 @@ func TestNarAndNarinfo404(t *testing.T) {
 	db.CreateCache("default", "c", true, 40)
 
 	resp, _ := http.Get(ts.URL + "/c/default/c/nar/" + h32b + ".nar")
-	if resp.StatusCode != 404 {
+	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("missing nar → %d want 404", resp.StatusCode)
 	}
 	resp, _ = http.Get(ts.URL + "/c/default/nope/nar/" + h32b + ".nar")
-	if resp.StatusCode != 404 {
+	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown cache nar → %d want 404", resp.StatusCode)
 	}
 	resp, _ = http.Get(ts.URL + "/c/default/c/" + h32b + ".narinfo")
-	if resp.StatusCode != 404 {
+	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("missing narinfo → %d want 404", resp.StatusCode)
 	}
 	if cc := resp.Header.Get("Cache-Control"); !strings.Contains(cc, "max-age=30") {
@@ -471,13 +471,13 @@ func TestTokenLifecycleAuth(t *testing.T) {
 	db.CreateCache("default", "priv", false, 40)
 
 	expired, _, _ := db.CreateToken(0, "old", []string{"default/priv"}, []string{"pull"}, time.Now().Unix()-10)
-	if resp := rawGet(t, ts, "/c/default/priv/nix-cache-info", "", expired); resp.StatusCode != 401 {
+	if resp := rawGet(t, ts, "/c/default/priv/nix-cache-info", "", expired); resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("expired token → %d want 401", resp.StatusCode)
 	}
 
 	revoked, tok, _ := db.CreateToken(0, "gone", []string{"default/priv"}, []string{"pull"}, 0)
 	db.RevokeToken(tok.ID)
-	if resp := rawGet(t, ts, "/c/default/priv/nix-cache-info", "", revoked); resp.StatusCode != 401 {
+	if resp := rawGet(t, ts, "/c/default/priv/nix-cache-info", "", revoked); resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("revoked token → %d want 401", resp.StatusCode)
 	}
 
@@ -485,19 +485,19 @@ func TestTokenLifecycleAuth(t *testing.T) {
 	pullTok, _, _ := db.CreateToken(0, "rd", []string{"default/priv"}, []string{"pull"}, 0)
 	data := []byte("d")
 	ch, _, _ := fakeNar(data)
-	if r := put(t, ts, "/c/default/priv/api/chunk/"+ch, data, pullTok); r.StatusCode != 401 {
+	if r := put(t, ts, "/c/default/priv/api/chunk/"+ch, data, pullTok); r.StatusCode != http.StatusUnauthorized {
 		t.Errorf("pull token push → %d want 401", r.StatusCode)
 	}
 
 	// Basic auth (netrc-style) carries the pull token
 	valid, _, _ := db.CreateToken(0, "net", []string{"default/priv"}, []string{"pull"}, 0)
-	req, _ := http.NewRequest("GET", ts.URL+"/c/default/priv/nix-cache-info", nil)
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/c/default/priv/nix-cache-info", nil)
 	req.SetBasicAuth("nix", valid)
 	resp, _ := http.DefaultClient.Do(req)
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Errorf("basic-auth pull → %d want 200", resp.StatusCode)
 	}
-	if resp := rawGet(t, ts, "/c/default/priv/nix-cache-info", "", ""); resp.Header.Get("WWW-Authenticate") == "" || resp.StatusCode != 401 {
+	if resp := rawGet(t, ts, "/c/default/priv/nix-cache-info", "", ""); resp.Header.Get("WWW-Authenticate") == "" || resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("anon private pull should 401 with WWW-Authenticate")
 	}
 }
@@ -507,13 +507,13 @@ func TestBootstrapClosesAfterFirstToken(t *testing.T) {
 	db.CreateCache("default", "c", true, 40)
 	data := []byte("first")
 	ch, _, _ := fakeNar(data)
-	if r := put(t, ts, "/c/default/c/api/chunk/"+ch, data, ""); r.StatusCode != 200 {
+	if r := put(t, ts, "/c/default/c/api/chunk/"+ch, data, ""); r.StatusCode != http.StatusOK {
 		t.Fatalf("bootstrap push → %d want 200", r.StatusCode)
 	}
 	db.CreateToken(0, "first", []string{"default/priv"}, []string{"push"}, 0)
 	data2 := []byte("second")
 	ch2, _, _ := fakeNar(data2)
-	if r := put(t, ts, "/c/default/c/api/chunk/"+ch2, data2, ""); r.StatusCode != 401 {
+	if r := put(t, ts, "/c/default/c/api/chunk/"+ch2, data2, ""); r.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("post-token anon push → %d want 401", r.StatusCode)
 	}
 }
@@ -527,7 +527,7 @@ func TestHealthJSONAndIndex(t *testing.T) {
 	if h["status"] != "ok" {
 		t.Fatalf("healthz json: %v", h)
 	}
-	req, _ := http.NewRequest("GET", ts.URL+"/healthz", nil)
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/healthz", nil)
 	req.Header.Set("Accept", "application/json")
 	resp, _ = http.DefaultClient.Do(req)
 	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "json") {
@@ -537,21 +537,21 @@ func TestHealthJSONAndIndex(t *testing.T) {
 	// index redirects to /admin
 	nr := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, _ = nr.Get(ts.URL + "/")
-	if resp.StatusCode != 302 || resp.Header.Get("Location") != "/admin" {
+	if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/admin" {
 		t.Fatalf("index → %d %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
 
 	// negotiated 404: html for browsers, plain otherwise
-	req, _ = http.NewRequest("GET", ts.URL+"/c/not-a-narinfo", nil)
+	req, _ = http.NewRequest(http.MethodGet, ts.URL+"/c/not-a-narinfo", nil)
 	req.Header.Set("Accept", "text/html")
 	resp, _ = http.DefaultClient.Do(req)
 	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 404 || !strings.Contains(string(body), "<") {
+	if resp.StatusCode != http.StatusNotFound || !strings.Contains(string(body), "<") {
 		t.Errorf("html 404 → %d %q", resp.StatusCode, body)
 	}
 	resp, _ = http.Get(ts.URL + "/c/not-a-narinfo")
 	body, _ = io.ReadAll(resp.Body)
-	if resp.StatusCode != 404 || !strings.Contains(string(body), "404 page not found") {
+	if resp.StatusCode != http.StatusNotFound || !strings.Contains(string(body), "404 page not found") {
 		t.Errorf("plain 404 → %d %q", resp.StatusCode, body)
 	}
 }
@@ -559,11 +559,11 @@ func TestHealthJSONAndIndex(t *testing.T) {
 func TestStaticAssets(t *testing.T) {
 	_, _, ts := newTestServerCfg(t, nil)
 	resp, _ := http.Get(ts.URL + "/static/xilo-tw.css")
-	if resp.StatusCode != 200 || resp.Header.Get("ETag") == "" {
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("ETag") == "" {
 		t.Fatalf("static asset: %d etag=%q", resp.StatusCode, resp.Header.Get("ETag"))
 	}
 	etag := resp.Header.Get("ETag")
-	req, _ := http.NewRequest("GET", ts.URL+"/static/xilo-tw.css", nil)
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/static/xilo-tw.css", nil)
 	req.Header.Set("If-None-Match", etag)
 	resp, _ = http.DefaultClient.Do(req)
 	if resp.StatusCode != http.StatusNotModified {

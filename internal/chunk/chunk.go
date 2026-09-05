@@ -6,6 +6,7 @@ package chunk
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 
 	fastcdc "github.com/jotfs/fastcdc-go"
@@ -79,7 +80,7 @@ func split(r io.Reader, p Params, fn func(hash string, data []byte) error) error
 	}
 	for {
 		c, err := ch.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return nil
 		}
 		if err != nil {

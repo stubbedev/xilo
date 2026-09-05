@@ -28,7 +28,13 @@
         # client = drop `xilo serve` (build tag `noserver`), which takes
         # internal/server out of the import graph and with it the need for
         # templ/Tailwind at build time.
-        mkXilo = { client, pkgs }: pkgs.buildGoModule {
+        # go.mod asks for 1.27 and nixpkgs' default `go` is still 1.26. The
+        # sandbox has no network, so the auto-toolchain fetch that papers over
+        # that outside nix fails here — and `go` has to be overridden on
+        # buildGoModule itself, not passed as a derivation attr, or the
+        # goModules (vendor) derivation keeps using the default. Drop the
+        # override once nixpkgs' default catches up.
+        mkXilo = { client, pkgs }: (pkgs.buildGoModule.override { go = pkgs.go_1_27; }) {
           pname = if client then "xilo-cli" else "xilo";
           version = "0-unstable-${self.shortRev or "dirty"}";
           src = self;
@@ -91,7 +97,7 @@
         # Dev shell: everything `just` recipes need.
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
-            go # matches go.mod (toolchain auto-downloads if newer)
+            go_latest # plain `go` is still 1.26 in nixpkgs; go.mod wants 1.27
             gopls
             gotools # goimports
             golangci-lint

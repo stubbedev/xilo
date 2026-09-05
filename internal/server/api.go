@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -29,10 +30,7 @@ func timeNow() int64 { return time.Now().Unix() }
 // server's configured chunking bounds so raising max_size/nar_threshold above
 // the old hardcoded 4 MiB doesn't silently truncate uploads.
 func (s *Server) maxChunkBody() int64 {
-	n := s.cfg.Chunking.MaxSize
-	if s.cfg.Chunking.NarThreshold > n {
-		n = s.cfg.Chunking.NarThreshold
-	}
+	n := max(s.cfg.Chunking.NarThreshold, s.cfg.Chunking.MaxSize)
 	return int64(n) + (1 << 20) // slack
 }
 
@@ -494,7 +492,7 @@ func (s *Server) verifyReassembly(r *http.Request, storageName string, chunkHash
 	}
 	got := "sha256:" + narinfo.Base32Encode(h.Sum(nil))
 	if got != narHash {
-		return fmt.Errorf("nar hash mismatch")
+		return errors.New("nar hash mismatch")
 	}
 	return nil
 }

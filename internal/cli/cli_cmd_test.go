@@ -78,9 +78,9 @@ func TestCacheLifecycle(t *testing.T) {
 		t.Fatalf("create output: %q", out)
 	}
 	pubkey := ""
-	for _, line := range strings.Split(out, "\n") {
-		if i := strings.Index(line, "trusted-public-keys = "); i >= 0 {
-			pubkey = strings.TrimSpace(line[i+len("trusted-public-keys = "):])
+	for line := range strings.SplitSeq(out, "\n") {
+		if _, after, ok := strings.Cut(line, "trusted-public-keys = "); ok {
+			pubkey = strings.TrimSpace(after)
 		}
 	}
 
@@ -200,34 +200,6 @@ func TestGCBadGraceFallsBack(t *testing.T) {
 	}
 	if !strings.Contains(out, `bad gc.grace "banana", using 1h`) {
 		t.Fatalf("gc output: %q", out)
-	}
-}
-
-func TestSchemaDump(t *testing.T) {
-	isolateEnv(t)
-	outFile := filepath.Join(t.TempDir(), "schema.json")
-	if _, err := runRoot(t, "schema", "dump", "--out", outFile); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(outFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var v map[string]any
-	if err := json.Unmarshal(data, &v); err != nil {
-		t.Fatalf("schema not valid JSON: %v", err)
-	}
-	if _, ok := v["properties"]; !ok {
-		t.Fatalf("schema has no properties: %v", v)
-	}
-
-	// stdout mode
-	out, err := runRoot(t, "schema", "dump")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal([]byte(out), &v); err != nil {
-		t.Fatalf("stdout schema not valid JSON: %v", err)
 	}
 }
 
@@ -580,7 +552,7 @@ func TestDefaultConfig(t *testing.T) {
 func TestRootHasSubcommands(t *testing.T) {
 	isolateEnv(t)
 	root := Root()
-	want := []string{"serve", "push", "watch", "login", "use", "cache", "token", "gc", "schema"}
+	want := []string{"serve", "push", "watch", "login", "use", "cache", "token", "gc"}
 	for _, name := range want {
 		found := false
 		for _, c := range root.Commands() {

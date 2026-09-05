@@ -21,7 +21,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/klauspost/compress/zstd"
 	"golang.org/x/term"
 
@@ -101,9 +100,12 @@ func (c *Client) logf(format string, a ...any) {
 	}
 }
 
-var (
-	barDone = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "35", Dark: "42"})
-	barTodo = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "250", Dark: "238"})
+// SGR escapes for the bar. Only ever written to a terminal (the caller checks),
+// and only when NO_COLOR is unset.
+const (
+	barDone = "\x1b[38;5;42m"  // green
+	barTodo = "\x1b[38;5;244m" // grey
+	barOff  = "\x1b[0m"
 )
 
 // progress redraws an in-place bar on a terminal, or falls back to the plain
@@ -118,7 +120,11 @@ func (c *Client) progress(done, total int) {
 	}
 	const width = 28
 	filled := done * width / max(total, 1)
-	bar := barDone.Render(strings.Repeat("█", filled)) + barTodo.Render(strings.Repeat("░", width-filled))
+	full, empty := strings.Repeat("█", filled), strings.Repeat("░", width-filled)
+	bar := full + empty
+	if os.Getenv("NO_COLOR") == "" {
+		bar = barDone + full + barOff + barTodo + empty + barOff
+	}
 	fmt.Printf("\r%s %d/%d paths", bar, done, total)
 }
 
@@ -353,7 +359,7 @@ func (c *Client) dumpPush(ctx context.Context, in pathInfo, params chunk.Params,
 	if err := p.wait(); err != nil {
 		return err
 	}
-	if dumpErr != nil && dumpErr != errAbort {
+	if dumpErr != nil && !errors.Is(dumpErr, errAbort) {
 		return dumpErr
 	}
 	if err := checkNarHash(o, in, narSum.Sum(nil)); err != nil {
@@ -405,14 +411,12 @@ func (p *pathPush) wait() error {
 // ever in flight, so the dump blocks rather than the heap growing.
 func (p *pathPush) upload(ctx context.Context, ch chunk.Chunk) {
 	p.c.sem <- struct{}{}
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+	p.wg.Go(func() {
 		defer func() { <-p.c.sem }()
 		if err := p.c.putChunk(ctx, ch); err != nil {
 			p.fail(err)
 		}
-	}()
+	})
 }
 
 // flush resolves one window off the dump goroutine: ask which of its chunks the
@@ -423,9 +427,7 @@ func (p *pathPush) upload(ctx context.Context, ch chunk.Chunk) {
 // so it can never race an in-progress wait().
 func (p *pathPush) flush(ctx context.Context, window []chunk.Chunk) {
 	p.c.win <- struct{}{}
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+	p.wg.Go(func() {
 		defer func() { <-p.c.win }()
 		hashes := make([]string, len(window))
 		for i, ch := range window {
@@ -445,7 +447,7 @@ func (p *pathPush) flush(ctx context.Context, window []chunk.Chunk) {
 				p.upload(ctx, ch)
 			}
 		}
-	}()
+	})
 }
 
 // errAbort signals the dump to stop early after an upload failure.
@@ -641,7 +643,7 @@ func dumpExternal(ctx context.Context, path string, consume func(io.Reader) erro
 		return consumeErr
 	}
 	if waitErr != nil {
-		return fmt.Errorf("nix-store --dump: %v: %s", waitErr, stderr.String())
+		return fmt.Errorf("nix-store --dump: %w: %s", waitErr, stderr.String())
 	}
 	return nil
 }
@@ -663,8 +665,9 @@ func dumpAll(ctx context.Context, path string, external bool) ([]byte, error) {
 }
 
 func cmdErr(err error) error {
-	if ee, ok := err.(*exec.ExitError); ok {
-		return fmt.Errorf("%v: %s", ee, strings.TrimSpace(string(ee.Stderr)))
+	ee := &exec.ExitError{}
+	if errors.As(err, &ee) {
+		return fmt.Errorf("%w: %s", ee, strings.TrimSpace(string(ee.Stderr)))
 	}
 	return err
 }

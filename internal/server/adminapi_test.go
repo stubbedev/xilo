@@ -74,7 +74,7 @@ func TestAdminAPI(t *testing.T) {
 		resp, body = apiReq(t, ts, http.MethodGet, "/api/v1/caches", adminSecret, nil)
 		var list []api.Cache
 		json.Unmarshal(body, &list)
-		if resp.StatusCode != 200 || len(list) != 1 {
+		if resp.StatusCode != http.StatusOK || len(list) != 1 {
 			t.Fatalf("list: %d %s", resp.StatusCode, body)
 		}
 
@@ -84,21 +84,21 @@ func TestAdminAPI(t *testing.T) {
 		resp, body = apiReq(t, ts, http.MethodPatch, "/api/v1/caches/default/apicache", adminSecret,
 			api.ConfigureCacheReq{Public: &pub, Priority: &prio, Retention: &ret})
 		json.Unmarshal(body, &c)
-		if resp.StatusCode != 200 || !c.Public || c.Priority != 30 || c.Retention != 3600 {
+		if resp.StatusCode != http.StatusOK || !c.Public || c.Priority != 30 || c.Retention != 3600 {
 			t.Fatalf("configure: %d %+v", resp.StatusCode, c)
 		}
 
 		old := c.PubKey
 		resp, body = apiReq(t, ts, http.MethodPost, "/api/v1/caches/default/apicache/rotate", adminSecret, nil)
 		json.Unmarshal(body, &c)
-		if resp.StatusCode != 200 || c.PubKey == old || c.PubKey == "" {
+		if resp.StatusCode != http.StatusOK || c.PubKey == old || c.PubKey == "" {
 			t.Fatalf("rotate: %d %+v", resp.StatusCode, c)
 		}
 
 		resp, body = apiReq(t, ts, http.MethodGet, "/api/v1/caches/default/apicache", adminSecret, nil)
 		var d api.CacheDetail
 		json.Unmarshal(body, &d)
-		if resp.StatusCode != 200 || d.Name != "apicache" || d.Paths != 0 {
+		if resp.StatusCode != http.StatusOK || d.Name != "apicache" || d.Paths != 0 {
 			t.Fatalf("get: %d %+v", resp.StatusCode, d)
 		}
 
@@ -151,7 +151,7 @@ func TestAdminAPI(t *testing.T) {
 			api.GCReq{EvictOlderThan: 3600})
 		var g api.GCResp
 		json.Unmarshal(body, &g)
-		if resp.StatusCode != 200 {
+		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("gc: %d %s", resp.StatusCode, body)
 		}
 	})
@@ -162,7 +162,7 @@ func TestAdminAPI(t *testing.T) {
 			t.Fatal(err)
 		}
 		resp, _ := apiReq(t, ts, http.MethodGet, "/api/v1/caches", sec, nil)
-		if resp.StatusCode != 200 {
+		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("live admin token: %d", resp.StatusCode)
 		}
 		if err := db.RevokeToken(tok.ID); err != nil {

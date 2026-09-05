@@ -44,11 +44,13 @@ func (db *DB) Audit(e AuditEntry) error {
 func (db *DB) SearchAudit(q string, limit, offset int, sortKey, sortDir string) (entries []AuditEntry, total int64, err error) {
 	where := `1=1`
 	var args []any
-	for _, term := range strings.Fields(q) {
-		where += ` AND (lower(actor) LIKE ? ESCAPE '\' OR lower(method) LIKE ? ESCAPE '\' OR lower(path) LIKE ? ESCAPE '\' OR lower(ip) LIKE ? ESCAPE '\')`
+	var whereSb47 strings.Builder
+	for term := range strings.FieldsSeq(q) {
+		whereSb47.WriteString(` AND (lower(actor) LIKE ? ESCAPE '\' OR lower(method) LIKE ? ESCAPE '\' OR lower(path) LIKE ? ESCAPE '\' OR lower(ip) LIKE ? ESCAPE '\')`)
 		p := substrPattern(term)
 		args = append(args, p, p, p, p)
 	}
+	where += whereSb47.String()
 	dir := ` DESC`
 	if sortDir == "asc" {
 		dir = ` ASC`

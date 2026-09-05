@@ -43,14 +43,29 @@ dev:
 install:
     go install -ldflags="{{GO_LDFLAGS}}" ./cmd/xilo
 
-# Format (gofmt).
+# Format. goimports, not gofmt: it is gofmt plus the import block, which the
+# golangci fixers do not maintain — a fixer that swaps fmt.Sprintf for
+# strconv.Itoa leaves the imports wrong on its own.
 fmt:
-    gofmt -w .
+    goimports -w .
 
 # Vet + build + test — the local gate. Views regenerate first: *_templ.go is
 # never committed, only built.
 lint: css generate
-    gofmt -l .
+    # Stdlib-first gate (.golangci.yml). Fixable findings are *applied*, never
+    # reported: an error you could have fixed yourself is a slower way to fix
+    # it. CI runs the same set read-only, so the fixes have to be committed.
+    #
+    # Two passes, and the first can't be the gate: when two fixers want the
+    # same file golangci applies one and skips the other with a *warning*, so
+    # a pass can exit 0 with fixable findings still on disk. The second is the
+    # gate — whatever it still reports is genuinely not auto-fixable.
+    # goimports after each: the fixers rewrite expressions but not the import
+    # block, so this is what makes an applied fix compile.
+    golangci-lint run --fix ./... || true
+    goimports -w .
+    golangci-lint run --fix ./...
+    goimports -w .
     go vet ./...
     # The client-only build (flake packages.xilo-cli, no internal/server) must
     # keep compiling; CI runs the same build.
@@ -65,9 +80,9 @@ test: css generate
 # Regenerate the published JSON schema from config.Config. Same dev
 # contract as treeman: anything that *can* be regenerated *is*. CI runs
 # the read-only `schema-check` variant as the strict gate.
-sync-schema: build
+sync-schema:
     mkdir -p schemas
-    ./bin/xilo schema dump --out schemas/xilo.schema.json
+    go run ./tools/schemagen --out schemas/xilo.schema.json
     @if [ -n "$(git status --porcelain schemas/xilo.schema.json)" ]; then \
         echo "sync-schema: regenerated schemas/xilo.schema.json"; \
     else \
@@ -75,11 +90,11 @@ sync-schema: build
     fi
 
 # Strict read-only schema check (what CI runs on PRs).
-schema-check: build
+schema-check:
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p schemas
-    ./bin/xilo schema dump --out schemas/xilo.schema.json
+    go run ./tools/schemagen --out schemas/xilo.schema.json
     if [ -n "$(git status --porcelain schemas/xilo.schema.json)" ]; then
         echo "::error::JSON schema is stale. Run 'just sync-schema' and commit."
         git --no-pager diff schemas/xilo.schema.json

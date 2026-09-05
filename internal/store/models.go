@@ -4,6 +4,8 @@ import (
 	"crypto/ed25519"
 	"database/sql"
 	"errors"
+	"iter"
+	"slices"
 	"strings"
 	"time"
 
@@ -483,13 +485,17 @@ func (db *DB) SearchPaths(cacheID int64, q string, limit, offset int, sortKey, s
 	args := []any{cacheID}
 	rank := `0`
 	var rankArgs []any
-	for _, term := range strings.Fields(q) {
-		where += ` AND lower(store_path) LIKE ? ESCAPE '\'`
+	var rankSb488 strings.Builder
+	var whereSb488 strings.Builder
+	for term := range strings.FieldsSeq(q) {
+		whereSb488.WriteString(` AND lower(store_path) LIKE ? ESCAPE '\'`)
 		args = append(args, fuzzyPattern(term))
 		// Portable substring test (instr() is SQLite-only).
-		rank += ` + (CASE WHEN lower(store_path) LIKE ? ESCAPE '\' THEN 1 ELSE 0 END)`
+		rankSb488.WriteString(` + (CASE WHEN lower(store_path) LIKE ? ESCAPE '\' THEN 1 ELSE 0 END)`)
 		rankArgs = append(rankArgs, substrPattern(term))
 	}
+	rank += rankSb488.String()
+	where += whereSb488.String()
 	// Explicit column sort wins; otherwise fuzzy rank (when searching) then
 	// recency. Column and direction come from a whitelist — never the query.
 	dir := ` DESC`
@@ -603,9 +609,8 @@ const batchVars = 900
 
 // eachBatch calls fn on successive slices of items, each at most batchVars long.
 func (db *DB) eachBatch(items []string, fn func([]string) error) error {
-	for i := 0; i < len(items); i += batchVars {
-		end := min(i+batchVars, len(items))
-		if err := fn(items[i:end]); err != nil {
+	for batch := range slices.Chunk(items, batchVars) {
+		if err := fn(batch); err != nil {
 			return err
 		}
 	}
@@ -615,8 +620,7 @@ func (db *DB) eachBatch(items []string, fn func([]string) error) error {
 // eachIDBatch is eachBatch for int64 ids, keeping them native args —
 // Postgres won't compare BIGINT columns against text parameters.
 func (db *DB) eachIDBatch(ids []int64, fn func(args []any) error) error {
-	for i := 0; i < len(ids); i += batchVars {
-		batch := ids[i:min(i+batchVars, len(ids))]
+	for batch := range slices.Chunk(ids, batchVars) {
 		args := make([]any, len(batch))
 		for j, id := range batch {
 			args[j] = id
@@ -655,6 +659,15 @@ func splitLines(s string) []string {
 		return nil
 	}
 	return strings.Split(s, "\n")
+}
+
+// seqLines is splitLines without the slice, for the full-table sweeps (GC,
+// stats, fsck) that walk every path's chunk list and keep none of them.
+func seqLines(s string) iter.Seq[string] {
+	if s == "" {
+		return func(func(string) bool) {}
+	}
+	return strings.SplitSeq(s, "\n")
 }
 
 func b2i(b bool) int {

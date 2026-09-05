@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"maps"
 	"net/url"
 	"strconv"
 	"strings"
@@ -48,10 +49,7 @@ func fillPct(used, capacity int64) int {
 	if capacity <= 0 {
 		return 0
 	}
-	p := used * 100 / capacity
-	if p > 100 {
-		p = 100
-	}
+	p := min(used*100/capacity, 100)
 	return int(p)
 }
 
@@ -135,9 +133,7 @@ func (s SortCtx) URL(key string) string {
 		dir = "desc"
 	}
 	v := url.Values{}
-	for k, vals := range s.Query {
-		v[k] = vals
-	}
+	maps.Copy(v, s.Query)
 	v.Set(s.SortParam, key)
 	v.Set(s.DirParam, dir)
 	v.Del(s.PageParam)
@@ -155,10 +151,7 @@ type Pager struct {
 // PageOf slices items for a 1-based page of size n, clamping page into range.
 // Returns the slice, the clamped page, and the page count (min 1).
 func PageOf[T any](items []T, page, n int) ([]T, int, int) {
-	pages := (len(items) + n - 1) / n
-	if pages < 1 {
-		pages = 1
-	}
+	pages := max((len(items)+n-1)/n, 1)
 	if page < 1 {
 		page = 1
 	}
@@ -166,10 +159,7 @@ func PageOf[T any](items []T, page, n int) ([]T, int, int) {
 		page = pages
 	}
 	lo := (page - 1) * n
-	hi := lo + n
-	if hi > len(items) {
-		hi = len(items)
-	}
+	hi := min(lo+n, len(items))
 	return items[lo:hi], page, pages
 }
 
@@ -230,10 +220,7 @@ func (u CacheUsage) Pct() int {
 	if u.Cache.MaxBytes <= 0 {
 		return 0
 	}
-	p := u.Bytes * 100 / u.Cache.MaxBytes
-	if p > 100 {
-		p = 100
-	}
+	p := min(u.Bytes*100/u.Cache.MaxBytes, 100)
 	return int(p)
 }
 

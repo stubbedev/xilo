@@ -12,6 +12,7 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 
+	"github.com/stubbedev/xilo/internal/config"
 	"github.com/stubbedev/xilo/internal/server/views"
 	"github.com/stubbedev/xilo/internal/store"
 )
@@ -50,7 +51,7 @@ func (s *Server) loadUserPasskeys(u *store.User) (passkeyUser, error) {
 	if err != nil {
 		return passkeyUser{}, err
 	}
-	pu := passkeyUser{id: []byte(fmt.Sprintf("xilo-user-%d", u.ID)), name: u.Name}
+	pu := passkeyUser{id: fmt.Appendf(nil, "xilo-user-%d", u.ID), name: u.Name}
 	pu.fillCreds(rows)
 	return pu, nil
 }
@@ -69,17 +70,19 @@ func (s *Server) loadAllPasskeys() (passkeyUser, error) {
 	return pu, nil
 }
 
-// webAuthn lazily builds the relying party from the configured base URL.
-func (s *Server) webAuthn() (*webauthn.WebAuthn, error) {
-	s.wanOnce.Do(func() {
-		rpID := hostOf(s.cfg.BaseURL)
+// newWebAuthn builds the memoized relying-party constructor stored in
+// Server.webAuthn: the base URL is fixed for the process, so the RP is built
+// once, on first passkey use.
+func newWebAuthn(cfg *config.Config) func() (*webauthn.WebAuthn, error) {
+	return sync.OnceValues(func() (*webauthn.WebAuthn, error) {
+		rpID := hostOf(cfg.BaseURL)
 		if i := strings.LastIndex(rpID, ":"); i >= 0 {
 			rpID = rpID[:i] // RP ID is a domain — no port
 		}
-		s.wan, s.wanErr = webauthn.New(&webauthn.Config{
+		return webauthn.New(&webauthn.Config{
 			RPDisplayName: "xilo",
 			RPID:          rpID,
-			RPOrigins:     []string{strings.TrimSuffix(s.cfg.BaseURL, "/")},
+			RPOrigins:     []string{strings.TrimSuffix(cfg.BaseURL, "/")},
 			// A passkey replaces username+password, so it must itself be strong:
 			// require user verification (PIN/biometric) at registration so the
 			// credential is possession + inherence, not possession alone.
@@ -88,7 +91,6 @@ func (s *Server) webAuthn() (*webauthn.WebAuthn, error) {
 			},
 		})
 	})
-	return s.wan, s.wanErr
 }
 
 // ceremonies holds the single in-flight registration/login challenge each.

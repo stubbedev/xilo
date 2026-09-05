@@ -82,7 +82,7 @@ func TestNarServeAfterStorageLoss(t *testing.T) {
 	// the server survives and the stream stops. Body/transport errors are fine.
 	for _, enc := range []string{"identity", "zstd", "gzip"} {
 		resp, err := http.DefaultClient.Do(func() *http.Request {
-			req, _ := http.NewRequest("GET", ts.URL+"/c/default/c/nar/"+h32+".nar", nil)
+			req, _ := http.NewRequest(http.MethodGet, ts.URL+"/c/default/c/nar/"+h32+".nar", nil)
 			req.Header.Set("Accept-Encoding", enc)
 			return req
 		}())
@@ -98,13 +98,13 @@ func TestNarServeAfterStorageLoss(t *testing.T) {
 		"storePath": "/nix/store/" + h32b + "-again", "narHash": narHash,
 		"narSize": narSize, "chunks": []string{ch},
 	})
-	if r := put(t, ts, "/c/default/c/api/path", pr, ""); r.StatusCode != 400 {
+	if r := put(t, ts, "/c/default/c/api/path", pr, ""); r.StatusCode != http.StatusBadRequest {
 		t.Errorf("put path over lost blob → %d want 400", r.StatusCode)
 	}
 
 	// still healthy afterwards
 	resp, _ := http.Get(ts.URL + "/healthz")
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("server unhealthy after storage loss: %d", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -206,7 +206,7 @@ func TestAdminGatesAnonymousAndMissing(t *testing.T) {
 	c := adminClient(t, ts)
 	for _, p := range []string{"/admin/cache/default/ghost/rotate", "/admin/cache/default/ghost/delete"} {
 		resp, _ := c.PostForm(ts.URL+p, nil)
-		if resp.StatusCode != 404 {
+		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("POST %s → %d want 404", p, resp.StatusCode)
 		}
 		resp.Body.Close()
@@ -294,11 +294,10 @@ func TestStartGCSweepsOnTick(t *testing.T) {
 	// orphan chunk: uploaded, never referenced by a path
 	data := []byte("orphan chunk")
 	ch, _, _ := fakeNar(data)
-	if r := put(t, ts, "/c/default/c/api/chunk/"+ch, data, ""); r.StatusCode != 200 {
+	if r := put(t, ts, "/c/default/c/api/chunk/"+ch, data, ""); r.StatusCode != http.StatusOK {
 		t.Fatalf("put chunk: %d", r.StatusCode)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	s.startGC(ctx)
 	deadline := time.Now().Add(3 * time.Second)
 	for {
@@ -317,19 +316,19 @@ func TestAPIUnknownCache404(t *testing.T) {
 	_, _, ts := newTestServerCfg(t, nil)
 	for _, p := range []string{"/c/default/nope/api/get-missing-paths", "/c/default/nope/api/get-missing-chunks"} {
 		resp, _ := http.Post(ts.URL+p, "application/json", strings.NewReader(`{"hashes":[]}`))
-		if resp.StatusCode != 404 {
+		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("POST %s → %d want 404", p, resp.StatusCode)
 		}
 		resp.Body.Close()
 	}
-	if r := put(t, ts, "/c/default/nope/api/chunk/"+strings.Repeat("0", 64), []byte("x"), ""); r.StatusCode != 404 {
+	if r := put(t, ts, "/c/default/nope/api/chunk/"+strings.Repeat("0", 64), []byte("x"), ""); r.StatusCode != http.StatusNotFound {
 		t.Errorf("put chunk unknown cache → %d want 404", r.StatusCode)
 	}
-	if r := put(t, ts, "/c/default/nope/api/path", []byte("{}"), ""); r.StatusCode != 404 {
+	if r := put(t, ts, "/c/default/nope/api/path", []byte("{}"), ""); r.StatusCode != http.StatusNotFound {
 		t.Errorf("put path unknown cache → %d want 404", r.StatusCode)
 	}
 	resp, _ := http.Get(ts.URL + "/c/default/nope/" + h32 + ".narinfo")
-	if resp.StatusCode != 404 {
+	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("narinfo unknown cache → %d want 404", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -341,7 +340,7 @@ func TestPrivateCachePullGates(t *testing.T) {
 	db.CreateToken(0, "t", []string{"default/c"}, []string{"push"}, 0)
 	for _, p := range []string{"/c/default/priv/" + h32 + ".narinfo", "/c/default/priv/nar/" + h32 + ".nar"} {
 		resp, _ := http.Get(ts.URL + p)
-		if resp.StatusCode != 401 {
+		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("anon GET %s → %d want 401", p, resp.StatusCode)
 		}
 		resp.Body.Close()
@@ -379,12 +378,12 @@ func TestPushAPIAnonWhenClosed(t *testing.T) {
 	db.CreateToken(0, "exists", []string{"default/c"}, []string{"push"}, 0)
 	for _, p := range []string{"/c/default/c/api/get-missing-paths", "/c/default/c/api/get-missing-chunks"} {
 		resp, _ := http.Post(ts.URL+p, "application/json", strings.NewReader(`{"hashes":[]}`))
-		if resp.StatusCode != 401 {
+		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("anon %s → %d want 401", p, resp.StatusCode)
 		}
 		resp.Body.Close()
 	}
-	if r := put(t, ts, "/c/default/c/api/path", []byte(`{}`), ""); r.StatusCode != 401 {
+	if r := put(t, ts, "/c/default/c/api/path", []byte(`{}`), ""); r.StatusCode != http.StatusUnauthorized {
 		t.Errorf("anon put path → %d want 401", r.StatusCode)
 	}
 }

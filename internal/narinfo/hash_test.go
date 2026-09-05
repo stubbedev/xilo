@@ -66,7 +66,7 @@ func TestParseHashErrors(t *testing.T) {
 
 func TestBase32RoundTripRandom(t *testing.T) {
 	r := rand.New(rand.NewSource(42))
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		b := make([]byte, 32)
 		r.Read(b)
 		enc := Base32Encode(b)

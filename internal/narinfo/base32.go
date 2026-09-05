@@ -40,7 +40,7 @@ func Base32Decode(s string) ([]byte, error) {
 		return nil, fmt.Errorf("invalid nix-base32 %q: too short", s)
 	}
 	out := make([]byte, outLen)
-	for n := 0; n < len(s); n++ {
+	for n := range len(s) {
 		c := s[len(s)-1-n]
 		digit := strings.IndexByte(nixBase32, c)
 		if digit < 0 {

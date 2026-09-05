@@ -29,6 +29,10 @@ jobs:
           out=$(gofmt -l .)
           if [ -n "$out" ]; then echo "unformatted:"; echo "$out"; exit 1; fi
       - run: go vet ./...
+      # Stdlib-first gate (.golangci.yml) — the same set `just lint` runs.
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.1
       - run: go build ./...
       # Client-only build (flake packages.xilo-cli): fails if anything outside
       # internal/cli/serve.go starts importing internal/server.
@@ -137,7 +141,7 @@ jobs:
         run: |
           go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
           mkdir -p schemas
-          go run ./cmd/xilo schema dump --out schemas/xilo.schema.json
+          go run ./tools/schemagen --out schemas/xilo.schema.json
 
       # Coverage badge (shields.io endpoint JSON, served raw from master).
       # Generated *_templ.go views are excluded — the badge tracks the code
