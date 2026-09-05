@@ -1,11 +1,12 @@
 // Package config defines xilo's YAML config. Every field's doc comment becomes
-// the description in the generated JSON schema (see `xilo schema dump`), so the
+// the description in the generated JSON schema (see `just sync-schema`), so the
 // struct is the single source of truth for both runtime config and editor
 // hinting. Keep comments user-facing.
 package config
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -270,9 +271,7 @@ type S3 struct {
 // storage: block) plus the storages: entries.
 func (c *Config) StorageMap() map[string]Storage {
 	m := map[string]Storage{"default": c.Storage}
-	for name, s := range c.Storages {
-		m[name] = s
-	}
+	maps.Copy(m, c.Storages)
 	return m
 }
 

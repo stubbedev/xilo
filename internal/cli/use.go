@@ -160,7 +160,7 @@ func updateNixConf(sub, pubkey string) error {
 
 func parseManagedBlock(content string) (subs, keys []string) {
 	inBlock := false
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		switch {
 		case strings.HasPrefix(line, blockStart):
 			inBlock = true

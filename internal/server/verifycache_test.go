@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -74,7 +74,7 @@ func putChunks(t *testing.T, ts *httptest.Server, cache string, parts [][]byte) 
 	var all []byte
 	for _, p := range parts {
 		h, _, _ := fakeNar(p)
-		if r := put(t, ts, "/c/default/"+cache+"/api/chunk/"+h, p, ""); r.StatusCode != 200 {
+		if r := put(t, ts, "/c/default/"+cache+"/api/chunk/"+h, p, ""); r.StatusCode != http.StatusOK {
 			b, _ := io.ReadAll(r.Body)
 			t.Fatalf("put chunk: %d %s", r.StatusCode, b)
 		}
@@ -247,7 +247,7 @@ func TestVerifyCacheHonorsMultiTenantVerification(t *testing.T) {
 		t.Fatal("multi-tenant put-path skipped verification entirely")
 	}
 	// And a wrong NarHash over the same chunks is still refused.
-	if code := putPathReq(t, ts, "one", h32b, chunks, fmt.Sprintf("sha256:%s", "1111111111111111111111111111111111111111111111111111"), narSize); code != 400 {
+	if code := putPathReq(t, ts, "one", h32b, chunks, "sha256:"+"1111111111111111111111111111111111111111111111111111", narSize); code != 400 {
 		t.Fatalf("bogus narHash → %d, want 400", code)
 	}
 }

@@ -75,7 +75,7 @@ func TestAdminUserLifecycle(t *testing.T) {
 	loginAs(t, ts, "walter", "resetpass99") // fails the test if the login bounces
 	// unknown id → 404
 	resp, _ := c.PostForm(ts.URL+"/admin/users/99999/reset", url.Values{"password": {"resetpass99"}})
-	if resp.StatusCode != 404 {
+	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("reset missing user → %d want 404", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -106,7 +106,7 @@ func TestAdminUserLifecycle(t *testing.T) {
 		t.Error("walter still exists after delete")
 	}
 	resp, _ = c.PostForm(ts.URL+"/admin/users/99999/delete", nil)
-	if resp.StatusCode != 404 {
+	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("delete missing user → %d want 404", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -233,7 +233,7 @@ func TestRefererPath(t *testing.T) {
 		{"http://example/admin/org/acme", "/admin/org/acme"},
 	}
 	for _, tc := range cases {
-		r := httptest.NewRequest("POST", "http://example/admin/context", nil)
+		r := httptest.NewRequest(http.MethodPost, "http://example/admin/context", nil)
 		if tc.ref != "" {
 			r.Header.Set("Referer", tc.ref)
 		}
@@ -267,7 +267,7 @@ func TestContextSwitcher(t *testing.T) {
 	}
 	post := func(c *http.Client, val, referer string) *http.Response {
 		t.Helper()
-		req, _ := http.NewRequest("POST", ts.URL+"/admin/context", strings.NewReader(url.Values{"ctx": {val}}.Encode()))
+		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/admin/context", strings.NewReader(url.Values{"ctx": {val}}.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		if referer != "" {
 			req.Header.Set("Referer", referer)
@@ -287,12 +287,12 @@ func TestContextSwitcher(t *testing.T) {
 	if v, ok := ctxCookieOf(resp); !ok || v != "acme" {
 		t.Errorf("admin ctx cookie = %q ok=%v", v, ok)
 	}
-	if loc := resp.Header.Get("Location"); resp.StatusCode != 303 || loc != "/admin/settings" {
+	if loc := resp.Header.Get("Location"); resp.StatusCode != http.StatusSeeOther || loc != "/admin/settings" {
 		t.Errorf("context redirect → %d %q", resp.StatusCode, loc)
 	}
 	// dashboard renders with the active context (activeContext resolves it)
 	resp2, _ := ac.Get(ts.URL + "/admin")
-	if resp2.StatusCode != 200 {
+	if resp2.StatusCode != http.StatusOK {
 		t.Errorf("dashboard with context → %d", resp2.StatusCode)
 	}
 	resp2.Body.Close()
@@ -402,7 +402,7 @@ func TestTenancyRoutesAbsentSingleTenant(t *testing.T) {
 		resp.Body.Close()
 	}
 	resp, _ := http.Get(ts.URL + "/register")
-	if resp.StatusCode != 404 {
+	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("single-tenant /register → %d want 404", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -464,7 +464,7 @@ func TestPlanCRUD(t *testing.T) {
 		t.Fatalf("edited plan: %+v", got)
 	}
 	resp, _ = c.PostForm(ts.URL+"/admin/plans/99999/edit", url.Values{"name": {"x"}})
-	if resp.StatusCode != 404 {
+	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("edit missing plan → %d want 404", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -579,7 +579,7 @@ func TestAPINamespaces(t *testing.T) {
 	resp, b := apiReq(t, ts, http.MethodGet, "/api/v1/namespaces", adminTok, nil)
 	var nss []api.AccountResp
 	jsonUnmarshal(t, b, &nss)
-	if resp.StatusCode != 200 || len(nss) == 0 || nss[0].Name != "default" {
+	if resp.StatusCode != http.StatusOK || len(nss) == 0 || nss[0].Name != "default" {
 		t.Fatalf("list namespaces: %d %s", resp.StatusCode, b)
 	}
 
@@ -678,7 +678,7 @@ func TestRunListenErrorAndGracefulShutdown(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		resp, err := http.Get("http://" + addr + "/healthz")
-		if err == nil && resp.StatusCode == 200 {
+		if err == nil && resp.StatusCode == http.StatusOK {
 			resp.Body.Close()
 			break
 		}

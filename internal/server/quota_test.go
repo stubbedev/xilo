@@ -49,7 +49,7 @@ func TestStorageQuotaReadOnly(t *testing.T) {
 
 	// Pull still works.
 	resp, _ := http.Get(ts.URL + "/c/default/q/nar/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.nar")
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("over-quota pull → %d want 200", resp.StatusCode)
 	}
 	resp.Body.Close()
@@ -96,7 +96,7 @@ func TestEgressRollup(t *testing.T) {
 	pushFake(t, ts, "e", "dddddddddddddddddddddddddddddddd", data, "")
 
 	resp, _ := http.Get(ts.URL + "/c/default/e/nar/dddddddddddddddddddddddddddddddd.nar")
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("pull → %d", resp.StatusCode)
 	}
 	resp.Body.Close()

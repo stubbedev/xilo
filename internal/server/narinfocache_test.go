@@ -1,14 +1,14 @@
 package server
 
 import (
-	"fmt"
+	"strconv"
 	"testing"
 )
 
 func TestNarinfoCacheLRU(t *testing.T) {
 	c := newNarinfoCache(2)
 	k := func(i int) narinfoKey {
-		return narinfoKey{cacheID: 1, storeHash: fmt.Sprint(i), narHash: "h", pubKey: "k"}
+		return narinfoKey{cacheID: 1, storeHash: strconv.Itoa(i), narHash: "h", pubKey: "k"}
 	}
 	c.put(k(1), "one")
 	c.put(k(2), "two")

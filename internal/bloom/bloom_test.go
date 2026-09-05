@@ -154,7 +154,7 @@ func BenchmarkHas(b *testing.B) {
 		f.Add(h)
 	}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for i := range b.N {
 		f.Has(hs[i%len(hs)])
 	}
 }

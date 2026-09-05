@@ -319,14 +319,14 @@ func BenchmarkDumpTree(b *testing.B) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		b.Fatal(err)
 	}
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		if err := os.WriteFile(filepath.Join(root, string(rune('a'+i%26))+strings.Repeat("x", i%12)+".f"),
 			bytes.Repeat([]byte("data"), 256), 0o644); err != nil {
 			b.Fatal(err)
 		}
 	}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		if err := Dump(io.Discard, root); err != nil {
 			b.Fatal(err)
 		}

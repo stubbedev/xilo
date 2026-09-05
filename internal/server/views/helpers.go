@@ -3,6 +3,7 @@ package views
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -228,12 +229,7 @@ func Remaining(expires int64) int64 {
 
 // hasPerm reports whether a token carries a permission.
 func hasPerm(t store.Token, perm string) bool {
-	for _, p := range t.Perms {
-		if p == perm {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(t.Perms, perm)
 }
 
 // ariaSort maps a column's sort state to the aria-sort attribute value.

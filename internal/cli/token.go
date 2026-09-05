@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -38,7 +39,7 @@ func tokenCreateCmd() *cobra.Command {
 				perms = append(perms, "admin")
 			}
 			if len(perms) == 0 {
-				return fmt.Errorf("give at least one of --push / --pull / --admin")
+				return errors.New("give at least one of --push / --pull / --admin")
 			}
 			var expires int64
 			if ttl > 0 {

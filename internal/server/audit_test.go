@@ -37,10 +37,10 @@ func TestAuditMiddleware(t *testing.T) {
 	if len(es) != 2 {
 		t.Fatalf("want 2 recorded actions, got %d: %+v", len(es), es)
 	}
-	if es[0].Method != "DELETE" || es[0].Path != "/api/v1/caches/acme/web" {
+	if es[0].Method != http.MethodDelete || es[0].Path != "/api/v1/caches/acme/web" {
 		t.Fatalf("newest entry wrong: %+v", es[0])
 	}
-	if es[1].Method != "POST" || es[1].Path != "/admin/caches" || es[1].Status != 200 {
+	if es[1].Method != http.MethodPost || es[1].Path != "/admin/caches" || es[1].Status != 200 {
 		t.Fatalf("oldest entry wrong: %+v", es[1])
 	}
 }

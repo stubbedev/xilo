@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"sort"
 	"testing"
@@ -130,7 +131,7 @@ func TestAdoptCandidatesBatches(t *testing.T) {
 	}
 	const n = batchVars + 50
 	want := make([]string, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		sh := fmt.Sprintf("%032d", i)
 		putTestPath(t, db, src.ID, sh, "sha256:h", []string{"c"})
 		want = append(want, sh)
@@ -150,7 +151,7 @@ func TestCountAndEachChunkHash(t *testing.T) {
 		t.Fatalf("empty backend: %d, %v", n, err)
 	}
 	var want []string
-	for i := 0; i < 250; i++ {
+	for i := range 250 {
 		h := fmt.Sprintf("hash-%03d", i)
 		if err := db.PutChunk("default", h, 10, 5, "k/"+h, 1); err != nil {
 			t.Fatal(err)
@@ -187,8 +188,8 @@ func TestCountAndEachChunkHash(t *testing.T) {
 	}
 
 	t.Run("callback error propagates", func(t *testing.T) {
-		boom := fmt.Errorf("boom")
-		if err := db.EachChunkHash("default", func(string) error { return boom }); err != boom {
+		boom := errors.New("boom")
+		if err := db.EachChunkHash("default", func(string) error { return boom }); !errors.Is(err, boom) {
 			t.Fatalf("err = %v, want boom", err)
 		}
 	})

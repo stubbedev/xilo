@@ -3,6 +3,7 @@
 package mail
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/smtp"
@@ -38,7 +39,7 @@ func Send(c Config, to, subject, body string) error {
 	// Reject header-injection at the boundary: a CR/LF in any header field
 	// would let a caller inject extra SMTP headers (Bcc, spoofed From, …).
 	if strings.ContainsAny(to+subject+c.From, "\r\n") {
-		return fmt.Errorf("mail: header field contains a newline")
+		return errors.New("mail: header field contains a newline")
 	}
 	port := c.Port
 	if port == 0 {

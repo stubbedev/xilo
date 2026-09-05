@@ -89,7 +89,7 @@ func (s *Server) clientIP(r *http.Request) string {
 		hops = 1 // default: one colocated reverse proxy
 	}
 	ip := net.ParseIP(host)
-	if ip == nil || !(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()) {
+	if ip == nil || (!ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast()) {
 		return host
 	}
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {

@@ -273,7 +273,7 @@ func TestPushRealStorePathAgainstRealServer(t *testing.T) {
 	}
 	got, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("nar: %d", resp.StatusCode)
 	}
 	gs, ws := sha256.Sum256(got), sha256.Sum256(want)

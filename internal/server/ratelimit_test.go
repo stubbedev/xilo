@@ -16,7 +16,7 @@ func TestLoginLimiterBucket(t *testing.T) {
 	l := newLoginLimiter()
 	l.now = func() time.Time { return now }
 
-	for i := 0; i < loginBurst; i++ {
+	for i := range loginBurst {
 		if !l.allow("1.2.3.4") {
 			t.Fatalf("attempt %d within burst denied", i)
 		}
@@ -38,7 +38,7 @@ func TestLoginLimiterBucket(t *testing.T) {
 	}
 	// Long idle → back to full burst, capped.
 	now = now.Add(time.Hour)
-	for i := 0; i < loginBurst; i++ {
+	for i := range loginBurst {
 		if !l.allow("1.2.3.4") {
 			t.Fatalf("post-idle attempt %d denied", i)
 		}
@@ -52,7 +52,7 @@ func TestLoginLimiterPrune(t *testing.T) {
 	now := time.Unix(1000, 0)
 	l := newLoginLimiter()
 	l.now = func() time.Time { return now }
-	for i := 0; i < 5000; i++ {
+	for i := range 5000 {
 		l.allow(string(rune(i)) + ".ip")
 	}
 	now = now.Add(24 * time.Hour)
@@ -116,7 +116,7 @@ func TestLoginRateLimited(t *testing.T) {
 	_, _, ts := newTestServer(t, true)
 	form := url.Values{"password": {"wrong"}}
 	var last int
-	for i := 0; i < loginBurst+2; i++ {
+	for range loginBurst + 2 {
 		resp, err := http.Post(ts.URL+"/admin/login", "application/x-www-form-urlencoded",
 			strings.NewReader(form.Encode()))
 		if err != nil {

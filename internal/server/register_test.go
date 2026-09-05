@@ -36,7 +36,7 @@ func TestRegistrationFlow(t *testing.T) {
 	}
 
 	resp, _ = http.Get(ts.URL + "/register")
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("register form → %d", resp.StatusCode)
 	}
 
@@ -57,7 +57,7 @@ func TestRegistrationFlow(t *testing.T) {
 		"plan": {strconv.FormatInt(plan.ID, 10)}, "org": {"carols-org"},
 	}
 	resp, _ = http.PostForm(ts.URL+"/register", form)
-	if b := body(t, resp); resp.StatusCode != 200 || !contains(b, "approve") {
+	if b := body(t, resp); resp.StatusCode != http.StatusOK || !contains(b, "approve") {
 		t.Fatalf("register: %d %.120q", resp.StatusCode, b)
 	}
 	u, err := db.GetUserByName("carol")
@@ -85,18 +85,18 @@ func TestRegistrationFlow(t *testing.T) {
 	resp, _ = ac.PostForm(ts.URL+"/admin/users/"+strconv.FormatInt(u.ID, 10)+"/approve", nil)
 	resp.Body.Close()
 	resp, _ = c.PostForm(ts.URL+"/admin/login", url.Values{"username": {"carol"}, "password": {"carolpass1"}})
-	if resp.StatusCode != 200 || resp.Request.URL.Path != "/admin" {
+	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin" {
 		t.Fatalf("approved login → %d at %s", resp.StatusCode, resp.Request.URL)
 	}
 
 	// Plan quota: max 1 cache in the org.
 	resp, _ = c.PostForm(ts.URL+"/admin/caches", url.Values{"namespace": {"carols-org"}, "name": {"one"}})
-	if resp.StatusCode != 200 && resp.StatusCode != 303 {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusSeeOther {
 		t.Fatalf("first cache → %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 	resp, _ = c.PostForm(ts.URL+"/admin/caches", url.Values{"namespace": {"carols-org"}, "name": {"two"}})
-	if b := body(t, resp); resp.StatusCode != 200 || resp.Request.URL.Path != "/admin" || !contains(b, "at most 1 caches") {
+	if b := body(t, resp); resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin" || !contains(b, "at most 1 caches") {
 		t.Fatalf("quota: %d at %s %.120q", resp.StatusCode, resp.Request.URL.Path, b)
 	}
 

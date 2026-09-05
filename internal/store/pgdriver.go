@@ -108,7 +108,7 @@ func rebind(query string) string {
 	b.Grow(len(query) + 8)
 	n := 0
 	inStr := false
-	for i := 0; i < len(query); i++ {
+	for i := range len(query) {
 		ch := query[i]
 		switch {
 		case ch == '\'':

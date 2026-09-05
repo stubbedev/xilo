@@ -75,7 +75,7 @@ func put(t *testing.T, ts *httptest.Server, path string, body []byte, token stri
 func pushFake(t *testing.T, ts *httptest.Server, cache, storeHash string, data []byte, token string) {
 	t.Helper()
 	chunkHash, narHash, narSize := fakeNar(data)
-	if r := put(t, ts, "/c/default/"+cache+"/api/chunk/"+chunkHash, data, token); r.StatusCode != 200 {
+	if r := put(t, ts, "/c/default/"+cache+"/api/chunk/"+chunkHash, data, token); r.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(r.Body)
 		t.Fatalf("put chunk: %d %s", r.StatusCode, b)
 	}
@@ -84,7 +84,7 @@ func pushFake(t *testing.T, ts *httptest.Server, cache, storeHash string, data [
 		Chunks: []string{chunkHash},
 	}
 	body, _ := json.Marshal(pr)
-	if r := put(t, ts, "/c/default/"+cache+"/api/path", body, token); r.StatusCode != 200 {
+	if r := put(t, ts, "/c/default/"+cache+"/api/path", body, token); r.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(r.Body)
 		t.Fatalf("put path: %d %s", r.StatusCode, b)
 	}
@@ -102,7 +102,7 @@ func TestPushPullSignedFlow(t *testing.T) {
 
 	// narinfo signature must verify with the cache's ed25519 pubkey.
 	resp, _ := http.Get(ts.URL + "/c/default/c/" + h32 + ".narinfo")
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("narinfo status %d", resp.StatusCode)
 	}
 	if cc := resp.Header.Get("Cache-Control"); !strings.Contains(cc, "immutable") {
@@ -171,7 +171,7 @@ func TestStatsAccuracy(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("HEAD nar status %d", resp.StatusCode)
 	}
 	if n := s.metrics.narServed.Load(); n != 0 {
@@ -213,7 +213,7 @@ func verifyNarinfoSig(t *testing.T, db *store.DB, cache, narinfoText string) {
 	var storePath, narHash, sig string
 	var refs []string
 	var narSize uint64
-	for _, line := range strings.Split(narinfoText, "\n") {
+	for line := range strings.SplitSeq(narinfoText, "\n") {
 		k, v, ok := strings.Cut(line, ": ")
 		if !ok {
 			continue
@@ -231,7 +231,7 @@ func verifyNarinfoSig(t *testing.T, db *store.DB, cache, narinfoText string) {
 			narSize = n
 		case "References":
 			if v != "" {
-				for _, r := range strings.Fields(v) {
+				for r := range strings.FieldsSeq(v) {
 					refs = append(refs, narinfo.StoreDir+"/"+r)
 				}
 			}
@@ -291,28 +291,28 @@ func TestAuthGating(t *testing.T) {
 	ch, _, _ := fakeNar(data)
 
 	// push without token → 401 (bootstrap closed, tokens exist)
-	if r := put(t, ts, "/c/default/pub/api/chunk/"+ch, data, ""); r.StatusCode != 401 {
+	if r := put(t, ts, "/c/default/pub/api/chunk/"+ch, data, ""); r.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("anon push want 401, got %d", r.StatusCode)
 	}
 	// push with push token → ok
-	if r := put(t, ts, "/c/default/pub/api/chunk/"+ch, data, pushTok); r.StatusCode != 200 {
+	if r := put(t, ts, "/c/default/pub/api/chunk/"+ch, data, pushTok); r.StatusCode != http.StatusOK {
 		t.Fatalf("push-token push want 200, got %d", r.StatusCode)
 	}
 	// private pull without token → 401
 	resp, _ := http.Get(ts.URL + "/c/default/priv/nix-cache-info")
-	if resp.StatusCode != 401 {
+	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("anon private pull want 401, got %d", resp.StatusCode)
 	}
 	// private pull with pull token → 200
-	req, _ := http.NewRequest("GET", ts.URL+"/c/default/priv/nix-cache-info", nil)
+	req, _ := http.NewRequest(http.MethodGet, ts.URL+"/c/default/priv/nix-cache-info", nil)
 	req.Header.Set("Authorization", "Bearer "+pullTok)
 	resp, _ = http.DefaultClient.Do(req)
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("pull-token private pull want 200, got %d", resp.StatusCode)
 	}
 	// public pull open
 	resp, _ = http.Get(ts.URL + "/c/default/pub/nix-cache-info")
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("public pull want 200, got %d", resp.StatusCode)
 	}
 }
@@ -353,7 +353,7 @@ func TestExtractToken(t *testing.T) {
 		{"Weird xyz", ""},
 	}
 	for _, c := range cases {
-		r, _ := http.NewRequest("GET", "/", nil)
+		r, _ := http.NewRequest(http.MethodGet, "/", nil)
 		if c.hdr != "" {
 			r.Header.Set("Authorization", c.hdr)
 		}

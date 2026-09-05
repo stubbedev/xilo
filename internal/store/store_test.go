@@ -30,11 +30,11 @@ func TestSingleWriterConcurrency(t *testing.T) {
 	const goroutines, per = 40, 100
 	var wg sync.WaitGroup
 	errc := make(chan error, goroutines*per)
-	for g := 0; g < goroutines; g++ {
+	for g := range goroutines {
 		wg.Add(1)
 		go func(g int) {
 			defer wg.Done()
-			for i := 0; i < per; i++ {
+			for i := range per {
 				h := fmt.Sprintf("chunk-%03d-%03d", g, i)
 				if err := db.PutChunk("default", h, 10, 5, "k/"+h, 1); err != nil {
 					errc <- err

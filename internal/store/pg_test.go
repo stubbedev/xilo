@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -292,7 +293,7 @@ func TestPostgres(t *testing.T) {
 	if err := db.DeleteCache(c.ID); err != nil {
 		t.Fatalf("DeleteCache: %v", err)
 	}
-	if _, err := db.GetCache("default", "pg-cache"); err != ErrNotFound {
+	if _, err := db.GetCache("default", "pg-cache"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cache should be gone: %v", err)
 	}
 

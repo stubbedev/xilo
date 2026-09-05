@@ -134,7 +134,7 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 	// Existence probes are not downloads: don't read a single chunk (net/http
 	// would discard the body) and don't count them as served NARs/bytes.
 	if r.Method == http.MethodHead {
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", p.NarSize))
+		w.Header().Set("Content-Length", strconv.FormatUint(p.NarSize, 10))
 		return
 	}
 	s.metrics.narServed.Add(1)
@@ -153,7 +153,7 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 			clen += ref.CSize
 		}
 		w.Header().Set("Content-Encoding", "zstd")
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", clen))
+		w.Header().Set("Content-Length", strconv.FormatInt(clen, 10))
 		// Count the chunk's UNCOMPRESSED size (frames are delivered strictly in
 		// order, so an index walk matches refs to frames): narBytes must mean
 		// the same thing on every encoding path, and the identity/gzip path
@@ -196,7 +196,7 @@ func (s *Server) narWriter(w http.ResponseWriter, r *http.Request, narSize uint6
 		}
 		return gz, func() { gz.Close(); s.gzipPool.Put(gz) }
 	default:
-		w.Header().Set("Content-Length", fmt.Sprintf("%d", narSize))
+		w.Header().Set("Content-Length", strconv.FormatUint(narSize, 10))
 		return w, func() {}
 	}
 }
@@ -263,13 +263,13 @@ func negotiateEncoding(accept string) string {
 // parseAcceptEncoding returns the set of encodings the client accepts (q>0).
 func parseAcceptEncoding(accept string) map[string]bool {
 	out := map[string]bool{}
-	for _, part := range strings.Split(accept, ",") {
+	for part := range strings.SplitSeq(accept, ",") {
 		name := strings.TrimSpace(part)
 		q := 1.0
 		if i := strings.IndexByte(name, ';'); i >= 0 {
 			params := name[i+1:]
 			name = strings.TrimSpace(name[:i])
-			for _, p := range strings.Split(params, ";") {
+			for p := range strings.SplitSeq(params, ";") {
 				if v, ok := strings.CutPrefix(strings.TrimSpace(p), "q="); ok {
 					if f, err := strconv.ParseFloat(v, 64); err == nil {
 						q = f

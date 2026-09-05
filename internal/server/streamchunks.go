@@ -140,9 +140,6 @@ func (s *Server) readAhead() int {
 	if s.cfg.Storage.Backend == "local" {
 		return 4
 	}
-	n := s.cfg.Parallelism
-	if n < 4 {
-		n = 4
-	}
+	n := max(s.cfg.Parallelism, 4)
 	return n
 }

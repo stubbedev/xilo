@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 )
@@ -22,7 +23,7 @@ func TestAuditRoundTrip(t *testing.T) {
 		t.Fatalf("want 2 entries, got %d", len(es))
 	}
 	// newest first
-	if es[0].Method != "DELETE" || es[0].Path != "/api/v1/caches/x/y" {
+	if es[0].Method != http.MethodDelete || es[0].Path != "/api/v1/caches/x/y" {
 		t.Fatalf("newest entry wrong: %+v", es[0])
 	}
 	if es[1].Actor != "alice" || es[1].UserID != 7 || es[1].Status != 201 || es[1].IP != "10.0.0.1" || es[1].DurationMs != 12 {
@@ -46,7 +47,7 @@ func TestPruneAuditBatch(t *testing.T) {
 	db := openTest(t)
 	// Two entries stamped "now"; cutoff in the future removes both. Batch of 1
 	// drains one per call, so the second call reports the tail then zero.
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		if err := db.Audit(AuditEntry{Method: "POST", Path: "/x", Status: 200}); err != nil {
 			t.Fatal(err)
 		}

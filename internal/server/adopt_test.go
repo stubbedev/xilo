@@ -29,7 +29,7 @@ func missingPaths(t *testing.T, ts *httptest.Server, cache, token string, refs [
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("get-missing-paths: %d %s", resp.StatusCode, b)
 	}
@@ -84,7 +84,7 @@ func TestAdoptPathAcrossCaches(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("narinfo from dst: %d %s", resp.StatusCode, body)
 	}
 	verifyNarinfoSig(t, db, "dst", string(body))
@@ -94,7 +94,7 @@ func TestAdoptPathAcrossCaches(t *testing.T) {
 	}
 	got, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode != 200 || !bytes.Equal(got, data) {
+	if resp.StatusCode != http.StatusOK || !bytes.Equal(got, data) {
 		t.Fatalf("NAR from dst: %d, %d bytes (want %d)", resp.StatusCode, len(got), len(data))
 	}
 }

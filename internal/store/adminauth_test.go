@@ -26,7 +26,7 @@ func TestUsersLifecycle(t *testing.T) {
 	if err != nil || got.ID != u.ID || got.PassHash != "hash-1" || got.Role != "owner" {
 		t.Fatalf("GetUserByName: %+v %v", got, err)
 	}
-	if _, err := db.GetUser(9999); err != ErrNotFound {
+	if _, err := db.GetUser(9999); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing user: %v", err)
 	}
 	if err := db.SetUserPassword(u.ID, "hash-3"); err != nil {
@@ -55,7 +55,7 @@ func TestUsersLifecycle(t *testing.T) {
 	if pks, _ := db.ListUserPasskeys(m.ID); len(pks) != 0 {
 		t.Fatal("passkeys should be gone with the user")
 	}
-	if _, err := db.GetUser(m.ID); err != ErrNotFound {
+	if _, err := db.GetUser(m.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("user should be gone: %v", err)
 	}
 }

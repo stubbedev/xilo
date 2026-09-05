@@ -89,8 +89,8 @@ func BaseName(storePath string) string {
 // StoreHash returns the 32-char hash part of a store path ("/nix/store/<hash>-<name>").
 func StoreHash(storePath string) string {
 	base := BaseName(storePath)
-	if i := strings.IndexByte(base, '-'); i >= 0 {
-		return base[:i]
+	if before, _, ok := strings.Cut(base, "-"); ok {
+		return before
 	}
 	return base
 }

@@ -51,7 +51,7 @@ func (db *DB) CacheStats(cacheID int64) (Stats, error) {
 		}
 		st.Paths++
 		st.LogicalBytes += narSize
-		for _, h := range splitLines(chunks) {
+		for h := range seqLines(chunks) {
 			distinct[h] = struct{}{}
 		}
 	}

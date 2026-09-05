@@ -1,9 +1,10 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
-	"sort"
+	"slices"
 
 	"github.com/stubbedev/xilo/internal/storage"
 )
@@ -37,8 +38,7 @@ func (db *DB) GC(ctx context.Context, st storage.Storage, storageName string, gr
 		byHash[c.Hash] = c
 		cand = append(cand, c.Hash)
 	}
-	for i := 0; i < len(cand); i += gcBatchSize {
-		batch := cand[i:min(i+gcBatchSize, len(cand))]
+	for batch := range slices.Chunk(cand, gcBatchSize) {
 		// One tx per batch: rows not returned were re-stamped by a
 		// concurrent push since the snapshot and stay.
 		gone, err := db.deleteChunkRowsIf(storageName, batch, graceCutoff)
@@ -104,7 +104,7 @@ func (db *DB) LiveChunkSet(storageName string) (map[string]bool, error) {
 		if err := rows.Scan(&c); err != nil {
 			return nil, err
 		}
-		for _, h := range splitLines(c) {
+		for h := range seqLines(c) {
 			live[h] = true
 		}
 	}
@@ -258,7 +258,7 @@ func evictToFit(paths []pathRow, csize map[string]int64, cap int64) []int64 {
 	if total <= cap {
 		return nil
 	}
-	sort.Slice(paths, func(i, j int) bool { return paths[i].accessed < paths[j].accessed })
+	slices.SortFunc(paths, func(a, b pathRow) int { return cmp.Compare(a.accessed, b.accessed) })
 	var evict []int64
 	for _, p := range paths {
 		if total <= cap {

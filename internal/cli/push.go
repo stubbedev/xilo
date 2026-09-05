@@ -2,7 +2,7 @@ package cli
 
 import (
 	"bufio"
-	"fmt"
+	"errors"
 	"os"
 	"strings"
 
@@ -35,10 +35,10 @@ func pushCmd() *cobra.Command {
 			}
 			cache, rest := splitCacheArg(args)
 			if cache == "" {
-				return fmt.Errorf("no cache given and no default saved — `xilo push <ns/cache> <path>` or `xilo use <ns/cache> --default`")
+				return errors.New("no cache given and no default saved — `xilo push <ns/cache> <path>` or `xilo use <ns/cache> --default`")
 			}
 			if len(rest) == 0 {
-				return fmt.Errorf("no paths to push")
+				return errors.New("no paths to push")
 			}
 			paths, err := resolvePaths(rest)
 			if err != nil {
@@ -48,7 +48,7 @@ func pushCmd() *cobra.Command {
 				return nil
 			}
 			if detach && dryRun {
-				return fmt.Errorf("--detach and --dry-run are mutually exclusive")
+				return errors.New("--detach and --dry-run are mutually exclusive")
 			}
 			// The re-exec carries the marker so the child pushes for real.
 			if detach && os.Getenv(detachEnv) == "" {
