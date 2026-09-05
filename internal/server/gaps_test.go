@@ -392,8 +392,38 @@ func TestPushAPIAnonWhenClosed(t *testing.T) {
 func TestIndexUnknownSingleSegment(t *testing.T) {
 	_, _, ts := newTestServerCfg(t, nil)
 	resp, _ := http.Get(ts.URL + "/standalone-nonsense")
-	if resp.StatusCode != 404 {
+	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("single-segment unknown path → %d want 404", resp.StatusCode)
 	}
 	resp.Body.Close()
+}
+
+// The sweeper must run once at startup, not only on the first tick: a host
+// redeployed or rebooted more often than gc.interval would otherwise never
+// sweep. Interval here is long enough that a tick can't be what fires.
+func TestStartGCSweepsAtStartup(t *testing.T) {
+	s, db, ts := newTestServerCfg(t, func(cfg *config.Config) {
+		cfg.GC.Interval = "24h"
+		cfg.GC.Grace = "-1s"
+	})
+	db.CreateCache("default", "c", true, 40)
+	data := []byte("orphan chunk")
+	ch, _, _ := fakeNar(data)
+	if r := put(t, ts, "/c/default/c/api/chunk/"+ch, data, ""); r.StatusCode != http.StatusOK {
+		t.Fatalf("put chunk: %d", r.StatusCode)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() { cancel(); s.gcDone.Wait() }()
+	s.startGC(ctx)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		g, err := db.GlobalStats()
+		if err == nil && g.StoredBytes == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("startup GC never swept the orphan chunk (%d bytes left)", g.StoredBytes)
+		}
+		time.Sleep(2 * time.Millisecond) // ponytail: async sweep, poll with deadline
+	}
 }

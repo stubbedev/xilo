@@ -52,6 +52,11 @@ type Server struct {
 	// lastSavedCounters is the JSON of the last persisted metrics snapshot;
 	// only the status-sampler goroutine touches it.
 	lastSavedCounters string
+	// gcDone tracks the sweeper goroutine so RunContext can wait for an
+	// in-flight sweep before returning: the caller closes the DB right after,
+	// and store.DB.Close() closes the writer channel, so a sweep still
+	// deleting rows would panic sending on it.
+	gcDone sync.WaitGroup
 }
 
 func New(cfg *config.Config, db *store.DB, sts map[string]storage.Storage) (*Server, error) {
@@ -145,6 +150,10 @@ func (s *Server) RunContext(ctx context.Context) error {
 	// instead of writing to a closed DB.
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// Cancel the loops on every return path, not just the signalled one, and
+	// let a sweep already running finish before the caller closes the DB.
+	ctx, stopBG := context.WithCancel(ctx)
+	defer func() { stopBG(); s.gcDone.Wait() }()
 	s.startGC(ctx)
 	s.startAuditPrune(ctx)
 	s.startStatusSampler(ctx)
@@ -302,22 +311,24 @@ func (s *Server) startGC(ctx context.Context) {
 		return
 	}
 	log.Printf("gc: background sweep every %s (retention=%q grace=%q)", interval, s.cfg.GC.Retention, s.cfg.GC.Grace)
-	go func() {
+	s.gcDone.Go(func() {
 		t := time.NewTicker(interval)
 		defer t.Stop()
+		// Sweep once at startup: a ticker alone means a box redeployed or
+		// rebooted more often than gc.interval never sweeps at all.
 		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-			}
 			if del, freed, err := s.runGC(ctx); err != nil {
 				log.Printf("gc: %v", err)
 			} else if del > 0 {
 				log.Printf("gc: swept %d chunks, freed %d bytes", del, freed)
 			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
 		}
-	}()
+	})
 }
 
 // Audit pruning runs on its own schedule, independent of the chunk sweeper, so
@@ -342,9 +353,9 @@ func (s *Server) startAuditPrune(ctx context.Context) {
 	go func() {
 		t := time.NewTicker(auditPruneEvery)
 		defer t.Stop()
-		// First pass on the first tick, never synchronously at startup: touching
-		// the DB before a tick would race a shutdown that closes it (same reason
-		// startGC waits for its ticker).
+		// First pass on the first tick, never synchronously at startup:
+		// touching the DB before a tick would race a shutdown that closes it.
+		// (The sweeper does sweep at startup, but RunContext waits it out.)
 		for {
 			select {
 			case <-ctx.Done():
