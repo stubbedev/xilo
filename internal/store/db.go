@@ -384,9 +384,24 @@ func migrate(w *sql.DB, pg bool) error {
 	}
 
 	// Indexes last — they may reference columns the ALTERs just added.
+	//
+	// The paths indexes are all (cache_id, <sort key>): every list in the UI is
+	// one cache's paths in some order, and UNIQUE(cache_id, store_hash) can
+	// only serve the filter, leaving the sort to run over the whole cache. The
+	// name index mirrors SearchPaths' expression exactly — store paths begin
+	// with a fixed-width "/nix/store/<32-char hash>-", so char 45 is where the
+	// package name starts and sorting on the raw column would sort by hash.
+	// lower() and substr() mean the same thing in SQLite and PostgreSQL, so
+	// one statement serves both.
 	for _, s := range []string{
 		`CREATE INDEX IF NOT EXISTS idx_paths_accessed ON paths(accessed)`,
+		`CREATE INDEX IF NOT EXISTS idx_paths_cache_accessed ON paths(cache_id, accessed)`,
+		`CREATE INDEX IF NOT EXISTS idx_paths_cache_size ON paths(cache_id, nar_size, accessed)`,
+		`CREATE INDEX IF NOT EXISTS idx_paths_cache_name ON paths(cache_id, lower(substr(store_path, 45)))`,
 		`CREATE INDEX IF NOT EXISTS idx_chunks_created ON chunks(created)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts)`,
+		`CREATE INDEX IF NOT EXISTS idx_members_user ON account_members(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_tokens_account ON tokens(account_id)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL`,
 	} {
 		if _, err := w.Exec(s); err != nil {

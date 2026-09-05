@@ -67,9 +67,16 @@ func (db *DB) SearchAudit(q string, limit, offset int, sortKey, sortDir string) 
 	case "status":
 		order = `status` + dir + `, id DESC`
 	}
+	// Counted separately, not as a `COUNT(*) OVER ()` window: the window made
+	// every page read the whole table to fill in one number, so the default
+	// view (newest 25, straight off the primary key) paid for every row ever
+	// recorded.
+	if err := db.r.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE `+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
 	args = append(args, limit, offset)
 	rows, err := db.r.Query(
-		`SELECT id,ts,user_id,actor,method,path,status,ip,user_agent,duration_ms, COUNT(*) OVER ()
+		`SELECT id,ts,user_id,actor,method,path,status,ip,user_agent,duration_ms
 		   FROM audit_log
 		  WHERE `+where+`
 		  ORDER BY `+order+` LIMIT ? OFFSET ?`,
@@ -80,7 +87,7 @@ func (db *DB) SearchAudit(q string, limit, offset int, sortKey, sortDir string) 
 	defer rows.Close()
 	for rows.Next() {
 		var e AuditEntry
-		if err := rows.Scan(&e.ID, &e.TS, &e.UserID, &e.Actor, &e.Method, &e.Path, &e.Status, &e.IP, &e.UserAgent, &e.DurationMs, &total); err != nil {
+		if err := rows.Scan(&e.ID, &e.TS, &e.UserID, &e.Actor, &e.Method, &e.Path, &e.Status, &e.IP, &e.UserAgent, &e.DurationMs); err != nil {
 			return nil, 0, err
 		}
 		entries = append(entries, e)

@@ -523,10 +523,18 @@ func (db *DB) SearchPaths(cacheID int64, q string, limit, offset int, sortKey, s
 			order = `(` + rank + `) DESC, accessed DESC`
 		}
 	}
+	// The total is its own query. As a `COUNT(*) OVER ()` window it rode along
+	// with the page, which forced the whole matching set to be materialized —
+	// so paging a large cache read every row it was not going to show, and no
+	// index on the sort key could help. Counting separately lets the page
+	// query stop at LIMIT.
+	if err := db.r.QueryRow(`SELECT COUNT(*) FROM paths WHERE `+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
 	args = append(args, rankArgs...)
 	args = append(args, limit, offset)
 	rows, err := db.r.Query(
-		`SELECT store_path, nar_size, accessed, COUNT(*) OVER ()
+		`SELECT store_path, nar_size, accessed
 		   FROM paths
 		  WHERE `+where+`
 		  ORDER BY `+order+` LIMIT ? OFFSET ?`,
@@ -537,7 +545,7 @@ func (db *DB) SearchPaths(cacheID int64, q string, limit, offset int, sortKey, s
 	defer rows.Close()
 	for rows.Next() {
 		var p PathInfo
-		if err := rows.Scan(&p.StorePath, &p.NarSize, &p.Accessed, &total); err != nil {
+		if err := rows.Scan(&p.StorePath, &p.NarSize, &p.Accessed); err != nil {
 			return nil, 0, err
 		}
 		paths = append(paths, p)
