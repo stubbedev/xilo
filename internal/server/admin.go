@@ -516,7 +516,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// Burn a bcrypt anyway so unknown usernames cost the same as wrong
 		// passwords (no user-enumeration timing signal).
 		bcrypt.CompareHashAndPassword([]byte("$2a$10$0000000000000000000000000000000000000000000000000000"), []byte(r.FormValue("password")))
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: "Invalid username or password"}).Render(r.Context(), w)
+		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T("flash.badlogin")}).Render(r.Context(), w)
 		return
 	}
 	if err != nil {
@@ -524,11 +524,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(u.PassHash), []byte(r.FormValue("password"))) != nil {
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: "Invalid username or password"}).Render(r.Context(), w)
+		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T("flash.badlogin")}).Render(r.Context(), w)
 		return
 	}
 	if u.Status == "pending" {
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: "Your account is awaiting approval."}).Render(r.Context(), w)
+		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T("flash.awaiting")}).Render(r.Context(), w)
 		return
 	}
 	// Password accepted. With 2FA on, the code is a second step gated by a
@@ -557,7 +557,7 @@ func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
 	pid := r.FormValue("pending")
 	uid, ok := s.sess.pendingUser(pid)
 	if !ok {
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: "That sign-in attempt expired — enter your password again."}).Render(r.Context(), w)
+		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T("flash.loginexpired")}).Render(r.Context(), w)
 		return
 	}
 	secret, on, _ := s.db.UserTOTP(uid)
@@ -572,7 +572,7 @@ func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
 		// retried against the ±1-step window for its whole 3-min lifetime;
 		// the user re-does the password step, which the limiter throttles.
 		s.sess.consumePending(pid)
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: "Invalid 2FA code — enter your password again."}).Render(r.Context(), w)
+		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T("flash.bad2fa")}).Render(r.Context(), w)
 		return
 	}
 	s.sess.consumePending(pid)
@@ -636,9 +636,9 @@ func (s *Server) handleAccountEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	u.Email = email
-	msg := "Email saved."
+	msg := views.T("flash.emailsaved")
 	if email == "" {
-		msg = "Email cleared."
+		msg = views.T("flash.emailcleared")
 	}
 	s.accountFlash(w, r, msg)
 }
@@ -927,7 +927,7 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 	if len(secret) == 0 || !totpVerify(secret, r.FormValue("code"), time.Now()) {
 		uri := totpURI(secret, "xilo", u.Name+"@"+hostOf(s.cfg.BaseURL))
 		qr, _ := totpQRDataURI(uri)
-		views.TOTPEnrollErr(s.nav(r, u), qr, secretB32(secret), "That code didn't match — try again.").Render(r.Context(), w)
+		views.TOTPEnrollErr(s.nav(r, u), qr, secretB32(secret), views.T("flash.badcode")).Render(r.Context(), w)
 		return
 	}
 	if err := s.db.SetUserTOTPEnabled(u.ID, true); err != nil {
@@ -1565,7 +1565,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.renderDashboard(w, r, views.Flash{
-		Msg:  fmt.Sprintf("Token %q created — copy it now, it will not be shown again:", t.Name),
+		Msg:  fmt.Sprintf(views.T("flash.tokencreated"), t.Name),
 		Code: secret,
 	})
 }

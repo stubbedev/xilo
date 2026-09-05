@@ -6,7 +6,6 @@ import (
 
 	"github.com/stubbedev/xilo/internal/store"
 
-	"github.com/templui/templui/components/badge"
 	"github.com/templui/templui/components/button"
 	"github.com/templui/templui/components/card"
 	"github.com/templui/templui/components/dialog"
@@ -22,7 +21,7 @@ templ Dashboard(d DashboardData) {
 		} else {
 			@PageHeader(T("dash.title"), T("dash.subtitle"))
 		}
-		<div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+		<div class="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
 			@StatTile("database", Count(d.Global.Caches), T("kpi.caches"), "", "")
 			@StatTile("package", Count(d.Global.Paths), T("kpi.paths"), "", "")
 			@StatTile("hard-drive", d.Bytes(d.Global.StoredBytes), T("kpi.disk")+capSuffix(d.ServerCap, d.Bytes), "", "")
@@ -197,8 +196,11 @@ templ tokenRow(d DashboardData, t store.Token) {
 			if scopeAll(t.Caches) {
 				// Not "all caches": this scope grants no cache access at all,
 				// it grants instance-wide management. Say the dangerous thing.
-				@badge.Badge(badge.Props{Variant: badge.VariantDestructive}) {
-					{ T("tokens.root") }
+				@WithTooltip(T("tokens.roothint")) {
+					<span class="inline-flex items-center gap-1 text-destructive">
+						@Icon("shield-alert")
+						<span>{ T("tokens.root") }</span>
+					</span>
 				}
 			} else {
 				{ strings.Join(t.Caches, ", ") }
@@ -304,7 +306,7 @@ templ tokenFormBody(action string, t *store.Token, d DashboardData, submitIcon, 
 		@Field(dlgID+"-name", T("tokens.name")) {
 			@input.Input(input.Props{ID: dlgID + "-name", Name: "name", Value: tokenName(t), Placeholder: T("ph.tokenname"), Required: true})
 		}
-		@FieldHint("", T("tokens.scope"), T("tokens.scopehint")) {
+		@FieldInfo("", T("tokens.scope"), T("tokens.scopehint")) {
 			@ScopeSelect("cache", tokenScopeValue(t, d), tokenScopeCaches(t, d))
 		}
 		@Field("", T("tokens.perms")) {

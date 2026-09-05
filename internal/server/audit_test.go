@@ -24,6 +24,14 @@ func TestAuditMiddleware(t *testing.T) {
 		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(method, path, nil))
 	}
 
+	secret, _, err := db.CreateToken(0, "robot", nil, []string{"admin"}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/caches", nil)
+	req.Header.Set("Authorization", "Bearer "+secret)
+	ok.ServeHTTP(httptest.NewRecorder(), req) // recorded, actor = token name
+
 	hit(ok, "POST", "/admin/caches")                 // recorded
 	hit(ok, "DELETE", "/api/v1/caches/acme/web")     // recorded
 	hit(ok, "GET", "/admin/caches")                  // skip: read
@@ -36,8 +44,11 @@ func TestAuditMiddleware(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(es) != 2 {
-		t.Fatalf("want 2 recorded actions, got %d: %+v", len(es), es)
+	if len(es) != 3 {
+		t.Fatalf("want 3 recorded actions, got %d: %+v", len(es), es)
+	}
+	if tok := es[2]; tok.Actor != "robot" || tok.UserID != 0 {
+		t.Fatalf("token call should be attributed to the token: %+v", tok)
 	}
 	if es[0].Method != http.MethodDelete || es[0].Path != "/api/v1/caches/acme/web" {
 		t.Fatalf("newest entry wrong: %+v", es[0])

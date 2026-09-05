@@ -203,22 +203,8 @@ templ usersCard(actingName string, multiTenant bool, users []store.User) {
 							@table.Row() {
 								@table.Cell() {
 									<div class="flex flex-wrap items-center gap-2">
-										@Icon("user")
+										@RoleIcon(userRole(u))
 										<span class="font-medium">{ u.Name }</span>
-										if u.Role == "owner" {
-											@badge.Badge(badge.Props{Variant: badge.VariantDefault}) {
-												{ T("role.superadmin") }
-											}
-										} else {
-											@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
-												{ T("role.user") }
-											}
-										}
-										if u.Status == "pending" {
-											@badge.Badge(badge.Props{Variant: badge.VariantOutline}) {
-												{ T("users.pending") }
-											}
-										}
 										if u.Email != "" {
 											<span class="text-xs text-muted-foreground">{ u.Email }</span>
 										}

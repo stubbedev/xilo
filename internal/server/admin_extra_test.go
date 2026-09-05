@@ -420,7 +420,7 @@ func TestTOTPEnrollAndTwoStepLogin(t *testing.T) {
 	// wrong 2FA code → ticket is burned, user is sent back to the password
 	// step (no retrying one ticket against the whole ±1-step window).
 	resp, _ = c2.PostForm(ts.URL+"/admin/login/code", url.Values{"pending": {pending}, "code": {wrongCode(secret)}})
-	if b := body(t, resp); !strings.Contains(b, "Invalid 2FA code") {
+	if b := body(t, resp); !strings.Contains(b, "Invalid two-factor code") {
 		t.Fatalf("wrong 2fa code: %.200q", b)
 	}
 	// the burned ticket no longer works → back to password step

@@ -41,7 +41,7 @@ templ PathDetail(d PathData) {
 				}
 			}
 		}
-		<div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+		<div class="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
 			@StatTile("package", d.Bytes(int64(d.Path.NarSize)), T("path.narsize"), "", "")
 			@StatTile("hard-drive", d.Bytes(d.CSize), T("path.ondisk"), "", "")
 			@StatTile("boxes", Count(int64(len(d.Path.Chunks))), T("path.chunks"), "", "")
@@ -117,7 +117,7 @@ templ PathDetail(d PathData) {
 			@card.Content(card.ContentProps{Class: "py-2"}) {
 				@accordion.Accordion() {
 					@accordion.Item() {
-						@accordion.Trigger() {
+						@accordion.Trigger(accordion.TriggerProps{Class: "hover:no-underline"}) {
 							<span class="flex items-center gap-2">
 								<span>{ T("path.chunks") }</span>
 								@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {

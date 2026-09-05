@@ -54,6 +54,15 @@ func confirmTriggerProps(c Confirm) button.Props {
 	return p
 }
 
+// chipVariant is the filter-chip variant: both states borderless so the row
+// keeps one height (outline adds a border the primary variant lacks).
+func chipVariant(active bool) button.Variant {
+	if active {
+		return button.VariantDefault
+	}
+	return button.VariantSecondary
+}
+
 // segVariant is the button variant for a segmented-control option.
 func segVariant(active bool) button.Variant {
 	if active {
@@ -127,6 +136,46 @@ func auditStatusVariant(status int) badge.Variant {
 		return badge.VariantOutline
 	default:
 		return badge.VariantSecondary
+	}
+}
+
+// userRole is the RoleIcon key for an instance user: the owner is the
+// superadmin, an unapproved sign-up shows as pending.
+func userRole(u store.User) string {
+	switch {
+	case u.Status == "pending":
+		return "pending"
+	case u.Role == "owner":
+		return "superadmin"
+	default:
+		return "user"
+	}
+}
+
+// roleIcon / roleTone map a role to its glyph and color.
+func roleIcon(role string) string {
+	switch role {
+	case "superadmin":
+		return "shield-check"
+	case "owner":
+		return "crown"
+	case "admin":
+		return "shield"
+	case "pending":
+		return "clock"
+	default:
+		return "user"
+	}
+}
+
+func roleTone(role string) string {
+	switch role {
+	case "superadmin", "owner":
+		return "text-primary"
+	case "pending":
+		return "text-muted-foreground"
+	default:
+		return ""
 	}
 }
 

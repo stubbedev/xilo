@@ -253,7 +253,14 @@ html.dark[data-palette="gruvbox"] {
   *::-webkit-scrollbar { width: 8px; height: 8px; }
   *::-webkit-scrollbar-thumb { background: var(--color-muted-foreground); border-radius: 4px; }
   ::selection { @apply bg-selection text-selection-foreground; }
-  html { @apply scroll-smooth; }
+  html { @apply scroll-smooth; interpolate-size: allow-keywords; }
+  /* <details> (accordion) opens with a height transition where the browser
+     supports ::details-content; elsewhere it just toggles. */
+  details::details-content {
+    block-size: 0; overflow: clip;
+    transition: block-size 200ms ease, content-visibility 200ms allow-discrete;
+  }
+  details[open]::details-content { block-size: auto; }
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
@@ -266,6 +273,13 @@ html.dark[data-palette="gruvbox"] {
   /* Every select here is a required choice (unit, account, scope, palette);
      the clear-selection x would only ever produce an invalid form. */
   [data-tui-selectbox-clear-trigger] { display: none !important; }
+  /* Selectbox options: a hair of space between rows, and "selected" reads
+     differently from "hovered" (primary tint vs accent). */
+  .select-content .select-item + .select-item { margin-top: 2px; }
+  .select-content .select-item[data-tui-selectbox-selected="true"] {
+    background: color-mix(in oklab, var(--primary) 18%, transparent);
+    color: var(--foreground);
+  }
   /* Grid children default to min-width:auto, so one long <pre> line (or a
      wide table) widens the column past the viewport instead of scrolling
      inside its box. Every grid here is a layout grid; let children shrink. */

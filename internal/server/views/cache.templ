@@ -3,7 +3,6 @@ package views
 import (
 	"github.com/stubbedev/xilo/internal/store"
 
-	"github.com/templui/templui/components/accordion"
 	"github.com/templui/templui/components/button"
 	"github.com/templui/templui/components/card"
 	"github.com/templui/templui/components/copybutton"
@@ -42,7 +41,7 @@ templ CacheView(d CacheData) {
 		@PageHeader(d.Cache.Ref(), d.BaseURL+"/c/"+d.Cache.Ref()) {
 			@VisBadge(d.Cache.Public)
 		}
-		<div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+		<div class="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
 			@StatTile("package", Count(d.Stats.Paths), T("kpi.paths"), "", "")
 			@StatTile("database", d.Bytes(d.Stats.LogicalBytes), T("kpi.logical"), "", "")
 			@StatTile("hard-drive", d.Bytes(d.Stats.PhysicalBytes), T("kpi.physical")+capLabel(d.Cache.MaxBytes, d.Bytes), "", "")
@@ -67,13 +66,13 @@ templ CacheView(d CacheData) {
 					@tabs.Tabs(tabs.Props{ID: "use"}) {
 						@tabs.List() {
 							@tabs.Trigger(tabs.TriggerProps{Value: "nixconf", IsActive: true}) {
-								nix.conf
+								{ T("cd.tab.nixconf") }
 							}
 							@tabs.Trigger(tabs.TriggerProps{Value: "flake"}) {
-								flake
+								{ T("cd.tab.flake") }
 							}
 							@tabs.Trigger(tabs.TriggerProps{Value: "cli"}) {
-								CLI
+								{ T("cd.tab.cli") }
 							}
 						}
 						@tabs.Content(tabs.ContentProps{Value: "nixconf", IsActive: true}) {
@@ -122,70 +121,70 @@ templ CacheView(d CacheData) {
 		<div class="mb-8">
 			@pathResults(d)
 		</div>
-		@card.Card() {
-			@card.Content(card.ContentProps{Class: "py-2"}) {
-				@accordion.Accordion() {
-					@accordion.Item(accordion.ItemProps{Attributes: templ.Attributes{"open": true}}) {
-						@accordion.Trigger() {
-							{ T("cd.settings") }
-						}
-						@accordion.Content() {
-							<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/configure") } class="grid gap-4 sm:grid-cols-3">
-								<div class="sm:col-span-3">
-									@VisibilitySwitch(!d.Cache.Public)
-								</div>
-								@PriorityField(d.Cache.Priority)
-								@Field("", T("cd.retention")) {
-									@DurationInput("retention", d.Cache.Retention)
-								}
-								@Field("", T("cd.maxsize")) {
-									@SizeInput("max", d.Cache.MaxBytes)
-								}
-								<div class="sm:col-span-3">
-									@button.Button(button.Props{Type: button.TypeSubmit}) {
-										@Icon("check")
-										<span>{ T("cd.save") }</span>
-									}
-								</div>
-							</form>
-						}
+		<div class="grid gap-6">
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						{ T("cd.settings") }
 					}
-					@accordion.Item() {
-						@accordion.Trigger() {
-							{ T("cd.maint") }
+				}
+				@card.Content() {
+					<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/configure") } class="grid gap-4 sm:grid-cols-3">
+						<div class="sm:col-span-3">
+							@VisibilitySwitch(!d.Cache.Public)
+						</div>
+						@PriorityField(d.Cache.Priority)
+						@Field("", T("cd.retention")) {
+							@DurationInput("retention", d.Cache.Retention)
 						}
-						@accordion.Content(accordion.ContentProps{Class: "space-y-4"}) {
-							@ActionRow(T("cd.rotatehint")) {
-								@ConfirmForm(Confirm{
-									ID:           "rotate",
-									Action:       "/admin/cache/" + d.Cache.Ref() + "/rotate",
-									Title:        T("cd.rotatetitle"),
-									Message:      T("confirm.rotate"),
-									ConfirmLabel: T("cd.rotate"),
-									ConfirmIcon:  "key-round",
-									TriggerLabel: T("cd.rotate"),
-									TriggerIcon:  "key-round",
-								})
-							}
-							@separator.Separator()
-							@ActionRow(T("cd.deletehint")) {
-								@ConfirmForm(Confirm{
-									ID:           "delete-cache",
-									Action:       "/admin/cache/" + d.Cache.Ref() + "/delete",
-									Title:        T("cd.deletetitle"),
-									Message:      "“" + d.Cache.Ref() + "” " + T("cd.deletemsg"),
-									ConfirmLabel: T("cd.delete"),
-									ConfirmIcon:  "trash-2",
-									Danger:       true,
-									TriggerLabel: T("action.delete"),
-									TriggerIcon:  "trash-2",
-								})
-							}
+						@Field("", T("cd.maxsize")) {
+							@SizeInput("max", d.Cache.MaxBytes)
 						}
+						<div class="sm:col-span-3">
+							@button.Button(button.Props{Type: button.TypeSubmit}) {
+								@Icon("check")
+								<span>{ T("cd.save") }</span>
+							}
+						</div>
+					</form>
+				}
+			}
+			@card.Card() {
+				@card.Header() {
+					@card.Title() {
+						{ T("cd.maint") }
+					}
+				}
+				@card.Content(card.ContentProps{Class: "space-y-4"}) {
+					@ActionRow(T("cd.rotatehint")) {
+						@ConfirmForm(Confirm{
+							ID:           "rotate",
+							Action:       "/admin/cache/" + d.Cache.Ref() + "/rotate",
+							Title:        T("cd.rotatetitle"),
+							Message:      T("confirm.rotate"),
+							ConfirmLabel: T("cd.rotate"),
+							ConfirmIcon:  "key-round",
+							TriggerLabel: T("cd.rotate"),
+							TriggerIcon:  "key-round",
+						})
+					}
+					@separator.Separator()
+					@ActionRow(T("cd.deletehint")) {
+						@ConfirmForm(Confirm{
+							ID:           "delete-cache",
+							Action:       "/admin/cache/" + d.Cache.Ref() + "/delete",
+							Title:        T("cd.deletetitle"),
+							Message:      "“" + d.Cache.Ref() + "” " + T("cd.deletemsg"),
+							ConfirmLabel: T("cd.delete"),
+							ConfirmIcon:  "trash-2",
+							Danger:       true,
+							TriggerLabel: T("action.delete"),
+							TriggerIcon:  "trash-2",
+						})
 					}
 				}
 			}
-		}
+		</div>
 	}
 }
 

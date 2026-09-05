@@ -358,6 +358,16 @@ templ confirmTriggerButton(c Confirm) {
 	}
 }
 
+// RoleIcon is a person's role as one glyph with the role name in a tooltip
+// and aria-label: superadmin / owner / admin / user / pending.
+templ RoleIcon(role string) {
+	@WithTooltip(T("role." + role)) {
+		<span class={ "inline-flex", roleTone(role) } role="img" aria-label={ T("role." + role) }>
+			@Icon(roleIcon(role))
+		</span>
+	}
+}
+
 // StatusIcon renders a token's status as one glyph (check, clock, ban); the
 // word rides in the tooltip and the aria-label.
 templ StatusIcon(status string) {

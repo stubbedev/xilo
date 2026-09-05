@@ -261,6 +261,10 @@ func (s *Server) recordAudit(r *http.Request, status int, elapsed time.Duration)
 	var actor string
 	if u := s.currentUser(r); u != nil {
 		uid, actor = u.ID, u.Name
+	} else if t, ok := s.db.TokenBySecret(extractToken(r), time.Now().Unix()); ok {
+		// Token-driven API call: the token's name is the actor (UserID stays 0,
+		// which is how the activities page tells tokens from people).
+		actor = t.Name
 	}
 	if err := s.db.Audit(store.AuditEntry{
 		UserID: uid, Actor: actor, Method: r.Method, Path: r.URL.Path, Status: status,

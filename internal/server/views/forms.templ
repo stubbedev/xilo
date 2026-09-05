@@ -13,40 +13,41 @@ import (
 
 // Field is a labelled form control built on the templui form component:
 // form.Item groups the form.Label with the control (children). An empty id
-// means the "label" is a group heading over several controls, not a <label>
-// for one input — rendered as a span so screen readers don't get a dangling
-// label element.
+// means the text heads a group of controls (no `for`); the same label element
+// is used either way so labels line up across a grid of fields.
 templ Field(id, text string) {
 	@form.Item() {
 		if text != "" {
-			if id != "" {
-				@form.Label(form.LabelProps{For: id}) {
-					{ text }
-				}
-			} else {
-				<span class="block text-sm font-medium leading-none">{ text }</span>
-			}
+			@fieldLabel(id, text, "")
 		}
 		{ children... }
 	}
 }
 
-// FieldHint is a Field with a trailing form.Description hint line. An empty id
-// means the text heads a group rather than labelling one input, same as Field.
-templ FieldHint(id, text, hint string) {
+// FieldInfo is a Field whose explanation sits in an info glyph next to the
+// label (tooltip), not in a line under the control, so a row of fields keeps
+// one height.
+templ FieldInfo(id, text, hint string) {
 	@form.Item() {
-		if id != "" {
-			@form.Label(form.LabelProps{For: id}) {
-				{ text }
-			}
-		} else {
-			<span class="block text-sm font-medium leading-none">{ text }</span>
-		}
+		@fieldLabel(id, text, hint)
 		{ children... }
-		@form.Description() {
-			{ hint }
-		}
 	}
+}
+
+// fieldLabel is the label row shared by Field and FieldInfo.
+templ fieldLabel(id, text, hint string) {
+	<div class="flex items-center gap-1.5">
+		@form.Label(form.LabelProps{For: id}) {
+			{ text }
+		}
+		if hint != "" {
+			@WithTooltip(hint) {
+				<span class="inline-flex text-muted-foreground" tabindex="0" aria-label={ hint }>
+					@Icon("info")
+				</span>
+			}
+		}
+	</div>
 }
 
 // AccountSelect is a namespace picker.
@@ -132,9 +133,9 @@ templ DurationInput(name string, secs int64) {
 	<div class="flex gap-2">
 		@input.Input(input.Props{
 			Name: name + "_value", Type: input.TypeNumber, Value: durValue(secs),
-			Class: "flex-1", Attributes: templ.Attributes{"min": "0", "step": "1", "aria-label": T("unit.duration")},
+			Class: "min-w-0 flex-1", Attributes: templ.Attributes{"min": "0", "step": "1", "aria-label": T("unit.duration")},
 		})
-		<div class="w-32">
+		<div class="w-28 shrink-0">
 			@selectbox.SelectBox() {
 				@selectbox.Trigger(selectbox.TriggerProps{Name: name + "_unit"}) {
 					@selectbox.Value(selectbox.ValueProps{})
@@ -162,9 +163,9 @@ templ SizeInput(name string, bytes int64) {
 	<div class="flex gap-2">
 		@input.Input(input.Props{
 			Name: name + "_value", Type: input.TypeNumber, Value: sizeValue(bytes),
-			Class: "flex-1", Placeholder: T("unit.unlimited"), Attributes: templ.Attributes{"min": "0", "step": "1", "aria-label": T("paths.size")},
+			Class: "min-w-0 flex-1", Placeholder: T("unit.unlimited"), Attributes: templ.Attributes{"min": "0", "step": "1", "aria-label": T("paths.size")},
 		})
-		<div class="w-32">
+		<div class="w-28 shrink-0">
 			@selectbox.SelectBox() {
 				@selectbox.Trigger(selectbox.TriggerProps{Name: name + "_unit"}) {
 					@selectbox.Value(selectbox.ValueProps{})
@@ -187,14 +188,11 @@ templ sizeUnitItem(name, unit, label string, bytes int64) {
 
 // PriorityField is the 1–100 substituter-priority number input.
 templ PriorityField(value int) {
-	@Field("priority", T("caches.priority")) {
+	@FieldInfo("priority", T("caches.priority"), T("caches.priorityhint")) {
 		@input.Input(input.Props{
 			ID: "priority", Name: "priority", Type: input.TypeNumber, Value: strconv.Itoa(value),
 			Attributes: templ.Attributes{"min": "1", "max": "100"},
 		})
-		@form.Description() {
-			{ T("caches.priorityhint") }
-		}
 	}
 }
 

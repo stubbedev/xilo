@@ -31,7 +31,7 @@ templ AuditPage(d AuditData) {
 		@PageHeader(T("audit.title"), T("audit.subtitle")) {
 			@SearchInput(d.Sort.With("q", ""), "q", d.Query, T("audit.search"), "#audit-results")
 		}
-		<div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+		<div class="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
 			@StatTile("scroll-text", Count(d.Stats.Total), T("audit.total"), "", "")
 			@StatTile("triangle-alert", Count(d.Stats.Failed), T("audit.failed"), "", failTone(d.Stats.Failed))
 			@StatTile("users", Count(d.Stats.Actors), T("audit.actors"), "", "")
@@ -76,7 +76,14 @@ templ auditResults(d AuditData) {
 								}
 								@table.Cell() {
 									<div class="min-w-0">
-										if e.Actor != "" {
+										if e.Actor != "" && e.UserID == 0 {
+											@WithTooltip(T("audit.token")) {
+												<div class="flex items-center gap-1 truncate font-medium">
+													@Icon("key-round")
+													<span class="truncate">{ e.Actor }</span>
+												</div>
+											}
+										} else if e.Actor != "" {
 											<div class="truncate font-medium">{ e.Actor }</div>
 										} else {
 											<div class="truncate text-muted-foreground">{ T("audit.system") }</div>
@@ -121,7 +128,7 @@ templ auditChips(d AuditData, param, label, active string, values []string) {
 
 templ auditChip(d AuditData, param, value, label string, on bool) {
 	{{ href := d.Sort.With(param, value) }}
-	@button.Button(button.Props{Href: href, Size: button.SizeSm, Variant: segVariant(on), Class: "h-7 px-2 font-mono text-xs", Attributes: hxSwapAttrs(href, "#audit-results")}) {
+	@button.Button(button.Props{Href: href, Size: button.SizeSm, Variant: chipVariant(on), Class: "h-7 px-2 font-mono text-xs", Attributes: hxSwapAttrs(href, "#audit-results")}) {
 		{ label }
 	}
 }

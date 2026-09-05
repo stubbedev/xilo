@@ -89,7 +89,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	email := strings.TrimSpace(r.FormValue("email"))
 	password := r.FormValue("password")
 	if !store.ValidSlug(username) {
-		fail("Invalid username: lowercase letters, digits, - and _.")
+		fail(views.T("reg.err.username"))
 		return
 	}
 	// Multi-tenant registration always requires a valid, verifiable email —
@@ -99,11 +99,11 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(password) < 8 {
-		fail("Password must be at least 8 characters.")
+		fail(views.T("flash.pwshort"))
 		return
 	}
 	if len(password) > 72 {
-		fail("Password must be at most 72 characters.")
+		fail(views.T("flash.pwlong"))
 		return
 	}
 
@@ -111,27 +111,27 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if pid, _ := strconv.ParseInt(r.FormValue("plan"), 10, 64); pid != 0 {
 		p, err := s.db.GetPlan(pid)
 		if err != nil || !p.Public {
-			fail("Pick one of the offered plans.")
+			fail(views.T("reg.err.plan"))
 			return
 		}
 		plan = p
 	} else if len(plans) > 0 {
-		fail("Pick one of the offered plans.")
+		fail(views.T("reg.err.plan"))
 		return
 	}
 
 	orgName := strings.TrimSpace(r.FormValue("org"))
 	if orgName != "" {
 		if plan == nil || !plan.OrgsAllowed {
-			fail("The selected plan does not include organizations.")
+			fail(views.T("reg.err.noorgs"))
 			return
 		}
 		if !store.ValidSlug(orgName) {
-			fail("Invalid organization name: lowercase letters, digits, - and _.")
+			fail(views.T("reg.err.orgname"))
 			return
 		}
 		if _, err := s.db.GetAccount(orgName); err == nil {
-			fail("That organization name is taken.")
+			fail(views.T("flash.nametaken"))
 			return
 		}
 	}
@@ -148,7 +148,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		u, err = s.db.CreateUser(username, email, string(hash), "user")
 	}
 	if errors.Is(err, store.ErrNameTaken) {
-		fail("That name is taken.")
+		fail(views.T("flash.nametaken"))
 		return
 	}
 	if err != nil {
@@ -156,7 +156,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		// raw driver error would confirm the email is registered (account
 		// enumeration) and leak schema/engine strings to an anonymous client.
 		log.Printf("register %q: %v", username, err)
-		fail("Could not complete registration.")
+		fail(views.T("reg.err.failed"))
 		return
 	}
 	// Plan lands on the personal account (and the org, if any).
