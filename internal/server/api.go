@@ -374,9 +374,9 @@ func (s *Server) handlePutPath(w http.ResponseWriter, r *http.Request) {
 	//
 	// The dedup pool is shared across tenants, so this check is the ONLY thing
 	// stopping one tenant from registering a path that references another
-	// tenant's chunk hashes and reading their private bytes. Never skip it in
-	// multi-tenant mode, regardless of the operator's SkipUploadVerify setting.
-	if s.cfg.MultiTenant || !s.cfg.Security.SkipUploadVerify {
+	// tenant's chunk hashes and reading their private bytes. Never skip it on
+	// an instance anyone can sign up to, regardless of SkipUploadVerify.
+	if s.cfg.SelfService || !s.cfg.Security.SkipUploadVerify {
 		// A chunk list already proven to hash to this NarHash on this backend
 		// cannot stop hashing to it, so the re-read is skippable — but the
 		// blobs behind it can still go missing, and the reassembly stream is

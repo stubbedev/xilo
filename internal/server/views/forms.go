@@ -4,24 +4,24 @@ import "github.com/stubbedev/xilo/internal/store"
 
 // defaultAccount picks the namespace preselected in the create-cache dialog:
 // "default" when present, else the first account, else "".
-func defaultAccount(accounts []store.Account) string {
-	for _, a := range accounts {
-		if a.Slug == "default" {
-			return "default"
+// defaultAccount is the account a create form starts on: the viewing context
+// when one is set, otherwise the user's own personal account, otherwise the
+// first they administer. It no longer prefers an account literally named
+// "default" — nothing creates one any more, and treating that name as special
+// was half of why the account layer read as magic.
+func defaultAccount(d DashboardData) string {
+	if d.Nav.Active != "" {
+		return d.Nav.Active
+	}
+	for _, a := range d.Accounts {
+		if a.Slug == d.Nav.UserName {
+			return a.Slug
 		}
 	}
-	if len(accounts) > 0 {
-		return accounts[0].Slug
+	if len(d.Accounts) > 0 {
+		return d.Accounts[0].Slug
 	}
 	return ""
-}
-
-// activeOr prefers the viewing context over a fallback for dialog presets.
-func activeOr(nav Nav, fallback string) string {
-	if nav.Active != "" {
-		return nav.Active
-	}
-	return fallback
 }
 
 // firstStr returns the first element or "".
@@ -75,7 +75,17 @@ func planSecs(p *store.Plan) int64 {
 // preselects its account's first cache (admin-only tokens have no scope).
 func tokenScopeValue(t *store.Token, d DashboardData) string {
 	if t == nil {
-		if cs := tokenScopeCaches(nil, d); len(cs) > 0 {
+		cs := tokenScopeCaches(nil, d)
+		// Preselect a cache in the account being viewed, so the common case
+		// (switch context, mint a token) needs no second pick.
+		if acct := defaultAccount(d); acct != "" {
+			for _, u := range cs {
+				if u.Cache.Account == acct {
+					return u.Cache.Ref()
+				}
+			}
+		}
+		if len(cs) > 0 {
 			return cs[0].Cache.Ref()
 		}
 		return ""
@@ -95,28 +105,19 @@ func canMintToken(d DashboardData) bool {
 	return len(tokenScopeCaches(nil, d)) > 0
 }
 
-// tokenAccount is the read-only owning-account label: the stored owner when
-// editing, the viewing context (falling back to the personal account) when
-// creating. Pre-existing instance-wide tokens (CLI/API-minted) show as such.
-func tokenAccount(t *store.Token, d DashboardData) string {
-	if t == nil {
-		return activeOr(d.Nav, d.Nav.UserName)
-	}
-	if t.AccountID == 0 {
-		return T("tokens.instance")
-	}
-	return t.Account
-}
-
-// tokenScopeCaches narrows the scope picker to the token's account.
+// tokenScopeCaches lists the caches the scope picker may offer.
+//
+// On create that is every cache in view: the picked cache now decides the
+// owning account, so narrowing the list by the sidebar's viewing context would
+// hide caches the user can perfectly well mint for. On edit it stays inside
+// the token's own account — a token cannot be moved between accounts.
 func tokenScopeCaches(t *store.Token, d DashboardData) []CacheUsage {
-	acct := tokenAccount(t, d)
-	if t != nil && t.AccountID == 0 {
+	if t == nil || t.AccountID == 0 {
 		return d.AllCaches
 	}
 	var out []CacheUsage
 	for _, u := range d.AllCaches {
-		if u.Cache.Account == acct {
+		if u.Cache.Account == t.Account {
 			out = append(out, u)
 		}
 	}

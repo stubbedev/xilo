@@ -6,6 +6,8 @@ import (
 	"github.com/templui/templui/components/button"
 	"github.com/templui/templui/components/card"
 	"github.com/templui/templui/components/copybutton"
+	"github.com/templui/templui/components/dialog"
+	"github.com/templui/templui/components/input"
 	"github.com/templui/templui/components/progress"
 	"github.com/templui/templui/components/separator"
 	"github.com/templui/templui/components/table"
@@ -13,7 +15,12 @@ import (
 )
 
 type CacheData struct {
-	Nav       Nav
+	Nav Nav
+	// Secret is a just-minted token, rendered into the setup snippets so the
+	// reader copies a working command. Empty on every ordinary page view.
+	Secret string
+	// CanManage gates the token-minting controls (account admins and above).
+	CanManage bool
 	Cache     store.Cache
 	Stats     store.Stats
 	Dedup     string
@@ -88,7 +95,17 @@ templ CacheView(d CacheData) {
 						}
 					}
 					if !d.Cache.Public {
-						<p class="mt-3 text-xs text-muted-foreground">{ T("cd.private") }</p>
+						<div class="mt-4 space-y-2">
+							<p class="text-xs text-muted-foreground">{ T("cd.private") }</p>
+							<p class="text-sm font-medium">{ T("cd.netrc") }</p>
+							@snippetBlock(snippetNetrc(d))
+							<p class="text-xs text-muted-foreground">{ T("cd.netrchint") }</p>
+						</div>
+					}
+					if d.CanManage {
+						<div class="mt-4">
+							@cacheTokenDialog(d, "dlg-pulltok", T("cd.pulltoken"), false, true)
+						</div>
 					}
 				}
 			}
@@ -101,8 +118,11 @@ templ CacheView(d CacheData) {
 						{ T("cd.pushhint") }
 					}
 				}
-				@card.Content() {
+				@card.Content(card.ContentProps{Class: "space-y-4"}) {
 					@snippetBlock(snippetPush(d))
+					if d.CanManage {
+						@cacheTokenDialog(d, "dlg-pushtok", T("cd.pushtoken"), true, false)
+					}
 				}
 			}
 		</div>
@@ -174,6 +194,64 @@ templ CacheView(d CacheData) {
 				}
 			}
 		</div>
+	}
+}
+
+// cacheTokenDialog mints a token for this cache. The scope is the page itself,
+// so it is shown as a fact rather than asked for — the account and cache a
+// token grants can no longer be picked wrong.
+templ cacheTokenDialog(d CacheData, id, label string, push, pull bool) {
+	@dialog.Dialog(dialog.Props{ID: id}) {
+		@dialog.Trigger(dialog.TriggerProps{For: id}) {
+			@button.Button(button.Props{Size: button.SizeSm}) {
+				@Icon("plus")
+				<span>{ label }</span>
+			}
+		}
+		@dialog.Content(dialog.ContentProps{Class: "text-left sm:max-w-lg"}) {
+			@dialog.Header() {
+				@dialog.Title() {
+					{ label }
+				}
+				@dialog.Description() {
+					{ T("cd.tokenhint") }
+				}
+			}
+			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/tokens") } class="mt-2 space-y-4">
+				@Field(id+"-name", T("tokens.name")) {
+					@input.Input(input.Props{ID: id + "-name", Name: "name", Value: d.Cache.Name, Placeholder: T("ph.tokenname"), Required: true})
+				}
+				@Field("", T("tokens.scope")) {
+					@input.Input(input.Props{ID: id + "-scope", Value: d.Cache.Ref(), Disabled: true})
+				}
+				@Field("", T("tokens.perms")) {
+					<div class="space-y-2">
+						@PermSwitchID(id+"-push", "push", "on", T("tokens.push"), push)
+						@PermSwitchID(id+"-pull", "pull", "on", T("tokens.pull"), pull)
+						@PermSwitchID(id+"-manage", "manage", "on", T("tokens.manage"), false)
+					</div>
+				}
+				@Field("", T("tokens.expiry")) {
+					<div class="group/expiry space-y-2">
+						@PermSwitchID(id+"-permanent", "permanent", "on", T("tokens.permanent"), false)
+						<div class="group-has-[:checked]/expiry:hidden">
+							@TTLSelect(nil)
+						</div>
+					</div>
+				}
+				@dialog.Footer() {
+					@dialog.Close(dialog.CloseProps{For: id}) {
+						@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
+							{ T("action.cancel") }
+						}
+					}
+					@button.Button(button.Props{Type: button.TypeSubmit}) {
+						@Icon("plus")
+						<span>{ T("tokens.create") }</span>
+					}
+				}
+			</form>
+		}
 	}
 }
 

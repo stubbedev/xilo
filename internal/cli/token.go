@@ -21,7 +21,7 @@ func tokenCmd() *cobra.Command {
 
 func tokenCreateCmd() *cobra.Command {
 	var cache string
-	var push, pull, admin bool
+	var push, pull, manage, admin bool
 	var ttl time.Duration
 	c := &cobra.Command{
 		Use:   "create <name>",
@@ -35,30 +35,34 @@ func tokenCreateCmd() *cobra.Command {
 			if pull {
 				perms = append(perms, "pull")
 			}
+			if manage {
+				perms = append(perms, "manage")
+			}
 			if admin {
 				perms = append(perms, "admin")
 			}
 			if len(perms) == 0 {
-				return errors.New("give at least one of --push / --pull / --admin")
+				return errors.New("give at least one of --push / --pull / --manage / --admin")
 			}
 			var expires int64
 			if ttl > 0 {
 				expires = time.Now().Add(ttl).Unix()
 			}
+			apic, _, db, err := adminTarget(adminServer, adminToken)
+			if err != nil {
+				return err
+			}
 			// A token is valid for exactly one cache and belongs to the
 			// account owning it, so it shows in that account's dashboard
-			// view. Bare cache names mean default/. Admin-only tokens carry
-			// no cache and are instance-wide.
+			// view. Admin-only tokens carry no cache and are instance-wide.
 			var caches []string
 			var account string
 			if cache != "" {
 				var bare string
-				account, bare = splitRef(cache)
+				if account, bare, err = resolveAdminRef(apic, db, cache); err != nil {
+					return err
+				}
 				caches = []string{bare}
-			}
-			apic, _, db, err := adminTarget(adminServer, adminToken)
-			if err != nil {
-				return err
 			}
 			var secret string
 			var t api.Token
@@ -98,10 +102,11 @@ func tokenCreateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringVar(&cache, "cache", "", "the single cache this token is valid for (required unless --admin)")
+	c.Flags().StringVar(&cache, "cache", "", "the single cache this token is valid for, <account>/<cache> (required unless --admin)")
 	c.Flags().BoolVar(&push, "push", false, "grant push")
 	c.Flags().BoolVar(&pull, "pull", false, "grant pull")
-	c.Flags().BoolVar(&admin, "admin", false, "grant management API access (remote cache/token/gc admin)")
+	c.Flags().BoolVar(&manage, "manage", false, "grant create/configure/destroy on that one cache")
+	c.Flags().BoolVar(&admin, "admin", false, "grant instance-wide management (root — every cache, token and account)")
 	c.Flags().DurationVar(&ttl, "ttl", 0, "expire the token after this long (e.g. 720h); 0 = never")
 	return c
 }

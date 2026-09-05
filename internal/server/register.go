@@ -15,10 +15,11 @@ import (
 	"github.com/stubbedev/xilo/internal/store"
 )
 
-// Multi-tenant surface: self-registration with plan selection, instance
+// Self-service surface: self-registration with plan selection, instance
 // policy toggles, plan CRUD, org creation, and pending-user approval. All of
-// it exists only when multi_tenant is on — single-tenant deployments keep
-// zero signup surface.
+// it exists only when self_service is on; without it the admin creates every
+// user and organization. Accounts and caches work the same either way — this
+// flag governs signup, not tenancy.
 
 func (s *Server) registerTenancy(mux *http.ServeMux) {
 	mux.HandleFunc("GET /register", s.handleRegisterForm)
@@ -33,7 +34,7 @@ func (s *Server) registerTenancy(mux *http.ServeMux) {
 
 // registrationOpen reports whether self-registration is currently possible.
 func (s *Server) registrationOpen() bool {
-	return s.cfg.MultiTenant && s.db.SettingBool("allow_registrations", false)
+	return s.cfg.SelfService && s.db.SettingBool("allow_registrations", false)
 }
 
 // validEmail is a light structural check (net/mail) — good enough to reject
@@ -305,7 +306,7 @@ func (s *Server) userCanCreateOrg(u *store.User) bool {
 	if u.Role == "owner" {
 		return true
 	}
-	if !s.cfg.MultiTenant {
+	if !s.cfg.SelfService {
 		return false
 	}
 	personal, err := s.db.GetAccount(u.Name)

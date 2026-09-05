@@ -16,11 +16,13 @@ func pushCmd() *cobra.Command {
 	var jobs int
 	var dryRun, quiet, detach bool
 	c := &cobra.Command{
-		Use:   "push [ns/cache] <path>...",
+		Use:   "push [account/cache] <path>...",
 		Short: "Push store paths (and their closure) to a cache",
 		Long: "Push store paths and their full closure to a cache.\n\n" +
-			"The cache argument is optional once a default is saved (`xilo use <ns/cache>\n" +
-			"--default` or `xilo login --cache`). Parallelism is automatic (the server\n" +
+			"The cache is written <account>/<cache>; a bare name is resolved against the\n" +
+			"account your token belongs to. The argument itself is optional once a default\n" +
+			"is saved (`xilo use <account>/<cache> --default` or `xilo login --cache`).\n" +
+			"Parallelism is automatic (the server\n" +
 			"advertises its capacity); override with --jobs. Pass '-' as the path to read\n" +
 			"newline-separated store paths from stdin (handy for a Nix post-build-hook).\n\n" +
 			"Nix runs a post-build-hook synchronously, so the build waits for the push.\n" +
@@ -35,7 +37,11 @@ func pushCmd() *cobra.Command {
 			}
 			cache, rest := splitCacheArg(args)
 			if cache == "" {
-				return errors.New("no cache given and no default saved — `xilo push <ns/cache> <path>` or `xilo use <ns/cache> --default`")
+				return errors.New("no cache given and no default saved — `xilo push <account>/<cache> <path>` or `xilo use <account>/<cache> --default`")
+			}
+			cache, err := resolveRef(url, token, cache)
+			if err != nil {
+				return err
 			}
 			if len(rest) == 0 {
 				return errors.New("no paths to push")
@@ -56,7 +62,7 @@ func pushCmd() *cobra.Command {
 					cache: cache, paths: paths, url: url, token: token, jobs: jobs, quiet: quiet,
 				})
 			}
-			cl := push.NewClient(url, normRef(cache), token, jobs)
+			cl := push.NewClient(url, cache, token, jobs)
 			cl.DryRun = dryRun
 			cl.Quiet = quiet
 			return cl.Push(cmd.Context(), paths)

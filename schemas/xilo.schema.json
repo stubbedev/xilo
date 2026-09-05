@@ -67,9 +67,13 @@
       ],
       "description": "Outbound transactional email (registration/approval/membership\nnotices). Empty host = mail disabled; everything keeps working, users\njust get no emails."
     },
+    "self_service": {
+      "type": "boolean",
+      "description": "Self-service mode: lets people sign themselves up (governed by the\ninstance settings in the dashboard), offers plans with quotas, and lets\nusers create their own organizations. Off (default) = the admin creates\nevery user and organization.\n\nThis does NOT switch the product between single- and multi-tenant:\naccounts, organizations and per-cache token scopes exist either way.\nOnly who may create users and organizations changes."
+    },
     "multi_tenant": {
       "type": "boolean",
-      "description": "Multi-tenant mode: enables self-registration (governed by the instance\nsettings in the dashboard), plans, and organization creation by users.\nOff (default) = single-tenant: no signup surface at all, everything is\nmanaged by the bootstrap admin."
+      "description": "Deprecated: the old name for self_service, still honored so existing\nconfigs keep working. It was misread as \"turn multi-tenancy off\",\nwhich it never did."
     },
     "admin": {
       "properties": {
@@ -390,6 +394,7 @@
     "data_dir",
     "database",
     "smtp",
+    "self_service",
     "multi_tenant",
     "admin",
     "storage",

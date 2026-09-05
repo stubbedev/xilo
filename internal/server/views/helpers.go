@@ -179,6 +179,22 @@ func snippetNixConf(d CacheData) string {
 		"\nextra-trusted-public-keys = " + d.Cache.PubKey
 }
 
+// snippetToken is the token to render into a snippet: the real one when a
+// token was just minted on this page, otherwise a placeholder to replace.
+func snippetToken(d CacheData) string {
+	if d.Secret != "" {
+		return d.Secret
+	}
+	return "<token>"
+}
+
+// snippetNetrc is the ~/.netrc line a private cache needs. Nix sends the token
+// as HTTP basic auth on pulls, so a substituter line alone gets a 401 — the
+// page used to show only the substituter and leave that to be discovered.
+func snippetNetrc(d CacheData) string {
+	return "machine " + d.Host + " login xilo password " + snippetToken(d)
+}
+
 func snippetFlake(d CacheData) string {
 	return "nixConfig = {\n" +
 		"  extra-substituters = [ \"" + d.BaseURL + "/c/" + d.Cache.Ref() + "\" ];\n" +
@@ -187,11 +203,13 @@ func snippetFlake(d CacheData) string {
 }
 
 func snippetCLI(d CacheData) string {
-	return "xilo login " + d.BaseURL + " --token <token>\nxilo use " + d.Cache.Ref()
+	return "xilo login " + d.BaseURL + " --token " + snippetToken(d) +
+		"\nxilo use " + d.Cache.Ref()
 }
 
 func snippetPush(d CacheData) string {
-	return "XILO_URL=" + d.BaseURL + " XILO_TOKEN=<token> xilo push " + d.Cache.Ref() + " ./result"
+	return "xilo login " + d.BaseURL + " --token " + snippetToken(d) +
+		"\nxilo push " + d.Cache.Ref() + " ./result"
 }
 
 // hxSwapAttrs makes a link fetch `url` via htmx and swap just one region in
@@ -227,9 +245,36 @@ func Remaining(expires int64) int64 {
 	}
 }
 
-// hasPerm reports whether a token carries a permission.
+// hasPerm reports whether a token carries a permission. "manage" is the one
+// switch standing for the three per-cache management perms, so it is set only
+// when the token carries all of them.
 func hasPerm(t store.Token, perm string) bool {
+	if perm == "manage" {
+		for _, m := range store.ManagePerms {
+			if !slices.Contains(t.Perms, m) {
+				return false
+			}
+		}
+		return true
+	}
 	return slices.Contains(t.Perms, perm)
+}
+
+// displayPerms is the badge list for a token: the three management perms
+// collapse back into the single "manage" they were minted as, so the table
+// reads the way the form that created it did.
+func displayPerms(t store.Token) []string {
+	var out []string
+	for _, p := range t.Perms {
+		if slices.Contains(store.ManagePerms, p) {
+			continue
+		}
+		out = append(out, p)
+	}
+	if hasPerm(t, "manage") {
+		out = append(out, "manage")
+	}
+	return out
 }
 
 // ariaSort maps a column's sort state to the aria-sort attribute value.

@@ -72,7 +72,7 @@ type CacheDetail struct {
 
 // CreateCacheReq creates a cache (POST /api/v1/caches).
 type CreateCacheReq struct {
-	Account  string `json:"account"` // "" = default
+	Account  string `json:"account"` // "" = the calling token's account (an admin token must name one)
 	Name     string `json:"name"`
 	Storage  string `json:"storage"` // "" = the server's default_storage
 	Public   bool   `json:"public"`
@@ -115,9 +115,22 @@ type Token struct {
 type CreateTokenReq struct {
 	Account string   `json:"account"` // "" = instance-wide token
 	Name    string   `json:"name"`
-	Caches  []string `json:"caches"` // exactly one cache ("account/cache" for instance tokens); empty only for admin-only tokens
+	Caches  []string `json:"caches"`  // exactly one cache ("account/cache" for instance tokens); empty only for admin-only tokens
+	Perms   []string `json:"perms"`   // pull, push, "manage" (= create+configure+destroy), admin
+	Expires int64    `json:"expires"` // unix; 0 = never
+}
+
+// WhoamiResp describes the calling token to itself (GET /api/v1/whoami). Any
+// live token may read it — a credential that cannot say what it is turns every
+// 401 into a guessing game. It carries no secret and no other token's data.
+type WhoamiResp struct {
+	Token   string   `json:"token"`             // the token's name
+	Account string   `json:"account,omitempty"` // owning account; "" = instance-wide
+	Caches  []string `json:"caches"`            // scope, as stored ("*" = no cache scope)
+	Cache   string   `json:"cache,omitempty"`   // scope resolved to "account/cache"; "" for admin-only tokens
 	Perms   []string `json:"perms"`
 	Expires int64    `json:"expires"` // unix; 0 = never
+	Admin   bool     `json:"admin"`   // carries instance-wide management rights
 }
 
 // CreateTokenResp returns the one-time secret plus the stored metadata.

@@ -56,11 +56,19 @@ type Config struct {
 	// notices). Empty host = mail disabled; everything keeps working, users
 	// just get no emails.
 	SMTP SMTP `yaml:"smtp" json:"smtp"`
-	// Multi-tenant mode: enables self-registration (governed by the instance
-	// settings in the dashboard), plans, and organization creation by users.
-	// Off (default) = single-tenant: no signup surface at all, everything is
-	// managed by the bootstrap admin.
-	MultiTenant bool `yaml:"multi_tenant" json:"multi_tenant"`
+	// Self-service mode: lets people sign themselves up (governed by the
+	// instance settings in the dashboard), offers plans with quotas, and lets
+	// users create their own organizations. Off (default) = the admin creates
+	// every user and organization.
+	//
+	// This does NOT switch the product between single- and multi-tenant:
+	// accounts, organizations and per-cache token scopes exist either way.
+	// Only who may create users and organizations changes.
+	SelfService bool `yaml:"self_service" json:"self_service"`
+	// Deprecated: the old name for self_service, still honored so existing
+	// configs keep working. It was misread as "turn multi-tenancy off",
+	// which it never did.
+	MultiTenant bool `yaml:"multi_tenant" json:"multi_tenant,omitempty"`
 	// Admin dashboard settings.
 	Admin Admin `yaml:"admin" json:"admin"`
 	// Where chunk bytes are stored (the backend named "default").
@@ -300,6 +308,9 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) applyDefaults() {
+	if c.MultiTenant {
+		c.SelfService = true // deprecated alias
+	}
 	if c.Listen == "" {
 		c.Listen = ":8080"
 	}

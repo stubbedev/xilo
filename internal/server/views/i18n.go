@@ -20,7 +20,9 @@ var en = map[string]string{
 	"flash.cachefailed":   "Could not create cache: %v",
 	"flash.cachecreated":  "Cache %s created.",
 	"flash.cachedeleted":  "Cache %s deleted.",
+	"flash.tokencreated":  "Token %q created — copy it now, it is not shown again:",
 	"flash.tokenupdated":  "Token updated.",
+	"flash.pickaccount":   "Pick the account the cache belongs to.",
 	"flash.tokenrevoked":  "Token revoked.",
 	"flash.emailfailed":   "Could not save email:",
 	"flash.emailreq":      "A valid email address is required on this instance.",
@@ -46,7 +48,7 @@ var en = map[string]string{
 	"flash.delself":       "You cannot delete your own account.",
 	"flash.badorgname":    "Invalid organization name.",
 	"flash.nametaken":     "That name is taken.",
-	"flash.orgready":      "Namespace %q ready.",
+	"flash.orgready":      "Account %q ready.",
 	"flash.orgcreated":    "Organization %q created.",
 	"flash.orgdeleted":    "Organization %s deleted.",
 	"flash.ownerdelete":   "Only the owner can delete an organization.",
@@ -59,10 +61,11 @@ var en = map[string]string{
 	"flash.plandeleted":   "Plan deleted.",
 	"flash.regpending":    "Registered — an administrator has to approve your account before you can sign in.",
 	"flash.ratelimited":   "Too many attempts — wait a moment and try again.",
-	// roles (badge + flash fragments)
-	"role.owner": "owner",
-	"role.admin": "admin",
-	"role.user":  "user",
+	// roles: superadmin is the instance-wide one, owner/admin/user are account roles
+	"role.superadmin": "superadmin",
+	"role.owner":      "owner",
+	"role.admin":      "admin",
+	"role.user":       "user",
 
 	// nav / chrome
 	"nav.caches":      "Caches",
@@ -232,6 +235,16 @@ var en = map[string]string{
 	"cache.nocap":   "no cap",
 
 	// caches
+	// first-run checklist
+	"onb.title":     "Get your first cache working",
+	"onb.subtitle":  "Three steps, about a minute.",
+	"onb.step1":     "Create a cache",
+	"onb.step1hint": "It belongs to an account — yours, or an organization you administer.",
+	"onb.step2":     "Create a token for it",
+	"onb.step2hint": "On the cache's own page, so its scope is right by construction.",
+	"onb.step3":     "Point Nix at it",
+	"onb.step3hint": "The cache page shows the nix.conf, flake and CLI snippets, filled in.",
+
 	"caches.title":        "Caches",
 	"caches.empty":        "No caches yet.",
 	"caches.nomatch":      "No caches match your search.",
@@ -260,9 +273,11 @@ var en = map[string]string{
 	"tokens.expires":   "Expires",
 	"tokens.expiry":    "Expiry",
 	"tokens.status":    "Status",
-	"tokens.all":       "all caches",
+	"tokens.root":      "instance root",
+	"tokens.scopehint": "The one cache this token works on. Its account owns the token.",
 	"tokens.push":      "Push",
 	"tokens.pull":      "Pull",
+	"tokens.manage":    "Manage (create, configure, delete this cache)",
 	"tokens.permanent": "Never",
 	"ttl.keep":         "Keep current expiry",
 	"ttl.7d":           "7 days",
@@ -279,6 +294,7 @@ var en = map[string]string{
 	"tok.never":        "never",
 	"perm.push":        "push",
 	"perm.pull":        "pull",
+	"perm.manage":      "manage",
 	"perm.admin":       "admin",
 
 	// cache detail
@@ -287,6 +303,11 @@ var en = map[string]string{
 	"cd.push":        "Push to this cache",
 	"cd.pushhint":    "With a token that has push access.",
 	"cd.private":     "This cache is private — pulls need a token with pull access.",
+	"cd.netrc":       "Add to ~/.netrc",
+	"cd.netrchint":   "Nix sends the token as basic auth, so the substituter alone returns 401. `xilo use` writes this line for you.",
+	"cd.pushtoken":   "Create push token",
+	"cd.pulltoken":   "Create pull token",
+	"cd.tokenhint":   "Scoped to this cache. The secret is shown once, filled into the snippets above.",
 	"cd.settings":    "Settings",
 	"cd.maxsize":     "Max size",
 	"cd.retention":   "Retention",
@@ -394,7 +415,6 @@ var en = map[string]string{
 	"caches.pickaccount": "Pick an account",
 	"caches.needaccount": "You do not administer any account",
 	"caches.storage":     "Storage backend",
-	"tokens.instance":    "Instance-wide",
 	"ns.addmember":       "Add",
 	"ns.removemember":    "Remove member",
 

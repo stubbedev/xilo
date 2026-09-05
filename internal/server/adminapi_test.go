@@ -61,7 +61,7 @@ func TestAdminAPI(t *testing.T) {
 
 	t.Run("cache lifecycle", func(t *testing.T) {
 		resp, body := apiReq(t, ts, http.MethodPost, "/api/v1/caches", adminSecret,
-			api.CreateCacheReq{Name: "apicache", Public: false})
+			api.CreateCacheReq{Account: "default", Name: "apicache", Public: false})
 		if resp.StatusCode != http.StatusCreated {
 			t.Fatalf("create: %d %s", resp.StatusCode, body)
 		}

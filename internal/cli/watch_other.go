@@ -11,7 +11,7 @@ import (
 // watchCmd is Linux-only (uses inotify). Elsewhere it errors with guidance.
 func watchCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "watch <cache>",
+		Use:   "watch <account>/<cache>",
 		Short: "Watch the Nix store and auto-push newly-built paths (Linux only)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

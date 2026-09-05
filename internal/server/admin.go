@@ -232,7 +232,7 @@ func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	if u.Role != "owner" {
-		http.Error(w, "owner role required", http.StatusForbidden)
+		http.Error(w, "instance superadmin required", http.StatusForbidden)
 		return false
 	}
 	return true
@@ -261,6 +261,7 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/cache/{account}/{name}/configure", s.handleConfigureCache)
 	mux.HandleFunc("POST /admin/cache/{account}/{name}/rotate", s.handleRotateKey)
 	mux.HandleFunc("POST /admin/cache/{account}/{name}/delete", s.handleDeleteCache)
+	mux.HandleFunc("POST /admin/cache/{account}/{name}/tokens", s.handleCacheToken)
 	mux.HandleFunc("POST /admin/orgs", s.handleCreateOrg)
 	mux.HandleFunc("POST /admin/org/{slug}/delete", s.handleDeleteOrg)
 	mux.HandleFunc("POST /admin/org/{slug}/members", s.handleSetMember)
@@ -314,8 +315,8 @@ func (s *Server) canManage(u *store.User, nsID int64) bool {
 	return mr == "owner" || mr == "admin"
 }
 
-// visibleCaches lists the caches u may see: all for admins, their namespaces'
-// for everyone else.
+// visibleCaches lists the caches u may see: all for instance admins, their
+// own accounts' for everyone else.
 func (s *Server) visibleCaches(u *store.User) ([]store.Cache, error) {
 	if u.Role == "owner" {
 		return s.db.ListCaches()
@@ -336,7 +337,7 @@ func (s *Server) visibleCaches(u *store.User) ([]store.Cache, error) {
 }
 
 // visibleTokens lists tokens u may see: all for admins, else the tokens of
-// namespaces they own.
+// accounts they administer.
 func (s *Server) visibleTokens(u *store.User) ([]store.Token, error) {
 	if u.Role == "owner" {
 		return s.db.ListTokens()
@@ -359,8 +360,8 @@ func (s *Server) visibleTokens(u *store.User) ([]store.Token, error) {
 	return out, nil
 }
 
-// ownedNamespaces returns the namespaces u may create caches/tokens in.
-func (s *Server) ownedNamespaces(u *store.User) ([]store.Account, error) {
+// ownedAccounts returns the accounts u may create caches/tokens in.
+func (s *Server) ownedAccounts(u *store.User) ([]store.Account, error) {
 	if u.Role == "owner" {
 		return s.db.ListAccounts()
 	}
@@ -437,7 +438,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 		}
 		tokens = kept
 	}
-	owned, err := s.ownedNamespaces(u)
+	owned, err := s.ownedAccounts(u)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -611,7 +612,7 @@ func (s *Server) renderAccount(w http.ResponseWriter, r *http.Request, u *store.
 	}
 	views.Account(views.AccountData{
 		Nav: s.nav(r, u), User: u, TOTPEnabled: u.TOTPEnabled, Passkeys: pks,
-		CanCreateOrg: s.cfg.MultiTenant && s.userCanCreateOrg(u),
+		CanCreateOrg: s.cfg.SelfService && s.userCanCreateOrg(u),
 		Flash:        flash,
 	}).Render(r.Context(), w)
 }
@@ -623,7 +624,7 @@ func (s *Server) handleAccountEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email := strings.TrimSpace(r.FormValue("email"))
-	if s.cfg.MultiTenant && !validEmail(email) {
+	if s.cfg.SelfService && !validEmail(email) {
 		s.accountFlash(w, r, views.T("flash.emailreq"))
 		return
 	}
@@ -667,19 +668,19 @@ func (s *Server) renderInstance(w http.ResponseWriter, r *http.Request, flash vi
 		return
 	}
 	if u.Role != "owner" { // defense in depth: never leak the instance page
-		http.Error(w, "owner role required", http.StatusForbidden)
+		http.Error(w, "instance superadmin required", http.StatusForbidden)
 		return
 	}
 	d := views.InstanceData{
 		Nav: s.nav(r, u), Flash: flash,
-		MultiTenant: s.cfg.MultiTenant,
+		SelfService: s.cfg.SelfService,
 	}
 	var err error
 	if d.Users, err = s.db.ListUsers(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if s.cfg.MultiTenant {
+	if s.cfg.SelfService {
 		if d.Plans, err = s.db.ListPlans(); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -1137,7 +1138,10 @@ func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.FormValue("name"))
 	ns := strings.TrimSpace(r.FormValue("namespace"))
 	if ns == "" {
-		ns = "default"
+		// No silent "default" account: the picker always offers one, and
+		// inventing a name here created an organization nobody asked for.
+		s.flashRedirect(w, r, "/admin", views.T("flash.pickaccount"))
+		return
 	}
 	if strings.Contains(name, "/") || strings.Contains(ns, "/") {
 		s.flashRedirect(w, r, "/admin", views.T("flash.badname"))
@@ -1187,21 +1191,37 @@ func (s *Server) handleCacheDetail(w http.ResponseWriter, r *http.Request) {
 	if u == nil {
 		return
 	}
+	c, ok := s.cacheForUser(w, r, u)
+	if !ok {
+		return
+	}
+	s.renderCache(w, r, u, c, s.popFlash(w, r), "")
+}
+
+// cacheForUser resolves {account}/{name} and enforces visibility: members see
+// their accounts' caches; outsiders get the same 404 as a nonexistent cache
+// (no existence oracle).
+func (s *Server) cacheForUser(w http.ResponseWriter, r *http.Request, u *store.User) (*store.Cache, bool) {
 	c, err := s.db.GetCache(r.PathValue("account"), r.PathValue("name"))
 	if errors.Is(err, store.ErrNotFound) {
 		s.notFound(w, r)
-		return
+		return nil, false
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return nil, false
 	}
-	// Members see their namespaces' caches; outsiders get the same 404 as a
-	// nonexistent cache (no existence oracle).
 	if u.Role != "owner" && s.db.MemberRole(c.AccountID, u.ID) == "" {
 		s.notFound(w, r)
-		return
+		return nil, false
 	}
+	return c, true
+}
+
+// renderCache draws the cache page. `secret` is a freshly minted token, shown
+// exactly once: it is spliced into the setup snippets so the reader copies a
+// working command instead of one with a <token> placeholder in it.
+func (s *Server) renderCache(w http.ResponseWriter, r *http.Request, u *store.User, c *store.Cache, flash views.Flash, secret string) {
 	st, err := s.db.CacheStats(c.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1231,7 +1251,9 @@ func (s *Server) handleCacheDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	views.CacheView(views.CacheData{
 		Nav:       s.nav(r, u),
-		Flash:     s.popFlash(w, r),
+		Flash:     flash,
+		Secret:    secret,
+		CanManage: s.canManage(u, c.AccountID),
 		Cache:     *c,
 		Stats:     st,
 		Dedup:     dedup,
@@ -1288,7 +1310,7 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 }
 
 // manageCache resolves {ns}/{name} and enforces mutate rights (instance admin
-// or namespace owner). Outsiders get 404, not 403 — no existence oracle.
+// or account owner). Outsiders get 404, not 403 — no existence oracle.
 func (s *Server) manageCache(w http.ResponseWriter, r *http.Request) (*store.Cache, bool) {
 	u := s.requireUser(w, r)
 	if u == nil {
@@ -1363,26 +1385,37 @@ func (s *Server) handleDeleteCache(w http.ResponseWriter, r *http.Request) {
 // validates the cache scope within it. Instance-wide tokens are a CLI/API
 // concept, never minted from the dashboard.
 func (s *Server) tokenScope(u *store.User, r *http.Request) (nsID int64, nsName string, caches []string, err error) {
-	nsName = s.activeContext(r, u)
-	if nsName == "" {
-		nsName = u.Name
+	// The submitted cache decides the owning account. It used to come from the
+	// sidebar's viewing-context cookie instead — an invisible input that
+	// silently minted the token against the wrong account whenever the
+	// switcher happened to point elsewhere.
+	ref := strings.TrimSpace(r.FormValue("cache"))
+	nsName, bare, qualified := strings.Cut(ref, "/")
+	if !qualified {
+		// Unqualified: fall back to the viewing context, then the personal
+		// account — the shape older forms posted.
+		bare, nsName = ref, s.activeContext(r, u)
+		if nsName == "" {
+			nsName = u.Name
+		}
+	}
+	if bare == "" {
+		return 0, "", nil, errors.New("pick a cache")
 	}
 	ns, gerr := s.db.GetAccount(nsName)
 	if gerr != nil {
 		return 0, "", nil, errors.New("no such account")
 	}
 	if !s.canManage(u, ns.ID) {
-		return 0, "", nil, errors.New("you do not administer this account")
+		return 0, "", nil, errors.New("you do not administer " + nsName)
 	}
-	nsID = ns.ID
-	// A token is valid for exactly one cache; account tokens store its bare
-	// name within their account.
-	bare, ok := strings.CutPrefix(r.FormValue("cache"), nsName+"/")
-	if !ok || bare == "" {
-		return 0, "", nil, errors.New("pick a cache in " + nsName)
+	// A token is valid for exactly one cache, which must exist in that
+	// account — a scope naming nothing can only ever 401.
+	if _, gerr := s.db.GetCache(nsName, bare); gerr != nil {
+		return 0, "", nil, errors.New("no cache " + nsName + "/" + bare)
 	}
-	caches = []string{bare}
-	return nsID, nsName, caches, nil
+	// Account tokens store the bare name within their account.
+	return ns.ID, nsName, []string{bare}, nil
 }
 
 func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
@@ -1417,8 +1450,50 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleCacheToken mints a token for the cache whose page the form was
+// submitted from. Creating a token from the thing it grants makes its scope
+// and owning account implicit — and correct — instead of depending on where
+// the sidebar's account switcher happened to be pointing.
+func (s *Server) handleCacheToken(w http.ResponseWriter, r *http.Request) {
+	u := s.requireUser(w, r)
+	if u == nil {
+		return
+	}
+	c, ok := s.cacheForUser(w, r, u)
+	if !ok {
+		return
+	}
+	if !s.canManage(u, c.AccountID) {
+		s.flashRedirect(w, r, "/admin/cache/"+c.Ref(), views.T("flash.notadmin"))
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		name = c.Name
+	}
+	perms := formPerms(r)
+	if len(perms) == 0 {
+		perms = []string{"pull"}
+	}
+	var expires int64
+	if r.FormValue("permanent") == "" {
+		if secs, _ := strconv.ParseInt(r.FormValue("ttl"), 10, 64); secs > 0 {
+			expires = time.Now().Unix() + secs
+		}
+	}
+	secret, t, err := s.db.CreateToken(c.AccountID, name, []string{c.Name}, perms, expires)
+	if err != nil {
+		s.flashRedirect(w, r, "/admin/cache/"+c.Ref(), err.Error())
+		return
+	}
+	// Rendered, not redirected: the secret exists only in this response.
+	s.renderCache(w, r, u, c, views.Flash{
+		Msg: fmt.Sprintf(views.T("flash.tokencreated"), t.Name), Code: secret,
+	}, secret)
+}
+
 // manageToken resolves {id} and enforces mutate rights: admins for any token,
-// owners for their namespace's tokens.
+// owners for their account's tokens.
 func (s *Server) manageToken(w http.ResponseWriter, r *http.Request) (*store.Token, *store.User, bool) {
 	u := s.requireUser(w, r)
 	if u == nil {
@@ -1472,10 +1547,11 @@ func (s *Server) handleEditToken(w http.ResponseWriter, r *http.Request) {
 	}
 	// The single-cache scope rule itself is enforced in store.UpdateToken.
 	perms := formPerms(r)
-	// The dashboard only edits push/pull; management perms on CLI/API-minted
-	// tokens survive an edit untouched.
+	// The dashboard edits push/pull/manage. Anything it cannot express —
+	// today just the instance-wide "admin" grant — survives an edit untouched
+	// rather than being silently dropped by a form that never showed it.
 	for _, p := range t.Perms {
-		if p != "push" && p != "pull" && !slices.Contains(perms, p) {
+		if !slices.Contains(store.ManagePerms, p) && p != "push" && p != "pull" && !slices.Contains(perms, p) {
 			perms = append(perms, p)
 		}
 	}
@@ -1578,7 +1654,7 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		s.instanceFlash(w, r, views.T("flash.userreq"))
 		return
 	}
-	if s.cfg.MultiTenant && !validEmail(email) {
+	if s.cfg.SelfService && !validEmail(email) {
 		s.instanceFlash(w, r, views.T("flash.emailreq"))
 		return
 	}
@@ -1675,7 +1751,7 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.userdeleted"), u.Name))
 }
 
-// ---- namespace management ----
+// ---- account management ----
 
 func (s *Server) handleCreateOrg(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
@@ -1826,14 +1902,18 @@ func (s *Server) notifyOrgMembership(u *store.User, org, role string) {
 
 // formPerms reads the token permission checkboxes shared by the create and
 // edit forms.
+// formPerms reads the permission switches. "manage" is one switch standing for
+// the three per-cache management perms the API enforces — before it existed
+// they could not be minted from anywhere, so delegating cache administration
+// meant handing out an instance-root token.
 func formPerms(r *http.Request) []string {
 	var perms []string
-	for _, p := range []string{"push", "pull"} {
+	for _, p := range []string{"push", "pull", "manage"} {
 		if r.FormValue(p) != "" {
 			perms = append(perms, p)
 		}
 	}
-	return perms
+	return store.ExpandPerms(perms)
 }
 
 func hostOf(baseURL string) string {

@@ -26,10 +26,14 @@ database:
   # empty stores them unencrypted. Never change it once set. Prefer XILO_SALT.
   salt: ""
 
-# Multi-tenant mode: unlocks self-registration, plans and user-created
-# organizations (all governed from the dashboard Settings). Off = private
-# single-admin instance with no signup surface at all.
-multi_tenant: false
+# Self-service mode: lets people sign themselves up, offers plans with quotas,
+# and lets users create their own organizations (all governed from the
+# dashboard Settings). Off = the admin creates every user and organization.
+#
+# This does not switch multi-tenancy on or off: accounts, organizations and
+# per-cache token scopes exist either way. Only who may create users and
+# organizations changes. (The old key `multi_tenant` still works.)
+self_service: false
 
 # Outbound transactional email (registration, approval, org-membership
 # notices). Empty host = mail disabled; everything still works, users just

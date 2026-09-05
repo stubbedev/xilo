@@ -7,15 +7,27 @@ import (
 )
 
 func TestDefaultAccount(t *testing.T) {
-	if got := defaultAccount(nil); got != "" {
+	accounts := []store.Account{{Slug: "acme"}, {Slug: "beta"}}
+	if got := defaultAccount(DashboardData{}); got != "" {
 		t.Fatalf("empty = %q", got)
 	}
-	if got := defaultAccount([]store.Account{{Slug: "acme"}, {Slug: "beta"}}); got != "acme" {
+	if got := defaultAccount(DashboardData{Accounts: accounts}); got != "acme" {
 		t.Fatalf("first = %q", got)
 	}
-	// "default" wins wherever it sits in the list.
-	if got := defaultAccount([]store.Account{{Slug: "acme"}, {Slug: "default"}}); got != "default" {
-		t.Fatalf("default preferred = %q", got)
+	// The viewing context wins over everything.
+	d := DashboardData{Accounts: accounts, Nav: Nav{Active: "beta", UserName: "acme"}}
+	if got := defaultAccount(d); got != "beta" {
+		t.Fatalf("active context = %q", got)
+	}
+	// Otherwise the user's own personal account, wherever it sits.
+	d = DashboardData{Accounts: accounts, Nav: Nav{UserName: "beta"}}
+	if got := defaultAccount(d); got != "beta" {
+		t.Fatalf("personal account = %q", got)
+	}
+	// An account literally named "default" is no longer special.
+	d = DashboardData{Accounts: []store.Account{{Slug: "acme"}, {Slug: "default"}}}
+	if got := defaultAccount(d); got != "acme" {
+		t.Fatalf("\"default\" must not win = %q", got)
 	}
 }
 

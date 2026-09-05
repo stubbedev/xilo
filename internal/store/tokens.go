@@ -15,6 +15,33 @@ import (
 // admin = full instance control).
 var ValidPerms = []string{"pull", "push", "create", "configure", "destroy", "admin"}
 
+// ManagePerms are the per-cache management permissions. The UI and CLI issue
+// them as one "manage" switch — three separate grants was a distinction no
+// operator ever wanted to make, and leaving them unmintable meant delegating
+// cache management required handing out instance root.
+var ManagePerms = []string{"create", "configure", "destroy"}
+
+// ExpandPerms turns the "manage" shorthand into the three management perms it
+// stands for, dropping duplicates and anything not in ValidPerms.
+func ExpandPerms(perms []string) []string {
+	var out []string
+	add := func(p string) {
+		if slices.Contains(ValidPerms, p) && !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	for _, p := range perms {
+		if p == "manage" {
+			for _, m := range ManagePerms {
+				add(m)
+			}
+			continue
+		}
+		add(p)
+	}
+	return out
+}
+
 type Token struct {
 	ID        int64
 	AccountID int64  // 0 = instance-wide token
@@ -37,7 +64,7 @@ func (db *DB) CreateToken(accountID int64, name string, caches, perms []string, 
 		return "", nil, err
 	}
 	secret = base64.RawURLEncoding.EncodeToString(raw)
-	if len(perms) == 0 {
+	if perms = ExpandPerms(perms); len(perms) == 0 {
 		perms = []string{"pull"}
 	}
 	if caches, err = scopeOne(accountID, caches, perms); err != nil {
@@ -113,7 +140,7 @@ func (db *DB) GetToken(id int64) (*Token, error) {
 // UpdateToken rewrites a token's metadata (name, scope, perms, expiry). The
 // secret itself is immutable — rotating credentials means a new token.
 func (db *DB) UpdateToken(id int64, name string, caches, perms []string, expires int64) error {
-	if len(perms) == 0 {
+	if perms = ExpandPerms(perms); len(perms) == 0 {
 		perms = []string{"pull"}
 	}
 	var accountID int64
@@ -150,6 +177,17 @@ func (db *DB) lookupLive(secret string, now int64) (*Token, bool) {
 		return nil, false
 	}
 	return t, true
+}
+
+// TokenBySecret resolves a live (not revoked/expired) token from its secret so
+// a caller can describe itself — the read behind `xilo status`. Returns
+// ok=false for an unknown, revoked or expired secret; never distinguishes
+// which, so it is no oracle.
+func (db *DB) TokenBySecret(secret string, now int64) (*Token, bool) {
+	if secret == "" {
+		return nil, false
+	}
+	return db.lookupLive(secret, now)
 }
 
 // Authorize reports whether the secret grants perm on account/cache. A single

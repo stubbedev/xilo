@@ -270,3 +270,34 @@ func TestLoggingAndDurabilityValidation(t *testing.T) {
 		t.Fatalf("explicit values: %q %q", c.Logging, c.Durability)
 	}
 }
+
+// multi_tenant is the old name for self_service. Existing configs must keep
+// working after the rename.
+func TestMultiTenantAliasesSelfService(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "xilo.yaml")
+	if err := os.WriteFile(path, []byte("multi_tenant: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.SelfService {
+		t.Fatal("multi_tenant: true did not enable self_service")
+	}
+
+	if err := os.WriteFile(path, []byte("self_service: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if c, err = Load(path); err != nil || !c.SelfService {
+		t.Fatalf("self_service: %v %v", c.SelfService, err)
+	}
+
+	if err := os.WriteFile(path, []byte("listen: \":9\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if c, err = Load(path); err != nil || c.SelfService {
+		t.Fatalf("default should be off: %v %v", c.SelfService, err)
+	}
+}

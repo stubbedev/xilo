@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stubbedev/xilo/internal/api"
 	"github.com/stubbedev/xilo/internal/config"
 	"github.com/stubbedev/xilo/internal/store"
 )
@@ -98,21 +100,84 @@ func adminTarget(serverFlag, tokenFlag string) (apic *apiClient, cfg *config.Con
 		// the server — operate on the DB directly.
 		if cfg.Database.URL != "" {
 			db, err = openStore(cfg)
+			announceTarget("database " + redactDSN(cfg.Database.URL))
 			return nil, cfg, db, err
 		}
 		if _, statErr := os.Stat(cfg.DBPath()); statErr == nil {
 			db, err = openStore(cfg)
+			announceTarget("local database " + cfg.DBPath())
 			return nil, cfg, db, err
 		}
 	}
 	if remoteURL == "" {
 		// Fresh box, no server known: bootstrap a local DB.
 		_, db, err = openDB()
+		if err == nil {
+			announceTarget("local database " + cfg.DBPath())
+		}
 		return nil, cfg, db, err
 	}
 	_, token := resolveServer(serverFlag, tokenFlag)
 	if token == "" {
 		return nil, nil, nil, fmt.Errorf("admin token required for %s — pass --token, set XILO_TOKEN, or `xilo login`", remoteURL)
 	}
+	announceTarget(remoteURL)
 	return newAPIClient(remoteURL, token), cfg, nil, nil
+}
+
+// announceTarget names where an admin command is about to act. Which of the
+// two it picks depends on whether a config file or database happens to exist
+// on this box, and writing straight to the database of a *running* server
+// bypasses its API and its activity log — so the choice is worth one line of
+// stderr rather than being silent.
+func announceTarget(what string) {
+	fmt.Fprintln(os.Stderr, styleDim("xilo: acting on "+what))
+}
+
+// redactDSN strips credentials from a database URL before printing it.
+func redactDSN(dsn string) string {
+	scheme, rest, ok := strings.Cut(dsn, "://")
+	if !ok {
+		return dsn
+	}
+	if _, host, hasCreds := strings.Cut(rest, "@"); hasCreds {
+		return scheme + "://***@" + host
+	}
+	return dsn
+}
+
+// whoami asks the server to describe the token this client is using. It is the
+// one management call that needs no admin perm — a credential that cannot say
+// what it is turns every 401 into guesswork.
+func (c *apiClient) whoami() (*api.WhoamiResp, error) {
+	var w api.WhoamiResp
+	if err := c.do(http.MethodGet, "/api/v1/whoami", nil, &w); err != nil {
+		return nil, err
+	}
+	return &w, nil
+}
+
+// resolveRef qualifies a cache reference for the client commands. An explicit
+// "account/cache" passes through; a bare name is resolved against the token's
+// own account, which only the server knows. Guessing it client-side is what
+// produced the phantom "default" account.
+func resolveRef(url, token, ref string) (string, error) {
+	account, name := splitRef(ref)
+	if name == "" {
+		return "", errors.New("no cache given")
+	}
+	if account != "" {
+		return account + "/" + name, nil
+	}
+	if token == "" {
+		return "", fmt.Errorf("no token, so %q cannot be resolved to an account — write it as <account>/%s", ref, ref)
+	}
+	who, err := newAPIClient(url, token).whoami()
+	if err != nil {
+		return "", fmt.Errorf("resolving cache %q: %w — or write it as <account>/%s", ref, err, ref)
+	}
+	if who.Account == "" {
+		return "", fmt.Errorf("this token is instance-wide, so it names no account — write the cache as <account>/%s", ref)
+	}
+	return who.Account + "/" + name, nil
 }

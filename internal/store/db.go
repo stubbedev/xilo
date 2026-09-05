@@ -574,13 +574,21 @@ func renameColumnIfPresent(w *sql.DB, pg bool, table, from, to string) error {
 // UNIQUE from name to (account_id, name)), and prefixes existing token cache
 // scopes with "default/" to match the pattern grammar.
 func migrateNamespaces(w *sql.DB, pg bool) error {
-	if _, err := w.Exec(`INSERT INTO accounts (slug, kind, created) VALUES ('default', 'org', ?) ON CONFLICT (slug) DO NOTHING`,
-		time.Now().Unix()); err != nil {
-		return err
-	}
+	// The 'default' account is created only when legacy rows actually need a
+	// home. It used to be inserted unconditionally, so every fresh install
+	// started life with an *organization* named "default" that nobody had
+	// created — half of why the account layer read as magic.
 	var defID int64
-	if err := w.QueryRow(`SELECT id FROM accounts WHERE slug='default'`).Scan(&defID); err != nil {
-		return err
+	ensureDefault := func() (int64, error) {
+		if defID != 0 {
+			return defID, nil
+		}
+		if _, err := w.Exec(`INSERT INTO accounts (slug, kind, created) VALUES ('default', 'org', ?) ON CONFLICT (slug) DO NOTHING`,
+			time.Now().Unix()); err != nil {
+			return 0, err
+		}
+		err := w.QueryRow(`SELECT id FROM accounts WHERE slug='default'`).Scan(&defID)
+		return defID, err
 	}
 
 	// A pre-account SQLite table still carries UNIQUE(name); rebuild it.
@@ -639,8 +647,18 @@ func migrateNamespaces(w *sql.DB, pg bool) error {
 	}
 
 	// Rehome caches that predate accounts.
-	if _, err := w.Exec(`UPDATE caches SET account_id=? WHERE account_id=0`, defID); err != nil {
+	var orphans int
+	if err := w.QueryRow(`SELECT COUNT(*) FROM caches WHERE account_id=0`).Scan(&orphans); err != nil {
 		return err
+	}
+	if orphans > 0 {
+		id, err := ensureDefault()
+		if err != nil {
+			return err
+		}
+		if _, err := w.Exec(`UPDATE caches SET account_id=? WHERE account_id=0`, id); err != nil {
+			return err
+		}
 	}
 
 	// Global-token scope grammar is *, ns/* or ns/cache — a bare "mycache"
@@ -678,6 +696,9 @@ func migrateNamespaces(w *sql.DB, pg bool) error {
 		}
 		if !changed {
 			continue
+		}
+		if _, err := ensureDefault(); err != nil {
+			return err
 		}
 		if _, err := w.Exec(`UPDATE tokens SET caches=? WHERE id=?`, strings.Join(parts, ","), t.id); err != nil {
 			return err

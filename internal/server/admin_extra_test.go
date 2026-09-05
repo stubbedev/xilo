@@ -131,7 +131,7 @@ func TestAdminCSRF(t *testing.T) {
 	resp.Body.Close()
 
 	// same-origin POST → cache created
-	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/admin/caches", strings.NewReader(url.Values{"name": {"csrf-ok"}}.Encode()))
+	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/admin/caches", strings.NewReader(url.Values{"name": {"csrf-ok"}, "namespace": {"default"}}.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", ts.URL)
 	resp, _ = c.Do(req)
@@ -147,7 +147,7 @@ func TestAdminCacheCRUD(t *testing.T) {
 	c := adminClient(t, ts)
 
 	// create via form (private, clamped priority)
-	resp, _ := c.PostForm(ts.URL+"/admin/caches", url.Values{"name": {"web"}, "priority": {"500"}, "private": {"on"}})
+	resp, _ := c.PostForm(ts.URL+"/admin/caches", url.Values{"name": {"web"}, "namespace": {"default"}, "priority": {"500"}, "private": {"on"}})
 	resp.Body.Close()
 	cc, err := db.GetCache("default", "web")
 	if err != nil {
@@ -159,7 +159,7 @@ func TestAdminCacheCRUD(t *testing.T) {
 
 	// duplicate name → flash + redirect back to the dashboard (PRG), and the
 	// landing page carries the error message.
-	resp, _ = c.PostForm(ts.URL+"/admin/caches", url.Values{"name": {"web"}})
+	resp, _ = c.PostForm(ts.URL+"/admin/caches", url.Values{"name": {"web"}, "namespace": {"default"}})
 	if b := body(t, resp); resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin" || !contains(b, "Could not create cache") {
 		t.Errorf("duplicate cache name → %d at %s", resp.StatusCode, resp.Request.URL.Path)
 	}

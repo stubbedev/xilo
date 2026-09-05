@@ -38,7 +38,14 @@ func loginCmd() *cobra.Command {
 				p.Token = token
 			}
 			if cache != "" {
-				p.Cache = normRef(cache)
+				// Resolve a bare name now, while the server is reachable and
+				// the token is at hand, so the saved default is a full
+				// account/cache and every later push needs no round trip.
+				ref, err := resolveRef(p.URL, token, cache)
+				if err != nil {
+					return err
+				}
+				p.Cache = ref
 			}
 			cc.Servers[name] = p
 			if makeDefault || cc.Default == "" {

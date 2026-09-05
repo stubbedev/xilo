@@ -31,11 +31,16 @@ templ Field(id, text string) {
 	}
 }
 
-// FieldHint is a Field with a trailing form.Description hint line.
+// FieldHint is a Field with a trailing form.Description hint line. An empty id
+// means the text heads a group rather than labelling one input, same as Field.
 templ FieldHint(id, text, hint string) {
 	@form.Item() {
-		@form.Label(form.LabelProps{For: id}) {
-			{ text }
+		if id != "" {
+			@form.Label(form.LabelProps{For: id}) {
+				{ text }
+			}
+		} else {
+			<span class="block text-sm font-medium leading-none">{ text }</span>
 		}
 		{ children... }
 		@form.Description() {

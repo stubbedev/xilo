@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -22,9 +23,14 @@ func (s *Server) registerAdminAPI(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/v1/caches/{account}/{name}", s.apiNS("configure", s.apiConfigureCache))
 	mux.HandleFunc("POST /api/v1/caches/{account}/{name}/rotate", s.apiNS("configure", s.apiRotateKey))
 	mux.HandleFunc("DELETE /api/v1/caches/{account}/{name}", s.apiNS("destroy", s.apiDeleteCache))
-	mux.HandleFunc("GET /api/v1/namespaces", s.apiAdmin(s.apiListNamespaces))
-	mux.HandleFunc("POST /api/v1/namespaces", s.apiAdmin(s.apiCreateNamespace))
-	mux.HandleFunc("DELETE /api/v1/accounts/{account}", s.apiAdmin(s.apiDeleteNamespace))
+	mux.HandleFunc("GET /api/v1/accounts", s.apiAdmin(s.apiListAccounts))
+	mux.HandleFunc("POST /api/v1/accounts", s.apiAdmin(s.apiCreateAccount))
+	mux.HandleFunc("DELETE /api/v1/accounts/{account}", s.apiAdmin(s.apiDeleteAccount))
+	// "namespace" was this layer's old name; the routes stay so existing
+	// clients and the k6 conformance suite keep working.
+	mux.HandleFunc("GET /api/v1/namespaces", s.apiAdmin(s.apiListAccounts))
+	mux.HandleFunc("POST /api/v1/namespaces", s.apiAdmin(s.apiCreateAccount))
+	mux.HandleFunc("GET /api/v1/whoami", s.apiWhoami)
 	mux.HandleFunc("GET /api/v1/tokens", s.apiAdmin(s.apiListTokens))
 	mux.HandleFunc("POST /api/v1/tokens", s.apiAdmin(s.apiCreateToken))
 	mux.HandleFunc("POST /api/v1/tokens/{id}/revoke", s.apiAdmin(s.apiRevokeToken))
@@ -118,7 +124,15 @@ func (s *Server) apiCreateCache(w http.ResponseWriter, r *http.Request) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Account = strings.TrimSpace(req.Account)
 	if req.Account == "" {
-		req.Account = "default"
+		// No account named: use the calling token's own. Defaulting to the
+		// literal name "default" used to conjure an organization nobody asked
+		// for, which then sat in the dashboard beside real accounts.
+		t, ok := s.db.TokenBySecret(extractToken(r), time.Now().Unix())
+		if !ok || t.Account == "" {
+			apiError(w, http.StatusBadRequest, "no account given — send \"account\", or use a token scoped to one")
+			return
+		}
+		req.Account = t.Account
 	}
 	if strings.Contains(req.Name, "/") || strings.Contains(req.Account, "/") {
 		apiError(w, http.StatusBadRequest, "names cannot contain '/'")
@@ -163,7 +177,7 @@ func (s *Server) apiCreateCache(w http.ResponseWriter, r *http.Request) {
 	jsonStatus(w, http.StatusCreated, apiCache(c))
 }
 
-func (s *Server) apiListNamespaces(w http.ResponseWriter, r *http.Request) {
+func (s *Server) apiListAccounts(w http.ResponseWriter, r *http.Request) {
 	nss, err := s.db.ListAccounts()
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
@@ -171,24 +185,49 @@ func (s *Server) apiListNamespaces(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]api.AccountResp, 0, len(nss))
 	for _, ns := range nss {
-		out = append(out, api.AccountResp{Name: ns.Slug, Created: ns.Created})
+		out = append(out, api.AccountResp{Name: ns.Slug, Kind: ns.Kind, Created: ns.Created})
 	}
 	jsonOut(w, out)
 }
 
-func (s *Server) apiCreateNamespace(w http.ResponseWriter, r *http.Request) {
+// apiWhoami describes the calling token to itself. Deliberately not behind
+// apiAdmin: a token that cannot say what it is turns every 401 into guesswork,
+// and it reveals nothing the holder of the secret does not already have.
+func (s *Server) apiWhoami(w http.ResponseWriter, r *http.Request) {
+	t, ok := s.db.TokenBySecret(extractToken(r), time.Now().Unix())
+	if !ok {
+		s.metrics.authFailures.Add(1)
+		apiError(w, http.StatusUnauthorized, "no live token on this request")
+		return
+	}
+	resp := api.WhoamiResp{
+		Token: t.Name, Account: t.Account, Caches: t.Caches, Perms: t.Perms,
+		Expires: t.Expires, Admin: slices.Contains(t.Perms, "admin"),
+	}
+	// Resolve the stored scope to the "account/cache" shape every other
+	// surface uses; admin-only tokens ("*") carry no cache and stay empty.
+	if len(t.Caches) == 1 && t.Caches[0] != "*" {
+		resp.Cache = t.Caches[0]
+		if t.Account != "" {
+			resp.Cache = t.Account + "/" + t.Caches[0]
+		}
+	}
+	jsonOut(w, resp)
+}
+
+func (s *Server) apiCreateAccount(w http.ResponseWriter, r *http.Request) {
 	var req api.CreateAccountReq
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" || strings.ContainsAny(req.Name, "/ ") {
-		apiError(w, http.StatusBadRequest, "invalid namespace name")
+		apiError(w, http.StatusBadRequest, "invalid account name")
 		return
 	}
 	ns, err := s.db.EnsureAccount(req.Name, "org")
 	if errors.Is(err, store.ErrSlugReserved) {
-		apiError(w, http.StatusConflict, "namespace name is reserved")
+		apiError(w, http.StatusConflict, "account name is reserved")
 		return
 	}
 	if err != nil {
@@ -198,10 +237,10 @@ func (s *Server) apiCreateNamespace(w http.ResponseWriter, r *http.Request) {
 	jsonStatus(w, http.StatusCreated, api.AccountResp{Name: ns.Slug, Created: ns.Created})
 }
 
-func (s *Server) apiDeleteNamespace(w http.ResponseWriter, r *http.Request) {
+func (s *Server) apiDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	ns, err := s.db.GetAccount(r.PathValue("account"))
 	if errors.Is(err, store.ErrNotFound) {
-		apiError(w, http.StatusNotFound, "no such namespace")
+		apiError(w, http.StatusNotFound, "no such account")
 		return
 	}
 	if err != nil {
@@ -318,7 +357,7 @@ func (s *Server) apiCreateToken(w http.ResponseWriter, r *http.Request) {
 	if req.Account != "" {
 		ns, err := s.db.GetAccount(req.Account)
 		if errors.Is(err, store.ErrNotFound) {
-			apiError(w, http.StatusBadRequest, "no such namespace")
+			apiError(w, http.StatusBadRequest, "no such account")
 			return
 		}
 		if err != nil {

@@ -19,7 +19,7 @@ import (
 // mtServer is newTestServerCfg with multi-tenant mode on.
 func mtServer(t *testing.T) (*Server, *store.DB, *httptest.Server) {
 	t.Helper()
-	return newTestServerCfg(t, func(c *config.Config) { c.MultiTenant = true })
+	return newTestServerCfg(t, func(c *config.Config) { c.SelfService = true })
 }
 
 // postFlash POSTs a form and returns the landing path + body after the PRG
@@ -561,6 +561,9 @@ func TestAPINamespaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.EnsureAccount("default", "org"); err != nil {
+		t.Fatal(err)
+	}
 	pushTok, _, _ := db.CreateToken(0, "pleb", []string{"default/c"}, []string{"push"}, 0)
 
 	// non-admin tokens are refused on every verb
@@ -575,7 +578,7 @@ func TestAPINamespaces(t *testing.T) {
 		}
 	}
 
-	// list includes the built-in default namespace
+	// list includes the account created above
 	resp, b := apiReq(t, ts, http.MethodGet, "/api/v1/namespaces", adminTok, nil)
 	var nss []api.AccountResp
 	jsonUnmarshal(t, b, &nss)

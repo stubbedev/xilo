@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -20,19 +21,46 @@ import (
 // commands (cache, token, gc). --server forces remote API mode.
 var adminServer, adminToken string
 
-// splitRef splits a "ns/name" cache reference; a bare name lands in the
-// "default" namespace.
-func splitRef(s string) (ns, name string) {
+// splitRef splits an "account/name" cache reference. A bare name comes back
+// with an empty account for the caller to resolve.
+//
+// It deliberately does not fall back to an account called "default": that
+// fallback meant `xilo cache create mycache` silently created an
+// *organization* named "default", which then sat in the dashboard next to real
+// accounts forever.
+func splitRef(s string) (account, name string) {
 	if before, after, ok := strings.Cut(s, "/"); ok {
 		return before, after
 	}
-	return "default", s
+	return "", s
 }
 
-// normRef canonicalizes a cache reference to "ns/name".
-func normRef(s string) string {
-	ns, name := splitRef(s)
-	return ns + "/" + name
+// resolveAdminRef qualifies a cache reference for an admin command: an
+// explicit "account/name" passes through, a bare name is resolved against the
+// token's own account (remote) or the instance's single account (local).
+func resolveAdminRef(apic *apiClient, db *store.DB, ref string) (account, name string, err error) {
+	account, name = splitRef(ref)
+	if name == "" {
+		return "", "", errors.New("no cache name given")
+	}
+	if account != "" {
+		return account, name, nil
+	}
+	if apic != nil {
+		who, werr := apic.whoami()
+		if werr != nil {
+			return "", "", fmt.Errorf("resolving %q: %w — write it as <account>/%s", ref, werr, ref)
+		}
+		if who.Account == "" {
+			return "", "", fmt.Errorf("this token is instance-wide, so it names no account — write the cache as <account>/%s", ref)
+		}
+		return who.Account, name, nil
+	}
+	account, err = db.ResolveAccount()
+	if err != nil {
+		return "", "", err
+	}
+	return account, name, nil
 }
 
 // addAdminFlags registers the remote-mode flags on an admin command.
@@ -100,7 +128,10 @@ func cacheCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ns, name := splitRef(args[0])
+			ns, name, err := resolveAdminRef(apic, db, args[0])
+			if err != nil {
+				return err
+			}
 			if apic != nil {
 				var ca api.Cache
 				if err := apic.do(http.MethodPost, "/api/v1/caches",
@@ -207,7 +238,10 @@ func cacheInfoCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ns, cname := splitRef(args[0])
+			ns, cname, err := resolveAdminRef(apic, db, args[0])
+			if err != nil {
+				return err
+			}
 			var d api.CacheDetail
 			base := cfg.BaseURL
 			if apic != nil {
@@ -290,7 +324,10 @@ func cacheConfigureCmd() *cobra.Command {
 				}
 				req.MaxBytes = &b
 			}
-			ns, cname := splitRef(args[0])
+			ns, cname, err := resolveAdminRef(apic, db, args[0])
+			if err != nil {
+				return err
+			}
 			var ca api.Cache
 			if apic != nil {
 				if err := apic.do(http.MethodPatch, "/api/v1/caches/"+ns+"/"+cname, req, &ca); err != nil {
@@ -349,7 +386,10 @@ func cacheRotateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ns, cname := splitRef(args[0])
+			ns, cname, err := resolveAdminRef(apic, db, args[0])
+			if err != nil {
+				return err
+			}
 			var name, pubkey string
 			if apic != nil {
 				var ca api.Cache
@@ -389,7 +429,10 @@ func cacheDestroyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ns, cname := splitRef(args[0])
+			ns, cname, err := resolveAdminRef(apic, db, args[0])
+			if err != nil {
+				return err
+			}
 			if apic != nil {
 				if err := apic.do(http.MethodDelete, "/api/v1/caches/"+ns+"/"+cname, nil, nil); err != nil {
 					return err

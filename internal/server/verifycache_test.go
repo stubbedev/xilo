@@ -233,7 +233,7 @@ func TestVerifyCacheLRU(t *testing.T) {
 // skip_upload_verify set — the cache must not become a way around that.
 func TestVerifyCacheHonorsMultiTenantVerification(t *testing.T) {
 	s, db, ts, st := newCountingServer(t)
-	s.cfg.MultiTenant = true
+	s.cfg.SelfService = true
 	s.cfg.Security.SkipUploadVerify = true
 	if _, err := db.CreateCache("default", "one", true, 40); err != nil {
 		t.Fatal(err)

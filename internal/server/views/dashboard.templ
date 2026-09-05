@@ -6,6 +6,7 @@ import (
 
 	"github.com/stubbedev/xilo/internal/store"
 
+	"github.com/templui/templui/components/badge"
 	"github.com/templui/templui/components/button"
 	"github.com/templui/templui/components/card"
 	"github.com/templui/templui/components/dialog"
@@ -45,18 +46,7 @@ templ Dashboard(d DashboardData) {
 				if d.CacheQuery != "" {
 					@EmptyState("database", T("caches.nomatch"))
 				} else {
-					@EmptyState("database", T("caches.empty")) {
-						if len(d.Accounts) > 0 {
-							@dialog.Trigger(dialog.TriggerProps{For: "dlg-cache"}) {
-								@button.Button(button.Props{Size: button.SizeSm}) {
-									@Icon("plus")
-									<span>{ T("caches.new") }</span>
-								}
-							}
-						} else {
-							@disabledCreate(T("caches.new"), T("caches.needaccount"))
-						}
-					}
+					@onboarding(d)
 				}
 			} else {
 				@card.Card(card.Props{Class: "divide-y p-0"}) {
@@ -121,6 +111,54 @@ templ Dashboard(d DashboardData) {
 	}
 }
 
+// onboarding replaces the empty cache list with the three steps that get a
+// first cache working. A blank dashboard with two disabled buttons told a new
+// operator nothing about what to do next.
+templ onboarding(d DashboardData) {
+	@card.Card(card.Props{Class: "border-dashed bg-transparent shadow-none"}) {
+		@card.Header() {
+			@card.Title() {
+				{ T("onb.title") }
+			}
+			@card.Description() {
+				{ T("onb.subtitle") }
+			}
+		}
+		@card.Content(card.ContentProps{Class: "space-y-4"}) {
+			@onboardStep("1", T("onb.step1"), T("onb.step1hint")) {
+				if len(d.Accounts) > 0 {
+					@dialog.Trigger(dialog.TriggerProps{For: "dlg-cache"}) {
+						@button.Button(button.Props{Size: button.SizeSm}) {
+							@Icon("plus")
+							<span>{ T("caches.new") }</span>
+						}
+					}
+				} else {
+					@disabledCreate(T("caches.new"), T("caches.needaccount"))
+				}
+			}
+			@onboardStep("2", T("onb.step2"), T("onb.step2hint")) {
+			}
+			@onboardStep("3", T("onb.step3"), T("onb.step3hint")) {
+			}
+		}
+	}
+}
+
+// onboardStep is one numbered row of the first-run checklist.
+templ onboardStep(n, title, hint string) {
+	<div class="flex items-start gap-3 rounded-lg border p-4">
+		<span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground tabular-nums">{ n }</span>
+		<div class="min-w-0 flex-1 space-y-1">
+			<p class="text-sm font-medium">{ title }</p>
+			<p class="text-xs text-muted-foreground">{ hint }</p>
+		</div>
+		<div class="shrink-0">
+			{ children... }
+		</div>
+	</div>
+}
+
 // cacheRow is one cache line: name, visibility, footprint, usage bar.
 templ cacheRow(u CacheUsage, bytes func(int64) string) {
 	<div class="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -156,14 +194,18 @@ templ tokenRow(d DashboardData, t store.Token) {
 			{ t.Name }
 		}
 		@table.Cell() {
-			@PermBadges(t.Perms)
+			@PermBadges(displayPerms(t))
 		}
 		@table.Cell() {
 			if t.AccountID != 0 {
 				<span class="text-muted-foreground">{ t.Account }:</span>
 			}
 			if scopeAll(t.Caches) {
-				<span class="text-muted-foreground">{ T("tokens.all") }</span>
+				// Not "all caches": this scope grants no cache access at all,
+				// it grants instance-wide management. Say the dangerous thing.
+				@badge.Badge(badge.Props{Variant: badge.VariantDestructive}) {
+					{ T("tokens.root") }
+				}
 			} else {
 				{ strings.Join(t.Caches, ", ") }
 			}
@@ -230,7 +272,7 @@ templ newCacheDialog(d DashboardData) {
 			}
 			<form method="post" action="/admin/caches" class="mt-2 space-y-4">
 				@Field("", T("caches.account")) {
-					@AccountSelect("namespace", activeOr(d.Nav, defaultAccount(d.Accounts)), T("caches.pickaccount"), d.Accounts)
+					@AccountSelect("namespace", defaultAccount(d), T("caches.pickaccount"), d.Accounts)
 				}
 				@Field("cache-name", T("caches.name")) {
 					@input.Input(input.Props{ID: "cache-name", Name: "name", Placeholder: T("ph.cachename"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-zA-Z0-9_]+"}})
@@ -312,16 +354,14 @@ templ tokenFormBody(action string, t *store.Token, d DashboardData, submitIcon, 
 		@Field(dlgID+"-name", T("tokens.name")) {
 			@input.Input(input.Props{ID: dlgID + "-name", Name: "name", Value: tokenName(t), Placeholder: T("ph.tokenname"), Required: true})
 		}
-		@Field(dlgID+"-ns", T("caches.account")) {
-			@input.Input(input.Props{ID: dlgID + "-ns", Value: tokenAccount(t, d), Disabled: true})
-		}
-		@Field("", T("tokens.scope")) {
+		@FieldHint("", T("tokens.scope"), T("tokens.scopehint")) {
 			@ScopeSelect("cache", tokenScopeValue(t, d), tokenScopeCaches(t, d))
 		}
 		@Field("", T("tokens.perms")) {
 			<div class="space-y-2">
 				@PermSwitchID(dlgID+"-push", "push", "on", T("tokens.push"), tokenPerm(t, "push"))
 				@PermSwitchID(dlgID+"-pull", "pull", "on", T("tokens.pull"), tokenPerm(t, "pull"))
+				@PermSwitchID(dlgID+"-manage", "manage", "on", T("tokens.manage"), tokenPerm(t, "manage"))
 			</div>
 		}
 		@Field("", T("tokens.expiry")) {

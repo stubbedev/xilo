@@ -128,7 +128,7 @@ func (s *Server) Handler() http.Handler {
 
 	s.registerAdmin(mux)
 	s.registerAdminAPI(mux)
-	if s.cfg.MultiTenant {
+	if s.cfg.SelfService {
 		s.registerTenancy(mux)
 	}
 	s.registerPasskeyRoutes(mux)

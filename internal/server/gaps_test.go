@@ -218,11 +218,22 @@ func TestCreateAndEditTokenDefaults(t *testing.T) {
 	bootstrapAdmin(t, db)
 	c := adminClient(t, ts)
 
+	if _, err := db.CreateCache("admin", "somecache", true, 40); err != nil {
+		t.Fatal(err)
+	}
+
 	// no perms, no ttl → pull-only, never expires; the cache is mandatory
 	resp, _ := c.PostForm(ts.URL+"/admin/tokens", url.Values{"name": {"nocache"}})
 	resp.Body.Close()
 	if toks, _ := db.ListTokens(); len(toks) != 0 {
 		t.Fatalf("cache-less token was created: %+v", toks)
+	}
+
+	// a scope naming a cache that does not exist can only ever 401 — refuse it
+	resp, _ = c.PostForm(ts.URL+"/admin/tokens", url.Values{"name": {"ghost"}, "cache": {"admin/nosuch"}})
+	resp.Body.Close()
+	if toks, _ := db.ListTokens(); len(toks) != 0 {
+		t.Fatalf("token scoped to a nonexistent cache was created: %+v", toks)
 	}
 	resp, _ = c.PostForm(ts.URL+"/admin/tokens", url.Values{"name": {"minimal"}, "cache": {"admin/somecache"}})
 	resp.Body.Close()

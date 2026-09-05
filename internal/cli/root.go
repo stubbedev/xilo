@@ -22,7 +22,7 @@ func Root() *cobra.Command {
 		"path to config YAML (env XILO_CONFIG)")
 	root.AddCommand(
 		serveCmd(), pushCmd(), watchCmd(),
-		loginCmd(), useCmd(),
+		loginCmd(), useCmd(), statusCmd(),
 		cacheCmd(), tokenCmd(), gcCmd(), fsckCmd(),
 	)
 	return root

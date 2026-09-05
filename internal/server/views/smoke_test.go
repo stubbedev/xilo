@@ -64,7 +64,7 @@ func TestSmokeAllComponents(t *testing.T) {
 		{"Login-nopw-passkeys", views.Login(true, true, true, views.Flash{Msg: "bad login"}), "passkey"},
 		{"LoginCode", views.LoginCode("pending-id", views.Flash{Msg: "wrong code"}), "code"},
 		{"Account", views.Account(views.AccountData{Nav: views.Nav{LoggedIn: true, UserName: "admin"}, User: &store.User{Name: "admin", Role: "owner"}, Passkeys: []store.Passkey{{ID: 1, Name: "yubikey", Created: 1}}}), "yubikey"},
-		{"Instance", views.Instance(views.InstanceData{Nav: views.Nav{LoggedIn: true, UserName: "admin", IsAdmin: true}, Users: []store.User{{ID: 1, Name: "admin", Role: "owner"}}, Orgs: []views.OrgInfo{{Account: store.Account{ID: 1, Slug: "acme", Kind: "org"}, Members: []store.AccountMember{{UserID: 1, UserName: "admin", Role: "admin"}}}}, MultiTenant: true, AllowRegs: true, Plans: []store.Plan{{ID: 1, Name: "free", MaxCaches: 3, Public: true}}, Flash: views.Flash{Msg: "saved"}}), "saved"},
+		{"Instance", views.Instance(views.InstanceData{Nav: views.Nav{LoggedIn: true, UserName: "admin", IsAdmin: true}, Users: []store.User{{ID: 1, Name: "admin", Role: "owner"}}, Orgs: []views.OrgInfo{{Account: store.Account{ID: 1, Slug: "acme", Kind: "org"}, Members: []store.AccountMember{{UserID: 1, UserName: "admin", Role: "admin"}}}}, SelfService: true, AllowRegs: true, Plans: []store.Plan{{ID: 1, Name: "free", MaxCaches: 3, Public: true}}, Flash: views.Flash{Msg: "saved"}}), "saved"},
 		{"PwHint-empty", views.PwHint(""), ""},
 		{"PwHint-short", views.PwHint("short"), "short"},
 		{"PwHint-weak", views.PwHint("weak"), "Weak"},
@@ -164,7 +164,8 @@ func TestSmokeCacheView(t *testing.T) {
 			t.Errorf("CacheView missing %q", want)
 		}
 	}
-	// Private cache, no paths, no query → empty state + private note.
+	// Private cache, no paths, no query → empty state + private note, and the
+	// netrc line nix needs for a private pull.
 	priv := d
 	priv.Cache.Public = false
 	priv.Cache.MaxBytes = 0
@@ -172,7 +173,25 @@ func TestSmokeCacheView(t *testing.T) {
 	priv.PathQuery = ""
 	priv.PathTotal = 0
 	priv.PathPager = views.Pager{Page: 1, Pages: 1}
-	render(t, "CacheView-private-empty", views.CacheView(priv))
+	out = render(t, "CacheView-private-empty", views.CacheView(priv))
+	if !strings.Contains(out, "machine localhost:8080 login xilo password") {
+		t.Error("private CacheView has no netrc line")
+	}
+
+	// With mint rights and a fresh secret: the token controls appear and the
+	// snippets carry the real secret instead of a <token> placeholder.
+	minted := priv
+	minted.CanManage = true
+	minted.Secret = "s3cr3t-token-value"
+	out = render(t, "CacheView-minted", views.CacheView(minted))
+	for _, want := range []string{"Create push token", "Create pull token", "s3cr3t-token-value"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("minted CacheView missing %q", want)
+		}
+	}
+	if strings.Contains(out, "&lt;token&gt;") {
+		t.Error("minted CacheView still shows a <token> placeholder")
+	}
 	// Query with no matches → nomatch branch.
 	nomatch := priv
 	nomatch.PathQuery = "zzz"

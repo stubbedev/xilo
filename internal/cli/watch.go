@@ -22,7 +22,7 @@ import (
 func watchCmd() *cobra.Command {
 	var url, token, storeDir string
 	c := &cobra.Command{
-		Use:   "watch <ns/cache>",
+		Use:   "watch <account>/<cache>",
 		Short: "Watch the Nix store and auto-push newly-built paths (Linux)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -30,9 +30,13 @@ func watchCmd() *cobra.Command {
 			if url == "" {
 				return errNoServer
 			}
-			cl := push.NewClient(url, normRef(args[0]), token, 0)
+			cache, err := resolveRef(url, token, args[0])
+			if err != nil {
+				return err
+			}
+			cl := push.NewClient(url, cache, token, 0)
 			cl.Quiet = true
-			fmt.Printf("watching %s → pushing to %s\n", storeDir, args[0])
+			fmt.Printf("watching %s → pushing to %s\n", storeDir, cache)
 
 			// Decouple pushing from the inotify read loop: a buffered queue +
 			// worker keeps draining the fd so a build burst can't overflow the

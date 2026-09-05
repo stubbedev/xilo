@@ -3,6 +3,8 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -282,4 +284,30 @@ func (db *DB) MemberRole(accountID, userID int64) string {
 		return ""
 	}
 	return role
+}
+
+// ResolveAccount picks the account an unqualified cache name belongs to.
+//
+// There is deliberately no account named "default": inventing one meant
+// `xilo cache create mycache` silently created an *organisation* called
+// "default" that then sat in the dashboard beside real accounts forever. When
+// the instance has exactly one account the answer is unambiguous; otherwise
+// the caller is told to write the name out in full.
+func (db *DB) ResolveAccount() (string, error) {
+	accs, err := db.ListAccounts()
+	if err != nil {
+		return "", err
+	}
+	switch len(accs) {
+	case 0:
+		return "", errors.New("no accounts exist yet — write the cache as <account>/<name> and it will be created")
+	case 1:
+		return accs[0].Slug, nil
+	}
+	names := make([]string, 0, len(accs))
+	for _, a := range accs {
+		names = append(names, a.Slug)
+	}
+	return "", fmt.Errorf("this instance has several accounts (%s) — write the cache as <account>/<name>",
+		strings.Join(names, ", "))
 }

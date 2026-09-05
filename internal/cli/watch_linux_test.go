@@ -105,7 +105,7 @@ func TestWatchCmdRunsAndStops(t *testing.T) {
 	os.Stdout = devnull
 
 	root := Root()
-	root.SetArgs([]string{"watch", "c", "--store", storeDir, "--url", "http://127.0.0.1:1"})
+	root.SetArgs([]string{"watch", "default/c", "--store", storeDir, "--url", "http://127.0.0.1:1"})
 	done := make(chan error, 1)
 	go func() { done <- root.ExecuteContext(ctx) }()
 

@@ -36,10 +36,11 @@ func TestAccountLifecycle(t *testing.T) {
 	}
 
 	db.EnsureAccount("beta", "org")
-	// A "default" account exists from DB open; ListAccounts is slug-sorted.
+	// A fresh database has no accounts of its own — in particular no
+	// "default" — so this lists exactly what was created, slug-sorted.
 	list, err := db.ListAccounts()
-	if err != nil || len(list) != 3 ||
-		list[0].Slug != "acme" || list[1].Slug != "beta" || list[2].Slug != "default" {
+	if err != nil || len(list) != 2 ||
+		list[0].Slug != "acme" || list[1].Slug != "beta" {
 		t.Fatalf("ListAccounts: %v %v", list, err)
 	}
 }

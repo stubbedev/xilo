@@ -18,7 +18,7 @@ import (
 // TestRegistrationFlow covers the multi-tenant signup surface: gated routes,
 // plan selection, org creation at signup, approval, and create-time quotas.
 func TestRegistrationFlow(t *testing.T) {
-	_, db, ts := newTestServerCfg(t, func(c *config.Config) { c.MultiTenant = true })
+	_, db, ts := newTestServerCfg(t, func(c *config.Config) { c.SelfService = true })
 	bootstrapAdmin(t, db)
 
 	// Closed by default.

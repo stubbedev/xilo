@@ -47,7 +47,7 @@ Feature parity, and where xilo goes further:
 | namespaces / multi-tenancy | ✓ first-class, with users + roles | per-cache only |
 | server-managed signing keys | ✓ (+ rotation) | ✓ |
 | token revocation | ✓ instant (DB-backed) | ✗ (stateless JWT) |
-| token scopes | `*`, `ns/*`, `ns/cache` + mgmt perms | JWT cache patterns |
+| token scopes | exactly one `account/cache`, + `manage`/`admin` perms | JWT cache patterns |
 | retention / GC | time **and size caps** (per cache + global LRU) | time only |
 | missing data | fails closed (clean error) | can serve truncated 200s |
 | web dashboard | ✓ (users, accounts, tokens, live status, activities) | ✗ |
@@ -72,7 +72,7 @@ Admin commands run against the server's API, so point them at it once:
 
 ```sh
 xilo login http://localhost:8080 --token <admin-token>
-xilo cache create mycache          # prints the public key + nix.conf snippet
+xilo cache create myteam/mycache   # prints the public key + nix.conf snippet
 ```
 
 (On the server box itself — where `xilo.yaml` lives — the same commands work
@@ -157,28 +157,31 @@ order are in [Configuration](#configuration).
 Add to `nix.conf` (the cache page in the dashboard shows this filled in):
 
 ```
-extra-substituters = http://localhost:8080/c/default/mycache
+extra-substituters = http://localhost:8080/c/myteam/mycache
 extra-trusted-public-keys = mycache:<public-key>
 ```
 
 Cache URLs are always `/c/{account}/{cache}` — the `/c/` mount means account
-names can never collide with application routes. Bare names in the CLI mean
-the `default` account.
+names can never collide with application routes. A bare name in the CLI is
+resolved against the account your token belongs to; nothing is ever created in
+an invented account called `default`.
 
 ### Push
 
 Nix can't upload to an HTTP cache, so xilo ships its own client:
 
 ```sh
-xilo cache create mycache
-# in the dashboard: create a token with "push" → copy the secret
-XILO_URL=http://localhost:8080 XILO_TOKEN=<secret> xilo push mycache ./result
+xilo cache create myteam/mycache
+# on the cache's page in the dashboard: "Create push token" → copy the snippet
+xilo login http://localhost:8080 --token <secret>
+xilo push myteam/mycache ./result
+xilo status                       # what am I pushing as, and where?
 ```
 
 Parallelism is automatic (the server advertises its capacity; override with `--jobs`).
 Paths already signed by a configured `upstream_keys` entry (e.g. `cache.nixos.org-1`) are skipped.
 Add `--dry-run` to preview, `--quiet` for hooks. With a saved default target
-(`xilo use mycache --default`) the cache argument is optional: `xilo push ./result`.
+(`xilo use myteam/mycache --default`) the cache argument is optional: `xilo push ./result`.
 
 ### Automatic push
 
@@ -187,7 +190,7 @@ Point Nix's `post-build-hook` at [`examples/post-build-hook.sh`](./examples/post
 inotify watcher:
 
 ```sh
-xilo watch mycache   # auto-pushes newly-built store paths
+xilo watch myteam/mycache   # auto-pushes newly-built store paths
 ```
 
 Nix runs a `post-build-hook` synchronously, so the build waits for the push.
@@ -221,11 +224,12 @@ Full workflow in [`examples/github-actions.yml`](./examples/github-actions.yml).
 ### Convenience
 
 ```sh
-xilo login https://cache.example.com --token <secret>   # save a server profile
-xilo login https://other.example.com --name work        # more servers: named profiles (-p work)
-xilo use mycache --default                               # write nix.conf (+ netrc) and make it the default push target
-xilo push ./result                                       # no cache argument needed anymore
-xilo use mycache --remove                                # undo nix.conf
+xilo login https://cache.example.com --token <secret> # save a server profile
+xilo login https://other.example.com --name work     # more servers: named profiles (-p work)
+xilo use myteam/mycache --default                    # write nix.conf (+ netrc), make it the default push target
+xilo push ./result                                   # no cache argument needed anymore
+xilo status                                          # profile, token, scope, expiry, nix.conf, netrc
+xilo use myteam/mycache --remove                     # undo nix.conf
 ```
 
 ## Behind a reverse proxy (TLS)
@@ -266,11 +270,20 @@ S3 backend only the DB needs backing up.
 ## Tokens & private caches
 
 - Tokens are opaque secrets, stored hashed, **revocable** from the dashboard or `xilo token revoke <id>`.
-- Scopes are patterns: `*`, `ns/*` or `ns/cache`. A token minted inside a
-  namespace can never reach outside it.
-- Perms: `pull`, `push`, plus management bits for the HTTP API —
-  `create-cache`, `configure-cache`, `destroy-cache` (scoped like pull/push)
-  and `admin` (instance-wide; drives remote `xilo cache|token|gc --server …`).
+- **A token is valid for exactly one cache**, `account/cache`, and belongs to
+  that cache's account. There are no wildcard scopes — the narrow thing is the
+  only thing, so a leaked token is worth one cache.
+- The place to mint one is the cache's own page in the dashboard
+  ("Create push token" / "Create pull token"): the scope and owning account
+  come from the page, and the secret is rendered straight into the setup
+  snippets, once.
+- Perms: `pull`, `push`, and `manage` (create/configure/destroy that one
+  cache — enough to delegate cache administration without handing out root).
+  Separately, `admin` is **instance root**: every cache, token and account,
+  and the credential behind remote `xilo cache|token|gc --server …`. It is not
+  a cache scope and grants no pull or push.
+- `xilo status` prints what the saved token actually is — account, scope,
+  perms, expiry — so a 401 is diagnosable without guessing.
 - Public caches are open to pull. Private caches need a `pull` token, supplied by Nix via `~/.netrc`:
 
   ```
@@ -326,8 +339,23 @@ Two caches may share a name in different accounts; each has its own signing
 key. A tenant's dashboard shows only their accounts, foreign caches 404, and
 account tokens cannot cross the boundary.
 
-Setting `multi_tenant: true` unlocks the signup surface, all governed from
-Settings by the instance admin:
+All of that is always on. What `self_service: true` adds is the **signup
+surface** — it does not switch multi-tenancy on, because multi-tenancy was
+never off:
+
+| | `self_service: false` (default) | `self_service: true` |
+|---|---|---|
+| accounts, orgs, per-cache token scopes | ✓ | ✓ |
+| a personal account per user | ✓ | ✓ |
+| who creates users and orgs | the admin | anyone who registers |
+| self-registration at `/register` | ✗ | behind an instance toggle |
+| plans and quotas | ✗ | ✓ |
+
+(The old key for this was `multi_tenant`, which read as "turn multi-tenancy
+off". It still works as an alias.)
+
+With `self_service: true` the extra surface is governed from Settings by the
+instance admin:
 
 - **Instance** toggles: allow registrations (off by default), require
   approval for new accounts (on by default — no email infrastructure needed).
@@ -340,8 +368,9 @@ Settings by the instance admin:
 - Registration can create an organization on the spot when the chosen plan
   allows it; entitled users can also create orgs later from Settings.
 
-Leave `multi_tenant` off (the default) and none of this surface exists — a
-single admin manages a private instance exactly as before.
+Leave `self_service` off (the default) and none of that surface exists: the
+admin creates each user and organization from Settings. Accounts and caches
+work identically either way.
 
 ## PostgreSQL
 
@@ -413,7 +442,7 @@ listen: ":8080"
 base_url: "https://cache.example.com" # https so session cookies are Secure
 data_dir: "/var/lib/xilo"
 
-multi_tenant: false
+self_service: false
 
 gc:
   interval: "12h"    # background sweep
