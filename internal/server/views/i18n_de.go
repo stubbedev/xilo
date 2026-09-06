@@ -87,6 +87,7 @@ var de = map[string]string{
 	"nav.audit":      "Aktivitäten",
 	"nav.context":    "Konto",
 	"nav.logout":     "Abmelden",
+	"nav.addaccount": "Konto hinzufügen",
 	"nav.theme":      "Erscheinungsbild",
 	"footer.tagline": "selbst gehosteter Nix-Cache",
 

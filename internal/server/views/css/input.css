@@ -732,3 +732,35 @@ input[type="radio"]:not(:disabled) { cursor: pointer; }
   background: var(--accent);
   color: var(--accent-foreground);
 }
+
+/* Cross-document view transitions. The admin navigates with plain links, so
+   the browser can snapshot the outgoing page itself — no router, no JS, and
+   nothing to do at the call site. Browsers without it navigate instantly, as
+   before. */
+@view-transition { navigation: auto; }
+
+/* Only the page body is named. The chrome (sidebar, header, footer) stays in
+   the root snapshot, where it cross-fades with a copy of itself and is
+   therefore invisible — which is the point: the rail must not blink every
+   time you move between pages. */
+main { view-transition-name: xilo-page; }
+@keyframes xilo-page-in {
+  from { opacity: 0; transform: translateY(6px); }
+}
+@keyframes xilo-page-out {
+  to { opacity: 0; }
+}
+/* The old page leaves fast (it is already stale) and the new one settles in;
+   overlapping the two is what reads as one page turning rather than two. */
+::view-transition-old(xilo-page) { animation: xilo-page-out 90ms ease-out both; }
+::view-transition-new(xilo-page) {
+  animation: xilo-page-in 180ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+::view-transition-old(root),
+::view-transition-new(root) { animation-duration: 120ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) { animation: none !important; }
+}

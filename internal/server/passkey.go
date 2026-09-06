@@ -341,6 +341,7 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 		uiFail(w, r, http.StatusInternalServerError, views.T(r.Context(), "err.session"), err)
 		return
 	}
+	s.addToWallet(w, r, id, ownerID)
 	s.setSessionCookie(w, id)
 	jsonOut(w, map[string]bool{"ok": true})
 }

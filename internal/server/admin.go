@@ -209,6 +209,9 @@ func (s *Server) nav(r *http.Request, u *store.User) views.Nav {
 	n.Orgs = s.cfg.SelfService && (s.userCanCreateOrg(u) || slices.ContainsFunc(n.Contexts, func(a store.Account) bool {
 		return a.Kind == "org"
 	}))
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		n.Sessions = s.walletAccounts(r, c.Value)
+	}
 	return n
 }
 
@@ -336,6 +339,8 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/login", s.handleLogin)
 	mux.HandleFunc("POST /admin/login/code", s.handleLoginCode)
 	mux.HandleFunc("POST /admin/logout", s.handleLogout)
+	mux.HandleFunc("GET /admin/signin", s.handleSignInPage)
+	mux.HandleFunc("POST /admin/session/switch", s.handleSwitchAccount)
 	mux.HandleFunc("POST /admin/caches", s.handleCreateCache)
 	mux.HandleFunc("GET /admin/cache/{account}/{name}", s.handleCacheDetail)
 	mux.HandleFunc("GET /admin/cache/{account}/{name}/path/{hash}", s.handlePathDetail)
@@ -663,8 +668,20 @@ func (s *Server) grantSession(w http.ResponseWriter, r *http.Request, userID int
 		uiFail(w, r, http.StatusInternalServerError, views.T(r.Context(), "err.session"), err)
 		return
 	}
+	s.addToWallet(w, r, id, userID)
 	s.setSessionCookie(w, id)
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+// reissueSession swaps a freshly minted session in for the current one, in
+// the cookie and in the wallet both.
+func (s *Server) reissueSession(w http.ResponseWriter, r *http.Request, id string) {
+	old := ""
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		old = c.Value
+	}
+	s.replaceInWallet(w, r, old, id)
+	s.setSessionCookie(w, id)
 }
 
 // setSessionCookie sets the session cookie with Max-Age matching the
@@ -909,7 +926,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if id, err := s.sess.create(u.ID); err == nil {
-		s.setSessionCookie(w, id)
+		s.reissueSession(w, r, id)
 	}
 	s.accountFlash(w, r, views.T(r.Context(), "flash.pwchanged"))
 }
@@ -1028,7 +1045,7 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 	// re-issue this one so a stolen cookie can't ride the weakened account.
 	if err := s.db.DropUserSessions(u.ID); err == nil {
 		if id, err := s.sess.create(u.ID); err == nil {
-			s.setSessionCookie(w, id)
+			s.reissueSession(w, r, id)
 		}
 	}
 	s.accountFlash(w, r, views.T(r.Context(), "flash.totpoff"))
@@ -1041,8 +1058,27 @@ func (s *Server) secureCookies() bool {
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	active := ""
 	if c, err := r.Cookie(sessionCookie); err == nil {
-		s.sess.drop(c.Value)
+		active = c.Value
+		s.sess.drop(active)
+	}
+	// Only this account leaves; the browser keeps the others, and lands on
+	// whichever it still holds.
+	var kept []string
+	for _, id := range walletIDs(r) {
+		if id == active {
+			continue
+		}
+		if _, ok := s.sess.user(id); ok {
+			kept = append(kept, id)
+		}
+	}
+	s.setWallet(w, kept)
+	if len(kept) > 0 {
+		s.setSessionCookie(w, kept[len(kept)-1])
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		return
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1})
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)

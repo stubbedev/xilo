@@ -8,6 +8,7 @@ import (
 	"github.com/templui/templui/components/checkbox"
 	"github.com/templui/templui/components/copybutton"
 	"github.com/templui/templui/components/datepicker"
+	"github.com/templui/templui/components/dropdown"
 	"github.com/templui/templui/components/dialog"
 	"github.com/templui/templui/components/input"
 	"github.com/templui/templui/components/inputotp"
@@ -38,6 +39,7 @@ type Nav struct {
 	IsAdmin  bool            // instance admin (shows the Settings link)
 	Orgs     bool            // the viewer is in an organization, or may create one
 	Contexts []store.Account // the viewer's personal account + orgs
+	Sessions []NavSession    // every account this browser is signed in as
 	Active   string          // active context slug; "" = all accounts
 	Theme    string          // the user's palette id ("" = default), see theme.go
 }
@@ -86,6 +88,7 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 			@textarea.Script()
 			@popover.Script()
 			@datepicker.Script()
+			@dropdown.Script()
 			@dialog.Script()
 			@tabs.Script()
 			@tooltip.Script()
@@ -166,7 +169,7 @@ templ appSidebar(section string, nav Nav) {
 			if len(nav.Contexts) > 1 {
 				@contextSwitcher(nav)
 			}
-			@userMenu()
+			@userMenu(nav)
 		}
 	}
 }
@@ -222,21 +225,57 @@ templ contextSwitcher(nav Nav) {
 	</form>
 }
 
-// userMenu is the sidebar footer: just the log-out button (icon-only on the
-// collapsed rail, where the tooltip names it).
-templ userMenu() {
-	<form method="post" action="/admin/logout">
-		@WithTooltip(T(ctx, "nav.logout")) {
+// userMenu is the sidebar footer: who you are signed in as, and a menu of the
+// other accounts this browser is signed in as. A person can hold several at
+// once (see the wallet in wallet.go), so the way to a second account is Add
+// account here, not signing out of the first.
+templ userMenu(nav Nav) {
+	@dropdown.Dropdown() {
+		@dropdown.Trigger() {
 			@button.Button(button.Props{
-				Variant: button.VariantOutline, Type: button.TypeSubmit, FullWidth: true, Size: button.SizeSm,
-				Class:      "gap-2 text-destructive hover:text-destructive group-data-[tui-sidebar-state=collapsed]:px-0",
-				Attributes: templ.Attributes{"aria-label": T(ctx, "nav.logout")},
+				Variant: button.VariantOutline, Type: button.TypeButton, FullWidth: true, Size: button.SizeSm,
+				Class:      "justify-between gap-2 group-data-[tui-sidebar-state=collapsed]:px-0",
+				Attributes: templ.Attributes{"aria-label": nav.UserName},
 			}) {
-				@Icon("log-out")
-				<span class="group-data-[tui-sidebar-state=collapsed]:hidden">{ T(ctx, "nav.logout") }</span>
+				<span class="flex min-w-0 items-center gap-2">
+					@Icon("circle-user")
+					<span class="truncate group-data-[tui-sidebar-state=collapsed]:hidden">{ nav.UserName }</span>
+				</span>
+				<span class="group-data-[tui-sidebar-state=collapsed]:hidden">
+					@IconClass("chevrons-up-down", 14, "")
+				</span>
 			}
 		}
-	</form>
+		@dropdown.Content(dropdown.ContentProps{Class: "w-56"}) {
+			// One form, one button per account: the menu posts a user id, never
+			// a session id — those are the secret the wallet holds.
+			<form method="post" action="/admin/session/switch">
+				for _, acct := range nav.Sessions {
+					if !acct.Active {
+						@dropdown.Item(dropdown.ItemProps{Class: "p-0"}) {
+							<button type="submit" name="user" value={ itoa(acct.UserID) } class="flex w-full items-center gap-2 px-2 py-1.5 text-left">
+								@Icon("circle-user")
+								<span class="truncate">{ acct.Name }</span>
+							</button>
+						}
+					}
+				}
+			</form>
+			@dropdown.Item(dropdown.ItemProps{Href: "/admin/signin", Class: "justify-start gap-2"}) {
+				@Icon("plus")
+				<span>{ T(ctx, "nav.addaccount") }</span>
+			}
+			@dropdown.Separator()
+			<form method="post" action="/admin/logout">
+				@dropdown.Item(dropdown.ItemProps{Class: "p-0"}) {
+					<button type="submit" class="flex w-full items-center gap-2 px-2 py-1.5 text-left text-destructive">
+						@Icon("log-out")
+						<span>{ T(ctx, "nav.logout") }</span>
+					</button>
+				}
+			</form>
+		}
+	}
 }
 
 templ footer() {
@@ -642,4 +681,12 @@ templ NotFound(nav Nav) {
 templ Icon(name string) {
 	@rawIcon(name)
 	{ children... }
+}
+
+// NavSession is one account this browser is signed in as, for the account
+// menu in the sidebar footer.
+type NavSession struct {
+	UserID int64
+	Name   string
+	Active bool
 }

@@ -87,6 +87,7 @@ var es = map[string]string{
 	"nav.audit":      "Actividad",
 	"nav.context":    "Cuenta",
 	"nav.logout":     "Cerrar sesión",
+	"nav.addaccount": "Añadir cuenta",
 	"nav.theme":      "Tema",
 	"footer.tagline": "caché de Nix autoalojada",
 

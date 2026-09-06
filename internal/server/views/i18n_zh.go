@@ -87,6 +87,7 @@ var zh = map[string]string{
 	"nav.audit":      "活动记录",
 	"nav.context":    "账户",
 	"nav.logout":     "退出登录",
+	"nav.addaccount": "添加账户",
 	"nav.theme":      "主题",
 	"footer.tagline": "自托管的 Nix 缓存",
 

@@ -87,6 +87,7 @@ var ja = map[string]string{
 	"nav.audit":      "アクティビティ",
 	"nav.context":    "アカウント",
 	"nav.logout":     "サインアウト",
+	"nav.addaccount": "アカウントを追加",
 	"nav.theme":      "テーマ",
 	"footer.tagline": "セルフホスト型 Nix キャッシュ",
 
