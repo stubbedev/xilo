@@ -81,42 +81,6 @@ templ Account(d AccountData) {
 						}
 				</form>
 			}
-			@SettingsCard(T(ctx, "set.passkeys"), T(ctx, "set.passkeys.hint")) {
-				if len(d.Passkeys) == 0 {
-					@EmptyState("fingerprint-pattern", T(ctx, "empty.none"))
-				} else {
-					<div class="divide-y border-y">
-						for _, pk := range d.Passkeys {
-							<div class="flex items-center justify-between gap-3 py-2">
-								<div class="flex min-w-0 items-center gap-2 text-sm">
-									@Icon("fingerprint-pattern")
-									<span class="truncate font-medium">{ pk.Name }</span>
-									@Meta() {
-										{ Ago(ctx, pk.Created) }
-									}
-								</div>
-								@ConfirmForm(Confirm{
-									ID:             "pk-" + strconv.FormatInt(pk.ID, 10),
-									Action:         "/admin/passkeys/" + strconv.FormatInt(pk.ID, 10) + "/delete",
-									Title:          T(ctx, "pk.removetitle"),
-									Message:        Tf(ctx, "pk.removemsg", pk.Name),
-									ConfirmLabel:   T(ctx, "action.remove"),
-									ConfirmIcon:    "trash-2",
-									Danger:         true,
-									TriggerIcon:    "trash-2",
-									IconOnly:       true,
-									TriggerTooltip: T(ctx, "action.remove"),
-									TriggerVariant: button.VariantGhost,
-								})
-							</div>
-						}
-					</div>
-				}
-				@button.Button(button.Props{Size: button.SizeSm, Variant: button.VariantOutline, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": "xiloPasskeyRegister()"}}) {
-					@Icon("fingerprint-pattern")
-					<span>{ T(ctx, "action.add") }</span>
-				}
-			}
 			@SettingsCard(T(ctx, "set.2fa"), T(ctx, "set.2fa.hint")) {
 				if d.TOTPEnabled {
 						<div class="flex flex-wrap items-center justify-between gap-3">
@@ -157,6 +121,42 @@ templ Account(d AccountData) {
 			if d.CanCreateOrg {
 				@SettingsCard(T(ctx, "acct.orgs"), T(ctx, "acct.orghint")) {
 					@newOrgDialog("/admin/neworg")
+				}
+			}
+			@SettingsCard(T(ctx, "set.passkeys"), T(ctx, "set.passkeys.hint")) {
+				if len(d.Passkeys) == 0 {
+					@EmptyLine(T(ctx, "empty.none"))
+				} else {
+					<div class="divide-y border-y">
+						for _, pk := range d.Passkeys {
+							<div class="flex items-center justify-between gap-3 py-2">
+								<div class="flex min-w-0 items-center gap-2 text-sm">
+									@Icon("fingerprint-pattern")
+									<span class="truncate font-medium">{ pk.Name }</span>
+									@Meta() {
+										{ Ago(ctx, pk.Created) }
+									}
+								</div>
+								@ConfirmForm(Confirm{
+									ID:             "pk-" + strconv.FormatInt(pk.ID, 10),
+									Action:         "/admin/passkeys/" + strconv.FormatInt(pk.ID, 10) + "/delete",
+									Title:          T(ctx, "pk.removetitle"),
+									Message:        Tf(ctx, "pk.removemsg", pk.Name),
+									ConfirmLabel:   T(ctx, "action.remove"),
+									ConfirmIcon:    "trash-2",
+									Danger:         true,
+									TriggerIcon:    "trash-2",
+									IconOnly:       true,
+									TriggerTooltip: T(ctx, "action.remove"),
+									TriggerVariant: button.VariantGhost,
+								})
+							</div>
+						}
+					</div>
+				}
+				@button.Button(button.Props{Size: button.SizeSm, Variant: button.VariantOutline, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": "xiloPasskeyRegister()"}}) {
+					@Icon("fingerprint-pattern")
+					<span>{ T(ctx, "action.add") }</span>
 				}
 			}
 			@SettingsCard(T(ctx, "login.password"), T(ctx, "set.password")) {

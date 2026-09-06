@@ -82,12 +82,12 @@ templ policyCard(d InstanceData) {
 // on the page, not an object in a box — the card wall around a bordered list
 // was two frames drawn around the same rows.
 templ plansCard(plans []store.Plan) {
-	@ListSection(T(ctx, "set.plans"), newPlanDialog()) {
+	// With no plans yet the empty state carries the only create button — and
+	// therefore the dialog too, since the header's copy is not rendered.
+	@ListSection(T(ctx, "set.plans"), sectionAction(len(plans) > 0, newPlanDialog())) {
 		if len(plans) == 0 {
 			@EmptyState("layers", T(ctx, "empty.none")) {
-				@dialog.Trigger(dialog.TriggerProps{For: "dlg-plan-new"}) {
-					@PlusButton(T(ctx, "action.new"))
-				}
+				@newPlanDialog()
 			}
 		} else {
 			@TableCard() {
@@ -277,12 +277,10 @@ templ newUserDialog(multiTenant bool) {
 
 // orgsCard lists organizations with usage and holds the create-org dialog.
 templ orgsCard(orgs []OrgInfo) {
-	@ListSection(T(ctx, "org.title"), newOrgDialog("/admin/orgs")) {
+	@ListSection(T(ctx, "org.title"), sectionAction(len(orgs) > 0, newOrgDialog("/admin/orgs"))) {
 		if len(orgs) == 0 {
 			@EmptyState("building-2", T(ctx, "empty.none")) {
-				@dialog.Trigger(dialog.TriggerProps{For: "dlg-org-new"}) {
-					@PlusButton(T(ctx, "action.new"))
-				}
+				@newOrgDialog("/admin/orgs")
 			}
 		} else {
 			@TableCard() {
@@ -339,15 +337,11 @@ templ newOrgDialog(action string) {
 	}
 }
 
-// maintCard is instance-wide maintenance: garbage collection.
+// maintCard is instance-wide maintenance: garbage collection. A section, not
+// a card — one sentence and one button is not an object worth a box.
 templ maintCard() {
-	@card.Card() {
-		@card.Header() {
-			@card.Title() {
-				{ T(ctx, "inst.maint") }
-			}
-		}
-		@card.Content() {
+	@ListSection(T(ctx, "inst.maint"), nil) {
+		<div class="border-y py-3">
 			@ActionRow(T(ctx, "inst.gcdesc")) {
 				@ConfirmForm(Confirm{
 					ID:           "gc",
@@ -361,6 +355,6 @@ templ maintCard() {
 					TriggerIcon:  "recycle",
 				})
 			}
-		}
+		</div>
 	}
 }

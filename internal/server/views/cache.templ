@@ -8,7 +8,6 @@ import (
 	"github.com/templui/templui/components/copybutton"
 	"github.com/templui/templui/components/dialog"
 	"github.com/templui/templui/components/input"
-	"github.com/templui/templui/components/separator"
 	"github.com/templui/templui/components/table"
 	"github.com/templui/templui/components/tabs"
 )
@@ -109,20 +108,17 @@ templ CacheView(d CacheData) {
 			}
 		</div>
 		@SectionHeader(T(ctx, "cd.paths")) {
-			@SearchInput("/admin/cache/"+d.Cache.Ref(), "q", d.PathQuery, T(ctx, "cd.search"), "#path-results")
+			// Nothing pushed yet: there is nothing to search through.
+			if len(d.Paths) > 0 || d.PathQuery != "" {
+				@SearchInput("/admin/cache/"+d.Cache.Ref(), "q", d.PathQuery, T(ctx, "cd.search"), "#path-results")
+			}
 		}
 		<div class="mb-8">
 			@pathResults(d)
 		</div>
-		<div class="grid gap-6">
-			@card.Card() {
-				@card.Header() {
-					@card.Title() {
-						{ T(ctx, "cd.settings") }
-					}
-				}
-				@card.Content() {
-					<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/configure") } class="grid gap-4 sm:grid-cols-3">
+		<div class="grid gap-8">
+			@SettingsCard(T(ctx, "cd.settings"), "") {
+				<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/configure") } class="grid gap-4 sm:grid-cols-3">
 						<div class="sm:col-span-3">
 							@VisibilitySwitch(!d.Cache.Public)
 						</div>
@@ -140,42 +136,41 @@ templ CacheView(d CacheData) {
 							}
 						</div>
 					</form>
-				}
 			}
-			@card.Card() {
-				@card.Header() {
-					@card.Title() {
-						{ T(ctx, "cd.maint") }
-					}
-				}
-				@card.Content(card.ContentProps{Class: "space-y-4"}) {
-					@ActionRow(T(ctx, "cd.rotatehint")) {
-						@ConfirmForm(Confirm{
-							ID:           "rotate",
-							Action:       "/admin/cache/" + d.Cache.Ref() + "/rotate",
-							Title:        T(ctx, "cd.rotatetitle"),
-							Message:      T(ctx, "confirm.rotate"),
-							ConfirmLabel: T(ctx, "cd.rotate"),
-							ConfirmIcon:  "key-round",
-							TriggerLabel: T(ctx, "cd.rotate"),
-							TriggerIcon:  "key-round",
-						})
-					}
-					@separator.Separator()
-					@ActionRow(T(ctx, "cd.deletehint")) {
-						@ConfirmForm(Confirm{
-							ID:           "delete-cache",
-							Action:       "/admin/cache/" + d.Cache.Ref() + "/delete",
-							Title:        T(ctx, "cd.deletetitle"),
-							Message:      Tf(ctx, "cd.deletemsg", d.Cache.Ref()),
-							ConfirmLabel: T(ctx, "action.delete"),
-							ConfirmIcon:  "trash-2",
-							Danger:       true,
-							TriggerLabel: T(ctx, "action.delete"),
-							TriggerIcon:  "trash-2",
-						})
-					}
-				}
+			// Maintenance is two sentences and two buttons — a section with
+			// rules, not a panel: nothing here is submitted as a whole.
+			@ListSection(T(ctx, "cd.maint"), nil) {
+				<div class="divide-y border-y">
+					<div class="py-3">
+						@ActionRow(T(ctx, "cd.rotatehint")) {
+							@ConfirmForm(Confirm{
+								ID:           "rotate",
+								Action:       "/admin/cache/" + d.Cache.Ref() + "/rotate",
+								Title:        T(ctx, "cd.rotatetitle"),
+								Message:      T(ctx, "confirm.rotate"),
+								ConfirmLabel: T(ctx, "cd.rotate"),
+								ConfirmIcon:  "key-round",
+								TriggerLabel: T(ctx, "cd.rotate"),
+								TriggerIcon:  "key-round",
+							})
+						}
+					</div>
+					<div class="py-3">
+						@ActionRow(T(ctx, "cd.deletehint")) {
+							@ConfirmForm(Confirm{
+								ID:           "delete-cache",
+								Action:       "/admin/cache/" + d.Cache.Ref() + "/delete",
+								Title:        T(ctx, "cd.deletetitle"),
+								Message:      Tf(ctx, "cd.deletemsg", d.Cache.Ref()),
+								ConfirmLabel: T(ctx, "action.delete"),
+								ConfirmIcon:  "trash-2",
+								Danger:       true,
+								TriggerLabel: T(ctx, "action.delete"),
+								TriggerIcon:  "trash-2",
+							})
+						}
+					</div>
+				</div>
 			}
 		</div>
 	}
@@ -198,7 +193,7 @@ templ cacheTokenDialog(d CacheData, id, label string, push, pull bool) {
 					@input.Input(input.Props{ID: id + "-scope", Value: d.Cache.Ref(), Disabled: true})
 				}
 				@Field("", T(ctx, "tokens.perms")) {
-					<div class="space-y-2">
+					<div>
 						@PermSwitchID(id+"-push", "push", "on", T(ctx, "tokens.push"), push)
 						@PermSwitchID(id+"-pull", "pull", "on", T(ctx, "tokens.pull"), pull)
 						@PermSwitchID(id+"-manage", "manage", "on", T(ctx, "tokens.manage"), false)
@@ -239,7 +234,7 @@ templ pathResults(d CacheData) {
 					@table.Header() {
 						@table.Row() {
 							@SortHead(d.PathSort, "path", T(ctx, "paths.path"), "")
-							@SortHead(d.PathSort, "size", T(ctx, "paths.size"), "w-32")
+							@SortHead(d.PathSort, "size", T(ctx, "paths.size"), "w-28 text-right")
 							@SortHead(d.PathSort, "pulled", T(ctx, "paths.pulled"), "w-40")
 						}
 					}
@@ -257,7 +252,7 @@ templ pathResults(d CacheData) {
 										}
 									</div>
 								}
-								@table.Cell(table.CellProps{Class: "font-mono text-xs tabular-nums"}) {
+								@table.Cell(table.CellProps{Class: "text-right font-mono text-xs tabular-nums"}) {
 									{ d.Bytes(p.NarSize) }
 								}
 								@table.Cell(table.CellProps{Class: "font-mono text-xs text-muted-foreground"}) {

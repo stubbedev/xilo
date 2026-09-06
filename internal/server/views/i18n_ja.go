@@ -245,7 +245,7 @@ var ja = map[string]string{
 	"caches.storage":  "ストレージバックエンド",
 
 	// tokens
-	"tokens.title":     "アクセストークン",
+	"tokens.title":     "トークン",
 	"tokens.new":       "新しいトークン",
 	"tokens.newtitle":  "新しいトークン",
 	"tokens.newhint":   "アップロードまたはダウンロード用。",

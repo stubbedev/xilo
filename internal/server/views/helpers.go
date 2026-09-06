@@ -59,6 +59,16 @@ func capBar(used, capacity int64) string {
 	}
 }
 
+// sectionAction is a ListSection's header control, or nothing when the list is
+// empty: the empty state carries the create button in that case, and two of
+// them a few pixels apart is one too many.
+func sectionAction(show bool, c templ.Component) templ.Component {
+	if !show {
+		return nil
+	}
+	return c
+}
+
 // confirmVariant is the button variant for a confirm action's submit button.
 func confirmVariant(danger bool) button.Variant {
 	if danger {

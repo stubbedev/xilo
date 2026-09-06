@@ -355,7 +355,7 @@ var en = map[string]string{
 	"caches.privatehint":  "Require a token to pull.",
 
 	// tokens
-	"tokens.title":     "Access tokens",
+	"tokens.title":     "Tokens",
 	"tokens.new":       "New token",
 	"tokens.newtitle":  "New token",
 	"tokens.newhint":   "For pushing or pulling.",

@@ -107,7 +107,7 @@ templ PageHeaderCode(title, code string) {
 
 templ pageHeaderBody(title, subtitle, subClass string) {
 	<div class="mb-6 flex flex-wrap items-center justify-between gap-4">
-		<div class="min-w-0 space-y-1">
+		<div class="min-w-0 space-y-1.5">
 			<h1 class="text-2xl font-semibold tracking-tight">{ title }</h1>
 			if subtitle != "" {
 				<p class={ subClass }>{ subtitle }</p>
@@ -293,7 +293,7 @@ templ RowActions() {
 // Meta is the secondary fact riding beside a name in a list row — a plan's
 // limits, an organization's usage. Mono because it is always quantities.
 templ Meta() {
-	<span class="font-mono text-xs text-muted-foreground tabular-nums">
+	<span class="min-w-0 truncate font-mono text-xs text-muted-foreground tabular-nums">
 		{ children... }
 	</span>
 }
@@ -329,7 +329,7 @@ templ SectionHeader(title string) {
 // columns and compared, not admired. A non-empty id marks the value for live
 // updates; tone adds a text color class to it.
 templ StatTile(icon, value, label, id, tone string) {
-	<div class="min-w-0 py-0.5">
+	<div class="w-[calc(50%-1.5rem)] min-w-0 py-0.5 sm:w-32">
 		<div
 			class={ "truncate font-mono text-[1.6rem] font-medium leading-tight tracking-tight tabular-nums", tone }
 			if id != "" {
@@ -346,9 +346,14 @@ templ StatTile(icon, value, label, id, tone string) {
 }
 
 // StatRow is the readout strip a page opens with: tiles ruled off from the
-// page above and below, no boxes. One grid rule for every page that has one.
+// page above and below, no boxes.
+//
+// A wrapping row of fixed-width tiles rather than a grid of equal fractions:
+// with a grid, three readouts spread themselves across the full width and the
+// numbers stop reading as a group. Fixed columns keep the strip identical
+// whether a page has three of them or twelve, and wrap on a phone.
 templ StatRow() {
-	<div class="mb-8 grid grid-cols-2 gap-x-8 gap-y-5 border-y py-4 sm:grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))]">
+	<div class="mb-8 flex flex-wrap gap-x-12 gap-y-5 border-y py-4">
 		{ children... }
 	</div>
 }
@@ -359,7 +364,10 @@ templ StatRow() {
 // quantities and their relationship in a single figure — so it is the loudest
 // element on the page, and every other number around it can stay quiet.
 templ DedupBar(logical, physical int64, ratio string, bytes func(int64) string) {
-	<div class="mb-8">
+	// Nothing stored yet has no dedup story: "1.00×" over a bar that is
+	// entirely "saved" claims a win for an empty cache. Say nothing instead.
+	if logical > 0 {
+		<div class="mb-8">
 		<div class="flex items-end justify-between gap-6">
 			<div>
 				<div class="font-mono text-5xl font-medium leading-none tracking-tighter tabular-nums text-brand">{ ratio }×</div>
@@ -384,8 +392,9 @@ templ DedupBar(logical, physical int64, ratio string, bytes func(int64) string) 
 				<span class="font-mono tabular-nums text-brand">{ bytes(savedBytes(logical, physical)) }</span>
 				<span class="text-muted-foreground">{ " " + T(ctx, "kpi.saved") }</span>
 			</span>
+			</div>
 		</div>
-	</div>
+	}
 }
 
 // StoreHash sets a store-path hash the way people read one: the leading
@@ -396,6 +405,14 @@ templ StoreHash(hash string) {
 	<span class="font-mono text-xs tracking-tight">
 		<span class="text-foreground/70">{ hashHead(hash) }</span><span class="text-muted-foreground/50">{ hashTail(hash) }</span>
 	</span>
+}
+
+// EmptyLine is the empty state for a list that already sits inside a card:
+// one muted line where the rows would be. The full EmptyState — icon, rules,
+// generous padding — is framing, and a panel that is already framed does not
+// need a second frame around the words "None yet."
+templ EmptyLine(msg string) {
+	<p class="py-2 text-sm text-muted-foreground">{ msg }</p>
 }
 
 // EmptyState is the shared empty-list block: icon, message, optional action.

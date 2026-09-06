@@ -245,7 +245,7 @@ var fr = map[string]string{
 	"caches.storage":  "Backend de stockage",
 
 	// tokens
-	"tokens.title":     "Jetons d'accès",
+	"tokens.title":     "Jetons",
 	"tokens.new":       "Nouveau jeton",
 	"tokens.newtitle":  "Nouveau jeton",
 	"tokens.newhint":   "Pour envoyer ou télécharger.",

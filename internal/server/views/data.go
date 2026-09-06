@@ -29,6 +29,19 @@ func dedupRatio(logical, stored int64) string {
 	return fmt.Sprintf("%.2f", float64(logical)/float64(stored))
 }
 
+// firstRun and noTokensYet mark the states where a list has nothing in it and
+// nothing is being filtered. The list's own controls — search over an empty
+// list, a create button duplicating the one in the empty state — are hidden
+// there; a filtered list that came back empty keeps them, because the search
+// box is how you get out of that.
+func firstRun(d DashboardData) bool {
+	return len(d.Caches) == 0 && d.CacheQuery == ""
+}
+
+func noTokensYet(d DashboardData) bool {
+	return len(d.Tokens) == 0 && d.TokenQuery == ""
+}
+
 // savedBytes is what deduplication kept off the disk. Never negative: a fresh
 // instance can report more stored than logical for a moment while a push is
 // still being accounted for, and "-2 KiB saved" reads as a bug.

@@ -7,7 +7,6 @@ import (
 	"github.com/stubbedev/xilo/internal/store"
 
 	"github.com/templui/templui/components/button"
-	"github.com/templui/templui/components/card"
 	"github.com/templui/templui/components/dialog"
 	"github.com/templui/templui/components/input"
 	"github.com/templui/templui/components/progress"
@@ -27,12 +26,18 @@ templ Dashboard(d DashboardData) {
 			@StatTile("package", Count(d.Global.Paths), T(ctx, "kpi.paths"), "", "")
 			@StatTile("hard-drive", d.Bytes(d.Global.StoredBytes), T(ctx, "kpi.disk")+capSuffix(d.ServerCap, d.Bytes), "", capTone(d.Global.StoredBytes, d.ServerCap))
 		}
-		@SectionHeader(T(ctx, "caches.title")) {
-			@SearchInput("/admin", "caches[q]", d.CacheQuery, T(ctx, "caches.search"), "#cache-list")
-			if len(d.Accounts) > 0 {
-				@newCacheDialog(d)
-			} else {
-				@disabledCreate(T(ctx, "caches.new"), T(ctx, "caches.needaccount"))
+		// Nothing to search and nothing to list yet: the onboarding block is the
+		// whole section, and it carries the only create button. A search box
+		// over an empty list, and a second New beside its own step 1, are just
+		// controls asking to be ignored.
+		if !firstRun(d) {
+			@SectionHeader(T(ctx, "caches.title")) {
+				@SearchInput("/admin", "caches[q]", d.CacheQuery, T(ctx, "caches.search"), "#cache-list")
+				if len(d.Accounts) > 0 {
+					@newCacheDialog(d)
+				} else {
+					@disabledCreate(T(ctx, "caches.new"), T(ctx, "caches.needaccount"))
+				}
 			}
 		}
 		// The list ids are htmx swap targets, so these two sections keep their
@@ -53,24 +58,30 @@ templ Dashboard(d DashboardData) {
 				@PagerNav(d.CachePager)
 			}
 		</div>
-		@SectionHeader(T(ctx, "tokens.title")) {
-			@SearchInput("/admin", "tokens[q]", d.TokenQuery, T(ctx, "tokens.search"), "#token-list")
-			if canMintToken(d) {
-				@newTokenDialog(d)
-			} else {
-				@disabledCreate(T(ctx, "tokens.new"), T(ctx, "tokens.needcache"))
+		// Before the first cache exists there is nothing to scope a token to,
+		// and step 2 already says where tokens come from. An empty token
+		// section with a disabled button would only repeat it.
+		if !firstRun(d) {
+			@SectionHeader(T(ctx, "tokens.title")) {
+				if !noTokensYet(d) {
+					@SearchInput("/admin", "tokens[q]", d.TokenQuery, T(ctx, "tokens.search"), "#token-list")
+					if canMintToken(d) {
+						@newTokenDialog(d)
+					} else {
+						@disabledCreate(T(ctx, "tokens.new"), T(ctx, "tokens.needcache"))
+					}
+				}
 			}
-		}
-		<div id="token-list">
+			<div id="token-list">
 			if len(d.Tokens) == 0 {
 				if d.TokenQuery != "" {
 					@EmptyState("key-round", T(ctx, "empty.nomatch"))
 				} else {
+					// The empty state owns the create button here, so it has to
+					// carry the dialog itself — the header's copy is not rendered.
 					@EmptyState("key-round", T(ctx, "empty.none")) {
 						if canMintToken(d) {
-							@dialog.Trigger(dialog.TriggerProps{For: "dlg-token"}) {
-								@PlusButton(T(ctx, "action.new"))
-							}
+							@newTokenDialog(d)
 						} else {
 							@disabledCreate(T(ctx, "tokens.new"), T(ctx, "tokens.needcache"))
 						}
@@ -81,9 +92,12 @@ templ Dashboard(d DashboardData) {
 					@table.Table(table.Props{Class: "table-fixed"}) {
 						@table.Header() {
 							@table.Row() {
-								@SortHead(d.TokenSort, "name", T(ctx, "tokens.name"), "")
-								@SortHead(d.TokenSort, "perms", T(ctx, "tokens.perms"), "w-36")
-								@SortHead(d.TokenSort, "scope", T(ctx, "tokens.scope"), "w-36")
+								// The scope column takes the slack, not the name:
+								// a cache reference is the long value here, and
+								// names sat alone in 500px of nothing.
+								@SortHead(d.TokenSort, "name", T(ctx, "tokens.name"), "w-64")
+								@SortHead(d.TokenSort, "perms", T(ctx, "tokens.perms"), "w-32")
+								@SortHead(d.TokenSort, "scope", T(ctx, "tokens.scope"), "")
 								@SortHead(d.TokenSort, "expires", T(ctx, "tokens.expires"), "w-28")
 								@SortHead(d.TokenSort, "status", T(ctx, "tokens.status"), "w-20")
 								@table.Head(table.HeadProps{Class: "w-24 text-right"}) {
@@ -98,9 +112,10 @@ templ Dashboard(d DashboardData) {
 						}
 					}
 				}
-				@PagerNav(d.TokenPager)
-			}
-		</div>
+					@PagerNav(d.TokenPager)
+				}
+			</div>
+		}
 	}
 }
 
@@ -108,21 +123,20 @@ templ Dashboard(d DashboardData) {
 // first cache working. A blank dashboard with two disabled buttons told a new
 // operator nothing about what to do next.
 templ onboarding(d DashboardData) {
-	@card.Card(card.Props{Class: "border-dashed bg-transparent shadow-none"}) {
-		@card.Header() {
-			@card.Title() {
-				{ T(ctx, "onb.title") }
-			}
-			@card.Description() {
-				{ T(ctx, "onb.subtitle") }
-			}
-		}
-		@card.Content(card.ContentProps{Class: "space-y-4"}) {
+	// A section, not a dashed card holding three more boxes: the steps are a
+	// list, and a list is ruled rows.
+	<div>
+		<div class="mb-3">
+			<h2 class="text-base font-semibold tracking-tight">{ T(ctx, "onb.title") }</h2>
+			<p class="text-sm text-muted-foreground">{ T(ctx, "onb.subtitle") }</p>
+		</div>
+		<div class="divide-y border-y">
 			@onboardStep("1", T(ctx, "onb.step1"), T(ctx, "onb.step1hint")) {
+				// The whole dialog, not just a trigger: on first run this is the
+				// only create control on the page, so the markup it opens has to
+				// come with it.
 				if len(d.Accounts) > 0 {
-					@dialog.Trigger(dialog.TriggerProps{For: "dlg-cache"}) {
-						@PlusButton(T(ctx, "action.new"))
-					}
+					@newCacheDialog(d)
 				} else {
 					@disabledCreate(T(ctx, "caches.new"), T(ctx, "caches.needaccount"))
 				}
@@ -131,15 +145,17 @@ templ onboarding(d DashboardData) {
 			}
 			@onboardStep("3", T(ctx, "onb.step3"), T(ctx, "onb.step3hint")) {
 			}
-		}
-	}
+		</div>
+	</div>
 }
 
-// onboardStep is one numbered row of the first-run checklist.
+// onboardStep is one numbered row of the first-run checklist. Numbered because
+// this genuinely is a sequence — the only place in the admin where a number
+// in front of a heading means anything.
 templ onboardStep(n, title, hint string) {
-	<div class="flex items-start gap-3 rounded-lg border p-4">
-		<span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-semibold text-accent-foreground tabular-nums">{ n }</span>
-		<div class="min-w-0 flex-1 space-y-1">
+	<div class="flex items-center gap-3 py-3">
+		<span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-medium text-accent-foreground tabular-nums">{ n }</span>
+		<div class="min-w-0 flex-1">
 			<p class="text-sm font-medium">{ title }</p>
 			<p class="text-xs text-muted-foreground">{ hint }</p>
 		</div>
@@ -241,7 +257,9 @@ templ tokenRow(d DashboardData, t store.Token) {
 // tooltip says what is missing.
 templ disabledCreate(label, why string) {
 	@WithTooltip(why) {
-		@button.Button(button.Props{Size: button.SizeSm, Disabled: true}) {
+		// Outline, like every other create trigger: a filled primary button
+		// that cannot be pressed reads as the thing to do next.
+		@button.Button(button.Props{Size: button.SizeSm, Variant: button.VariantOutline, Disabled: true}) {
 			@Icon("plus")
 			<span>{ label }</span>
 		}
@@ -310,7 +328,7 @@ templ tokenFormBody(action string, t *store.Token, d DashboardData, submitIcon, 
 			@ScopeSelect("cache", tokenScopeValue(t, d), tokenScopeCaches(t, d))
 		}
 		@Field("", T(ctx, "tokens.perms")) {
-			<div class="space-y-2">
+			<div>
 				@PermSwitchID(dlgID+"-push", "push", "on", T(ctx, "tokens.push"), tokenPerm(t, "push"))
 				@PermSwitchID(dlgID+"-pull", "pull", "on", T(ctx, "tokens.pull"), tokenPerm(t, "pull"))
 				@PermSwitchID(dlgID+"-manage", "manage", "on", T(ctx, "tokens.manage"), tokenPerm(t, "manage"))

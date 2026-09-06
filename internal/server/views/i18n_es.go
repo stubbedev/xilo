@@ -245,7 +245,7 @@ var es = map[string]string{
 	"caches.storage":  "Backend de almacenamiento",
 
 	// tokens
-	"tokens.title":     "Tokens de acceso",
+	"tokens.title":     "Tokens",
 	"tokens.new":       "Nuevo token",
 	"tokens.newtitle":  "Nuevo token",
 	"tokens.newhint":   "Para subir o descargar.",

@@ -198,7 +198,7 @@ templ PriorityField(value int) {
 
 // VisibilitySwitch toggles a cache's privacy; checked = private.
 templ VisibilitySwitch(private bool) {
-	@form.ItemFlex(form.ItemProps{Class: "justify-between rounded-lg border p-3"}) {
+	@form.ItemFlex(form.ItemProps{Class: "justify-between border-b py-3 last:border-0"}) {
 		@form.Item(form.ItemProps{Class: "space-y-0.5"}) {
 			@form.Label() {
 				{ T(ctx, "vis.private") }
@@ -214,7 +214,7 @@ templ VisibilitySwitch(private bool) {
 // PermSwitchID is a labelled switch row with an explicit DOM id — required
 // when the same form body renders more than once per page (per-row dialogs).
 templ PermSwitchID(id, name, value, text string, checked bool) {
-	@form.ItemFlex(form.ItemProps{Class: "justify-between rounded-lg border p-3"}) {
+	@form.ItemFlex(form.ItemProps{Class: "justify-between border-b py-3 last:border-0"}) {
 		@form.Label(form.LabelProps{For: id}) {
 			{ text }
 		}

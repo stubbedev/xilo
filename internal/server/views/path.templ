@@ -53,8 +53,11 @@ templ PathDetail(d PathData) {
 						@CopyField(d.Path.NarHash)
 					}
 					@kv(T(ctx, "path.deriver")) {
+						// Copyable like the other two values on this card: it is
+						// a store path, and the reason to look at one is to paste
+						// it into a command.
 						if d.Path.Deriver != "" {
-							<code class="break-all font-mono text-xs">{ d.Path.Deriver }</code>
+							@CopyField(d.Path.Deriver)
 						} else {
 							<span class="text-sm text-muted-foreground">{ T(ctx, "path.noderiver") }</span>
 						}
@@ -65,7 +68,7 @@ templ PathDetail(d PathData) {
 			}
 			@SettingsCard(T(ctx, "path.refs"), T(ctx, "path.refshint")) {
 				if len(d.Path.Refs) == 0 {
-					<p class="text-sm text-muted-foreground">{ T(ctx, "path.norefs") }</p>
+					@EmptyLine(T(ctx, "path.norefs"))
 				} else {
 					<div class="divide-y border-y">
 						for _, ref := range d.Path.Refs {

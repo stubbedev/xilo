@@ -245,7 +245,7 @@ var zh = map[string]string{
 	"caches.storage":  "存储后端",
 
 	// tokens
-	"tokens.title":     "访问令牌",
+	"tokens.title":     "令牌",
 	"tokens.new":       "新建令牌",
 	"tokens.newtitle":  "新建令牌",
 	"tokens.newhint":   "用于上传或下载。",

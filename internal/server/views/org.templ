@@ -80,7 +80,7 @@ templ Org(d OrgPageData) {
 				}
 				if d.CanManage {
 					if len(d.AllUsers) > 0 {
-						<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") } class="mt-4 flex flex-wrap items-end gap-2">
+						<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") } class="mt-6 flex flex-wrap items-end gap-2">
 							<div class="min-w-48 flex-1">
 								@Field("", T(ctx, "org.addmember")) {
 									@selectbox.SelectBox() {
@@ -108,7 +108,7 @@ templ Org(d OrgPageData) {
 							}
 						</form>
 					} else {
-						<p class="mt-4 text-sm text-muted-foreground">{ T(ctx, "org.nocandidates") }</p>
+						<p class="mt-6 text-sm text-muted-foreground">{ T(ctx, "org.nocandidates") }</p>
 					}
 				}
 			}

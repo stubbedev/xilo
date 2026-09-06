@@ -29,7 +29,10 @@ func (d AuditData) filtered() bool { return d.Query != "" || d.Method != "" || d
 templ AuditPage(d AuditData) {
 	@Layout(T(ctx, "audit.title"), "audit", d.Nav, Flash{}) {
 		@PageHeader(T(ctx, "audit.title"), T(ctx, "audit.subtitle")) {
-			@SearchInput(d.Sort.With("q", ""), "q", d.Query, T(ctx, "audit.search"), "#audit-results")
+			// An empty, unfiltered log has nothing to search.
+			if len(d.Entries) > 0 || d.filtered() {
+				@SearchInput(d.Sort.With("q", ""), "q", d.Query, T(ctx, "audit.search"), "#audit-results")
+			}
 		}
 		@StatRow() {
 			@StatTile("scroll-text", Count(d.Stats.Total), T(ctx, "audit.total"), "", "")
@@ -74,22 +77,29 @@ templ auditResults(d AuditData) {
 										<span class="font-mono text-xs tabular-nums">{ stamp(e.TS) }</span>
 									}
 								}
+								// One line, not two: an address stacked under every
+								// actor doubled the height of every row in a log
+								// that is read by scanning down it.
 								@table.Cell() {
-									<div class="min-w-0">
+									<div class="flex min-w-0 items-baseline gap-2">
 										if e.Actor != "" && e.UserID == 0 {
 											@WithTooltip(T(ctx, "audit.token")) {
-												<div class="flex items-center gap-1 truncate font-medium">
+												<span class="flex shrink-0 items-center gap-1 font-medium">
 													@Icon("key-round")
 													<span class="truncate">{ e.Actor }</span>
-												</div>
+												</span>
 											}
 										} else if e.Actor != "" {
-											<div class="truncate font-medium">{ e.Actor }</div>
+											<span class="shrink-0 truncate font-medium">{ e.Actor }</span>
 										} else {
-											<div class="truncate text-muted-foreground">{ T(ctx, "audit.system") }</div>
+											<span class="shrink-0 truncate text-muted-foreground">{ T(ctx, "audit.system") }</span>
 										}
 										if e.IP != "" {
-											<div class="truncate font-mono text-xs text-muted-foreground">{ e.IP }</div>
+											@WithTooltip(e.IP) {
+												@Meta() {
+													{ e.IP }
+												}
+											}
 										}
 									</div>
 								}
