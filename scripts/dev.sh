@@ -19,6 +19,13 @@ WORK="$PWD/tmp/dev"
 XILO=./tmp/xilo
 ADMIN_PW=demo
 
+# Never wipe tmp/dev under a running instance: a second `just dev` would pull
+# the database out from under the first and leave it hanging on busy retries.
+if curl -fs -o /dev/null "$APP/healthz" 2>/dev/null; then
+	echo "something already serves $URL (another just dev?); stop it first" >&2
+	exit 1
+fi
+
 echo "== building =="
 templ generate >/dev/null
 just css >/dev/null
