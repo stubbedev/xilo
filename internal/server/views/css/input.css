@@ -739,11 +739,12 @@ input[type="radio"]:not(:disabled) { cursor: pointer; }
    before. */
 @view-transition { navigation: auto; }
 
-/* Only the page body is named. The chrome (sidebar, header, footer) stays in
-   the root snapshot, where it cross-fades with a copy of itself and is
-   therefore invisible — which is the point: the rail must not blink every
-   time you move between pages. */
-main { view-transition-name: xilo-page; }
+/* Only the page body is named — #page, not `main`, because templui's sidebar
+   inset is a <main> of its own and two elements sharing a view-transition-name
+   abort the transition ("invalid state"). The chrome (rail, header, footer)
+   stays in the root snapshot, where it cross-fades with a copy of itself and
+   is therefore invisible: the rail must not blink on every navigation. */
+#page { view-transition-name: xilo-page; }
 @keyframes xilo-page-in {
   from { opacity: 0; transform: translateY(6px); }
 }
@@ -763,4 +764,21 @@ main { view-transition-name: xilo-page; }
   ::view-transition-group(*),
   ::view-transition-old(*),
   ::view-transition-new(*) { animation: none !important; }
+}
+
+/* The boosted-navigation indicator (navProgress). htmx toggles .htmx-request
+   on it; the 250ms delay on the way in means a navigation that answers fast
+   never flashes a bar, while the way out is immediate. */
+#nav-progress { opacity: 0; transition: opacity 120ms ease 250ms; }
+#nav-progress.htmx-request { opacity: 1; }
+#nav-progress:not(.htmx-request) { transition-delay: 0s; }
+@keyframes xilo-progress {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+#nav-progress.htmx-request > div {
+  animation: xilo-progress 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  #nav-progress > div { animation: none !important; width: 100%; }
 }

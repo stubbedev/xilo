@@ -217,6 +217,11 @@ func (s *Server) nav(r *http.Request, u *store.User) views.Nav {
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		n.Sessions = s.walletAccounts(r, c.Value)
 	}
+	// templui's sidebar script writes this cookie but never reads it back, so
+	// the rail is only ever collapsed until the next render. Render it.
+	if c, err := r.Cookie("sidebar_state"); err == nil {
+		n.RailCollapsed = c.Value == "false"
+	}
 	return n
 }
 
@@ -767,7 +772,14 @@ func (s *Server) handleAppearance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Flash in the language just chosen, not the one the page was rendered in.
-	s.accountFlash(w, r, views.T(views.WithLocale(r.Context(), locale), "flash.appearancesaved"))
+	msg := views.T(views.WithLocale(r.Context(), locale), "flash.appearancesaved")
+	s.setFlash(w, msg, "")
+	// The palette and the language are attributes of <html>, which a boosted
+	// body swap leaves untouched: this one costs a reload.
+	if hxRefresh(w, r) {
+		return
+	}
+	http.Redirect(w, r, "/admin/account", http.StatusSeeOther)
 }
 
 func (s *Server) handleInstancePage(w http.ResponseWriter, r *http.Request) {
@@ -1887,13 +1899,10 @@ func (s *Server) flashStore(w http.ResponseWriter, r *http.Request, path string,
 // flashRedirect stores a one-shot flash in a cookie and 303-redirects (PRG:
 // a refresh re-fetches the page instead of re-executing the action). Never
 // used for secrets — those render directly and are shown exactly once.
-func (s *Server) flashRedirect(w http.ResponseWriter, r *http.Request, path, msg string) {
-	s.flashRedirectCode(w, r, path, msg, "")
-}
-
-// flashRedirectCode is flashRedirect with a copyable code box (e.g. a rotated
-// public key). Not for secrets.
-func (s *Server) flashRedirectCode(w http.ResponseWriter, r *http.Request, path, msg, code string) {
+// setFlash arms the one-shot flash cookie the next GET pops. Only the redirect
+// helpers and the handlers that answer a boosted request with a reload use it
+// directly — everything else goes through flashRedirect.
+func (s *Server) setFlash(w http.ResponseWriter, msg, code string) {
 	v := url.QueryEscape(msg)
 	if code != "" {
 		v += "|" + url.QueryEscape(code)
@@ -1902,7 +1911,35 @@ func (s *Server) flashRedirectCode(w http.ResponseWriter, r *http.Request, path,
 		Name: flashCookie, Value: v, Path: "/admin",
 		MaxAge: 60, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.secureCookies(),
 	})
-	if r.Header.Get("HX-Request") == "true" {
+}
+
+// hxRefresh answers a boosted request with a full page load instead of a body
+// swap, for the few changes a swap cannot carry: <html> holds the palette and
+// the language, and hx-boost never replaces it. A redirect would not do — the
+// browser follows the 303 itself, so htmx only ever sees the headers of the
+// page that comes back, never the ones on the redirect.
+func hxRefresh(w http.ResponseWriter, r *http.Request) bool {
+	if r.Header.Get("HX-Boosted") != "true" {
+		return false
+	}
+	w.Header().Set("HX-Refresh", "true")
+	w.WriteHeader(http.StatusNoContent)
+	return true
+}
+
+func (s *Server) flashRedirect(w http.ResponseWriter, r *http.Request, path, msg string) {
+	s.flashRedirectCode(w, r, path, msg, "")
+}
+
+// flashRedirectCode is flashRedirect with a copyable code box (e.g. a rotated
+// public key). Not for secrets.
+func (s *Server) flashRedirectCode(w http.ResponseWriter, r *http.Request, path, msg, code string) {
+	s.setFlash(w, msg, code)
+	// A boosted navigation is a whole-page swap, so it can follow the plain 303
+	// itself and land on the target without a reload. Only a fragment request
+	// needs the client-side redirect: its target is one region of the page, and
+	// splicing a full page into it would nest the app inside itself.
+	if r.Header.Get("HX-Request") == "true" && r.Header.Get("HX-Boosted") != "true" {
 		w.Header().Set("HX-Redirect", path)
 		return
 	}

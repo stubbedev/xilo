@@ -102,7 +102,7 @@ templ Account(d AccountData) {
 			@ListSection(T(ctx, "acct.appearance"), nil) {
 				// Two preferences that apply the moment they are picked, so they
 				// have no Save and therefore no card around them.
-				<form method="post" action="/admin/account/appearance" class="divide-y border-y" onchange="if (event.target.name === 'theme' || event.target.name === 'locale') this.submit()">
+				<form method="post" action="/admin/account/appearance" class="divide-y border-y" onchange="if (event.target.name === 'theme' || event.target.name === 'locale') this.requestSubmit()">
 					@SettingRow(T(ctx, "acct.palette"), "") {
 						<div class="w-48">
 							@selectbox.SelectBox() {

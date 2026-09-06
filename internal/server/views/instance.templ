@@ -48,7 +48,7 @@ templ Instance(d InstanceData) {
 // button — it is a ruled section like the rest of the page.
 templ policySection(d InstanceData) {
 	@ListSection(T(ctx, "inst.policy"), nil) {
-		<form method="post" action="/admin/settings/instance" class="border-y" onchange="this.submit()">
+		<form method="post" action="/admin/settings/instance" class="border-y" onchange="this.requestSubmit()">
 			@PermSwitchID("allow_registrations", "allow_registrations", "on", T(ctx, "inst.regs"), d.AllowRegs)
 			@PermSwitchID("require_approval", "require_approval", "on", T(ctx, "inst.approve"), d.RequireOK)
 		</form>

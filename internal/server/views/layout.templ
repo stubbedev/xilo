@@ -42,6 +42,11 @@ type Nav struct {
 	Sessions []NavSession    // every account this browser is signed in as
 	Active   string          // active context slug; "" = all accounts
 	Theme    string          // the user's palette id ("" = default), see theme.go
+	// RailCollapsed is the sidebar's state, read back from the cookie templui's
+	// script writes. It has to be server-rendered: the rail is part of every
+	// page's HTML, so without it a collapsed rail springs open again on the
+	// next navigation.
+	RailCollapsed bool
 }
 
 // Layout is the signed-in app shell: top navigation bar, flash banner, and the
@@ -106,7 +111,20 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 				@devReloadScript()
 			}
 		</head>
-		<body class="bg-background text-foreground antialiased">
+		// hx-boost turns every in-shell link and form into an AJAX swap of the
+		// body: the stylesheet is not re-parsed, the component scripts are not
+		// re-run, and the rail keeps its scroll and its open dropdown. The swap
+		// spec is inherited, so `transition:true` routes a navigation through
+		// the same View Transition CSS as a real one — set here rather than
+		// globally, because the search, sort and pager swaps carry an hx-swap of
+		// their own and must stay instant.
+		<body
+			class="bg-background text-foreground antialiased"
+			hx-boost="true"
+			hx-swap="innerHTML transition:true"
+			hx-indicator="#nav-progress"
+		>
+			@navProgress()
 			if nav.LoggedIn {
 				@sidebar.Layout() {
 					@appSidebar(section, nav)
@@ -118,7 +136,7 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 									@themeToggle()
 								</div>
 							</header>
-							<main class="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
+							<main id="page" class="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
 								@FlashToast(flash)
 								{ children... }
 							</main>
@@ -127,7 +145,7 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 					}
 				}
 			} else {
-				<main class="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6">
+				<main id="page" class="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6">
 					@FlashToast(flash)
 					{ children... }
 				</main>
@@ -138,7 +156,7 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 
 // appSidebar is the collapsible left navigation rail.
 templ appSidebar(section string, nav Nav) {
-	@sidebar.Sidebar(sidebar.Props{ID: "app-sidebar", Collapsible: sidebar.CollapsibleIcon}) {
+	@sidebar.Sidebar(sidebar.Props{ID: "app-sidebar", Collapsible: sidebar.CollapsibleIcon, Collapsed: nav.RailCollapsed}) {
 		@sidebar.Header() {
 			<a href="/admin" class="flex items-center gap-2 px-2 py-1 font-semibold tracking-tight">
 				<span class="text-brand">
@@ -208,7 +226,7 @@ templ contextSwitcher(nav Nav) {
 		method="post"
 		action="/admin/context"
 		class="group-data-[tui-sidebar-state=collapsed]:hidden"
-		onchange="if (event.target.name === 'ctx') this.submit()"
+		onchange="if (event.target.name === 'ctx') this.requestSubmit()"
 	>
 		@selectbox.SelectBox() {
 			@selectbox.Trigger(selectbox.TriggerProps{Name: "ctx", Attributes: templ.Attributes{"aria-label": T(ctx, "nav.context")}}) {
@@ -261,12 +279,14 @@ templ userMenu(nav Nav) {
 					}
 				}
 			</form>
-			@dropdown.Item(dropdown.ItemProps{Href: "/admin/signin", Class: "justify-start gap-2"}) {
+			// Leaves the app shell for the sign-in page, which has a <head> and a
+			// body layout of its own — a boosted swap would splice it into this one.
+			@dropdown.Item(dropdown.ItemProps{Href: "/admin/signin", Class: "justify-start gap-2", Attributes: templ.Attributes{"hx-boost": "false"}}) {
 				@Icon("plus")
 				<span>{ T(ctx, "nav.addaccount") }</span>
 			}
 			@dropdown.Separator()
-			<form method="post" action="/admin/logout">
+			<form method="post" action="/admin/logout" hx-boost="false">
 				@dropdown.Item(dropdown.ItemProps{Class: "p-0"}) {
 					<button type="submit" class="flex w-full items-center gap-2 px-2 py-1.5 text-left text-destructive">
 						@Icon("log-out")
@@ -689,4 +709,15 @@ type NavSession struct {
 	UserID int64
 	Name   string
 	Active bool
+}
+
+// navProgress is the whole of a boosted navigation's feedback: a hairline at
+// the top edge while the next page is in flight. It is the shared hx-indicator
+// (set on <body>), so any request that does not name one of its own lights it.
+// input.css holds it back for a beat — a page that answers in 80ms should
+// flash nothing at all.
+templ navProgress() {
+	<div id="nav-progress" class="pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden" aria-hidden="true">
+		<div class="h-full w-2/5 bg-foreground/40"></div>
+	</div>
 }

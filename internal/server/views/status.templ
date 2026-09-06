@@ -319,7 +319,8 @@ templ statusPollScript() {
 				}, 250);
 			}
 			tuneBurst();
-			new MutationObserver(tuneBurst).observe(document.documentElement, {
+			var themeWatch = new MutationObserver(tuneBurst);
+			themeWatch.observe(document.documentElement, {
 				attributes: true,
 				attributeFilter: ['class', 'data-palette'],
 			});
@@ -379,7 +380,16 @@ templ statusPollScript() {
 				});
 				tuneAxes();
 			}
-			setInterval(function () {
+			// A boosted navigation swaps the body out from under this script, so
+			// the poller has to notice its own page is gone: nothing else would
+			// stop it, and every visit to this page would leave one more behind,
+			// all of them polling.
+			var timer = setInterval(function () {
+				if (!cfgEl.isConnected) {
+					clearInterval(timer);
+					themeWatch.disconnect();
+					return;
+				}
 				fetch(cfg.url, { headers: { Accept: 'application/json' } })
 					.then(function (r) {
 						if (!r.ok) throw 0;
