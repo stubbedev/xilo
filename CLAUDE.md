@@ -15,7 +15,7 @@ Everything goes through `just` (run `just` to list recipes):
 - `just lint` — css + generate + golangci-lint + `goimports -w .` + `go vet ./...` + a `-tags noserver` build. **It rewrites your files.** `.golangci.yml` is a stdlib-first set (`modernize`, `usestdlibvars`, `perfsprint`, `mirror`, `intrange`, `exptostd`, `errorlint`, `staticcheck`, …) run with `--fix`: anything auto-fixable is applied, never reported, so a finding that survives is one no fixer can write. CI runs the same set read-only — commit what `just lint` changed.
 - `just check` — everything CI runs (lint, test, schema-check, nix-check)
 - `just release-patch` / `-minor` / `-major` — gate on the default branch, resync schema/lock/vendorHash, tag and push; the tag push publishes the release (RELEASING.md). `just release-preview` is the dry run.
-- `just dev` — live-reload dev server via `air` (rebuilds on .go/.templ/.css change; copy `xilo.example.yaml` to `xilo.yaml` first)
+- `just dev` — UI dev server (`scripts/dev.sh`): seeds a throwaway instance under `tmp/dev` with dummy data, then runs `air` on :8090 so every `.go`/`.templ`/`.css` save rebuilds and restarts; under `XILO_DEV` the page morphs itself in place (idiomorph) instead of reloading. Sign in admin / demo.
 - Single test: `go test ./internal/server/ -run TestName` — but run `just generate` (templ) first if any `.templ` changed, and `just css` if classes changed.
 
 Generated artifacts are **regenerated, never hand-edited, and mostly git-ignored**:

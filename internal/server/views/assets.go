@@ -5,6 +5,11 @@ package views
 // fetches the current file after an edit/deploy (cache-busting).
 var assetVersions = map[string]string{}
 
+// DevMode (set under XILO_DEV, `just dev`) adds the morph-reload script to
+// every page: after a rebuild the page is refetched and patched in place
+// instead of reloaded, so scroll, open dialogs and typed input survive.
+var DevMode bool
+
 // SetAssetVersions is called once by the server with content hashes.
 func SetAssetVersions(m map[string]string) { assetVersions = m }
 

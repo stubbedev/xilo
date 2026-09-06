@@ -21,6 +21,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/stubbedev/xilo/internal/config"
+	"github.com/stubbedev/xilo/internal/server/views"
 	"github.com/stubbedev/xilo/internal/storage"
 	"github.com/stubbedev/xilo/internal/store"
 )
@@ -133,6 +134,12 @@ func (s *Server) Handler() http.Handler {
 	}
 	s.registerPasskeyRoutes(mux)
 	s.registerStatic(mux)
+	if os.Getenv("XILO_DEV") != "" {
+		// `just dev`: the page holds this stream open; when air restarts the
+		// binary the stream drops, and the reconnect is the reload signal.
+		views.DevMode = true
+		mux.HandleFunc("GET /dev/events", devEvents)
+	}
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /metrics", s.handleMetrics)
 	mux.HandleFunc("GET /", s.handleIndex)
@@ -271,6 +278,29 @@ func (s *Server) recordAudit(r *http.Request, status int, elapsed time.Duration)
 		IP: s.clientIP(r), UserAgent: r.UserAgent(), DurationMs: elapsed.Milliseconds(),
 	}); err != nil {
 		log.Printf("audit: %v", err)
+	}
+}
+
+// devEvents is a keepalive-only SSE stream for the dev reload script (see
+// devReloadScript in layout.templ). Registered only under XILO_DEV.
+func devEvents(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	rc := http.NewResponseController(w)
+	fmt.Fprint(w, ": ready\n\n")
+	_ = rc.Flush()
+	t := time.NewTicker(15 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-t.C:
+			fmt.Fprint(w, ": ping\n\n")
+			if rc.Flush() != nil {
+				return
+			}
+		}
 	}
 }
 

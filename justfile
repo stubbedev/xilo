@@ -29,15 +29,13 @@ build: css generate
     go build -ldflags="{{GO_LDFLAGS}}" -o bin/xilo ./cmd/xilo
     @echo "Built ./bin/xilo"
 
-# Live-reload dev server (air): rebuilds on .go/.templ/.css change.
-# Copy xilo.example.yaml to xilo.yaml first.
+# UI dev server (scripts/dev.sh): a throwaway instance seeded with dummy data
+# (caches, tokens, users, orgs, pushed store paths, activity) behind air, so
+# every .go/.templ/.css save rebuilds, restarts and patches the open page in
+# place (no full reload).
+# http://localhost:8090, sign in admin / demo. Ctrl-C stops.
 dev:
-    #!/usr/bin/env sh
-    # Open the admin UI once the server is accepting; air runs in the
-    # foreground, so its hot-reload restarts never re-trigger this.
-    url="http://localhost$(awk -F'"' '/^listen:/{print $2}' xilo.yaml)"
-    (until curl -sf -o /dev/null "$url"; do sleep 0.3; done; "${BROWSER:-xdg-open}" "$url") &
-    air
+    ./scripts/dev.sh
 
 # Install into $GOBIN (or $GOPATH/bin).
 install:
@@ -143,11 +141,6 @@ check: lint test schema-check nix-check
 # Run the server against ./xilo.yaml (copy xilo.example.yaml first).
 run: build
     ./bin/xilo serve
-
-# Throwaway instance with dummy data for eyeballing the UI (scripts/demo.sh):
-# `just demo` serves http://localhost:8090, sign in admin / demo. Ctrl-C stops.
-demo port="8090": build
-    ./scripts/demo.sh {{port}}
 
 # Create a cache locally: `just cache-create mycache`.
 cache-create name:

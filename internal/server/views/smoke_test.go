@@ -110,6 +110,18 @@ func TestSmokeAllComponents(t *testing.T) {
 	}
 }
 
+func TestDevModeScript(t *testing.T) {
+	nav := views.Nav{LoggedIn: true}
+	if out := render(t, "Layout", views.Layout("t", "", nav, views.Flash{})); strings.Contains(out, "/dev/events") {
+		t.Fatal("dev reload script rendered outside dev mode")
+	}
+	views.DevMode = true
+	defer func() { views.DevMode = false }()
+	if out := render(t, "Layout-dev", views.Layout("t", "", nav, views.Flash{})); !strings.Contains(out, "/dev/events") || !strings.Contains(out, "idiomorph") {
+		t.Fatal("dev reload script missing in dev mode")
+	}
+}
+
 func TestSmokeDashboard(t *testing.T) {
 	d := views.DashboardData{
 		Global: store.Global{Caches: 2, Paths: 3, Chunks: 4, StoredBytes: 100, LogicalBytes: 200},

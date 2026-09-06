@@ -96,6 +96,9 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 			@sidebar.Script()
 			@webauthnScript()
 			@copyToastScript()
+			if DevMode {
+				@devReloadScript()
+			}
 		</head>
 		<body class="bg-background text-foreground antialiased">
 			if nav.LoggedIn {
@@ -257,6 +260,102 @@ templ copyToastScript() {
 			var t = document.getElementById('copied-toast');
 			if (t) document.body.appendChild(t.content.cloneNode(true));
 		});
+	</script>
+}
+
+// devReloadScript patches the page in place whenever the dev server comes
+// back after a rebuild (the SSE stream at /dev/events drops on restart and
+// reconnects). Dev only, never shipped to a page in production: DevMode is
+// false unless XILO_DEV is set.
+//
+// The shape follows Hotwire Spark (37signals' live reload for Rails): fetch
+// the current URL, hot-swap any stylesheet whose fingerprint changed by
+// loading the new one before removing the old (no unstyled flash), then morph
+// <body> with idiomorph so only changed nodes are touched.
+//
+// Why this survives a morph without re-initialising templui: every templui
+// script we load either delegates events on document (popover, copybutton,
+// checkbox, sidebar) or watches document.body with a MutationObserver and
+// initialises added nodes (dialog, selectbox, tabs, datepicker, toast, label,
+// progress, chart, inputotp, textarea). Nodes idiomorph keeps are already
+// initialised; nodes it adds get picked up by those observers. Client-side
+// state the server cannot know is left alone: <details open>, sidebar
+// collapse, and the data-tui-*-open/-state flags dialogs and popovers toggle.
+templ devReloadScript() {
+	<script src={ Asset("idiomorph.min.js") }></script>
+	<script>
+		(function () {
+			var keep =
+				/^open$|^data-tui-.*-(open|state|closing|initialized|placement)$/;
+			var connected = false;
+			function stem(href) {
+				return href.split('?')[0];
+			}
+			function swapStyles(next) {
+				var jobs = [];
+				next.querySelectorAll('link[rel=stylesheet]').forEach(function (fresh) {
+					var cur = Array.prototype.find.call(
+						document.querySelectorAll('link[rel=stylesheet]'),
+						function (l) {
+							return (
+								stem(l.getAttribute('href')) ===
+								stem(fresh.getAttribute('href'))
+							);
+						},
+					);
+					if (!cur) {
+						document.head.appendChild(fresh.cloneNode());
+						return;
+					}
+					if (cur.getAttribute('href') === fresh.getAttribute('href')) return;
+					jobs.push(
+						new Promise(function (done) {
+							var link = fresh.cloneNode();
+							link.onload = link.onerror = function () {
+								cur.remove();
+								done();
+							};
+							cur.after(link);
+						}),
+					);
+				});
+				return Promise.all(jobs);
+			}
+			function morphBody(next) {
+				document.title = next.title;
+				Idiomorph.morph(document.body, next.body, {
+					callbacks: {
+						beforeAttributeUpdated: function (name) {
+							return !keep.test(name);
+						},
+						beforeNodeRemoved: function (node) {
+							return !(node.matches && node.matches('[data-tui-toast]'));
+						},
+					},
+				});
+			}
+			var es = new EventSource('/dev/events');
+			es.onopen = function () {
+				if (!connected) {
+					connected = true;
+					return;
+				}
+				fetch(location.href, { headers: { 'X-Dev-Reload': '1' } })
+					.then(function (r) {
+						return r.text();
+					})
+					.then(function (html) {
+						var next = new DOMParser().parseFromString(html, 'text/html');
+						return swapStyles(next).then(function () {
+							morphBody(next);
+							console.debug('xilo dev: page patched');
+						});
+					})
+					.catch(function () {
+						location.reload();
+					});
+			};
+		})();
 	</script>
 }
 
