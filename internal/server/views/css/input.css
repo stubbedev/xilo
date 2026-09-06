@@ -151,32 +151,32 @@ html[data-palette="catppuccin"] {
   --background: #e6e9ef; --foreground: #4c4f69;
   --card: #eff1f5; --card-foreground: #4c4f69;
   --popover: #eff1f5; --popover-foreground: #4c4f69;
-  --primary: #fe640b; --primary-foreground: #eff1f5;
+  --primary: #8839ef; --primary-foreground: #eff1f5;
   --secondary: #ccd0da; --secondary-foreground: #4c4f69;
   --muted: #ccd0da; --muted-foreground: #6c6f85;
-  --accent: #ccd0da; --accent-foreground: #4c4f69;
+  --accent: #8839ef; --accent-foreground: #eff1f5;
   --destructive: #d20f39; --success: #40a02b; --warning: #df8e1d;
-  --border: #bcc0cc; --input: #bcc0cc; --ring: #fe640b;
+  --border: #bcc0cc; --input: #bcc0cc; --ring: #8839ef;
   --sidebar: #dce0e8; --sidebar-foreground: #4c4f69;
-  --sidebar-primary: #fe640b; --sidebar-primary-foreground: #eff1f5;
-  --sidebar-accent: #ccd0da; --sidebar-accent-foreground: #4c4f69;
-  --sidebar-border: #bcc0cc; --sidebar-ring: #fe640b;
+  --sidebar-primary: #8839ef; --sidebar-primary-foreground: #eff1f5;
+  --sidebar-accent: #8839ef; --sidebar-accent-foreground: #eff1f5;
+  --sidebar-border: #bcc0cc; --sidebar-ring: #8839ef;
   --selection: #4c4f69; --selection-foreground: #eff1f5;
 }
 html.dark[data-palette="catppuccin"] {
   --background: #181825; --foreground: #cdd6f4;
   --card: #1e1e2e; --card-foreground: #cdd6f4;
   --popover: #1e1e2e; --popover-foreground: #cdd6f4;
-  --primary: #fab387; --primary-foreground: #11111b;
+  --primary: #cba6f7; --primary-foreground: #181825;
   --secondary: #313244; --secondary-foreground: #cdd6f4;
   --muted: #313244; --muted-foreground: #a6adc8;
-  --accent: #313244; --accent-foreground: #cdd6f4;
+  --accent: #cba6f7; --accent-foreground: #181825;
   --destructive: #f38ba8; --success: #a6e3a1; --warning: #f9e2af;
-  --border: #45475a; --input: #45475a; --ring: #fab387;
+  --border: #45475a; --input: #45475a; --ring: #cba6f7;
   --sidebar: #11111b; --sidebar-foreground: #cdd6f4;
-  --sidebar-primary: #fab387; --sidebar-primary-foreground: #11111b;
-  --sidebar-accent: #313244; --sidebar-accent-foreground: #cdd6f4;
-  --sidebar-border: #45475a; --sidebar-ring: #fab387;
+  --sidebar-primary: #cba6f7; --sidebar-primary-foreground: #181825;
+  --sidebar-accent: #cba6f7; --sidebar-accent-foreground: #181825;
+  --sidebar-border: #45475a; --sidebar-ring: #cba6f7;
   --selection: #cdd6f4; --selection-foreground: #1e1e2e;
 }
 html[data-palette="nord"] {
@@ -243,6 +243,326 @@ html.dark[data-palette="gruvbox"] {
   --sidebar-border: #504945; --sidebar-ring: #fe8019;
   --selection: #ebdbb2; --selection-foreground: #282828;
 }
+html.dark[data-palette="dracula"] {
+  --background: #282a36; --foreground: #f8f8f2;
+  --card: #21222c; --card-foreground: #f8f8f2;
+  --popover: #21222c; --popover-foreground: #f8f8f2;
+  --primary: #ff79c6; --primary-foreground: #282a36;
+  --secondary: #44475a; --secondary-foreground: #f8f8f2;
+  --muted: #44475a; --muted-foreground: #6272a4;
+  --accent: #44475a; --accent-foreground: #f8f8f2;
+  --destructive: #ff5555; --success: #50fa7b; --warning: #f1fa8c;
+  --border: #44475a; --input: #44475a; --ring: #ff79c6;
+  --sidebar: #1e1f29; --sidebar-foreground: #f8f8f2;
+  --sidebar-primary: #ff79c6; --sidebar-primary-foreground: #282a36;
+  --sidebar-accent: #44475a; --sidebar-accent-foreground: #f8f8f2;
+  --sidebar-border: #44475a; --sidebar-ring: #ff79c6;
+  --selection: #f8f8f2; --selection-foreground: #282a36;
+}
+html[data-palette="github-dark"] {
+  --background: #0d1117; --foreground: #c9d1d9;
+  --card: #161b22; --card-foreground: #c9d1d9;
+  --popover: #161b22; --popover-foreground: #c9d1d9;
+  --primary: #58a6ff; --primary-foreground: #0d1117;
+  --secondary: #30363d; --secondary-foreground: #c9d1d9;
+  --muted: #30363d; --muted-foreground: #8b949e;
+  --accent: #30363d; --accent-foreground: #c9d1d9;
+  --destructive: #f85149; --success: #3fb950; --warning: #d29922;
+  --border: #30363d; --input: #30363d; --ring: #58a6ff;
+  --sidebar: #010409; --sidebar-foreground: #c9d1d9;
+  --sidebar-primary: #58a6ff; --sidebar-primary-foreground: #0d1117;
+  --sidebar-accent: #30363d; --sidebar-accent-foreground: #c9d1d9;
+  --sidebar-border: #30363d; --sidebar-ring: #58a6ff;
+  --selection: #c9d1d9; --selection-foreground: #161b22;
+}
+html[data-palette="github-light"] {
+  --background: #ffffff; --foreground: #24292f;
+  --card: #f6f8fa; --card-foreground: #24292f;
+  --popover: #f6f8fa; --popover-foreground: #24292f;
+  --primary: #0969da; --primary-foreground: #ffffff;
+  --secondary: #eaeef2; --secondary-foreground: #24292f;
+  --muted: #eaeef2; --muted-foreground: #57606a;
+  --accent: #eaeef2; --accent-foreground: #24292f;
+  --destructive: #d1242f; --success: #1a7f37; --warning: #9e6a03;
+  --border: #d0d7de; --input: #d0d7de; --ring: #0969da;
+  --sidebar: #f6f8fa; --sidebar-foreground: #24292f;
+  --sidebar-primary: #0969da; --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #eaeef2; --sidebar-accent-foreground: #24292f;
+  --sidebar-border: #d0d7de; --sidebar-ring: #0969da;
+  --selection: #24292f; --selection-foreground: #ffffff;
+}
+html.dark[data-palette="github-light"] {
+  --background: #0d1117; --foreground: #c9d1d9;
+  --card: #161b22; --card-foreground: #c9d1d9;
+  --popover: #161b22; --popover-foreground: #c9d1d9;
+  --primary: #79c0ff; --primary-foreground: #0d1117;
+  --secondary: #30363d; --secondary-foreground: #c9d1d9;
+  --muted: #30363d; --muted-foreground: #8b949e;
+  --accent: #30363d; --accent-foreground: #c9d1d9;
+  --destructive: #f85149; --success: #3fb950; --warning: #d29922;
+  --border: #30363d; --input: #30363d; --ring: #79c0ff;
+  --sidebar: #010409; --sidebar-foreground: #c9d1d9;
+  --sidebar-primary: #79c0ff; --sidebar-primary-foreground: #0d1117;
+  --sidebar-accent: #30363d; --sidebar-accent-foreground: #c9d1d9;
+  --sidebar-border: #30363d; --sidebar-ring: #79c0ff;
+  --selection: #c9d1d9; --selection-foreground: #161b22;
+}
+html[data-palette="one-dark"] {
+  --background: #f5f5f5; --foreground: #383a42;
+  --card: #fafafa; --card-foreground: #383a42;
+  --popover: #fafafa; --popover-foreground: #383a42;
+  --primary: #0184bc; --primary-foreground: #fafafa;
+  --secondary: #e5e5e5; --secondary-foreground: #383a42;
+  --muted: #e5e5e5; --muted-foreground: #686b77;
+  --accent: #e5e5e5; --accent-foreground: #383a42;
+  --destructive: #e45649; --success: #50a14f; --warning: #c18401;
+  --border: #d4d4d4; --input: #d4d4d4; --ring: #0184bc;
+  --sidebar: #e8e8e8; --sidebar-foreground: #383a42;
+  --sidebar-primary: #0184bc; --sidebar-primary-foreground: #fafafa;
+  --sidebar-accent: #e5e5e5; --sidebar-accent-foreground: #383a42;
+  --sidebar-border: #d4d4d4; --sidebar-ring: #0184bc;
+  --selection: #383a42; --selection-foreground: #fafafa;
+}
+html.dark[data-palette="one-dark"] {
+  --background: #282c34; --foreground: #abb2bf;
+  --card: #3e4451; --card-foreground: #abb2bf;
+  --popover: #3e4451; --popover-foreground: #abb2bf;
+  --primary: #61afef; --primary-foreground: #282c34;
+  --secondary: #2c313c; --secondary-foreground: #abb2bf;
+  --muted: #2c313c; --muted-foreground: #565c64;
+  --accent: #2c313c; --accent-foreground: #abb2bf;
+  --destructive: #e06c75; --success: #98c379; --warning: #e5c07b;
+  --border: #545862; --input: #545862; --ring: #61afef;
+  --sidebar: #21252b; --sidebar-foreground: #abb2bf;
+  --sidebar-primary: #61afef; --sidebar-primary-foreground: #282c34;
+  --sidebar-accent: #3e4451; --sidebar-accent-foreground: #abb2bf;
+  --sidebar-border: #545862; --sidebar-ring: #61afef;
+  --selection: #abb2bf; --selection-foreground: #282c34;
+}
+html[data-palette="solarized-light"] {
+  --background: #fdf6e3; --foreground: #657b83;
+  --card: #eee8d5; --card-foreground: #657b83;
+  --popover: #eee8d5; --popover-foreground: #657b83;
+  --primary: #268bd2; --primary-foreground: #fdf6e3;
+  --secondary: #e8dcc5; --secondary-foreground: #657b83;
+  --muted: #e8dcc5; --muted-foreground: #93a1a1;
+  --accent: #e8dcc5; --accent-foreground: #657b83;
+  --destructive: #dc322f; --success: #859900; --warning: #b58900;
+  --border: #d6cfc2; --input: #d6cfc2; --ring: #268bd2;
+  --sidebar: #f1e8d7; --sidebar-foreground: #657b83;
+  --sidebar-primary: #268bd2; --sidebar-primary-foreground: #fdf6e3;
+  --sidebar-accent: #e8dcc5; --sidebar-accent-foreground: #657b83;
+  --sidebar-border: #d6cfc2; --sidebar-ring: #268bd2;
+  --selection: #657b83; --selection-foreground: #fdf6e3;
+}
+html.dark[data-palette="solarized-light"] {
+  --background: #002b36; --foreground: #839496;
+  --card: #073642; --card-foreground: #839496;
+  --popover: #073642; --popover-foreground: #839496;
+  --primary: #268bd2; --primary-foreground: #002b36;
+  --secondary: #073642; --secondary-foreground: #839496;
+  --muted: #073642; --muted-foreground: #586e75;
+  --accent: #073642; --accent-foreground: #839496;
+  --destructive: #dc322f; --success: #859900; --warning: #b58900;
+  --border: #093f5c; --input: #093f5c; --ring: #268bd2;
+  --sidebar: #002b36; --sidebar-foreground: #839496;
+  --sidebar-primary: #268bd2; --sidebar-primary-foreground: #002b36;
+  --sidebar-accent: #073642; --sidebar-accent-foreground: #839496;
+  --sidebar-border: #093f5c; --sidebar-ring: #268bd2;
+  --selection: #839496; --selection-foreground: #002b36;
+}
+html.dark[data-palette="solarized-dark"] {
+  --background: #002b36; --foreground: #839496;
+  --card: #073642; --card-foreground: #839496;
+  --popover: #073642; --popover-foreground: #839496;
+  --primary: #268bd2; --primary-foreground: #002b36;
+  --secondary: #073642; --secondary-foreground: #839496;
+  --muted: #073642; --muted-foreground: #586e75;
+  --accent: #073642; --accent-foreground: #839496;
+  --destructive: #dc322f; --success: #859900; --warning: #b58900;
+  --border: #093f5c; --input: #093f5c; --ring: #268bd2;
+  --sidebar: #001f2f; --sidebar-foreground: #839496;
+  --sidebar-primary: #268bd2; --sidebar-primary-foreground: #002b36;
+  --sidebar-accent: #073642; --sidebar-accent-foreground: #839496;
+  --sidebar-border: #093f5c; --sidebar-ring: #268bd2;
+  --selection: #839496; --selection-foreground: #073642;
+}
+html[data-palette="solarized-dark"] {
+  --background: #fdf6e3; --foreground: #657b83;
+  --card: #eee8d5; --card-foreground: #657b83;
+  --popover: #eee8d5; --popover-foreground: #657b83;
+  --primary: #268bd2; --primary-foreground: #fdf6e3;
+  --secondary: #e8dcc5; --secondary-foreground: #657b83;
+  --muted: #e8dcc5; --muted-foreground: #93a1a1;
+  --accent: #e8dcc5; --accent-foreground: #657b83;
+  --destructive: #dc322f; --success: #859900; --warning: #b58900;
+  --border: #d6cfc2; --input: #d6cfc2; --ring: #268bd2;
+  --sidebar: #f1e8d7; --sidebar-foreground: #657b83;
+  --sidebar-primary: #268bd2; --sidebar-primary-foreground: #fdf6e3;
+  --sidebar-accent: #e8dcc5; --sidebar-accent-foreground: #657b83;
+  --sidebar-border: #d6cfc2; --sidebar-ring: #268bd2;
+  --selection: #657b83; --selection-foreground: #fdf6e3;
+}
+html.dark[data-palette="tokyo-night"] {
+  --background: #1a1b26; --foreground: #c0caf5;
+  --card: #16161e; --card-foreground: #c0caf5;
+  --popover: #16161e; --popover-foreground: #c0caf5;
+  --primary: #7aa2f7; --primary-foreground: #1a1b26;
+  --secondary: #3b4261; --secondary-foreground: #c0caf5;
+  --muted: #3b4261; --muted-foreground: #565f89;
+  --accent: #3b4261; --accent-foreground: #c0caf5;
+  --destructive: #f7768e; --success: #9ece6a; --warning: #e0af68;
+  --border: #3b4261; --input: #3b4261; --ring: #7aa2f7;
+  --sidebar: #0f1018; --sidebar-foreground: #c0caf5;
+  --sidebar-primary: #7aa2f7; --sidebar-primary-foreground: #1a1b26;
+  --sidebar-accent: #3b4261; --sidebar-accent-foreground: #c0caf5;
+  --sidebar-border: #3b4261; --sidebar-ring: #7aa2f7;
+  --selection: #c0caf5; --selection-foreground: #16161e;
+}
+html[data-palette="tokyo-night"] {
+  --background: #f5f5f5; --foreground: #343b58;
+  --card: #eff0f5; --card-foreground: #343b58;
+  --popover: #eff0f5; --popover-foreground: #343b58;
+  --primary: #0088cc; --primary-foreground: #f5f5f5;
+  --secondary: #d5d8e3; --secondary-foreground: #343b58;
+  --muted: #d5d8e3; --muted-foreground: #6e738d;
+  --accent: #d5d8e3; --accent-foreground: #343b58;
+  --destructive: #d20f39; --success: #485e30; --warning: #8a6239;
+  --border: #c4c8da; --input: #c4c8da; --ring: #0088cc;
+  --sidebar: #e5e5ea; --sidebar-foreground: #343b58;
+  --sidebar-primary: #0088cc; --sidebar-primary-foreground: #f5f5f5;
+  --sidebar-accent: #d5d8e3; --sidebar-accent-foreground: #343b58;
+  --sidebar-border: #c4c8da; --sidebar-ring: #0088cc;
+  --selection: #343b58; --selection-foreground: #f5f5f5;
+}
+html[data-palette="ayu"] {
+  --background: #fafaf8; --foreground: #5c6366;
+  --card: #f3f1e8; --card-foreground: #5c6366;
+  --popover: #f3f1e8; --popover-foreground: #5c6366;
+  --primary: #0084bc; --primary-foreground: #fafaf8;
+  --secondary: #e8e6dd; --secondary-foreground: #5c6366;
+  --muted: #e8e6dd; --muted-foreground: #8a8980;
+  --accent: #e8e6dd; --accent-foreground: #5c6366;
+  --destructive: #f07178; --success: #5ab926; --warning: #ff8a1d;
+  --border: #dcd7cc; --input: #dcd7cc; --ring: #0084bc;
+  --sidebar: #eae6d9; --sidebar-foreground: #5c6366;
+  --sidebar-primary: #0084bc; --sidebar-primary-foreground: #fafaf8;
+  --sidebar-accent: #e8e6dd; --sidebar-accent-foreground: #5c6366;
+  --sidebar-border: #dcd7cc; --sidebar-ring: #0084bc;
+  --selection: #5c6366; --selection-foreground: #fafaf8;
+}
+html.dark[data-palette="ayu"] {
+  --background: #0d1117; --foreground: #bfbdb0;
+  --card: #151819; --card-foreground: #bfbdb0;
+  --popover: #151819; --popover-foreground: #bfbdb0;
+  --primary: #5ccfe6; --primary-foreground: #0d1117;
+  --secondary: #3e3935; --secondary-foreground: #bfbdb0;
+  --muted: #3e3935; --muted-foreground: #8a8980;
+  --accent: #3e3935; --accent-foreground: #bfbdb0;
+  --destructive: #f07178; --success: #b8cc52; --warning: #ffb454;
+  --border: #424038; --input: #424038; --ring: #5ccfe6;
+  --sidebar: #0a0e12; --sidebar-foreground: #bfbdb0;
+  --sidebar-primary: #5ccfe6; --sidebar-primary-foreground: #0d1117;
+  --sidebar-accent: #3e3935; --sidebar-accent-foreground: #bfbdb0;
+  --sidebar-border: #424038; --sidebar-ring: #5ccfe6;
+  --selection: #bfbdb0; --selection-foreground: #151819;
+}
+html[data-palette="everforest"] {
+  --background: #fdf6e3; --foreground: #5c6366;
+  --card: #f3f1e8; --card-foreground: #5c6366;
+  --popover: #f3f1e8; --popover-foreground: #5c6366;
+  --primary: #7fbbb3; --primary-foreground: #fdf6e3;
+  --secondary: #e8e6dd; --secondary-foreground: #5c6366;
+  --muted: #e8e6dd; --muted-foreground: #8a8980;
+  --accent: #e8e6dd; --accent-foreground: #5c6366;
+  --destructive: #e68183; --success: #a7c957; --warning: #dba273;
+  --border: #dcd7cc; --input: #dcd7cc; --ring: #7fbbb3;
+  --sidebar: #eae6d9; --sidebar-foreground: #5c6366;
+  --sidebar-primary: #7fbbb3; --sidebar-primary-foreground: #fdf6e3;
+  --sidebar-accent: #e8e6dd; --sidebar-accent-foreground: #5c6366;
+  --sidebar-border: #dcd7cc; --sidebar-ring: #7fbbb3;
+  --selection: #5c6366; --selection-foreground: #fdf6e3;
+}
+html.dark[data-palette="everforest"] {
+  --background: #2b3339; --foreground: #d4be98;
+  --card: #323a41; --card-foreground: #d4be98;
+  --popover: #323a41; --popover-foreground: #d4be98;
+  --primary: #7fbbb3; --primary-foreground: #2b3339;
+  --secondary: #38403f; --secondary-foreground: #d4be98;
+  --muted: #38403f; --muted-foreground: #9da9a0;
+  --accent: #38403f; --accent-foreground: #d4be98;
+  --destructive: #e68183; --success: #a7c957; --warning: #dba273;
+  --border: #3f4946; --input: #3f4946; --ring: #7fbbb3;
+  --sidebar: #1e2326; --sidebar-foreground: #d4be98;
+  --sidebar-primary: #7fbbb3; --sidebar-primary-foreground: #2b3339;
+  --sidebar-accent: #38403f; --sidebar-accent-foreground: #d4be98;
+  --sidebar-border: #3f4946; --sidebar-ring: #7fbbb3;
+  --selection: #d4be98; --selection-foreground: #323a41;
+}
+html[data-palette="kanagawa"] {
+  --background: #f2ecbc; --foreground: #54546d;
+  --card: #e8e3c8; --card-foreground: #54546d;
+  --popover: #e8e3c8; --popover-foreground: #54546d;
+  --primary: #1f1f28; --primary-foreground: #f2ecbc;
+  --secondary: #ddd7c8; --secondary-foreground: #54546d;
+  --muted: #ddd7c8; --muted-foreground: #7f7f96;
+  --accent: #ddd7c8; --accent-foreground: #54546d;
+  --destructive: #d7474b; --success: #76946a; --warning: #8b7000;
+  --border: #c8bfb8; --input: #c8bfb8; --ring: #1f1f28;
+  --sidebar: #e8e3c8; --sidebar-foreground: #54546d;
+  --sidebar-primary: #1f1f28; --sidebar-primary-foreground: #f2ecbc;
+  --sidebar-accent: #ddd7c8; --sidebar-accent-foreground: #54546d;
+  --sidebar-border: #c8bfb8; --sidebar-ring: #1f1f28;
+  --selection: #54546d; --selection-foreground: #f2ecbc;
+}
+html.dark[data-palette="kanagawa"] {
+  --background: #1f1f28; --foreground: #dcd7ba;
+  --card: #2a2a37; --card-foreground: #dcd7ba;
+  --popover: #2a2a37; --popover-foreground: #dcd7ba;
+  --primary: #7fb4ca; --primary-foreground: #1f1f28;
+  --secondary: #3a3a4e; --secondary-foreground: #dcd7ba;
+  --muted: #3a3a4e; --muted-foreground: #a6a69c;
+  --accent: #3a3a4e; --accent-foreground: #dcd7ba;
+  --destructive: #ec7279; --success: #98bb6c; --warning: #e6c384;
+  --border: #54546d; --input: #54546d; --ring: #7fb4ca;
+  --sidebar: #16161d; --sidebar-foreground: #dcd7ba;
+  --sidebar-primary: #7fb4ca; --sidebar-primary-foreground: #1f1f28;
+  --sidebar-accent: #3a3a4e; --sidebar-accent-foreground: #dcd7ba;
+  --sidebar-border: #54546d; --sidebar-ring: #7fb4ca;
+  --selection: #dcd7ba; --selection-foreground: #2a2a37;
+}
+html[data-palette="rosepine"] {
+  --background: #faf4ed; --foreground: #575279;
+  --card: #f2ede9; --card-foreground: #575279;
+  --popover: #f2ede9; --popover-foreground: #575279;
+  --primary: #d7827e; --primary-foreground: #faf4ed;
+  --secondary: #e8dcc6; --secondary-foreground: #575279;
+  --muted: #e8dcc6; --muted-foreground: #9893a5;
+  --accent: #e8dcc6; --accent-foreground: #575279;
+  --destructive: #b4637a; --success: #286983; --warning: #d7c992;
+  --border: #ddd7dc; --input: #ddd7dc; --ring: #d7827e;
+  --sidebar: #ede9de; --sidebar-foreground: #575279;
+  --sidebar-primary: #d7827e; --sidebar-primary-foreground: #faf4ed;
+  --sidebar-accent: #e8dcc6; --sidebar-accent-foreground: #575279;
+  --sidebar-border: #ddd7dc; --sidebar-ring: #d7827e;
+  --selection: #575279; --selection-foreground: #faf4ed;
+}
+html.dark[data-palette="rosepine"] {
+  --background: #191724; --foreground: #e0def4;
+  --card: #1f1d2e; --card-foreground: #e0def4;
+  --popover: #1f1d2e; --popover-foreground: #e0def4;
+  --primary: #ebbcba; --primary-foreground: #191724;
+  --secondary: #39384c; --secondary-foreground: #e0def4;
+  --muted: #39384c; --muted-foreground: #b5ada8;
+  --accent: #39384c; --accent-foreground: #e0def4;
+  --destructive: #eb6f92; --success: #31748f; --warning: #f6c177;
+  --border: #3e3d4d; --input: #3e3d4d; --ring: #ebbcba;
+  --sidebar: #0f0c15; --sidebar-foreground: #e0def4;
+  --sidebar-primary: #ebbcba; --sidebar-primary-foreground: #191724;
+  --sidebar-accent: #39384c; --sidebar-accent-foreground: #e0def4;
+  --sidebar-border: #3e3d4d; --sidebar-ring: #ebbcba;
+  --selection: #e0def4; --selection-foreground: #1f1d2e;
+}
 
 @layer base {
   * {
@@ -270,42 +590,105 @@ html.dark[data-palette="gruvbox"] {
   input[type="number"] { appearance: textfield; }
   input[type="number"]::-webkit-inner-spin-button,
   input[type="number"]::-webkit-outer-spin-button { appearance: none; margin: 0; }
-  /* Tailwind v4's preflight sets buttons to cursor:default, so every trigger
-     (tabs, dropdown, dialog, row actions) stopped reading as clickable. Put v3
-     behaviour back once here instead of Class:"cursor-pointer" per call site. */
-  button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
-  /* templui's toast pads pt-5/pb-4 to clear the progress bar and adds mt-1 to
-     the description even when there is no title, so the text sits below the
-     centre line the icon and the dismiss button share. Even both out. */
-  [data-tui-toast] > div { padding-top: calc(var(--spacing) * 4); }
-  [data-tui-toast] p:only-child { margin-top: 0; }
-  /* Its variant accents ship as fixed palette classes (green-500, red-500, …).
-     Repaint them from the theme tokens so a toast matches the active palette;
-     the icon is the inner box's only direct svg child, the dismiss X is nested
-     inside its button. */
-  [data-tui-toast][data-variant="success"] > div > svg { color: var(--success); }
-  [data-tui-toast][data-variant="error"] > div > svg { color: var(--destructive); }
-  [data-tui-toast][data-variant="warning"] > div > svg { color: var(--warning); }
-  [data-tui-toast][data-variant="info"] > div > svg { color: var(--primary); }
-  .toast-progress[data-variant="default"] { background-color: var(--muted-foreground); }
-  .toast-progress[data-variant="success"] { background-color: var(--success); }
-  .toast-progress[data-variant="error"] { background-color: var(--destructive); }
-  .toast-progress[data-variant="warning"] { background-color: var(--warning); }
-  .toast-progress[data-variant="info"] { background-color: var(--primary); }
-  /* Every select here is a required choice (unit, account, scope, palette);
-     the clear-selection x would only ever produce an invalid form. */
-  [data-tui-selectbox-clear-trigger] { display: none !important; }
-  /* Selectbox options: a hair of space between rows, and "selected" reads
-     differently from "hovered" (primary tint vs accent). */
-  .select-content .select-item + .select-item { margin-top: 2px; }
-  .select-content .select-item[data-tui-selectbox-selected="true"] {
-    background: color-mix(in oklab, var(--primary) 18%, transparent);
-    color: var(--foreground);
-  }
   /* Grid children default to min-width:auto, so one long <pre> line (or a
      wide table) widens the column past the viewport instead of scrolling
      inside its box. Every grid here is a layout grid; let children shrink. */
   .grid > * { min-width: 0; }
   /* htmx: dim a list while its swap (search, sort, paging) is in flight. */
   .htmx-request { @apply opacity-60 transition-opacity; }
+  /* Remove all focus effects. */
+  input:focus,
+  textarea:focus,
+  select:focus,
+  button:focus,
+  [role="button"]:focus {
+    outline: none !important;
+    box-shadow: none !important;
+    border-color: inherit;
+  }
+}
+
+/* ── templui overrides ────────────────────────────────────────────────────
+   UNLAYERED ON PURPOSE. Tailwind v4 orders its layers `theme, base,
+   components, utilities`, and layer order beats specificity outright: a rule
+   in @layer base loses to a plain `.shadow-lg` no matter how many attribute
+   selectors it carries. Everything below fights a utility class baked into a
+   templui component's own markup, so it has to sit outside the layers, where
+   unlayered styles win over every layer. Put a rule here only when it
+   overrides such a class — anything else belongs in @layer base above. */
+
+/* Anything a click chooses or triggers gets the hand — one policy, keyed on
+   the role rather than on each component. Tailwind v4's preflight made
+   <button> cursor:default, and templui hardcodes cursor-default on selectbox
+   options and dropdown items, so the parts of a combobox you actually click
+   read as inert. The :not()s keep genuinely disabled controls on their
+   cursor-not-allowed.
+
+   Deliberately absent: text inputs and plain label[for] — focusing a text box
+   is not a choice, and CSS cannot tell which labels front a checkbox. */
+button:not(:disabled),
+summary,
+[role="button"]:not([aria-disabled="true"]),
+[role="tab"]:not([aria-disabled="true"]),
+[role="option"]:not([aria-disabled="true"]),
+[role="menuitem"]:not([aria-disabled="true"]),
+[role="switch"]:not(:disabled),
+[role="checkbox"]:not(:disabled),
+[role="radio"]:not(:disabled),
+input[type="checkbox"]:not(:disabled),
+input[type="radio"]:not(:disabled) { cursor: pointer; }
+
+/* Tooltips — one look wherever they come from. WithTooltip builds most of
+   them, but templui's sidebar builds its own for the collapsed rail, so
+   styling at the call site could never make the two agree. A tooltip is
+   exactly "the content of a hover-triggered popover", and popover.Root puts
+   trigger and content side by side, so :has() names that precisely; click
+   popovers (selectbox, dialog, dropdown) are untouched.
+     - pointer-events/user-select none: never eats a click, never shows an
+       I-beam, never lets the caret select the text;
+     - flat: templui gives popovers `border` + `shadow-lg`, which on a small
+       inverted chip reads as a smudge around the corners rather than depth;
+     - 16rem and wrapping anywhere: the long ones hold data (store paths, user
+       agents) that must wrap instead of stretching the box. */
+[data-tui-popover-root]:has(> [data-tui-popover-type="hover"]) > [data-tui-popover-content] {
+  pointer-events: none;
+  user-select: none;
+  max-width: 16rem;
+  padding: 0.25rem 0.5rem;
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  border: 0;
+  box-shadow: none;
+  border-radius: var(--radius-md);
+  overflow-wrap: anywhere;
+}
+
+/* templui's toast pads pt-5/pb-4 to clear the progress bar and adds mt-1 to
+   the description even when there is no title, so the text sits below the
+   centre line the icon and the dismiss button share. Even both out. */
+[data-tui-toast] > div { padding-top: calc(var(--spacing) * 4); }
+[data-tui-toast] p:only-child { margin-top: 0; }
+/* Its variant accents ship as fixed palette classes (green-500, red-500, …).
+   Repaint them from the theme tokens so a toast matches the active palette;
+   the icon is the inner box's only direct svg child, the dismiss X is nested
+   inside its button. */
+[data-tui-toast][data-variant="success"] > div > svg { color: var(--success); }
+[data-tui-toast][data-variant="error"] > div > svg { color: var(--destructive); }
+[data-tui-toast][data-variant="warning"] > div > svg { color: var(--warning); }
+[data-tui-toast][data-variant="info"] > div > svg { color: var(--primary); }
+.toast-progress[data-variant="default"] { background-color: var(--muted-foreground); }
+.toast-progress[data-variant="success"] { background-color: var(--success); }
+.toast-progress[data-variant="error"] { background-color: var(--destructive); }
+.toast-progress[data-variant="warning"] { background-color: var(--warning); }
+.toast-progress[data-variant="info"] { background-color: var(--primary); }
+
+/* Every select here is a required choice (unit, account, scope, palette); the
+   clear-selection x would only ever produce an invalid form. */
+[data-tui-selectbox-clear-trigger] { display: none; }
+/* Selectbox options: a hair of space between rows, and "selected" reads
+   differently from "hovered" (primary tint vs accent). */
+.select-content .select-item + .select-item { margin-top: 2px; }
+.select-content .select-item[data-tui-selectbox-selected="true"] {
+  background: color-mix(in oklab, var(--primary) 18%, transparent);
+  color: var(--foreground);
 }

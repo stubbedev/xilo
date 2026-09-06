@@ -206,7 +206,7 @@ func TestSmokeCacheView(t *testing.T) {
 	minted.CanManage = true
 	minted.Secret = "s3cr3t-token-value"
 	out = render(t, "CacheView-minted", views.CacheView(minted))
-	for _, want := range []string{"Create push token", "Create pull token", "s3cr3t-token-value"} {
+	for _, want := range []string{"Push token", "Pull token", "s3cr3t-token-value"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("minted CacheView missing %q", want)
 		}
@@ -268,7 +268,7 @@ func TestSmokeAuditPage(t *testing.T) {
 	out := render(t, "AuditPage", views.AuditPage(d))
 	for _, want := range []string{"alice", "DELETE", "/admin/cache/default/demo/delete", "10.0.0.1", "system", "42",
 		// summary tiles + filter chips carrying the active search
-		"1.2k", "Failed", "Distinct actors", "method=POST", "status=2xx", "q=x"} {
+		"1.2k", "Failed", "Actors", "method=POST", "status=2xx", "q=x"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("AuditPage missing %q", want)
 		}

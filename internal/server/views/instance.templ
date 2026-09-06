@@ -71,7 +71,7 @@ templ policyCard(d InstanceData) {
 				}
 				@button.Button(button.Props{Type: button.TypeSubmit}) {
 					@Icon("check")
-					<span>{ T(ctx, "inst.savepolicy") }</span>
+					<span>{ T(ctx, "action.save") }</span>
 				}
 			</form>
 		}
@@ -86,9 +86,9 @@ templ plansCard(plans []store.Plan) {
 		}
 		@card.Content(card.ContentProps{Class: "space-y-2"}) {
 			if len(plans) == 0 {
-				@EmptyState("layers", T(ctx, "plan.empty")) {
+				@EmptyState("layers", T(ctx, "empty.none")) {
 					@dialog.Trigger(dialog.TriggerProps{For: "dlg-plan-new"}) {
-						@PlusButton(T(ctx, "plan.new"))
+						@PlusButton(T(ctx, "action.new"))
 					}
 				}
 			} else {
@@ -119,7 +119,7 @@ templ plansCard(plans []store.Plan) {
 												Action:         "/admin/plans/" + strconv.FormatInt(p.ID, 10) + "/delete",
 												Title:          T(ctx, "plan.deletetitle"),
 												Message:        Tf(ctx, "plan.deletemsg", p.Name),
-												ConfirmLabel:   T(ctx, "plan.delete"),
+												ConfirmLabel:   T(ctx, "action.delete"),
 												ConfirmIcon:    "trash-2",
 												Danger:         true,
 												TriggerIcon:    "trash-2",
@@ -142,10 +142,10 @@ templ plansCard(plans []store.Plan) {
 templ newPlanDialog() {
 	@dialog.Dialog(dialog.Props{ID: "dlg-plan-new"}) {
 		@dialog.Trigger(dialog.TriggerProps{For: "dlg-plan-new"}) {
-			@PlusButton(T(ctx, "plan.new"))
+			@PlusButton(T(ctx, "action.new"))
 		}
 		@DialogBox(T(ctx, "plan.new"), T(ctx, "plan.hint"), true) {
-			@planFormBody("/admin/plans", nil, "plus", T(ctx, "plan.create"), "dlg-plan-new")
+			@planFormBody("/admin/plans", nil, "plus", T(ctx, "action.create"), "dlg-plan-new")
 		}
 	}
 }
@@ -158,7 +158,7 @@ templ editPlanDialog(p store.Plan) {
 			@RowAction("square-pen", T(ctx, "action.edit"), false)
 		}
 		@DialogBox(T(ctx, "plan.edit"), T(ctx, "plan.hint"), true) {
-			@planFormBody("/admin/plans/"+strconv.FormatInt(p.ID, 10)+"/edit", &p, "check", T(ctx, "action.savechanges"), id)
+			@planFormBody("/admin/plans/"+strconv.FormatInt(p.ID, 10)+"/edit", &p, "check", T(ctx, "action.save"), id)
 		}
 	}
 }
@@ -224,7 +224,7 @@ templ usersCard(actingName string, multiTenant bool, users []store.User) {
 												Action:         "/admin/users/" + strconv.FormatInt(u.ID, 10) + "/delete",
 												Title:          T(ctx, "users.deletetitle"),
 												Message:        Tf(ctx, "users.deletemsg", u.Name),
-												ConfirmLabel:   T(ctx, "users.delete"),
+												ConfirmLabel:   T(ctx, "action.delete"),
 												ConfirmIcon:    "trash-2",
 												Danger:         true,
 												TriggerIcon:    "trash-2",
@@ -255,7 +255,7 @@ templ resetUserDialog(u store.User) {
 				@Field("reset-pw-"+strconv.FormatInt(u.ID, 10), T(ctx, "users.newpw")) {
 					@input.Input(input.Props{ID: "reset-pw-" + strconv.FormatInt(u.ID, 10), Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "8"}})
 				}
-				@DialogFooter(id, "key-round", T(ctx, "users.reset"))
+				@DialogFooter(id, "key-round", T(ctx, "action.reset"))
 			</form>
 		}
 	}
@@ -264,7 +264,7 @@ templ resetUserDialog(u store.User) {
 templ newUserDialog(multiTenant bool) {
 	@dialog.Dialog(dialog.Props{ID: "dlg-user-new"}) {
 		@dialog.Trigger(dialog.TriggerProps{For: "dlg-user-new"}) {
-			@PlusButton(T(ctx, "users.new"))
+			@PlusButton(T(ctx, "action.new"))
 		}
 		@DialogBox(T(ctx, "users.new"), T(ctx, "users.hint"), false) {
 			<form method="post" action="/admin/users" class="mt-2 space-y-4">
@@ -277,7 +277,7 @@ templ newUserDialog(multiTenant bool) {
 				@Field("nu-pw", T(ctx, "login.password")) {
 					@input.Input(input.Props{ID: "nu-pw", Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "8"}})
 				}
-				@DialogFooter("dlg-user-new", "plus", T(ctx, "users.create"))
+				@DialogFooter("dlg-user-new", "plus", T(ctx, "action.create"))
 			</form>
 		}
 	}
@@ -291,9 +291,9 @@ templ orgsCard(orgs []OrgInfo) {
 		}
 		@card.Content(card.ContentProps{Class: "space-y-4"}) {
 			if len(orgs) == 0 {
-				@EmptyState("building-2", T(ctx, "org.empty")) {
+				@EmptyState("building-2", T(ctx, "empty.none")) {
 					@dialog.Trigger(dialog.TriggerProps{For: "dlg-org-new"}) {
-						@PlusButton(T(ctx, "org.new"))
+						@PlusButton(T(ctx, "action.new"))
 					}
 				}
 			} else {
@@ -315,7 +315,7 @@ templ orgsCard(orgs []OrgInfo) {
 											Action:         "/admin/org/" + info.Account.Slug + "/delete",
 											Title:          T(ctx, "org.deletetitle"),
 											Message:        Tf(ctx, "org.deletemsg", info.Account.Slug),
-											ConfirmLabel:   T(ctx, "org.delete"),
+											ConfirmLabel:   T(ctx, "action.delete"),
 											ConfirmIcon:    "trash-2",
 											Danger:         true,
 											TriggerIcon:    "trash-2",
@@ -337,14 +337,14 @@ templ orgsCard(orgs []OrgInfo) {
 templ newOrgDialog(action string) {
 	@dialog.Dialog(dialog.Props{ID: "dlg-org-new"}) {
 		@dialog.Trigger(dialog.TriggerProps{For: "dlg-org-new"}) {
-			@PlusButton(T(ctx, "org.new"))
+			@PlusButton(T(ctx, "action.new"))
 		}
 		@DialogBox(T(ctx, "org.new"), T(ctx, "org.newhint"), false) {
 			<form method="post" action={ templ.SafeURL(action) } class="mt-2 space-y-4">
 				@Field("org-name", T(ctx, "org.name")) {
 					@input.Input(input.Props{ID: "org-name", Name: "name", Placeholder: T(ctx, "ph.orgname"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
 				}
-				@DialogFooter("dlg-org-new", "plus", T(ctx, "org.create"))
+				@DialogFooter("dlg-org-new", "plus", T(ctx, "action.create"))
 			</form>
 		}
 	}

@@ -37,7 +37,7 @@ templ Org(d OrgPageData) {
 				}
 				@card.Content(card.ContentProps{Class: "space-y-4"}) {
 					if len(d.Info.Members) == 0 {
-						@EmptyState("users", T(ctx, "org.membersempty"))
+						@EmptyState("users", T(ctx, "empty.none"))
 					} else {
 						@ListBox() {
 							@table.Table() {
@@ -68,7 +68,7 @@ templ Org(d OrgPageData) {
 															Action:         "/admin/org/" + d.Info.Account.Slug + "/members/" + strconv.FormatInt(m.UserID, 10) + "/remove",
 															Title:          T(ctx, "org.removetitle"),
 															Message:        Tf(ctx, "org.removemsg", m.UserName, d.Info.Account.Slug),
-															ConfirmLabel:   T(ctx, "ns.removemember"),
+															ConfirmLabel:   T(ctx, "action.remove"),
 															ConfirmIcon:    "trash-2",
 															Danger:         true,
 															TriggerIcon:    "trash-2",
@@ -111,7 +111,7 @@ templ Org(d OrgPageData) {
 								</div>
 								@button.Button(button.Props{Type: button.TypeSubmit}) {
 									@Icon("user-plus")
-									<span>{ T(ctx, "ns.addmember") }</span>
+									<span>{ T(ctx, "action.add") }</span>
 								}
 							</form>
 						} else {
@@ -128,7 +128,7 @@ templ Org(d OrgPageData) {
 				}
 				@card.Content() {
 					if len(d.Caches) == 0 {
-						@EmptyState("database", T(ctx, "org.cachesempty")) {
+						@EmptyState("database", T(ctx, "empty.none")) {
 							@button.Button(button.Props{Href: "/admin", Size: button.SizeSm}) {
 								@Icon("plus")
 								<span>{ T(ctx, "caches.new") }</span>

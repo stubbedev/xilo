@@ -143,7 +143,7 @@ templ CacheView(d CacheData) {
 						<div class="sm:col-span-3">
 							@button.Button(button.Props{Type: button.TypeSubmit}) {
 								@Icon("check")
-								<span>{ T(ctx, "cd.save") }</span>
+								<span>{ T(ctx, "action.save") }</span>
 							}
 						</div>
 					</form>
@@ -175,7 +175,7 @@ templ CacheView(d CacheData) {
 							Action:       "/admin/cache/" + d.Cache.Ref() + "/delete",
 							Title:        T(ctx, "cd.deletetitle"),
 							Message:      Tf(ctx, "cd.deletemsg", d.Cache.Ref()),
-							ConfirmLabel: T(ctx, "cd.delete"),
+							ConfirmLabel: T(ctx, "action.delete"),
 							ConfirmIcon:  "trash-2",
 							Danger:       true,
 							TriggerLabel: T(ctx, "action.delete"),
@@ -212,7 +212,7 @@ templ cacheTokenDialog(d CacheData, id, label string, push, pull bool) {
 					</div>
 				}
 				@ExpiryField(id, nil)
-				@DialogFooter(id, "plus", T(ctx, "tokens.create"))
+				@DialogFooter(id, "plus", T(ctx, "action.create"))
 			</form>
 		}
 	}
@@ -236,9 +236,9 @@ templ pathResults(d CacheData) {
 	<div id="path-results" hx-target="#path-results" hx-select="#path-results" hx-swap="outerHTML show:none">
 		if len(d.Paths) == 0 {
 			if d.PathQuery != "" {
-				@EmptyState("package-search", T(ctx, "cd.nomatch"))
+				@EmptyState("package-search", T(ctx, "empty.nomatch"))
 			} else {
-				@EmptyState("package-search", T(ctx, "cd.pathsempty"))
+				@EmptyState("package-search", T(ctx, "empty.none"))
 			}
 		} else {
 			@TableCard() {

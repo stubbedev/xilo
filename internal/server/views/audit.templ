@@ -51,9 +51,9 @@ templ auditResults(d AuditData) {
 		</div>
 		if len(d.Entries) == 0 {
 			if d.filtered() {
-				@EmptyState("search-x", T(ctx, "audit.nomatch"))
+				@EmptyState("search-x", T(ctx, "empty.nomatch"))
 			} else {
-				@EmptyState("scroll-text", T(ctx, "audit.empty"))
+				@EmptyState("scroll-text", T(ctx, "empty.none"))
 			}
 		} else {
 			@TableCard() {

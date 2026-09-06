@@ -43,7 +43,7 @@ templ Dashboard(d DashboardData) {
 		<div id="cache-list" class="mb-8">
 			if len(d.Caches) == 0 {
 				if d.CacheQuery != "" {
-					@EmptyState("database", T(ctx, "caches.nomatch"))
+					@EmptyState("database", T(ctx, "empty.nomatch"))
 				} else {
 					@onboarding(d)
 				}
@@ -67,12 +67,12 @@ templ Dashboard(d DashboardData) {
 		<div id="token-list">
 			if len(d.Tokens) == 0 {
 				if d.TokenQuery != "" {
-					@EmptyState("key-round", T(ctx, "tokens.nomatch"))
+					@EmptyState("key-round", T(ctx, "empty.nomatch"))
 				} else {
-					@EmptyState("key-round", T(ctx, "tokens.empty")) {
+					@EmptyState("key-round", T(ctx, "empty.none")) {
 						if canMintToken(d) {
 							@dialog.Trigger(dialog.TriggerProps{For: "dlg-token"}) {
-								@PlusButton(T(ctx, "tokens.new"))
+								@PlusButton(T(ctx, "action.new"))
 							}
 						} else {
 							@disabledCreate(T(ctx, "tokens.new"), T(ctx, "tokens.needcache"))
@@ -124,7 +124,7 @@ templ onboarding(d DashboardData) {
 			@onboardStep("1", T(ctx, "onb.step1"), T(ctx, "onb.step1hint")) {
 				if len(d.Accounts) > 0 {
 					@dialog.Trigger(dialog.TriggerProps{For: "dlg-cache"}) {
-						@PlusButton(T(ctx, "caches.new"))
+						@PlusButton(T(ctx, "action.new"))
 					}
 				} else {
 					@disabledCreate(T(ctx, "caches.new"), T(ctx, "caches.needaccount"))
@@ -252,7 +252,7 @@ templ disabledCreate(label, why string) {
 templ newCacheDialog(d DashboardData) {
 	@dialog.Dialog(dialog.Props{ID: "dlg-cache"}) {
 		@dialog.Trigger(dialog.TriggerProps{For: "dlg-cache"}) {
-			@PlusButton(T(ctx, "caches.new"))
+			@PlusButton(T(ctx, "action.new"))
 		}
 		@DialogBox(T(ctx, "caches.new"), T(ctx, "caches.newhint"), true) {
 			<form method="post" action="/admin/caches" class="mt-2 space-y-4">
@@ -269,7 +269,7 @@ templ newCacheDialog(d DashboardData) {
 				}
 				@VisibilitySwitch(false)
 				@PriorityField(40)
-				@DialogFooter("dlg-cache", "plus", T(ctx, "caches.create"))
+				@DialogFooter("dlg-cache", "plus", T(ctx, "action.create"))
 			</form>
 		}
 	}
@@ -279,10 +279,10 @@ templ newCacheDialog(d DashboardData) {
 templ newTokenDialog(d DashboardData) {
 	@dialog.Dialog(dialog.Props{ID: "dlg-token"}) {
 		@dialog.Trigger(dialog.TriggerProps{For: "dlg-token"}) {
-			@PlusButton(T(ctx, "tokens.new"))
+			@PlusButton(T(ctx, "action.new"))
 		}
 		@DialogBox(T(ctx, "tokens.newtitle"), T(ctx, "tokens.newhint"), true) {
-			@tokenFormBody("/admin/tokens", nil, d, "plus", T(ctx, "tokens.create"), "dlg-token")
+			@tokenFormBody("/admin/tokens", nil, d, "plus", T(ctx, "action.create"), "dlg-token")
 		}
 	}
 }
@@ -295,7 +295,7 @@ templ editTokenDialog(d DashboardData, t store.Token) {
 			@RowAction("square-pen", T(ctx, "action.edit"), false)
 		}
 		@DialogBox(T(ctx, "tokens.edittitle"), T(ctx, "tokens.edithint"), true) {
-			@tokenFormBody("/admin/tokens/"+strconv.FormatInt(t.ID, 10)+"/edit", &t, d, "check", T(ctx, "action.savechanges"), id)
+			@tokenFormBody("/admin/tokens/"+strconv.FormatInt(t.ID, 10)+"/edit", &t, d, "check", T(ctx, "action.save"), id)
 		}
 	}
 }

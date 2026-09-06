@@ -21,7 +21,11 @@ templ WithTooltip(text string) {
 		@tooltip.Trigger() {
 			{ children... }
 		}
-		@tooltip.Content(tooltip.ContentProps{ShowArrow: true, Class: "text-xs"}) {
+		// No arrow, and the same delays templui's sidebar uses for its own
+		// tooltips: instant ones flicker as the pointer crosses a row of icon
+		// buttons. Size, padding and colour live in css/input.css so this and
+		// the sidebar's built-in tooltip cannot drift apart.
+		@tooltip.Content(tooltip.ContentProps{HoverDelay: 200, HoverOutDelay: 100}) {
 			{ text }
 		}
 	}

@@ -10,9 +10,20 @@ type Palette struct {
 // Palettes is the Appearance picker, default first.
 var Palettes = []Palette{
 	{"", "Xilo"},
-	{"catppuccin", "Catppuccin (Latte / Mocha)"},
-	{"nord", "Nord"},
+	{"ayu", "Ayu"},
+	{"catppuccin", "Catppuccin"},
+	{"dracula", "Dracula"},
+	{"everforest", "Everforest"},
+	{"github-dark", "GitHub Dark"},
+	{"github-light", "GitHub Light"},
 	{"gruvbox", "Gruvbox"},
+	{"kanagawa", "Kanagawa"},
+	{"nord", "Nord"},
+	{"one-dark", "One Dark"},
+	{"rosepine", "Rosepine"},
+	{"solarized-dark", "Solarized Dark"},
+	{"solarized-light", "Solarized Light"},
+	{"tokyo-night", "Tokyo Night"},
 }
 
 // ValidPalette reports whether id names a shipped palette ("" included).

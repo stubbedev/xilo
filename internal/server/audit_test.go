@@ -72,7 +72,7 @@ func TestAuditPageFilters(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if b := body(t, resp); resp.StatusCode != http.StatusOK || !contains(b, "Actions recorded") {
+		if b := body(t, resp); resp.StatusCode != http.StatusOK || !contains(b, "Actions") {
 			t.Errorf("GET /admin/audit%s → %d", q, resp.StatusCode)
 		}
 	}
