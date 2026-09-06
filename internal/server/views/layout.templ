@@ -97,6 +97,7 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 			@webauthnScript()
 			@toastLayer()
 			@searchClearLayer()
+			@comboboxKeysLayer()
 			if DevMode {
 				@devReloadScript()
 			}
@@ -360,6 +361,155 @@ templ searchClearLayer() {
 				inp.dispatchEvent(new Event('input', { bubbles: true }));
 				inp.dispatchEvent(new Event('search', { bubbles: true }));
 				inp.focus();
+			});
+		})();
+	</script>
+}
+
+// comboboxKeysLayer makes a searchable selectbox behave like a combobox.
+//
+// templui drives its list by moving DOM focus onto the option elements, which
+// means the first ArrowDown takes focus out of the search box: from then on
+// typing goes nowhere, and Enter only works if an option happens to hold
+// focus. The fix is the standard combobox arrangement — focus never leaves the
+// input, and the option the arrows point at is tracked separately
+// (data-tui-active + aria-activedescendant), so filtering and navigating stay
+// available at the same time.
+//
+// The handler runs in the capture phase and stops propagation for exactly the
+// keys it takes over, because templui's own listener sits on document and
+// would otherwise still steal the focus. Escape is deliberately left alone —
+// templui already closes the popover and returns focus to the trigger.
+templ comboboxKeysLayer() {
+	<script>
+		(function () {
+			var ACTIVE = 'data-tui-active';
+			var seq = 0;
+
+			function options(content) {
+				return Array.prototype.filter.call(
+					content.querySelectorAll('.select-item'),
+					function (el) {
+						return (
+							el.style.display !== 'none' &&
+							el.getAttribute('data-tui-selectbox-disabled') !== 'true'
+						);
+					},
+				);
+			}
+			function clear(content) {
+				var cur = content.querySelector('[' + ACTIVE + ']');
+				if (cur) cur.removeAttribute(ACTIVE);
+			}
+			function setActive(input, content, item) {
+				clear(content);
+				if (!item) {
+					input.removeAttribute('aria-activedescendant');
+					return;
+				}
+				if (!item.id) item.id = 'cb-opt-' + ++seq;
+				item.setAttribute(ACTIVE, '');
+				input.setAttribute('aria-activedescendant', item.id);
+				item.scrollIntoView({ block: 'nearest' });
+			}
+			function ctx(el) {
+				if (!el || !el.matches || !el.matches('[data-tui-selectbox-search]')) {
+					return null;
+				}
+				var content = el.closest('[data-tui-selectbox-content]');
+				return content ? { input: el, content: content } : null;
+			}
+
+			// Escape asks "close the open list", which is a question about the
+			// page, not about where focus happens to be — templui's own handler
+			// only fires when the search input is the active element, and by the
+			// time Escape arrives focus may sit on the trigger (the click that
+			// opened it moves focus a frame later) or have been taken by a
+			// browser extension. Closing the one open selectbox is unambiguous:
+			// the popover is exclusive, so there is never more than one.
+			document.addEventListener(
+				'keydown',
+				function (e) {
+					if (e.key !== 'Escape') return;
+					var content = document.querySelector(
+						'[data-tui-selectbox-content][data-tui-popover-open="true"]',
+					);
+					if (!content) return;
+					var root = content.closest('[data-tui-popover-root]');
+					var trig = root && root.querySelector('button.select-trigger');
+					if (!trig) return;
+					// Stop here so an Escape meant for the list does not also
+					// close the dialog the list is sitting in.
+					e.preventDefault();
+					e.stopPropagation();
+					clear(content);
+					trig.click(); // templui's own toggle: closes and tidies up
+					// Its click handler focuses the search box on the next frame
+					// — which by then is hidden, so focus would land nowhere and
+					// the caret would be lost to <body>. Take it back after.
+					setTimeout(function () { trig.focus(); }, 60);
+				},
+				true,
+			);
+
+			document.addEventListener(
+				'keydown',
+				function (e) {
+					var c = ctx(e.target);
+					if (!c) return;
+
+					if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+						var items = options(c.content);
+						if (!items.length) return;
+						e.preventDefault();
+						e.stopPropagation();
+						var cur = c.content.querySelector('[' + ACTIVE + ']');
+						var i = items.indexOf(cur);
+						var next =
+							i < 0
+								? e.key === 'ArrowDown'
+									? 0
+									: items.length - 1
+								: (i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) %
+									items.length;
+						setActive(c.input, c.content, items[next]);
+						return;
+					}
+
+					if (e.key === 'Enter') {
+						// Always swallow Enter: this input usually lives inside a
+						// form, and submitting it is never what picking an option
+						// from a list is supposed to do.
+						e.preventDefault();
+						e.stopPropagation();
+						var pick =
+							c.content.querySelector('[' + ACTIVE + ']') || options(c.content)[0];
+						// click() is the same path a mouse takes, so selection,
+						// change event and close all stay templui's business.
+						if (pick) pick.click();
+						return;
+					}
+
+					return;
+				},
+				true,
+			);
+
+			// Typing changes which options exist; a stale highlight would point
+			// at a row that is no longer in the filtered list.
+			document.addEventListener('input', function (e) {
+				var c = ctx(e.target);
+				if (c) setActive(c.input, c.content, null);
+			});
+
+			// One highlight at a time: moving the pointer over the list hands it
+			// to the row under the cursor.
+			document.addEventListener('pointerover', function (e) {
+				var item = e.target.closest && e.target.closest('.select-item');
+				if (!item) return;
+				var content = item.closest('[data-tui-selectbox-content]');
+				var input = content && content.querySelector('[data-tui-selectbox-search]');
+				if (input) setActive(input, content, item);
 			});
 		})();
 	</script>

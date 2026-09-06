@@ -719,3 +719,11 @@ input[type="radio"]:not(:disabled) { cursor: pointer; }
   background: color-mix(in oklab, var(--primary) 18%, transparent);
   color: var(--foreground);
 }
+/* The option the arrow keys point at (comboboxKeysLayer). It reads like hover
+   because it is the same idea — where the pointer is — and it has to outrank
+   the selected tint above, since the row you are moving onto matters more
+   right now than the one already chosen. Last rule wins; keep it here. */
+.select-content .select-item[data-tui-active] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}

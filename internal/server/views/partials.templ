@@ -65,21 +65,27 @@ templ SecretCard(code string) {
 // SearchInput is a live-search box: typing swaps just `target` in place via
 // htmx, preserving the rest of the page.
 templ SearchInput(action, name, value, placeholder, target string) {
-	@input.Input(input.Props{
-		Name: name, Value: value, Type: input.TypeSearch, Placeholder: placeholder,
-		Class: "h-8 w-full sm:w-64",
-		Attributes: templ.Attributes{
-			"hx-get":       action,
-			"hx-trigger":   "input changed delay:300ms, search",
-			"hx-target":    target,
-			"hx-select":    target,
-			"hx-swap":      "outerHTML",
-			"hx-indicator": target,
-			"hx-push-url":  "true",
-			"autocomplete": "off",
-			"aria-label":   placeholder,
-		},
-	})
+	// The width has to live on a box of our own: templui wraps every input in
+	// a hard-coded `relative w-full` div, so sizing the input alone leaves the
+	// wrapper spanning the row and the field pinned to the section title
+	// instead of sitting beside its create button.
+	<div class="w-44 shrink-0 sm:w-64">
+		@input.Input(input.Props{
+			Name: name, Value: value, Type: input.TypeSearch, Placeholder: placeholder,
+			Class: "h-8 w-full",
+			Attributes: templ.Attributes{
+				"hx-get":       action,
+				"hx-trigger":   "input changed delay:300ms, search",
+				"hx-target":    target,
+				"hx-select":    target,
+				"hx-swap":      "outerHTML",
+				"hx-indicator": target,
+				"hx-push-url":  "true",
+				"autocomplete": "off",
+				"aria-label":   placeholder,
+			},
+		})
+	</div>
 }
 
 // PageHeader is a page title + optional prose subtitle, with a right-aligned
