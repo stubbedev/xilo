@@ -306,7 +306,7 @@ func (s *Server) userCanCreateOrg(u *store.User) bool {
 	if u == nil {
 		return false
 	}
-	if u.Role == "owner" {
+	if u.Superadmin() {
 		return true
 	}
 	if !s.cfg.SelfService {
@@ -353,7 +353,7 @@ func (s *Server) handleUserCreateOrg(w http.ResponseWriter, r *http.Request) {
 		uiError(w, r, err)
 		return
 	}
-	if u.Role != "owner" {
+	if !u.Superadmin() {
 		if personal, err := s.db.GetAccount(u.Name); err == nil && personal.PlanID != 0 {
 			_ = s.db.SetAccountPlan(org.ID, personal.PlanID)
 		}

@@ -122,12 +122,12 @@ func openLegacyAdminDB(t *testing.T) *DB {
 }
 
 // TestAdminMigration builds a pre-users database (singleton admin table) and
-// checks migrate() converts it: admin row → user "admin" (role owner), passkeys claimed,
+// checks migrate() converts it: admin row → user "admin" (role superadmin), passkeys claimed,
 // sessions wiped, old table dropped.
 func TestAdminMigration(t *testing.T) {
 	db := openLegacyAdminDB(t)
 	u, err := db.GetUserByName("admin")
-	if err != nil || u.Role != "owner" || u.PassHash != "legacy-hash" {
+	if err != nil || u.Role != RoleSuperadmin || u.PassHash != "legacy-hash" {
 		t.Fatalf("migrated admin: %+v %v", u, err)
 	}
 	if !u.TOTPEnabled {

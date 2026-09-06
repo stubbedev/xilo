@@ -69,6 +69,7 @@ func TestSmokeAllComponents(t *testing.T) {
 		{"Account", views.Account(views.AccountData{Nav: views.Nav{LoggedIn: true, UserName: "admin"}, User: &store.User{Name: "admin", Role: "owner", Theme: "catppuccin"}, Passkeys: []store.Passkey{{ID: 1, Name: "yubikey", Created: 1}}}), "Appearance"},
 		{"Instance", views.Instance(views.InstanceData{Nav: views.Nav{LoggedIn: true, UserName: "admin", IsAdmin: true}, Users: []store.User{{ID: 1, Name: "admin", Role: "owner"}}, SelfService: true, AllowRegs: true, Plans: []store.Plan{{ID: 1, Name: "free", MaxCaches: 3, Public: true}}, Flash: views.Flash{Msg: "saved"}}), "saved"},
 		{"Orgs", views.OrgsPage(views.OrgsData{Nav: views.Nav{LoggedIn: true, UserName: "admin", IsAdmin: true, Orgs: true}, IsAdmin: true, CanCreate: true, Orgs: []views.OrgInfo{{Account: store.Account{ID: 1, Slug: "acme", Kind: "org"}, Members: []store.AccountMember{{UserID: 1, UserName: "admin", Role: "owner"}}}}}), "Organizations"},
+		{"Console", views.Console(views.ConsoleData{Nav: views.Nav{LoggedIn: true, UserName: "admin", IsAdmin: true}, Global: store.Global{Caches: 2, Paths: 31, StoredBytes: 4096, LogicalBytes: 8192}, Dedup: "2.00", Users: 3, Orgs: []views.OrgInfo{{Account: store.Account{ID: 1, Slug: "acme", Kind: "org"}}}, Caches: []views.CacheUsage{{Cache: store.Cache{Account: "acme", Name: "web"}}}, Bytes: bytesFn}), "Console"},
 		{"PwHint-empty", views.PwHint(""), ""},
 		{"PwHint-short", views.PwHint("short"), "At least 8"},
 		{"PwHint-weak", views.PwHint("weak"), "Weak"},

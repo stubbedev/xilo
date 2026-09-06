@@ -118,11 +118,17 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 		// the same View Transition CSS as a real one — set here rather than
 		// globally, because the search, sort and pager swaps carry an hx-swap of
 		// their own and must stay instant.
+		//
+		// hx-history="false" keeps htmx from writing each page's DOM into
+		// localStorage for the back button: a freshly created token is rendered
+		// once and would otherwise sit in there, readable by anything on the
+		// origin, long after the session ended. Back re-fetches instead.
 		<body
 			class="bg-background text-foreground antialiased"
 			hx-boost="true"
 			hx-swap="innerHTML transition:true"
 			hx-indicator="#nav-progress"
+			hx-history="false"
 		>
 			@navProgress()
 			if nav.LoggedIn {
@@ -166,20 +172,41 @@ templ appSidebar(section string, nav Nav) {
 			</a>
 		}
 		@sidebar.Content() {
-			@sidebar.Group() {
-				@sidebar.Menu() {
-					@navItem("/admin", T(ctx, "nav.caches"), "database", section == "caches")
-					@navItem("/admin/account", T(ctx, "nav.account"), "user", section == "account")
-				if nav.Orgs {
-					@navItem("/admin/orgs", T(ctx, "org.title"), "building-2", section == "orgs")
-				}
-					if nav.IsAdmin {
-						@navItem("/admin/settings", T(ctx, "nav.settings"), "settings", section == "settings")
+			// The nav says which job you are here to do. Running the instance and
+			// using a workspace are different ones, so they are different groups —
+			// and the workspace items only exist for someone who is in an
+			// organization, which on a single-tenant instance is the same person
+			// wearing both hats.
+			if nav.IsAdmin {
+				@sidebar.Group() {
+					@sidebar.GroupLabel() {
+						{ T(ctx, "nav.instance") }
 					}
-					@navItem("/admin/status", T(ctx, "nav.status"), "activity", section == "status")
-					if nav.IsAdmin {
+					@sidebar.Menu() {
+						@navItem("/admin/console", T(ctx, "console.title"), "server-cog", section == "console")
+						@navItem("/admin/settings", T(ctx, "nav.settings"), "settings", section == "settings")
+						@navItem("/admin/status", T(ctx, "nav.status"), "activity", section == "status")
 						@navItem("/admin/audit", T(ctx, "nav.audit"), "scroll-text", section == "audit")
 					}
+				}
+			}
+			@sidebar.Group() {
+				if nav.IsAdmin && len(nav.Contexts) > 0 {
+					@sidebar.GroupLabel() {
+						{ T(ctx, "nav.workspace") }
+					}
+				}
+				@sidebar.Menu() {
+					if len(nav.Contexts) > 0 {
+						@navItem("/admin", T(ctx, "nav.caches"), "database", section == "caches")
+					}
+					if nav.Orgs {
+						@navItem("/admin/orgs", T(ctx, "org.title"), "building-2", section == "orgs")
+					}
+					if !nav.IsAdmin {
+						@navItem("/admin/status", T(ctx, "nav.status"), "activity", section == "status")
+					}
+					@navItem("/admin/account", T(ctx, "nav.account"), "user", section == "account")
 				}
 			}
 		}

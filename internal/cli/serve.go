@@ -14,10 +14,16 @@ import (
 	"github.com/stubbedev/xilo/internal/store"
 )
 
-// bootstrapAdmin seeds the first account ("admin", role owner) from the
-// config/env password on first run. Once any user exists, the config value is
-// ignored so a stale env var can't reset a password.
-func bootstrapAdmin(db *store.DB, password string) error {
+// bootstrapAdmin seeds the instance's superadmin ("admin") from the config/env
+// password on first run. Once any user exists the config value is ignored, so
+// a stale env var can't reset a password.
+//
+// A superadmin runs the service and owns nothing in it. On a single-tenant
+// instance that would leave a fresh install with nowhere to put a cache, so
+// boot also creates the first workspace and makes them its owner: one person
+// wearing both hats is the whole point of the hobbyist shape. A multi-tenant
+// instance — one taking signups — creates none: its tenants arrive by signing up.
+func bootstrapAdmin(db *store.DB, password string, selfService bool) error {
 	if db.UsersExist() || password == "" {
 		return nil
 	}
@@ -25,9 +31,17 @@ func bootstrapAdmin(db *store.DB, password string) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("bootstrapping admin account from configured password")
-	_, err = db.CreateUser("admin", "", string(hash), "owner")
-	return err
+	log.Printf("bootstrapping superadmin account from configured password")
+	u, err := db.CreateUser("admin", "", string(hash), store.RoleSuperadmin)
+	if err != nil || selfService {
+		return err
+	}
+	acc, err := db.EnsureAccount(u.Name, "org")
+	if err != nil {
+		return err
+	}
+	log.Printf("single-tenant instance: created workspace %q owned by admin", acc.Slug)
+	return db.MakeOwner(acc.ID, u.ID)
 }
 
 func serveCmd() *cobra.Command {
@@ -47,7 +61,7 @@ func serveCmd() *cobra.Command {
 				return err
 			}
 			defer db.Close()
-			if err := bootstrapAdmin(db, cfg.Admin.Password); err != nil {
+			if err := bootstrapAdmin(db, cfg.Admin.Password, cfg.SelfService); err != nil {
 				return err
 			}
 			sts, err := openStorages(cfg)

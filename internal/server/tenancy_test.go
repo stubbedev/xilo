@@ -85,10 +85,10 @@ func TestAdminUserLifecycle(t *testing.T) {
 	if !contains(b, "cannot delete your own account") {
 		t.Errorf("self delete: %.120q", b)
 	}
-	boss2, _ := db.CreateUser("boss2", "", passHash(t, "bosspass123"), "owner")
+	boss2, _ := db.CreateUser("boss2", "", passHash(t, "bosspass123"), store.RoleSuperadmin)
 	_, b = postFlash(t, c, ts.URL+"/admin/users/"+itoa(boss2.ID)+"/delete", nil)
-	if !contains(b, "owner cannot be deleted") {
-		t.Errorf("owner delete: %.120q", b)
+	if !contains(b, "superadmin cannot be deleted") {
+		t.Errorf("superadmin delete: %.120q", b)
 	}
 	founder, _ := db.CreateUser("founder", "", passHash(t, "founderpass1"), "user")
 	forg, _ := db.EnsureAccount("f-org", "org")

@@ -190,7 +190,7 @@ templ usersCard(actingName string, multiTenant bool, users []store.User) {
 										</form>
 									}
 									@resetUserDialog(u)
-									if u.Name != actingName && u.Role != "owner" {
+									if u.Name != actingName && !u.Superadmin() {
 										@ConfirmForm(Confirm{
 											ID:             "del-user-" + strconv.FormatInt(u.ID, 10),
 											Action:         "/admin/users/" + strconv.FormatInt(u.ID, 10) + "/delete",

@@ -198,7 +198,7 @@ func userRole(u store.User) string {
 	switch {
 	case u.Status == "pending":
 		return "pending"
-	case u.Role == "owner":
+	case u.Superadmin():
 		return "superadmin"
 	default:
 		return "user"

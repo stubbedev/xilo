@@ -1,0 +1,76 @@
+package views
+
+import (
+	"github.com/stubbedev/xilo/internal/store"
+
+	"github.com/templui/templui/components/table"
+)
+
+// ConsoleData is the superadmin's instance overview: what the whole service
+// holds, and every organization holding it.
+type ConsoleData struct {
+	Nav    Nav
+	Global store.Global
+	Dedup  string
+	Orgs   []OrgInfo
+	Caches []CacheUsage
+	Users  int64
+	Bytes  func(int64) string
+	Flash  Flash
+}
+
+// Console is what a superadmin opens onto: the instance, not an account. The
+// figures are every organization's added together, because the person reading
+// them runs the service rather than uses it — a tenant's own numbers are on
+// the tenant's own overview, one per organization.
+templ Console(d ConsoleData) {
+	@Layout(T(ctx, "console.title"), "console", d.Nav, d.Flash) {
+		@PageHeader(T(ctx, "console.title"), T(ctx, "console.subtitle"))
+		@DedupBar(d.Global.LogicalBytes, d.Global.StoredBytes, d.Dedup, d.Bytes)
+		@StatRow() {
+			@StatTile("building-2", Count(int64(len(d.Orgs))), T(ctx, "console.orgs"), "", "")
+			@StatTile("users", Count(d.Users), T(ctx, "console.users"), "", "")
+			@StatTile("database", Count(d.Global.Caches), T(ctx, "kpi.caches"), "", "")
+			@StatTile("package", Count(d.Global.Paths), T(ctx, "kpi.paths"), "", "")
+			@StatTile("hard-drive", d.Bytes(d.Global.StoredBytes), T(ctx, "kpi.disk"), "", "")
+		}
+		<div class="grid gap-8">
+			@ListSection(T(ctx, "org.title"), nil) {
+				if len(d.Orgs) == 0 {
+					@EmptyState("building-2", T(ctx, "empty.none"))
+				} else {
+					@TableCard() {
+						@table.Table() {
+							@table.Body() {
+								for _, info := range d.Orgs {
+									@table.Row() {
+										@table.Cell() {
+											<div class="flex min-w-0 items-center gap-2">
+												@Icon("building-2")
+												<a href={ templ.SafeURL("/admin/org/" + info.Account.Slug) } class="font-medium hover:underline">{ info.Account.Slug }</a>
+												@Meta() {
+													{ UsagePhrase(ctx, info) }
+												}
+											</div>
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+			@ListSection(T(ctx, "console.allcaches"), nil) {
+				if len(d.Caches) == 0 {
+					@EmptyState("database", T(ctx, "empty.none"))
+				} else {
+					<div class="divide-y border-y">
+						for _, u := range d.Caches {
+							@cacheRow(u, d.Bytes)
+						}
+					</div>
+				}
+			}
+		</div>
+	}
+}

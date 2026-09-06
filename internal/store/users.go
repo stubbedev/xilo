@@ -12,18 +12,36 @@ import (
 // "user" can
 // sign in and manage their own account (namespace membership scopes what they
 // see — added with namespaces).
+// RoleSuperadmin administers the instance itself — policy, plans, storage,
+// every organization and every user. It is not a tenant: it owns no account
+// and holds no caches, because running the service and buying it are different
+// jobs and an audit line is only worth reading while they stay apart. Seeded
+// from the configured password when the container first starts.
+const RoleSuperadmin = "superadmin"
+
+// RoleUser is everyone else: a login, whose reach is the organizations it is a
+// member of. Note that account_members.role has its own vocabulary (owner /
+// admin / user) for authority *inside* an organization — a user with no
+// instance role at all is the owner of their own workspace.
+const RoleUser = "user"
+
 type User struct {
 	ID          int64
 	Name        string
 	Email       string // optional; unique when set; usable for sign-in
 	PassHash    string
-	Role        string // "owner" | "user"
+	Role        string // RoleSuperadmin | RoleUser
 	Status      string // "active" | "pending" (awaiting approval)
 	TOTPEnabled bool
 	Theme       string // dashboard palette id ("" = default); light/dark is a browser choice
 	Locale      string // UI language id ("" = fall back to Accept-Language)
 	Created     int64
 }
+
+// Superadmin reports whether this login administers the instance. Always ask
+// this rather than comparing Role: "owner" also names an organization role,
+// and the two meanings sat on the same string for a long time.
+func (u *User) Superadmin() bool { return u != nil && u.Role == RoleSuperadmin }
 
 // ErrNameTaken means the username/account slug is already in use. The slug
 // namespace is public (caches mount at /c/{slug}), so surfacing this to the
@@ -74,6 +92,12 @@ func (db *DB) createUser(name, email, passHash, role, status string) (*User, err
 			`INSERT INTO users (username,email,password_hash,role,status,created) VALUES (?,?,?,?,?,?) RETURNING id`,
 			u.Name, email, u.PassHash, u.Role, u.Status, u.Created).Scan(&u.ID); err != nil {
 			return err
+		}
+		// A superadmin administers organizations; it is not in one. Everyone
+		// else gets a workspace of their own, named after them, which is what
+		// their caches hang off.
+		if u.Role == RoleSuperadmin {
+			return nil
 		}
 		var accID int64
 		if err := tx.QueryRow(`INSERT INTO accounts (slug, kind, created) VALUES (?,?,?) RETURNING id`,

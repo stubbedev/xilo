@@ -163,3 +163,32 @@ func TestPresentSet(t *testing.T) {
 		t.Fatal("presentSet on missing table should error")
 	}
 }
+
+// A superadmin administers organizations rather than being in one, so it gets
+// no account of its own — the check that keeps "runs the service" and "buys
+// the service" from being the same row.
+func TestSuperadminHasNoAccount(t *testing.T) {
+	db := openTest(t)
+	root, err := db.CreateUser("root", "", "hash", RoleSuperadmin)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if !root.Superadmin() {
+		t.Fatal("role did not stick")
+	}
+	accs, err := db.UserAccounts(root.ID)
+	if err != nil || len(accs) != 0 {
+		t.Fatalf("superadmin accounts: %v %v", accs, err)
+	}
+	if _, err := db.GetAccount("root"); err == nil {
+		t.Fatal("superadmin got a personal account")
+	}
+	// An ordinary user still does.
+	u, err := db.CreateUser("nora", "", "hash", RoleUser)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if accs, err := db.UserAccounts(u.ID); err != nil || len(accs) != 1 {
+		t.Fatalf("user accounts: %v %v", accs, err)
+	}
+}

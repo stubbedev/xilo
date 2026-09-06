@@ -153,7 +153,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	// Allow an instance-admin token (Prometheus/automation, via authorization
 	// config) or a signed-in owner (the dashboard, a human).
 	if !s.db.AuthorizeAdmin(extractToken(r), time.Now().Unix()) {
-		if u := s.currentUser(r); u == nil || u.Role != "owner" {
+		if u := s.currentUser(r); u == nil || !u.Superadmin() {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="xilo"`)
 			http.Error(w, "admin token or owner session required", http.StatusUnauthorized)
 			return

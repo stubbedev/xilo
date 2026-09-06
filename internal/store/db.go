@@ -437,6 +437,14 @@ func migrate(w *sql.DB, pg bool) error {
 			return fmt.Errorf("migrate index: %w", err)
 		}
 	}
+	// The instance role was called "owner", which is also what an organization
+	// calls its own owner. One word for two authorities is how a check ends up
+	// asking the wrong question. Renaming the value only: memberships keep
+	// their own "owner", and whatever the instance admin already owns stays
+	// theirs — this migration takes nothing away.
+	if _, err := w.Exec(`UPDATE users SET role='superadmin' WHERE role='owner'`); err != nil {
+		return fmt.Errorf("migrate superadmin role: %w", err)
+	}
 	return nil
 }
 

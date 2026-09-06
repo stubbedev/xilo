@@ -206,7 +206,7 @@ func (s *Server) nav(r *http.Request, u *store.User) views.Nav {
 	if u == nil {
 		return views.Nav{}
 	}
-	n := views.Nav{LoggedIn: true, UserName: u.Name, IsAdmin: u.Role == "owner", Active: s.activeContext(r, u), Theme: u.Theme}
+	n := views.Nav{LoggedIn: true, UserName: u.Name, IsAdmin: u.Superadmin(), Active: s.activeContext(r, u), Theme: u.Theme}
 	accs, err := s.db.UserAccounts(u.ID)
 	if err == nil {
 		n.Contexts = accs
@@ -234,7 +234,7 @@ func (s *Server) handleOrgsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	d := views.OrgsData{
 		Nav: s.nav(r, u), Flash: s.popFlash(w, r),
-		IsAdmin:   u.Role == "owner",
+		IsAdmin:   u.Superadmin(),
 		CanCreate: s.cfg.SelfService && s.userCanCreateOrg(u),
 	}
 	var accounts []store.Account
@@ -324,7 +324,7 @@ func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	if u == nil {
 		return false
 	}
-	if u.Role != "owner" {
+	if !u.Superadmin() {
 		uiFail(w, r, http.StatusForbidden, views.T(r.Context(), "err.superadmin"), nil)
 		return false
 	}
@@ -371,6 +371,7 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/account/email", s.handleAccountEmail)
 	mux.HandleFunc("POST /admin/account/appearance", s.handleAppearance)
 	mux.HandleFunc("POST /admin/context", s.handleContext)
+	mux.HandleFunc("GET /admin/console", s.handleConsole)
 	mux.HandleFunc("GET /admin/orgs", s.handleOrgsPage)
 	mux.HandleFunc("GET /admin/org/{slug}", s.handleOrgPage)
 	mux.HandleFunc("GET /admin/status", s.handleStatus)
@@ -406,7 +407,7 @@ func (s *Server) canManage(u *store.User, nsID int64) bool {
 	if u == nil {
 		return false
 	}
-	if u.Role == "owner" {
+	if u.Superadmin() {
 		return true
 	}
 	mr := s.db.MemberRole(nsID, u.ID)
@@ -416,7 +417,7 @@ func (s *Server) canManage(u *store.User, nsID int64) bool {
 // visibleCaches lists the caches u may see: all for instance admins, their
 // own accounts' for everyone else.
 func (s *Server) visibleCaches(u *store.User) ([]store.Cache, error) {
-	if u.Role == "owner" {
+	if u.Superadmin() {
 		return s.db.ListCaches()
 	}
 	nss, err := s.db.UserAccounts(u.ID)
@@ -437,7 +438,7 @@ func (s *Server) visibleCaches(u *store.User) ([]store.Cache, error) {
 // visibleTokens lists tokens u may see: all for admins, else the tokens of
 // accounts they administer.
 func (s *Server) visibleTokens(u *store.User) ([]store.Token, error) {
-	if u.Role == "owner" {
+	if u.Superadmin() {
 		return s.db.ListTokens()
 	}
 	nss, err := s.db.UserAccounts(u.ID)
@@ -460,7 +461,7 @@ func (s *Server) visibleTokens(u *store.User) ([]store.Token, error) {
 
 // ownedAccounts returns the accounts u may create caches/tokens in.
 func (s *Server) ownedAccounts(u *store.User) ([]store.Account, error) {
-	if u.Role == "owner" {
+	if u.Superadmin() {
 		return s.db.ListAccounts()
 	}
 	nss, err := s.db.UserAccounts(u.ID)
@@ -576,7 +577,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 		Tokens:     pagedTokens,
 		Accounts:   owned,
 		Storages:   s.storageNames(),
-		IsAdmin:    u.Role == "owner",
+		IsAdmin:    u.Superadmin(),
 		Flash:      flash,
 		ServerCap:  s.cfg.Limits.TotalBytes(),
 		Bytes:      humanBytes,
@@ -809,7 +810,7 @@ func (s *Server) renderInstance(w http.ResponseWriter, r *http.Request, flash vi
 		http.Redirect(w, r, "/admin", http.StatusSeeOther)
 		return
 	}
-	if u.Role != "owner" { // defense in depth: never leak the instance page
+	if !u.Superadmin() { // defense in depth: never leak the instance page
 		uiFail(w, r, http.StatusForbidden, views.T(r.Context(), "err.superadmin"), nil)
 		return
 	}
@@ -853,7 +854,7 @@ func (s *Server) renderOrg(w http.ResponseWriter, r *http.Request, u *store.User
 		uiError(w, r, err)
 		return
 	}
-	if u.Role != "owner" && s.db.MemberRole(acct.ID, u.ID) == "" {
+	if !u.Superadmin() && s.db.MemberRole(acct.ID, u.ID) == "" {
 		s.notFound(w, r) // no existence oracle
 		return
 	}
@@ -1294,7 +1295,7 @@ func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
 	// Instance admins may create caches anywhere (minting the account on the
 	// fly); everyone else only inside accounts they administer, within plan
 	// quota.
-	if u.Role != "owner" {
+	if !u.Superadmin() {
 		acc, err := s.db.GetAccount(ns)
 		if err != nil || !s.canManage(u, acc.ID) {
 			s.flashRedirect(w, r, "/admin", views.T(r.Context(), "flash.notadmin"))
@@ -1356,7 +1357,7 @@ func (s *Server) cacheForUser(w http.ResponseWriter, r *http.Request, u *store.U
 		uiError(w, r, err)
 		return nil, false
 	}
-	if u.Role != "owner" && s.db.MemberRole(c.AccountID, u.ID) == "" {
+	if !u.Superadmin() && s.db.MemberRole(c.AccountID, u.ID) == "" {
 		s.notFound(w, r)
 		return nil, false
 	}
@@ -1752,7 +1753,7 @@ func (s *Server) manageToken(w http.ResponseWriter, r *http.Request) (*store.Tok
 		uiError(w, r, err)
 		return nil, nil, false
 	}
-	if t.AccountID == 0 && u.Role != "owner" {
+	if t.AccountID == 0 && !u.Superadmin() {
 		s.notFound(w, r)
 		return nil, nil, false
 	}
@@ -2070,7 +2071,7 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 		s.instanceFlash(w, r, views.T(r.Context(), "flash.delself"))
 		return
 	}
-	if u.Role == "owner" {
+	if u.Superadmin() {
 		s.instanceFlash(w, r, views.T(r.Context(), "flash.delowner"))
 		return
 	}
@@ -2143,7 +2144,7 @@ func (s *Server) handleDeleteOrg(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if u.Role != "owner" && s.db.MemberRole(ns.ID, u.ID) != "owner" {
+	if !u.Superadmin() && s.db.MemberRole(ns.ID, u.ID) != "owner" {
 		s.flashRedirect(w, r, "/admin/org/"+ns.Slug, views.T(r.Context(), "flash.ownerdelete"))
 		return
 	}
@@ -2220,7 +2221,7 @@ func (s *Server) mailAdmins(render func(ctx context.Context) (subject, body stri
 		return
 	}
 	for _, u := range users {
-		if u.Role == "owner" && u.Email != "" {
+		if u.Superadmin() && u.Email != "" {
 			subject, body := render(mailCtx(&u))
 			mail.Go(s.cfg.SMTP.Mail(), u.Email, subject, body)
 		}

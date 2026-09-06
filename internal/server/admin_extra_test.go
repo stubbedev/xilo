@@ -23,13 +23,24 @@ import (
 const adminPass = "hunter2boogaloo"
 
 // bootstrapAdmin sets the admin password directly in the store.
+// bootstrapAdmin seeds what a single-tenant boot seeds: the instance
+// superadmin, plus the workspace they own — a superadmin owns nothing on its
+// own, so without one there would be nowhere to put a cache.
 func bootstrapAdmin(t *testing.T, db *store.DB) {
 	t.Helper()
 	hash, err := bcrypt.GenerateFromPassword([]byte(adminPass), bcrypt.MinCost)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.CreateUser("admin", "", string(hash), "owner"); err != nil {
+	u, err := db.CreateUser("admin", "", string(hash), store.RoleSuperadmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acc, err := db.EnsureAccount(u.Name, "org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.MakeOwner(acc.ID, u.ID); err != nil {
 		t.Fatal(err)
 	}
 }
