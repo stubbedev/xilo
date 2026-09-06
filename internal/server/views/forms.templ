@@ -35,15 +35,20 @@ templ FieldInfo(id, text, hint string) {
 }
 
 // fieldLabel is the label row shared by Field and FieldInfo.
+//
+// Fixed height, and an icon a size under the label's line: otherwise a field
+// carrying an info glyph is two pixels taller than the plain field beside it,
+// which puts their labels on different lines and their controls one pixel
+// apart all the way across a row of fields.
 templ fieldLabel(id, text, hint string) {
-	<div class="flex items-center gap-1.5">
+	<div class="flex h-5 items-center gap-1.5">
 		@form.Label(form.LabelProps{For: id}) {
 			{ text }
 		}
 		if hint != "" {
 			@WithTooltip(hint) {
-				<span class="inline-flex text-muted-foreground" tabindex="0" aria-label={ hint }>
-					@Icon("info")
+				<span class="inline-flex shrink-0 text-muted-foreground" tabindex="0" aria-label={ hint }>
+					@IconClass("info", 14, "")
 				</span>
 			}
 		}
@@ -213,6 +218,20 @@ templ SwitchGroup() {
 	<div class="rounded-lg border px-3">
 		{ children... }
 	</div>
+}
+
+// VisibilityField is the privacy toggle as a field, for a row of fields: the
+// label above with its info glyph, the switch on the control line. Its cell is
+// then exactly as tall as an input's, so the labels sit on one line and the
+// controls on another — the switch-row form (VisibilitySwitch) is taller than
+// an input, and bottom-aligning it in a grid left its label out of step with
+// the ones beside it.
+templ VisibilityField(private bool) {
+	@FieldInfo("cache-private", T(ctx, "caches.private"), T(ctx, "caches.privatehint")) {
+		<div class="flex h-9 items-center">
+			@switchcomp.Switch(switchcomp.Props{ID: "cache-private", Name: "private", Value: "on", Checked: private})
+		</div>
+	}
 }
 
 // PermSwitchID is a labelled switch row with an explicit DOM id — required

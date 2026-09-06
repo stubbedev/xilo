@@ -98,11 +98,10 @@ templ CacheView(d CacheData) {
 		<div class="grid gap-8">
 			@SettingsCard(T(ctx, "cd.settings"), "") {
 				<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/configure") } class="space-y-4">
-					// items-end: the switch carries its label inside its box, the
-					// other three carry theirs above the control, so only their
-					// bottoms line up.
-					<div class="grid items-end gap-4 sm:grid-cols-2 xl:grid-cols-4">
-						@VisibilitySwitch(!d.Cache.Public)
+					// Four fields of one shape — label line, control line — so both
+					// lines run straight across the row.
+					<div class="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-4">
+						@VisibilityField(!d.Cache.Public)
 						@PriorityField(d.Cache.Priority)
 						@Field("", T(ctx, "cd.retention")) {
 							@DurationInput("retention", d.Cache.Retention)

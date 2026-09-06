@@ -306,14 +306,23 @@ templ statusPollScript() {
 					inst.update('none');
 				});
 			}
-			// templui builds its charts on its own listener, so there is no single
-			// moment to hook: try for a couple of seconds and stop once every
-			// instance is tuned (tuneAxes is a no-op on one it has already done).
-			var tuneTries = 0;
-			var tuneTimer = setInterval(function () {
-				tuneAxes();
-				if (++tuneTries > 12) clearInterval(tuneTimer);
-			}, 250);
+			// templui builds its charts on its own listener, and rebuilds them all
+			// on a theme switch to pick up the new surface colours — so there is no
+			// single moment to hook, and a rebuilt instance is back on Chart.js'
+			// defaults. Sweep for a few seconds after either event; tuneAxes is a
+			// no-op on an instance it has already done.
+			function tuneBurst() {
+				var tries = 0;
+				var timer = setInterval(function () {
+					tuneAxes();
+					if (++tries > 12) clearInterval(timer);
+				}, 250);
+			}
+			tuneBurst();
+			new MutationObserver(tuneBurst).observe(document.documentElement, {
+				attributes: true,
+				attributeFilter: ['class', 'data-palette'],
+			});
 			function fmtLabel(ms, longSpan) {
 				var t = new Date(ms);
 				var hm =
