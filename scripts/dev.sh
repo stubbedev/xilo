@@ -19,6 +19,11 @@ WORK="$PWD/tmp/dev"
 XILO=./tmp/xilo
 ADMIN_PW=demo
 
+# Fail on a missing tool now, not sixty seconds into a health-check loop.
+for tool in go templ just air curl; do
+	command -v "$tool" >/dev/null || { echo "just dev needs '$tool' on PATH" >&2; exit 1; }
+done
+
 # Never wipe tmp/dev under a running instance: a second `just dev` would pull
 # the database out from under the first and leave it hanging on busy retries.
 if curl -fs -o /dev/null "$APP/healthz" 2>/dev/null; then
@@ -49,6 +54,10 @@ export XILO_CONFIG="$WORK/xilo.yaml"
 # end opens your own profile, not a blank one.
 REAL_XDG="${XDG_CONFIG_HOME:-$HOME/.config}"
 export XDG_CONFIG_HOME="$WORK/home/.config"
+# go reads its env file from XDG_CONFIG_HOME too, so the line above would move
+# GOPATH/GOMODCACHE to the defaults and make air's rebuilds resolve a different
+# module cache than the one this checkout was built against. Pin it back.
+export GOENV="$REAL_XDG/go/env"
 
 echo "== seeding metadata (local DB) =="
 $XILO cache create default/nixpkgs
@@ -57,7 +66,7 @@ $XILO cache configure default/ci --max-size 512MB --retention 720h
 ADMIN_TOK=$($XILO token create demo-admin --admin | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
 PUSH_TOK=$($XILO token create nixpkgs-push --cache default/nixpkgs --push --pull | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
 CI_TOK=$($XILO token create ci-push --cache default/ci --push --pull --ttl 720h | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
-DEAD=$($XILO token create old-laptop --cache default/nixpkgs --pull | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
+$XILO token create old-laptop --cache default/nixpkgs --pull >/dev/null
 DEAD_ID=$($XILO token list | grep old-laptop | grep -oE '^[0-9 ]+' | tr -d ' ' | head -1)
 $XILO token revoke "$DEAD_ID"
 
@@ -66,8 +75,14 @@ export XILO_DEV=1
 air &
 AIR=$!
 trap 'kill $AIR 2>/dev/null; wait $AIR 2>/dev/null; echo; echo "dev server stopped"' EXIT
-for _ in $(seq 1 300); do curl -fs "$APP/healthz" >/dev/null 2>&1 && break; sleep 0.2; done
-curl -fs "$APP/healthz" >/dev/null || { echo "server never came up"; exit 1; }
+for _ in $(seq 1 300); do
+	curl -fs "$APP/healthz" >/dev/null 2>&1 && break
+	# air quits on a build error (stop_on_error) and when the port is taken;
+	# say so instead of spinning out the whole timeout.
+	kill -0 $AIR 2>/dev/null || { echo "air exited during startup (see its output above)" >&2; exit 1; }
+	sleep 0.2
+done
+curl -fs "$APP/healthz" >/dev/null || { echo "server never came up on $URL" >&2; exit 1; }
 
 echo "== admin actions (fills the activities page) =="
 JAR="$WORK/cookies"
