@@ -96,6 +96,7 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 			@sidebar.Script()
 			@webauthnScript()
 			@toastLayer()
+			@searchClearLayer()
 			if DevMode {
 				@devReloadScript()
 			}
@@ -290,6 +291,77 @@ templ toastLayer() {
 			// Copy buttons are templui's; they carry no data-toast of their own.
 			if (e.target.closest('[data-copy-button]')) xiloToast('copied');
 		});
+	</script>
+}
+
+// searchClearLayer gives every type=search field the same clear button.
+//
+// The native one (::-webkit-search-cancel-button) is a fixed grey glyph that
+// ignores the theme, so it is switched off and ours takes its place. One layer
+// rather than a prop on SearchInput, because the combobox search box belongs
+// to templui: it is rendered inside selectbox.Content and there is no call
+// site of ours to hang a button on. A script that decorates every search input
+// on the page covers both, and anything added later for free.
+//
+// The button is cloned from a <template> — the same trick toastLayer uses —
+// so it is still a templui button with a templui icon rather than markup
+// spelled out in JavaScript. Visibility is CSS only (input.css keys it on
+// :placeholder-shown), so an empty field shows nothing to click.
+templ searchClearLayer() {
+	<template data-search-clear-template>
+		@button.Button(button.Props{
+			Variant: button.VariantGhost, Type: button.TypeButton, Size: button.SizeIcon,
+			Class: "absolute right-1 top-1/2 size-6 -translate-y-1/2 text-muted-foreground hover:text-foreground",
+			Attributes: templ.Attributes{
+				"data-search-clear": "",
+				"tabindex":          "-1",
+				"aria-label":        T(ctx, "action.clear"),
+			},
+		}) {
+			@IconClass("x", 14, "")
+		}
+	</template>
+	<script>
+		(function () {
+			function decorate(root) {
+				var tpl = document.querySelector('template[data-search-clear-template]');
+				if (!tpl) return;
+				(root || document)
+					.querySelectorAll('input[type="search"]')
+					.forEach(function (el) {
+						if (el.dataset.searchClearOn) return;
+						el.dataset.searchClearOn = '1';
+						el.classList.add('pr-8');
+						var host = el.parentElement;
+						if (!host) return;
+						host.classList.add('relative');
+						host.appendChild(tpl.content.cloneNode(true));
+					});
+			}
+			function ready() {
+				decorate();
+				document.addEventListener('htmx:afterSwap', function (e) {
+					decorate(e.target);
+				});
+			}
+			if (document.readyState === 'loading') {
+				document.addEventListener('DOMContentLoaded', ready);
+			} else {
+				ready();
+			}
+			document.addEventListener('click', function (e) {
+				var b = e.target.closest('[data-search-clear]');
+				if (!b) return;
+				var inp = b.parentElement.querySelector('input[type="search"]');
+				if (!inp) return;
+				inp.value = '';
+				// input drives htmx's "input changed" trigger and templui's own
+				// option filter; search is what a native clear would have fired.
+				inp.dispatchEvent(new Event('input', { bubbles: true }));
+				inp.dispatchEvent(new Event('search', { bubbles: true }));
+				inp.focus();
+			});
+		})();
 	</script>
 }
 

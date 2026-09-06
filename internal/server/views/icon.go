@@ -7,7 +7,7 @@ import (
 
 // iconSize maps a pixel size to its Tailwind class. Literal strings so the
 // Tailwind scanner (which sources this file) sees them.
-var iconSize = map[int]string{12: "size-3", 16: "size-4", 20: "size-5", 32: "size-8", 48: "size-12"}
+var iconSize = map[int]string{12: "size-3", 14: "size-3.5", 16: "size-4", 20: "size-5", 24: "size-6", 32: "size-8", 48: "size-12"}
 
 // IconClass renders a templui/Lucide icon at a given size with extra classes
 // (used for the theme toggle's sun/moon and other sized glyphs). No children.

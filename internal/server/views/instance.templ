@@ -57,13 +57,13 @@ templ policyCard(d InstanceData) {
 		}
 		@card.Content() {
 			<form method="post" action="/admin/settings/instance" class="space-y-3">
-				@form.ItemFlex(form.ItemProps{Class: "justify-between rounded-lg border p-3"}) {
+				@form.ItemFlex(form.ItemProps{Class: "justify-between border-b py-3 last:border-0"}) {
 					@form.Label(form.LabelProps{For: "allow_registrations"}) {
 						{ T(ctx, "inst.regs") }
 					}
 					@switchcomp.Switch(switchcomp.Props{ID: "allow_registrations", Name: "allow_registrations", Value: "on", Checked: d.AllowRegs})
 				}
-				@form.ItemFlex(form.ItemProps{Class: "justify-between rounded-lg border p-3"}) {
+				@form.ItemFlex(form.ItemProps{Class: "justify-between border-b py-3 last:border-0"}) {
 					@form.Label(form.LabelProps{For: "require_approval"}) {
 						{ T(ctx, "inst.approve") }
 					}
@@ -78,23 +78,21 @@ templ policyCard(d InstanceData) {
 	}
 }
 
-// plansCard lists plans and holds the create-plan dialog.
+// plansCard lists plans and holds the create-plan dialog. A list is a section
+// on the page, not an object in a box — the card wall around a bordered list
+// was two frames drawn around the same rows.
 templ plansCard(plans []store.Plan) {
-	@card.Card() {
-		@CardHeaderRow(T(ctx, "set.plans")) {
-			@newPlanDialog()
-		}
-		@card.Content(card.ContentProps{Class: "space-y-2"}) {
-			if len(plans) == 0 {
-				@EmptyState("layers", T(ctx, "empty.none")) {
-					@dialog.Trigger(dialog.TriggerProps{For: "dlg-plan-new"}) {
-						@PlusButton(T(ctx, "action.new"))
-					}
+	@ListSection(T(ctx, "set.plans"), newPlanDialog()) {
+		if len(plans) == 0 {
+			@EmptyState("layers", T(ctx, "empty.none")) {
+				@dialog.Trigger(dialog.TriggerProps{For: "dlg-plan-new"}) {
+					@PlusButton(T(ctx, "action.new"))
 				}
-			} else {
-				@ListBox() {
-					@table.Table() {
-						@table.Body() {
+			}
+		} else {
+			@TableCard() {
+				@table.Table() {
+					@table.Body() {
 							for _, p := range plans {
 								@table.Row() {
 									@table.Cell() {
@@ -112,7 +110,7 @@ templ plansCard(plans []store.Plan) {
 										</div>
 									}
 									@table.Cell(table.CellProps{Class: "text-right"}) {
-										<div class="flex justify-end gap-1">
+										@RowActions() {
 											@editPlanDialog(p)
 											@ConfirmForm(Confirm{
 												ID:             "plan-" + strconv.FormatInt(p.ID, 10),
@@ -127,11 +125,10 @@ templ plansCard(plans []store.Plan) {
 												TriggerTooltip: T(ctx, "action.delete"),
 												TriggerVariant: button.VariantGhost,
 											})
-										</div>
+										}
 									}
 								}
 							}
-						}
 					}
 				}
 			}
@@ -191,49 +188,44 @@ templ planFormBody(action string, p *store.Plan, submitIcon, submitLabel, dlgID 
 
 // usersCard is the user administration block.
 templ usersCard(actingName string, multiTenant bool, users []store.User) {
-	@card.Card() {
-		@CardHeaderRow(T(ctx, "set.users")) {
-			@newUserDialog(multiTenant)
-		}
-		@card.Content() {
-			@ListBox() {
-				@table.Table() {
-					@table.Body() {
-						for _, u := range users {
-							@table.Row() {
-								@table.Cell() {
-									<div class="flex flex-wrap items-center gap-2">
-										@RoleIcon(userRole(u))
-										<span class="font-medium">{ u.Name }</span>
-										if u.Email != "" {
-											<span class="text-xs text-muted-foreground">{ u.Email }</span>
-										}
-									</div>
-								}
-								@table.Cell(table.CellProps{Class: "text-right"}) {
-									<div class="flex justify-end gap-1">
-										if u.Status == "pending" {
-											<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/approve") }>
-												@RowAction("user-check", T(ctx, "users.approve"), true)
-											</form>
-										}
-										@resetUserDialog(u)
-										if u.Name != actingName && u.Role != "owner" {
-											@ConfirmForm(Confirm{
-												ID:             "del-user-" + strconv.FormatInt(u.ID, 10),
-												Action:         "/admin/users/" + strconv.FormatInt(u.ID, 10) + "/delete",
-												Title:          T(ctx, "users.deletetitle"),
-												Message:        Tf(ctx, "users.deletemsg", u.Name),
-												ConfirmLabel:   T(ctx, "action.delete"),
-												ConfirmIcon:    "trash-2",
-												Danger:         true,
-												TriggerIcon:    "trash-2",
-												IconOnly:       true,
-												TriggerTooltip: T(ctx, "action.delete"),
-												TriggerVariant: button.VariantGhost,
-											})
-										}
-									</div>
+	@ListSection(T(ctx, "set.users"), newUserDialog(multiTenant)) {
+		@TableCard() {
+			@table.Table() {
+				@table.Body() {
+					for _, u := range users {
+						@table.Row() {
+							@table.Cell() {
+								<div class="flex flex-wrap items-center gap-2">
+									@RoleIcon(userRole(u))
+									<span class="font-medium">{ u.Name }</span>
+									if u.Email != "" {
+										<span class="text-xs text-muted-foreground">{ u.Email }</span>
+									}
+								</div>
+							}
+							@table.Cell(table.CellProps{Class: "text-right"}) {
+								@RowActions() {
+									if u.Status == "pending" {
+										<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/approve") }>
+											@RowAction("user-check", T(ctx, "users.approve"), true)
+										</form>
+									}
+									@resetUserDialog(u)
+									if u.Name != actingName && u.Role != "owner" {
+										@ConfirmForm(Confirm{
+											ID:             "del-user-" + strconv.FormatInt(u.ID, 10),
+											Action:         "/admin/users/" + strconv.FormatInt(u.ID, 10) + "/delete",
+											Title:          T(ctx, "users.deletetitle"),
+											Message:        Tf(ctx, "users.deletemsg", u.Name),
+											ConfirmLabel:   T(ctx, "action.delete"),
+											ConfirmIcon:    "trash-2",
+											Danger:         true,
+											TriggerIcon:    "trash-2",
+											IconOnly:       true,
+											TriggerTooltip: T(ctx, "action.delete"),
+											TriggerVariant: button.VariantGhost,
+										})
+									}
 								}
 							}
 						}
@@ -285,45 +277,42 @@ templ newUserDialog(multiTenant bool) {
 
 // orgsCard lists organizations with usage and holds the create-org dialog.
 templ orgsCard(orgs []OrgInfo) {
-	@card.Card() {
-		@CardHeaderRow(T(ctx, "org.title")) {
-			@newOrgDialog("/admin/orgs")
-		}
-		@card.Content(card.ContentProps{Class: "space-y-4"}) {
-			if len(orgs) == 0 {
-				@EmptyState("building-2", T(ctx, "empty.none")) {
-					@dialog.Trigger(dialog.TriggerProps{For: "dlg-org-new"}) {
-						@PlusButton(T(ctx, "action.new"))
-					}
+	@ListSection(T(ctx, "org.title"), newOrgDialog("/admin/orgs")) {
+		if len(orgs) == 0 {
+			@EmptyState("building-2", T(ctx, "empty.none")) {
+				@dialog.Trigger(dialog.TriggerProps{For: "dlg-org-new"}) {
+					@PlusButton(T(ctx, "action.new"))
 				}
-			} else {
-				@ListBox() {
-					@table.Table() {
-						@table.Body() {
-							for _, info := range orgs {
-								@table.Row() {
-									@table.Cell() {
-										<div class="flex items-center gap-2">
-											@Icon("building-2")
-											<a href={ templ.SafeURL("/admin/org/" + info.Account.Slug) } class="font-medium hover:underline">{ info.Account.Slug }</a>
-											<span class="text-xs text-muted-foreground tabular-nums">{ UsagePhrase(ctx, info) }</span>
-										</div>
-									}
-									@table.Cell(table.CellProps{Class: "text-right"}) {
-										@ConfirmForm(Confirm{
-											ID:             "org-" + info.Account.Slug,
-											Action:         "/admin/org/" + info.Account.Slug + "/delete",
-											Title:          T(ctx, "org.deletetitle"),
-											Message:        Tf(ctx, "org.deletemsg", info.Account.Slug),
-											ConfirmLabel:   T(ctx, "action.delete"),
-											ConfirmIcon:    "trash-2",
-											Danger:         true,
-											TriggerIcon:    "trash-2",
-											IconOnly:       true,
-											TriggerTooltip: T(ctx, "action.delete"),
-											TriggerVariant: button.VariantGhost,
-										})
-									}
+			}
+		} else {
+			@TableCard() {
+				@table.Table() {
+					@table.Body() {
+						for _, info := range orgs {
+							@table.Row() {
+								@table.Cell() {
+									<div class="flex items-center gap-2">
+										@Icon("building-2")
+										<a href={ templ.SafeURL("/admin/org/" + info.Account.Slug) } class="font-medium hover:underline">{ info.Account.Slug }</a>
+										@Meta() {
+											{ UsagePhrase(ctx, info) }
+										}
+									</div>
+								}
+								@table.Cell(table.CellProps{Class: "text-right"}) {
+									@ConfirmForm(Confirm{
+										ID:             "org-" + info.Account.Slug,
+										Action:         "/admin/org/" + info.Account.Slug + "/delete",
+										Title:          T(ctx, "org.deletetitle"),
+										Message:        Tf(ctx, "org.deletemsg", info.Account.Slug),
+										ConfirmLabel:   T(ctx, "action.delete"),
+										ConfirmIcon:    "trash-2",
+										Danger:         true,
+										TriggerIcon:    "trash-2",
+										IconOnly:       true,
+										TriggerTooltip: T(ctx, "action.delete"),
+										TriggerVariant: button.VariantGhost,
+									})
 								}
 							}
 						}

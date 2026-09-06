@@ -84,30 +84,44 @@ templ StatusPage(d StatusData) {
 		@PageHeader(T(ctx, "status.title"), T(ctx, "status.subtitle")) {
 			@statusSettings(d)
 		}
-		<div class="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4 xl:grid-cols-6">
-			if d.Healthy {
-				@StatTile("activity", T(ctx, "status.ok"), T(ctx, "status.health"), "st-health", "text-success")
-			} else {
-				@StatTile("activity", T(ctx, "status.err"), T(ctx, "status.health"), "st-health", "text-destructive")
-			}
-			@StatTile("clock", d.Uptime, T(ctx, "status.uptime"), "st-uptime", "")
-			@StatTile("target", d.HitPct, T(ctx, "status.hits"), "st-hit", "")
-			@StatTile("hard-drive", d.Bytes(d.Global.StoredBytes), T(ctx, "status.stored"), "st-stored", "")
-			@StatTile("package", Count(d.Global.Paths), T(ctx, "kpi.paths"), "st-paths", "")
-			@StatTile("download", Count(d.NarServed), T(ctx, "status.nars"), "st-nars", "")
-			@StatTile("network", Count(d.Requests), T(ctx, "status.reqs"), "st-req", "")
-			@StatTile("shield", Count(d.AuthFails), T(ctx, "status.authfail"), "st-auth", "")
-			@StatTile("upload", Count(d.PathsPushed), T(ctx, "status.pushed"), "st-pushed", "")
-			@StatTile("copy", Count(d.PathsAdopted), T(ctx, "status.adopted"), "st-adopted", "")
-			@StatTile("boxes", Count(d.ChunksRecv), T(ctx, "status.chunks"), "st-chunks", "")
-			@StatTile("layers", Count(d.ChunksDedup), T(ctx, "status.deduped"), "st-dedup", "")
+		// Twelve equal tiles asked the reader to rank twelve numbers themselves.
+		// The page answers one question first — is it up — so health, uptime and
+		// hit rate lead, the live charts come next, and the counters settle
+		// underneath as a readout you consult rather than scan.
+		<div class="mb-8 flex flex-wrap items-baseline gap-x-10 gap-y-3 border-y py-4">
+			<div class="flex items-baseline gap-2.5">
+				<span
+					id="st-health"
+					class={ "font-mono text-3xl font-medium leading-none tracking-tight", healthTone(d.Healthy) }
+				>
+					if d.Healthy {
+						{ T(ctx, "status.ok") }
+					} else {
+						{ T(ctx, "status.err") }
+					}
+				</span>
+				<span class="text-xs text-muted-foreground">{ T(ctx, "status.health") }</span>
+			</div>
+			@Readout(d.Uptime, T(ctx, "status.uptime"), "st-uptime", "")
+			@Readout(d.HitPct, T(ctx, "status.hits"), "st-hit", "")
 		</div>
-		<div class="grid gap-6 lg:grid-cols-2">
+		<div class="mb-8 grid gap-6 lg:grid-cols-2">
 			for _, c := range d.Charts {
 				@statusChart(c)
 			}
 		</div>
-		<p id="status-updated" class="mt-6 text-center text-xs text-muted-foreground">{ T(ctx, "status.updated") } { d.Updated }</p>
+		@StatRow() {
+			@StatTile("hard-drive", d.Bytes(d.Global.StoredBytes), T(ctx, "status.stored"), "st-stored", "")
+			@StatTile("package", Count(d.Global.Paths), T(ctx, "kpi.paths"), "st-paths", "")
+			@StatTile("download", Count(d.NarServed), T(ctx, "status.nars"), "st-nars", "")
+			@StatTile("network", Count(d.Requests), T(ctx, "status.reqs"), "st-req", "")
+			@StatTile("shield", Count(d.AuthFails), T(ctx, "status.authfail"), "st-auth", failTone(d.AuthFails))
+			@StatTile("upload", Count(d.PathsPushed), T(ctx, "status.pushed"), "st-pushed", "")
+			@StatTile("copy", Count(d.PathsAdopted), T(ctx, "status.adopted"), "st-adopted", "")
+			@StatTile("boxes", Count(d.ChunksRecv), T(ctx, "status.chunks"), "st-chunks", "")
+			@StatTile("layers", Count(d.ChunksDedup), T(ctx, "status.deduped"), "st-dedup", "")
+		}
+		<p id="status-updated" class="mt-6 text-center font-mono text-xs text-muted-foreground tabular-nums">{ T(ctx, "status.updated") } { d.Updated }</p>
 		@templ.JSONScript("status-poll", map[string]any{
 			"url": dataURL(d), "rate": d.Rate,
 			"ok": T(ctx, "status.ok"), "err": T(ctx, "status.err"),
@@ -181,7 +195,7 @@ templ statusChart(c ChartData) {
 				{ c.Label }
 			}
 			<div class="flex items-baseline gap-2">
-				<span id={ "cur-" + c.ID } class="text-lg font-semibold tabular-nums">{ c.Cur }</span>
+				<span id={ "cur-" + c.ID } class="font-mono text-lg font-medium tabular-nums">{ c.Cur }</span>
 				@badge.Badge(badge.Props{ID: "peak-" + c.ID, Variant: badge.VariantSecondary, Class: peakClass(c.Peak)}) {
 					if c.Peak != "" {
 						{ T(ctx, "status.peak") } { c.Peak }

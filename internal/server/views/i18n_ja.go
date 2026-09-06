@@ -222,6 +222,7 @@ var ja = map[string]string{
 	"kpi.dedup":     "重複排除率",
 	"kpi.logical":   "論理サイズ",
 	"kpi.physical":  "ディスク上",
+	"kpi.saved":     "削減量",
 	"cache.paths":   "パス",
 	"cache.nocap":   "上限なし",
 
@@ -418,6 +419,7 @@ var ja = map[string]string{
 
 	// generic actions
 	"action.cancel": "キャンセル",
+	"action.clear":  "クリア",
 	"action.save":   "保存",
 	"action.delete": "削除",
 	"action.edit":   "編集",

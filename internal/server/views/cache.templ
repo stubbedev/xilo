@@ -8,7 +8,6 @@ import (
 	"github.com/templui/templui/components/copybutton"
 	"github.com/templui/templui/components/dialog"
 	"github.com/templui/templui/components/input"
-	"github.com/templui/templui/components/progress"
 	"github.com/templui/templui/components/separator"
 	"github.com/templui/templui/components/table"
 	"github.com/templui/templui/components/tabs"
@@ -38,21 +37,15 @@ type CacheData struct {
 templ CacheView(d CacheData) {
 	@Layout(d.Cache.Ref(), "caches", d.Nav, d.Flash) {
 		@Crumbs(Crumb{T(ctx, "nav.caches"), "/admin"}, Crumb{d.Cache.Ref(), ""})
-		@PageHeader(d.Cache.Ref(), d.BaseURL+"/c/"+d.Cache.Ref()) {
+		@PageHeaderCode(d.Cache.Ref(), d.BaseURL+"/c/"+d.Cache.Ref()) {
 			@VisBadge(d.Cache.Public)
 		}
-		<div class="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+		@DedupBar(d.Stats.LogicalBytes, d.Stats.PhysicalBytes, d.Dedup, d.Bytes)
+		@StatRow() {
 			@StatTile("package", Count(d.Stats.Paths), T(ctx, "kpi.paths"), "", "")
-			@StatTile("database", d.Bytes(d.Stats.LogicalBytes), T(ctx, "kpi.logical"), "", "")
-			@StatTile("hard-drive", d.Bytes(d.Stats.PhysicalBytes), T(ctx, "kpi.physical")+capLabel(ctx, d.Cache.MaxBytes, d.Bytes), "", "")
-			@StatTile("layers", d.Dedup+"×", T(ctx, "kpi.dedup"), "", "")
-		</div>
-		if d.Cache.MaxBytes > 0 {
-			<div class="mb-8">
-				@progress.Progress(progress.Props{Value: fillPct(d.Stats.PhysicalBytes, d.Cache.MaxBytes), Size: progress.SizeSm, Variant: capVariant(d.Stats.PhysicalBytes, d.Cache.MaxBytes)})
-			</div>
+			@StatTile("hard-drive", d.Bytes(d.Stats.PhysicalBytes), T(ctx, "kpi.physical")+capLabel(ctx, d.Cache.MaxBytes, d.Bytes), "", capTone(d.Stats.PhysicalBytes, d.Cache.MaxBytes))
 		}
-		<div class="mb-8 grid gap-6 lg:grid-cols-2">
+		<div class="mb-8 grid items-start gap-6 lg:grid-cols-2">
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
@@ -256,18 +249,18 @@ templ pathResults(d CacheData) {
 							@table.Row() {
 								@table.Cell() {
 									<div class="flex min-w-0 items-center gap-2">
-										<a href={ templ.SafeURL(pathURL(d.Cache, p.StorePath)) } class="truncate font-medium hover:underline" aria-label={ T(ctx, "paths.open") }>{ name }</a>
+										<a href={ templ.SafeURL(pathURL(d.Cache, p.StorePath)) } class="truncate text-sm font-medium hover:underline" aria-label={ T(ctx, "paths.open") }>{ name }</a>
 										if hash != "" {
 											@WithTooltip(p.StorePath) {
-												<code class="font-mono text-xs text-muted-foreground">{ hash }</code>
+												@StoreHash(hash)
 											}
 										}
 									</div>
 								}
-								@table.Cell(table.CellProps{Class: "tabular-nums"}) {
+								@table.Cell(table.CellProps{Class: "font-mono text-xs tabular-nums"}) {
 									{ d.Bytes(p.NarSize) }
 								}
-								@table.Cell(table.CellProps{Class: "text-muted-foreground"}) {
+								@table.Cell(table.CellProps{Class: "font-mono text-xs text-muted-foreground"}) {
 									{ Ago(ctx, p.Accessed) }
 								}
 							}

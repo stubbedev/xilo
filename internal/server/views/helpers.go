@@ -31,6 +31,34 @@ func capVariant(used, capacity int64) progress.Variant {
 	}
 }
 
+// capTone colours a stored-bytes readout as it approaches its quota. It is
+// what replaced the separate quota progress bar: the number already carried
+// the quantity, only the urgency was missing.
+func capTone(used, capacity int64) string {
+	switch fillClass(used, capacity) {
+	case "over":
+		return "text-destructive"
+	case "warn":
+		return "text-warning"
+	default:
+		return ""
+	}
+}
+
+// capBar is capTone's bar-fill twin: a quota bar is the same grading in
+// paint. Under 75% it stays neutral — a bar that is green from 1% on says
+// "good" about a cache that is simply empty.
+func capBar(used, capacity int64) string {
+	switch fillClass(used, capacity) {
+	case "over":
+		return "bg-destructive"
+	case "warn":
+		return "bg-warning"
+	default:
+		return "bg-foreground/60"
+	}
+}
+
 // confirmVariant is the button variant for a confirm action's submit button.
 func confirmVariant(danger bool) button.Variant {
 	if danger {
@@ -57,20 +85,23 @@ func confirmTriggerProps(c Confirm) button.Props {
 }
 
 // chipVariant is the filter-chip variant: both states borderless so the row
-// keeps one height (outline adds a border the primary variant lacks).
+// keeps one height (outline adds a border the primary variant lacks). Selected
+// is a filled neutral, not the primary colour — which state a filter is in is
+// not an action, and primary is spoken for.
 func chipVariant(active bool) button.Variant {
 	if active {
-		return button.VariantDefault
+		return button.VariantSecondary
 	}
-	return button.VariantSecondary
+	return button.VariantGhost
 }
 
-// segVariant is the button variant for a segmented-control option.
+// segVariant is the button variant for a segmented-control option — same
+// reasoning as chipVariant.
 func segVariant(active bool) button.Variant {
 	if active {
-		return button.VariantDefault
+		return button.VariantSecondary
 	}
-	return button.VariantOutline
+	return button.VariantGhost
 }
 
 // toastDuration is the flash toast lifetime (ms). A flash paired with a secret
@@ -105,6 +136,15 @@ func rowActionType(submit bool) button.Type {
 		return button.TypeSubmit
 	}
 	return button.TypeButton
+}
+
+// healthTone colors the health word on the status page. The poll script
+// toggles these same two classes, so they have to be the ones it knows.
+func healthTone(healthy bool) string {
+	if healthy {
+		return "text-success"
+	}
+	return "text-destructive"
 }
 
 // failTone colors the failed-requests tile once there is anything to see.
@@ -210,8 +250,9 @@ func copyID(value string) string {
 	return "cp-" + hex.EncodeToString(sum[:6])
 }
 
-// pathParts splits "/nix/store/<hash>-<name>" for compact display: an 8-char
-// short hash and the package name. Unparseable paths return "" and the path.
+// pathParts splits "/nix/store/<hash>-<name>" into the store hash and the
+// package name. The hash comes back whole — StoreHash decides how much of it
+// reads at full contrast. Unparseable paths return "" and the path.
 func pathParts(p string) (hash, name string) {
 	s, ok := strings.CutPrefix(p, "/nix/store/")
 	if !ok {
@@ -221,10 +262,25 @@ func pathParts(p string) (hash, name string) {
 	if !ok {
 		return "", s
 	}
-	if len(hash) > 8 {
-		hash = hash[:8]
-	}
 	return hash, name
+}
+
+// hashHead and hashTail split a store hash where the eye does: nobody reads
+// 32 base32 characters, they match the first few and skim the rest. StoreHash
+// renders the head at full contrast and the tail dimmed. Either half may be
+// empty — a hash already shortened to 8 has no tail.
+func hashHead(h string) string {
+	if len(h) > 8 {
+		return h[:8]
+	}
+	return h
+}
+
+func hashTail(h string) string {
+	if len(h) > 8 {
+		return h[8:]
+	}
+	return ""
 }
 
 // pathURL is the admin detail page for a store path in a cache.
@@ -418,7 +474,7 @@ func planLimits(ctx context.Context, p store.Plan) string {
 		if v == 0 {
 			return ""
 		}
-		return label + " " + fmtv + " · "
+		return label + " " + fmtv + MetaSep
 	}
 	out := part(T(ctx, "plan.caches"), p.MaxCaches, itoa(p.MaxCaches)) +
 		part(T(ctx, "plan.members"), p.MaxMembers, itoa(p.MaxMembers)) +
@@ -427,7 +483,7 @@ func planLimits(ctx context.Context, p store.Plan) string {
 	if out == "" {
 		return T(ctx, "plan.unlimited")
 	}
-	return strings.TrimSuffix(out, " · ")
+	return strings.TrimSuffix(out, MetaSep)
 }
 
 // humanBytesV formats bytes without needing the injected formatter.

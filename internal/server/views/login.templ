@@ -155,11 +155,17 @@ templ AuthShell(title string, flash Flash) {
 		</head>
 		<body class="flex min-h-full items-center justify-center bg-background px-4 py-12 text-foreground antialiased">
 			<div class="w-full max-w-sm">
-				<div class="mb-6 flex items-center justify-center gap-2 text-lg font-semibold">
-					<span class="text-primary">
-						@Icon("box")
-					</span>
-					<span>Xilo</span>
+				// The signed-out lockup says what this is, once. The wordmark alone
+				// could have fronted any admin panel; the line under it is the only
+				// thing on the page that names the job.
+				<div class="mb-6 text-center">
+					<div class="flex items-center justify-center gap-2 text-lg font-semibold">
+						<span class="text-primary">
+							@Icon("box")
+						</span>
+						<span>Xilo</span>
+					</div>
+					<p class="mt-1 font-mono text-xs text-muted-foreground">{ T(ctx, "footer.tagline") }</p>
 				</div>
 				if flash.Msg != "" {
 					<div class="mb-4">

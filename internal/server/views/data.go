@@ -29,6 +29,13 @@ func dedupRatio(logical, stored int64) string {
 	return fmt.Sprintf("%.2f", float64(logical)/float64(stored))
 }
 
+// savedBytes is what deduplication kept off the disk. Never negative: a fresh
+// instance can report more stored than logical for a moment while a push is
+// still being accounted for, and "-2 KiB saved" reads as a bug.
+func savedBytes(logical, physical int64) int64 {
+	return max(logical-physical, 0)
+}
+
 // capSuffix appends " / <cap>" to the disk-used tile when a server cap is set.
 func capSuffix(cap int64, bytes func(int64) string) string {
 	if cap <= 0 {
@@ -211,19 +218,26 @@ type OrgInfo struct {
 	Egress  int64       // NAR bytes served this month
 }
 
-// UsageLine renders "12 GiB stored (of 50 GiB) · 3 GiB egress this month".
+// MetaSep separates the clauses of a meta line. An em space, not a middle
+// dot: the dot was punctuation pretending to be structure, and three of them
+// in a row ("0 B stored · 1 member · plan free") read as one long sentence
+// rather than three facts. Space is not a character the browser can collapse
+// here — U+2003 is not ASCII whitespace — so it survives in prose and in mono.
+const MetaSep = " "
+
+// UsageLine renders "12 GiB stored (of 50 GiB)   3 GiB egress this month".
 func (o OrgInfo) UsageLine(ctx context.Context) string {
-	// One format string per clause, joined with " · ": a translator moves the
-	// words inside a clause, we only decide which clauses appear.
+	// One format string per clause: a translator moves the words inside a
+	// clause, we only decide which clauses appear.
 	out := Tf(ctx, "acct.usestored", humanBytesV(o.Used))
 	if o.Plan != nil && o.Plan.MaxStorage > 0 {
 		out = Tf(ctx, "acct.useof", humanBytesV(o.Used), humanBytesV(o.Plan.MaxStorage))
 	}
 	if o.Egress > 0 {
-		out += " · " + Tf(ctx, "acct.useegress", humanBytesV(o.Egress))
+		out += MetaSep + Tf(ctx, "acct.useegress", humanBytesV(o.Egress))
 	}
 	if o.Plan != nil {
-		out += " · " + Tf(ctx, "acct.useplan", o.Plan.Name)
+		out += MetaSep + Tf(ctx, "acct.useplan", o.Plan.Name)
 	}
 	return out
 }

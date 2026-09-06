@@ -222,6 +222,7 @@ var es = map[string]string{
 	"kpi.dedup":     "Ratio de deduplicación",
 	"kpi.logical":   "Lógico",
 	"kpi.physical":  "En disco",
+	"kpi.saved":     "Ahorrado",
 	"cache.paths":   "rutas",
 	"cache.nocap":   "sin límite",
 
@@ -418,6 +419,7 @@ var es = map[string]string{
 
 	// generic actions
 	"action.cancel": "Cancelar",
+	"action.clear":  "Borrar",
 	"action.save":   "Guardar",
 	"action.delete": "Eliminar",
 	"action.edit":   "Editar",

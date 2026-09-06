@@ -222,6 +222,7 @@ var zh = map[string]string{
 	"kpi.dedup":     "去重率",
 	"kpi.logical":   "逻辑大小",
 	"kpi.physical":  "磁盘占用",
+	"kpi.saved":     "已节省",
 	"cache.paths":   "个路径",
 	"cache.nocap":   "无上限",
 
@@ -418,6 +419,7 @@ var zh = map[string]string{
 
 	// generic actions
 	"action.cancel": "取消",
+	"action.clear":  "清除",
 	"action.save":   "保存",
 	"action.delete": "删除",
 	"action.edit":   "编辑",

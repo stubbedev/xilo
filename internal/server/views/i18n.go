@@ -331,6 +331,7 @@ var en = map[string]string{
 	"kpi.dedup":     "Dedup ratio",
 	"kpi.logical":   "Logical",
 	"kpi.physical":  "On disk",
+	"kpi.saved":     "Saved",
 	"cache.paths":   "paths",
 	"cache.nocap":   "no cap",
 
@@ -588,6 +589,7 @@ var en = map[string]string{
 	"empty.none":    "None yet.",
 	"empty.nomatch": "No matches.",
 	"action.cancel": "Cancel",
+	"action.clear":  "Clear",
 	"action.save":   "Save",
 	"action.delete": "Delete",
 	"action.edit":   "Edit",

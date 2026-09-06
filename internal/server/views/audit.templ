@@ -31,12 +31,12 @@ templ AuditPage(d AuditData) {
 		@PageHeader(T(ctx, "audit.title"), T(ctx, "audit.subtitle")) {
 			@SearchInput(d.Sort.With("q", ""), "q", d.Query, T(ctx, "audit.search"), "#audit-results")
 		}
-		<div class="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+		@StatRow() {
 			@StatTile("scroll-text", Count(d.Stats.Total), T(ctx, "audit.total"), "", "")
 			@StatTile("triangle-alert", Count(d.Stats.Failed), T(ctx, "audit.failed"), "", failTone(d.Stats.Failed))
 			@StatTile("users", Count(d.Stats.Actors), T(ctx, "audit.actors"), "", "")
 			@StatTile("timer", itoa(d.Stats.AvgMs)+" "+T(ctx, "audit.ms"), T(ctx, "audit.avgms"), "", "")
-		</div>
+		}
 		@auditResults(d)
 	}
 }
@@ -71,7 +71,7 @@ templ auditResults(d AuditData) {
 							@table.Row() {
 								@table.Cell(table.CellProps{Class: "text-muted-foreground"}) {
 									@WithTooltip(Ago(ctx, e.TS)) {
-										<span class="tabular-nums">{ stamp(e.TS) }</span>
+										<span class="font-mono text-xs tabular-nums">{ stamp(e.TS) }</span>
 									}
 								}
 								@table.Cell() {
@@ -101,7 +101,7 @@ templ auditResults(d AuditData) {
 										@badge.Badge(badge.Props{Variant: auditStatusVariant(e.Status)}) {
 											{ itoa(int64(e.Status)) }
 										}
-										<span class="text-xs text-muted-foreground tabular-nums">{ itoa(e.DurationMs) } { T(ctx, "audit.ms") }</span>
+										<span class="font-mono text-xs text-muted-foreground tabular-nums">{ itoa(e.DurationMs) } { T(ctx, "audit.ms") }</span>
 									</div>
 								}
 							}

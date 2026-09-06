@@ -7,7 +7,6 @@ import (
 	"github.com/stubbedev/xilo/internal/store"
 
 	"github.com/templui/templui/components/button"
-	"github.com/templui/templui/components/card"
 	"github.com/templui/templui/components/selectbox"
 	"github.com/templui/templui/components/table"
 )
@@ -27,56 +26,49 @@ type OrgPageData struct {
 templ Org(d OrgPageData) {
 	@Layout(d.Info.Account.Slug, "", d.Nav, d.Flash) {
 		@Crumbs(Crumb{T(ctx, "org.title"), orgParent(d.Nav)}, Crumb{d.Info.Account.Slug, ""})
-		@PageHeader(d.Info.Account.Slug, UsagePhrase(ctx, d.Info))
-		<div class="grid gap-6">
-			@card.Card() {
-				@card.Header() {
-					@card.Title() {
-						{ T(ctx, "org.members") }
-					}
-				}
-				@card.Content(card.ContentProps{Class: "space-y-4"}) {
-					if len(d.Info.Members) == 0 {
-						@EmptyState("users", T(ctx, "empty.none"))
-					} else {
-						@ListBox() {
-							@table.Table() {
-								@table.Body() {
-									for _, m := range d.Info.Members {
-										@table.Row() {
-											@table.Cell() {
-												<div class="flex items-center gap-2">
-													@RoleIcon(m.Role)
-													<span class="font-medium">{ m.UserName }</span>
-												</div>
-											}
-											@table.Cell(table.CellProps{Class: "text-right"}) {
-												if d.CanManage && m.Role != "owner" {
-													<div class="flex justify-end gap-1">
-														<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") }>
-															<input type="hidden" name="user_id" value={ strconv.FormatInt(m.UserID, 10) }/>
-															if m.Role == "admin" {
-																<input type="hidden" name="role" value="user"/>
-																@RowAction("user-minus", T(ctx, "users.demote"), true)
-															} else {
-																<input type="hidden" name="role" value="admin"/>
-																@RowAction("user-plus", T(ctx, "users.promote"), true)
-															}
-														</form>
-														@ConfirmForm(Confirm{
-															ID:             "rm-member-" + strconv.FormatInt(m.UserID, 10),
-															Action:         "/admin/org/" + d.Info.Account.Slug + "/members/" + strconv.FormatInt(m.UserID, 10) + "/remove",
-															Title:          T(ctx, "org.removetitle"),
-															Message:        Tf(ctx, "org.removemsg", m.UserName, d.Info.Account.Slug),
-															ConfirmLabel:   T(ctx, "action.remove"),
-															ConfirmIcon:    "trash-2",
-															Danger:         true,
-															TriggerIcon:    "trash-2",
-															IconOnly:       true,
-															TriggerTooltip: T(ctx, "action.remove"),
-															TriggerVariant: button.VariantGhost,
-														})
-													</div>
+		@PageHeaderCode(d.Info.Account.Slug, UsagePhrase(ctx, d.Info))
+		<div class="grid gap-8">
+			@ListSection(T(ctx, "org.members"), nil) {
+				if len(d.Info.Members) == 0 {
+					@EmptyState("users", T(ctx, "empty.none"))
+				} else {
+					@TableCard() {
+						@table.Table() {
+							@table.Body() {
+								for _, m := range d.Info.Members {
+									@table.Row() {
+										@table.Cell() {
+											<div class="flex items-center gap-2">
+												@RoleIcon(m.Role)
+												<span class="font-medium">{ m.UserName }</span>
+											</div>
+										}
+										@table.Cell(table.CellProps{Class: "text-right"}) {
+											if d.CanManage && m.Role != "owner" {
+												@RowActions() {
+													<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") }>
+														<input type="hidden" name="user_id" value={ strconv.FormatInt(m.UserID, 10) }/>
+														if m.Role == "admin" {
+															<input type="hidden" name="role" value="user"/>
+															@RowAction("user-minus", T(ctx, "users.demote"), true)
+														} else {
+															<input type="hidden" name="role" value="admin"/>
+															@RowAction("user-plus", T(ctx, "users.promote"), true)
+														}
+													</form>
+													@ConfirmForm(Confirm{
+														ID:             "rm-member-" + strconv.FormatInt(m.UserID, 10),
+														Action:         "/admin/org/" + d.Info.Account.Slug + "/members/" + strconv.FormatInt(m.UserID, 10) + "/remove",
+														Title:          T(ctx, "org.removetitle"),
+														Message:        Tf(ctx, "org.removemsg", m.UserName, d.Info.Account.Slug),
+														ConfirmLabel:   T(ctx, "action.remove"),
+														ConfirmIcon:    "trash-2",
+														Danger:         true,
+														TriggerIcon:    "trash-2",
+														IconOnly:       true,
+														TriggerTooltip: T(ctx, "action.remove"),
+														TriggerVariant: button.VariantGhost,
+													})
 												}
 											}
 										}
@@ -85,62 +77,55 @@ templ Org(d OrgPageData) {
 							}
 						}
 					}
-					if d.CanManage {
-						if len(d.AllUsers) > 0 {
-							<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") } class="flex flex-wrap items-end gap-2">
-								<div class="min-w-48 flex-1">
-									@Field("", T(ctx, "org.addmember")) {
-										@selectbox.SelectBox() {
-											@selectbox.Trigger(selectbox.TriggerProps{Name: "user_id"}) {
-												@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "org.pickuser")})
-											}
-											@selectbox.Content() {
-												for _, cand := range d.AllUsers {
-													@selectbox.Item(selectbox.ItemProps{Value: strconv.FormatInt(cand.ID, 10)}) {
-														{ cand.Name }
-													}
+				}
+				if d.CanManage {
+					if len(d.AllUsers) > 0 {
+						<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") } class="mt-4 flex flex-wrap items-end gap-2">
+							<div class="min-w-48 flex-1">
+								@Field("", T(ctx, "org.addmember")) {
+									@selectbox.SelectBox() {
+										@selectbox.Trigger(selectbox.TriggerProps{Name: "user_id"}) {
+											@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "org.pickuser")})
+										}
+										@selectbox.Content() {
+											for _, cand := range d.AllUsers {
+												@selectbox.Item(selectbox.ItemProps{Value: strconv.FormatInt(cand.ID, 10)}) {
+													{ cand.Name }
 												}
 											}
 										}
 									}
-								</div>
-								<div class="w-36">
-									@Field("", T(ctx, "users.role")) {
-										@roleSelect("role", "user")
-									}
-								</div>
-								@button.Button(button.Props{Type: button.TypeSubmit}) {
-									@Icon("user-plus")
-									<span>{ T(ctx, "action.add") }</span>
 								}
-							</form>
-						} else {
-							<p class="text-sm text-muted-foreground">{ T(ctx, "org.nocandidates") }</p>
-						}
+							</div>
+							<div class="w-36">
+								@Field("", T(ctx, "users.role")) {
+									@roleSelect("role", "user")
+								}
+							</div>
+							@button.Button(button.Props{Type: button.TypeSubmit}) {
+								@Icon("user-plus")
+								<span>{ T(ctx, "action.add") }</span>
+							}
+						</form>
+					} else {
+						<p class="mt-4 text-sm text-muted-foreground">{ T(ctx, "org.nocandidates") }</p>
 					}
 				}
 			}
-			@card.Card() {
-				@card.Header() {
-					@card.Title() {
-						{ T(ctx, "org.caches") }
-					}
-				}
-				@card.Content() {
-					if len(d.Caches) == 0 {
-						@EmptyState("database", T(ctx, "empty.none")) {
-							@button.Button(button.Props{Href: "/admin", Size: button.SizeSm}) {
-								@Icon("plus")
-								<span>{ T(ctx, "caches.new") }</span>
-							}
-						}
-					} else {
-						@ListBox() {
-							for _, u := range d.Caches {
-								@cacheRow(u, d.Bytes)
-							}
+			@ListSection(T(ctx, "org.caches"), nil) {
+				if len(d.Caches) == 0 {
+					@EmptyState("database", T(ctx, "empty.none")) {
+						@button.Button(button.Props{Href: "/admin", Size: button.SizeSm, Variant: button.VariantOutline}) {
+							@Icon("plus")
+							<span>{ T(ctx, "caches.new") }</span>
 						}
 					}
+				} else {
+					<div class="divide-y border-y">
+						for _, u := range d.Caches {
+							@cacheRow(u, d.Bytes)
+						}
+					</div>
 				}
 			}
 		</div>
@@ -164,15 +149,15 @@ templ roleSelect(name, value string) {
 	}
 }
 
-// UsagePhrase renders "12 GiB stored (of 50 GiB) · 3 GiB served this month ·
-// plan team · N members".
+// UsagePhrase renders "12 GiB stored (of 50 GiB)   3 GiB served this month
+// plan team   N members" — clauses set apart by space, see MetaSep.
 func UsagePhrase(ctx context.Context, o OrgInfo) string {
 	out := o.UsageLine(ctx)
 	switch n := len(o.Members); {
 	case n == 1:
-		out += " · " + Tf(ctx, "org.membercount", n)
+		out += MetaSep + Tf(ctx, "org.membercount", n)
 	case n > 1:
-		out += " · " + Tf(ctx, "org.memberscount", n)
+		out += MetaSep + Tf(ctx, "org.memberscount", n)
 	}
 	return out
 }

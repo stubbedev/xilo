@@ -21,16 +21,11 @@ templ Dashboard(d DashboardData) {
 		} else {
 			@PageHeader(T(ctx, "dash.title"), T(ctx, "dash.subtitle"))
 		}
-		<div class="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+		@DedupBar(d.Global.LogicalBytes, d.Global.StoredBytes, dedupRatio(d.Global.LogicalBytes, d.Global.StoredBytes), d.Bytes)
+		@StatRow() {
 			@StatTile("database", Count(d.Global.Caches), T(ctx, "kpi.caches"), "", "")
 			@StatTile("package", Count(d.Global.Paths), T(ctx, "kpi.paths"), "", "")
-			@StatTile("hard-drive", d.Bytes(d.Global.StoredBytes), T(ctx, "kpi.disk")+capSuffix(d.ServerCap, d.Bytes), "", "")
-			@StatTile("layers", dedupRatio(d.Global.LogicalBytes, d.Global.StoredBytes)+"×", T(ctx, "kpi.dedup"), "", "")
-		</div>
-		if d.ServerCap > 0 {
-			<div class="mb-8">
-				@progress.Progress(progress.Props{Value: fillPct(d.Global.StoredBytes, d.ServerCap), Size: progress.SizeSm, Variant: capVariant(d.Global.StoredBytes, d.ServerCap)})
-			</div>
+			@StatTile("hard-drive", d.Bytes(d.Global.StoredBytes), T(ctx, "kpi.disk")+capSuffix(d.ServerCap, d.Bytes), "", capTone(d.Global.StoredBytes, d.ServerCap))
 		}
 		@SectionHeader(T(ctx, "caches.title")) {
 			@SearchInput("/admin", "caches[q]", d.CacheQuery, T(ctx, "caches.search"), "#cache-list")
@@ -40,6 +35,8 @@ templ Dashboard(d DashboardData) {
 				@disabledCreate(T(ctx, "caches.new"), T(ctx, "caches.needaccount"))
 			}
 		}
+		// The list ids are htmx swap targets, so these two sections keep their
+		// own wrappers instead of going through ListSection.
 		<div id="cache-list" class="mb-8">
 			if len(d.Caches) == 0 {
 				if d.CacheQuery != "" {
@@ -48,11 +45,11 @@ templ Dashboard(d DashboardData) {
 					@onboarding(d)
 				}
 			} else {
-				@card.Card(card.Props{Class: "divide-y overflow-hidden"}) {
+				<div class="divide-y border-y">
 					for _, u := range d.Caches {
 						@cacheRow(u, d.Bytes)
 					}
-				}
+				</div>
 				@PagerNav(d.CachePager)
 			}
 		</div>
@@ -152,30 +149,33 @@ templ onboardStep(n, title, hint string) {
 	</div>
 }
 
-// cacheRow is one cache line: name, visibility, footprint, usage bar.
+// cacheRow is one cache line: name, visibility, footprint, path count. The
+// quantities sit in their own right-aligned mono columns instead of a
+// "26.6 MiB / 512 MiB · 24 paths" run-on — columns can be scanned down a list,
+// a sentence has to be read row by row.
 templ cacheRow(u CacheUsage, bytes func(int64) string) {
-	<div class="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
-		<div class="flex items-center gap-2">
-			<a href={ templ.SafeURL("/admin/cache/" + u.Cache.Ref()) } class="font-medium hover:underline">
+	<div class="flex flex-col gap-1.5 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+		<div class="flex min-w-0 items-center gap-2">
+			<a href={ templ.SafeURL("/admin/cache/" + u.Cache.Ref()) } class="truncate text-sm font-medium hover:underline">
 				<span class="text-muted-foreground">{ u.Cache.Account }/</span>{ u.Cache.Name }
 			</a>
 			@VisBadge(u.Cache.Public)
 		</div>
-		<div class="flex items-center gap-3 sm:w-72">
-			<div class="min-w-0 flex-1">
+		<div class="flex shrink-0 items-center gap-5 whitespace-nowrap font-mono text-xs tabular-nums">
+			// The quota column holds its width whether or not this cache has a
+			// quota, so the byte figures stay in one column down the list.
+			<span class="w-16 shrink-0">
 				if u.Cache.MaxBytes > 0 {
-					@progress.Progress(progress.Props{Value: u.Pct(), Size: progress.SizeSm, Variant: capVariant(u.Bytes, u.Cache.MaxBytes)})
-				} else {
-					@progress.Progress(progress.Props{Value: 100, Size: progress.SizeSm, BarClass: "bg-muted-foreground/30"})
+					@progress.Progress(progress.Props{Value: u.Pct(), Size: progress.SizeSm, Class: "[&>div]:rounded-none", BarClass: "rounded-none " + capBar(u.Bytes, u.Cache.MaxBytes)})
 				}
-			</div>
-			<span class="shrink-0 whitespace-nowrap text-xs text-muted-foreground tabular-nums">
+			</span>
+			<span class={ "w-40 text-right", capTone(u.Bytes, u.Cache.MaxBytes) }>
 				{ bytes(u.Bytes) }
 				if u.Cache.MaxBytes > 0 {
-					{ " / " + bytes(u.Cache.MaxBytes) }
+					<span class="text-muted-foreground">{ " / " + bytes(u.Cache.MaxBytes) }</span>
 				}
-				· { Count(u.Paths) } { T(ctx, "cache.paths") }
 			</span>
+			<span class="w-20 text-right text-muted-foreground">{ Count(u.Paths) } { T(ctx, "cache.paths") }</span>
 		</div>
 	</div>
 }
@@ -189,7 +189,7 @@ templ tokenRow(d DashboardData, t store.Token) {
 		@table.Cell() {
 			@PermBadges(displayPerms(t))
 		}
-		@table.Cell() {
+		@table.Cell(table.CellProps{Class: "font-mono text-xs"}) {
 			if t.AccountID != 0 {
 				<span class="text-muted-foreground">{ t.Account }:</span>
 			}
@@ -206,14 +206,14 @@ templ tokenRow(d DashboardData, t store.Token) {
 				{ strings.Join(t.Caches, ", ") }
 			}
 		}
-		@table.Cell(table.CellProps{Class: "text-muted-foreground"}) {
+		@table.Cell(table.CellProps{Class: "font-mono text-xs text-muted-foreground tabular-nums"}) {
 			{ TokenExpiry(ctx, t) }
 		}
 		@table.Cell() {
 			@StatusIcon(TokenStatus(t))
 		}
 		@table.Cell(table.CellProps{Class: "text-right"}) {
-			<div class="flex justify-end gap-1">
+			@RowActions() {
 				if !t.Revoked {
 					@editTokenDialog(d, t)
 				}
@@ -232,7 +232,7 @@ templ tokenRow(d DashboardData, t store.Token) {
 						TriggerVariant: button.VariantGhost,
 					})
 				}
-			</div>
+			}
 		}
 	}
 }

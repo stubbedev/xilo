@@ -31,7 +31,7 @@ templ PathDetail(d PathData) {
 	{{ narinfoURL := d.BaseURL + "/c/" + d.Cache.Ref() + "/" + narinfo.StoreHash(d.Path.StorePath) + ".narinfo" }}
 	@Layout(name, "caches", d.Nav, Flash{}) {
 		@Crumbs(Crumb{T(ctx, "nav.caches"), "/admin"}, Crumb{d.Cache.Ref(), "/admin/cache/" + d.Cache.Ref()}, Crumb{name, ""})
-		@PageHeader(name, d.Path.StorePath) {
+		@PageHeaderCode(name, d.Path.StorePath) {
 			if d.Broken {
 				@WithTooltip(T(ctx, "path.brokenhint")) {
 					@badge.Badge(badge.Props{Variant: badge.VariantDestructive, Class: "gap-1"}) {
@@ -41,23 +41,14 @@ templ PathDetail(d PathData) {
 				}
 			}
 		}
-		<div class="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+		@StatRow() {
 			@StatTile("package", d.Bytes(int64(d.Path.NarSize)), T(ctx, "path.narsize"), "", "")
 			@StatTile("hard-drive", d.Bytes(d.CSize), T(ctx, "path.ondisk"), "", "")
 			@StatTile("boxes", Count(int64(len(d.Path.Chunks))), T(ctx, "path.chunks"), "", "")
 			@StatTile("git-fork", Count(int64(len(d.Path.Refs))), T(ctx, "path.refs"), "", "")
-		</div>
-		<div class="mb-8 grid gap-6 lg:grid-cols-2">
-			@card.Card() {
-				@card.Header() {
-					@card.Title() {
-						{ T(ctx, "path.narinfo") }
-					}
-					@card.Description() {
-						{ T(ctx, "path.narinfohint") }
-					}
-				}
-				@card.Content(card.ContentProps{Class: "space-y-4"}) {
+		}
+		<div class="mb-8 grid items-start gap-6 lg:grid-cols-2">
+			@SettingsCard(T(ctx, "path.narinfo"), T(ctx, "path.narinfohint")) {
 					@kv(T(ctx, "path.narhash")) {
 						@CopyField(d.Path.NarHash)
 					}
@@ -69,47 +60,28 @@ templ PathDetail(d PathData) {
 						}
 					}
 					@kv(T(ctx, "path.url")) {
-						@CopyField(narinfoURL)
-					}
+					@CopyField(narinfoURL)
 				}
 			}
-			@card.Card() {
-				@card.Header() {
-					@card.Title() {
-						{ T(ctx, "path.refs") }
-					}
-					@card.Description() {
-						{ T(ctx, "path.refshint") }
-					}
-				}
-				@card.Content() {
-					if len(d.Path.Refs) == 0 {
-						<p class="text-sm text-muted-foreground">{ T(ctx, "path.norefs") }</p>
-					} else {
-						@ListBox() {
-							@table.Table() {
-								@table.Body() {
-									for _, ref := range d.Path.Refs {
-										{{ rh, rn := pathParts(ref) }}
-										@table.Row() {
-											@table.Cell() {
-												<div class="flex min-w-0 items-center gap-2">
-													if d.Present[narinfo.StoreHash(ref)] {
-														<a href={ templ.SafeURL(pathURL(d.Cache, ref)) } class="truncate font-medium hover:underline">{ rn }</a>
-													} else {
-														<span class="truncate">{ rn }</span>
-													}
-													@WithTooltip(ref) {
-														<code class="font-mono text-xs text-muted-foreground">{ rh }</code>
-													}
-												</div>
-											}
-										}
-									}
+			@SettingsCard(T(ctx, "path.refs"), T(ctx, "path.refshint")) {
+				if len(d.Path.Refs) == 0 {
+					<p class="text-sm text-muted-foreground">{ T(ctx, "path.norefs") }</p>
+				} else {
+					<div class="divide-y border-y">
+						for _, ref := range d.Path.Refs {
+							{{ rh, rn := pathParts(ref) }}
+							<div class="flex min-w-0 items-center gap-2 py-2">
+								if d.Present[narinfo.StoreHash(ref)] {
+									<a href={ templ.SafeURL(pathURL(d.Cache, ref)) } class="truncate text-sm font-medium hover:underline">{ rn }</a>
+								} else {
+									<span class="truncate text-sm">{ rn }</span>
 								}
-							}
+								@WithTooltip(ref) {
+									@StoreHash(rh)
+								}
+							</div>
 						}
-					}
+					</div>
 				}
 			}
 		</div>
@@ -146,12 +118,14 @@ templ PathDetail(d PathData) {
 										for _, ch := range d.Chunks {
 											@table.Row() {
 												@table.Cell() {
-													<code class="block truncate font-mono text-xs">{ ch.Hash }</code>
+													<span class="block truncate">
+											@StoreHash(ch.Hash)
+										</span>
 												}
-												@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
+												@table.Cell(table.CellProps{Class: "text-right font-mono text-xs tabular-nums"}) {
 													@chunkBytes(d, ch.Size)
 												}
-												@table.Cell(table.CellProps{Class: "text-right tabular-nums"}) {
+												@table.Cell(table.CellProps{Class: "text-right font-mono text-xs tabular-nums"}) {
 													@chunkBytes(d, ch.CSize)
 												}
 											}

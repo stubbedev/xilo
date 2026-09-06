@@ -12,7 +12,6 @@ import (
 	"github.com/templui/templui/components/input"
 	"github.com/templui/templui/components/inputotp"
 	"github.com/templui/templui/components/selectbox"
-	"github.com/templui/templui/components/table"
 )
 
 // AccountData is everything the personal account page renders.
@@ -29,42 +28,26 @@ type AccountData struct {
 templ Account(d AccountData) {
 	@Layout(T(ctx, "nav.account"), "account", d.Nav, d.Flash) {
 		@PageHeader(T(ctx, "nav.account"), Tf(ctx, "acct.subtitle", d.User.Name))
-		<div class="grid gap-6">
-			@card.Card() {
-				@card.Header() {
-					@card.Title() {
-						{ T(ctx, "acct.email") }
-					}
-					@card.Description() {
-						{ T(ctx, "acct.emailhint") }
-					}
-				}
-				@card.Content() {
-					<form method="post" action="/admin/account/email" class="flex items-end gap-2">
-						@form.Item(form.ItemProps{Class: "flex-1"}) {
-							@form.Label(form.LabelProps{For: "email"}) {
-								{ T(ctx, "acct.emailaddr") }
-							}
-							@input.Input(input.Props{ID: "email", Name: "email", Type: input.TypeEmail, Value: d.User.Email, Placeholder: T(ctx, "ph.email"), Attributes: templ.Attributes{"autocomplete": "email"}})
+		// Two columns on a wide screen. Stacked full width, six identical cards
+		// made a 1800px scroll of the same box, and a password field a thousand
+		// pixels wide for eight characters.
+		<div class="grid items-start gap-6 lg:grid-cols-2">
+			@SettingsCard(T(ctx, "acct.email"), T(ctx, "acct.emailhint")) {
+				<form method="post" action="/admin/account/email" class="flex items-end gap-2">
+					@form.Item(form.ItemProps{Class: "flex-1"}) {
+						@form.Label(form.LabelProps{For: "email"}) {
+							{ T(ctx, "acct.emailaddr") }
 						}
-						@button.Button(button.Props{Type: button.TypeSubmit}) {
-							@Icon("check")
-							<span>{ T(ctx, "action.save") }</span>
-						}
-					</form>
-				}
+						@input.Input(input.Props{ID: "email", Name: "email", Type: input.TypeEmail, Value: d.User.Email, Placeholder: T(ctx, "ph.email"), Attributes: templ.Attributes{"autocomplete": "email"}})
+					}
+					@button.Button(button.Props{Type: button.TypeSubmit}) {
+						@Icon("check")
+						<span>{ T(ctx, "action.save") }</span>
+					}
+				</form>
 			}
-			@card.Card() {
-				@card.Header() {
-					@card.Title() {
-						{ T(ctx, "acct.appearance") }
-					}
-					@card.Description() {
-						{ T(ctx, "acct.appearancehint") }
-					}
-				}
-				@card.Content() {
-					<form method="post" action="/admin/account/appearance" class="grid max-w-md gap-4" onchange="if (event.target.name === 'theme' || event.target.name === 'locale') this.submit()">
+			@SettingsCard(T(ctx, "acct.appearance"), T(ctx, "acct.appearancehint")) {
+				<form method="post" action="/admin/account/appearance" class="grid gap-4 sm:grid-cols-2" onchange="if (event.target.name === 'theme' || event.target.name === 'locale') this.submit()">
 						@Field("", T(ctx, "acct.palette")) {
 							@selectbox.SelectBox() {
 								@selectbox.Trigger(selectbox.TriggerProps{Name: "theme", Attributes: templ.Attributes{"aria-label": T(ctx, "acct.palette")}}) {
@@ -96,72 +79,46 @@ templ Account(d AccountData) {
 								}
 							}
 						}
-					</form>
-				}
+				</form>
 			}
-			@card.Card() {
-				@card.Header() {
-					@card.Title() {
-						{ T(ctx, "set.passkeys") }
-					}
-					@card.Description() {
-						{ T(ctx, "set.passkeys.hint") }
-					}
-				}
-				@card.Content(card.ContentProps{Class: "space-y-4"}) {
-					if len(d.Passkeys) == 0 {
-						@EmptyState("fingerprint-pattern", T(ctx, "empty.none"))
-					} else {
-						@ListBox() {
-							@table.Table() {
-								@table.Body() {
-									for _, pk := range d.Passkeys {
-										@table.Row() {
-											@table.Cell() {
-												<div class="flex items-center gap-2 text-sm">
-													@Icon("fingerprint-pattern")
-													<span class="font-medium">{ pk.Name }</span>
-													<span class="text-muted-foreground">· { Ago(ctx, pk.Created) }</span>
-												</div>
-											}
-											@table.Cell(table.CellProps{Class: "text-right"}) {
-												@ConfirmForm(Confirm{
-													ID:             "pk-" + strconv.FormatInt(pk.ID, 10),
-													Action:         "/admin/passkeys/" + strconv.FormatInt(pk.ID, 10) + "/delete",
-													Title:          T(ctx, "pk.removetitle"),
-													Message:        Tf(ctx, "pk.removemsg", pk.Name),
-													ConfirmLabel:   T(ctx, "action.remove"),
-													ConfirmIcon:    "trash-2",
-													Danger:         true,
-													TriggerIcon:    "trash-2",
-													IconOnly:       true,
-													TriggerTooltip: T(ctx, "action.remove"),
-													TriggerVariant: button.VariantGhost,
-												})
-											}
-										}
+			@SettingsCard(T(ctx, "set.passkeys"), T(ctx, "set.passkeys.hint")) {
+				if len(d.Passkeys) == 0 {
+					@EmptyState("fingerprint-pattern", T(ctx, "empty.none"))
+				} else {
+					<div class="divide-y border-y">
+						for _, pk := range d.Passkeys {
+							<div class="flex items-center justify-between gap-3 py-2">
+								<div class="flex min-w-0 items-center gap-2 text-sm">
+									@Icon("fingerprint-pattern")
+									<span class="truncate font-medium">{ pk.Name }</span>
+									@Meta() {
+										{ Ago(ctx, pk.Created) }
 									}
-								}
-							}
+								</div>
+								@ConfirmForm(Confirm{
+									ID:             "pk-" + strconv.FormatInt(pk.ID, 10),
+									Action:         "/admin/passkeys/" + strconv.FormatInt(pk.ID, 10) + "/delete",
+									Title:          T(ctx, "pk.removetitle"),
+									Message:        Tf(ctx, "pk.removemsg", pk.Name),
+									ConfirmLabel:   T(ctx, "action.remove"),
+									ConfirmIcon:    "trash-2",
+									Danger:         true,
+									TriggerIcon:    "trash-2",
+									IconOnly:       true,
+									TriggerTooltip: T(ctx, "action.remove"),
+									TriggerVariant: button.VariantGhost,
+								})
+							</div>
 						}
-					}
-					@button.Button(button.Props{Size: button.SizeSm, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": "xiloPasskeyRegister()"}}) {
-						@Icon("fingerprint-pattern")
-						<span>{ T(ctx, "action.add") }</span>
-					}
+					</div>
+				}
+				@button.Button(button.Props{Size: button.SizeSm, Variant: button.VariantOutline, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": "xiloPasskeyRegister()"}}) {
+					@Icon("fingerprint-pattern")
+					<span>{ T(ctx, "action.add") }</span>
 				}
 			}
-			@card.Card() {
-				@card.Header() {
-					@card.Title() {
-						{ T(ctx, "set.2fa") }
-					}
-					@card.Description() {
-						{ T(ctx, "set.2fa.hint") }
-					}
-				}
-				@card.Content() {
-					if d.TOTPEnabled {
+			@SettingsCard(T(ctx, "set.2fa"), T(ctx, "set.2fa.hint")) {
+				if d.TOTPEnabled {
 						<div class="flex flex-wrap items-center justify-between gap-3">
 							<div class="flex items-center gap-2 text-sm">
 								@badge.Badge(badge.Props{Variant: badge.VariantDefault, Class: "gap-1"}) {
@@ -195,48 +152,32 @@ templ Account(d AccountData) {
 								}
 							</form>
 						}
-					}
 				}
 			}
 			if d.CanCreateOrg {
-				@card.Card() {
-					@CardHeaderRow(T(ctx, "acct.orgs")) {
-						@newOrgDialog("/admin/neworg")
-					}
-					@card.Content() {
-						<p class="text-sm text-muted-foreground">{ T(ctx, "acct.orghint") }</p>
-					}
+				@SettingsCard(T(ctx, "acct.orgs"), T(ctx, "acct.orghint")) {
+					@newOrgDialog("/admin/neworg")
 				}
 			}
-			@card.Card() {
-				@card.Header() {
-					@card.Title() {
-						{ T(ctx, "login.password") }
+			@SettingsCard(T(ctx, "login.password"), T(ctx, "set.password")) {
+				<form method="post" action="/admin/account/password" class="space-y-4">
+					@Field("cur-pw", T(ctx, "set.current")) {
+						@input.Input(input.Props{ID: "cur-pw", Name: "current", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "current-password"}})
 					}
-					@card.Description() {
-						{ T(ctx, "set.password") }
+					@Field("new-pw", T(ctx, "set.new")) {
+						@input.Input(input.Props{ID: "new-pw", Name: "new", Type: input.TypePassword, Required: true, Attributes: pwCheckAttrs()})
 					}
-				}
-				@card.Content() {
-					<form method="post" action="/admin/account/password" class="space-y-4">
-						@Field("cur-pw", T(ctx, "set.current")) {
-							@input.Input(input.Props{ID: "cur-pw", Name: "current", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "current-password"}})
+					@Field("new-pw2", T(ctx, "set.new2")) {
+						@input.Input(input.Props{ID: "new-pw2", Name: "confirm", Type: input.TypePassword, Required: true, Attributes: pwCheckAttrs()})
+					}
+					<div class="flex flex-wrap items-center justify-between gap-3">
+						<span id="pw-hint" class="text-sm"></span>
+						@button.Button(button.Props{Type: button.TypeSubmit}) {
+							@Icon("check")
+							<span>{ T(ctx, "set.update") }</span>
 						}
-						@Field("new-pw", T(ctx, "set.new")) {
-							@input.Input(input.Props{ID: "new-pw", Name: "new", Type: input.TypePassword, Required: true, Attributes: pwCheckAttrs()})
-						}
-						@Field("new-pw2", T(ctx, "set.new2")) {
-							@input.Input(input.Props{ID: "new-pw2", Name: "confirm", Type: input.TypePassword, Required: true, Attributes: pwCheckAttrs()})
-						}
-						<div class="flex flex-wrap items-center justify-between gap-3">
-							<span id="pw-hint" class="text-sm"></span>
-							@button.Button(button.Props{Type: button.TypeSubmit}) {
-								@Icon("check")
-								<span>{ T(ctx, "set.update") }</span>
-							}
-						</div>
-					</form>
-				}
+					</div>
+				</form>
 			}
 		</div>
 	}

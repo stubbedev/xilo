@@ -9,6 +9,7 @@ import (
 	"github.com/templui/templui/components/dialog"
 	"github.com/templui/templui/components/input"
 	"github.com/templui/templui/components/pagination"
+	"github.com/templui/templui/components/progress"
 	"github.com/templui/templui/components/table"
 	"github.com/templui/templui/components/toast"
 	"github.com/templui/templui/components/tooltip"
@@ -81,17 +82,35 @@ templ SearchInput(action, name, value, placeholder, target string) {
 	})
 }
 
-// PageHeader is a page title + optional subtitle, with a right-aligned actions
-// slot (children).
+// PageHeader is a page title + optional prose subtitle, with a right-aligned
+// actions slot (children).
 templ PageHeader(title, subtitle string) {
+	@pageHeaderBody(title, subtitle, "text-sm text-muted-foreground") {
+		{ children... }
+	}
+}
+
+// PageHeaderCode is PageHeader where the subtitle is a machine string — a
+// cache URL, a store path. Same header, mono subtitle: an address the reader
+// may have to compare character by character is not prose.
+templ PageHeaderCode(title, code string) {
+	@pageHeaderBody(title, code, "break-all font-mono text-xs text-muted-foreground") {
+		{ children... }
+	}
+}
+
+templ pageHeaderBody(title, subtitle, subClass string) {
 	<div class="mb-6 flex flex-wrap items-center justify-between gap-4">
-		<div class="space-y-1">
+		<div class="min-w-0 space-y-1">
 			<h1 class="text-2xl font-semibold tracking-tight">{ title }</h1>
 			if subtitle != "" {
-				<p class="text-sm text-muted-foreground">{ subtitle }</p>
+				<p class={ subClass }>{ subtitle }</p>
 			}
 		</div>
-		<div class="flex items-center gap-2">
+		// The actions slot has to be able to grow: a w-full search box inside a
+		// content-sized flex item resolves to zero, which left every search on
+		// the site unreachable on a phone.
+		<div class="flex min-w-0 flex-1 items-center justify-end gap-2 empty:hidden">
 			{ children... }
 		</div>
 	</div>
@@ -146,14 +165,14 @@ templ ListBox() {
 	</div>
 }
 
-// TableCard is a card holding nothing but a table. Sortable tables are
-// table-fixed with sized meta columns, so below a floor the primary column
-// would collapse to nothing: the floor makes the table scroll inside the
-// card instead.
+// TableCard is a table ruled off from the page — no card walls, because a
+// list is not an object you act on as a whole. Sortable tables are table-fixed
+// with sized meta columns, so below a floor the primary column would collapse
+// to nothing: the floor makes the table scroll sideways instead.
 templ TableCard() {
-	@card.Card(card.Props{Class: "overflow-x-auto [&_table]:min-w-[48rem]"}) {
+	<div class="overflow-x-auto border-y [&_table]:min-w-[48rem]">
 		{ children... }
-	}
+	</div>
 }
 
 // RowAction is the icon-only ghost button used in table rows and card
@@ -167,9 +186,11 @@ templ RowAction(icon, label string, submit bool) {
 	}
 }
 
-// PlusButton is the house create-trigger: primary, small, plus icon.
+// PlusButton is the house create-trigger: small, outline, plus icon. It opens
+// a form, it does not commit anything — the filled primary button is kept for
+// the action that does, so primary stays worth noticing.
 templ PlusButton(label string) {
-	@button.Button(button.Props{Size: button.SizeSm}) {
+	@button.Button(button.Props{Size: button.SizeSm, Variant: button.VariantOutline}) {
 		@Icon("plus")
 		<span>{ label }</span>
 	}
@@ -217,48 +238,171 @@ templ ActionRow(text string) {
 	</div>
 }
 
+// SettingsCard is the other half of the card rule: a card encloses something
+// you submit or copy. Title, optional one-line hint, then the form. Every
+// settings panel is one of these — the header/description/content triple was
+// hand-written a dozen times and drifted in spacing each time.
+templ SettingsCard(title, hint string) {
+	@card.Card() {
+		@card.Header() {
+			@card.Title() {
+				{ title }
+			}
+			if hint != "" {
+				@card.Description() {
+					{ hint }
+				}
+			}
+		}
+		@card.Content(card.ContentProps{Class: "space-y-4"}) {
+			{ children... }
+		}
+	}
+}
+
+// ListSection is the house shape for "a titled list with a create button":
+// heading row, optional action, then the rows. Every list on the settings,
+// organization and dashboard pages is one of these, so the spacing and the
+// heading weight cannot drift between them. Pass nil for actions when the
+// section has none.
+templ ListSection(title string, actions templ.Component) {
+	<div>
+		@SectionHeader(title) {
+			if actions != nil {
+				@actions
+			}
+		}
+		{ children... }
+	</div>
+}
+
+// RowActions is the right-aligned cluster of RowAction buttons that closes a
+// list row.
+templ RowActions() {
+	<div class="flex justify-end gap-1">
+		{ children... }
+	</div>
+}
+
+// Meta is the secondary fact riding beside a name in a list row — a plan's
+// limits, an organization's usage. Mono because it is always quantities.
+templ Meta() {
+	<span class="font-mono text-xs text-muted-foreground tabular-nums">
+		{ children... }
+	</span>
+}
+
+// Readout is one value-and-label pair on a single line: the compact form of
+// StatTile, for strips where the label sits beside the number rather than
+// under it. Same rule — value in mono, label in prose.
+templ Readout(value, label, id, tone string) {
+	<div class="flex items-baseline gap-2">
+		<span
+			class={ "font-mono text-sm tabular-nums", tone }
+			if id != "" {
+				id={ id }
+			}
+		>{ value }</span>
+		<span class="text-xs text-muted-foreground">{ label }</span>
+	</div>
+}
+
 // SectionHeader is a lighter heading for a card/region, with an actions slot.
 templ SectionHeader(title string) {
-	<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-		<h2 class="text-lg font-semibold tracking-tight">{ title }</h2>
-		<div class="flex items-center gap-2">
+	<div class="mb-3 flex flex-wrap items-end justify-between gap-3">
+		<h2 class="text-base font-semibold tracking-tight">{ title }</h2>
+		// Same growable actions slot as the page header, for the same reason.
+		<div class="flex min-w-0 flex-1 items-center justify-end gap-2 empty:hidden">
 			{ children... }
 		</div>
 	</div>
 }
 
-// StatTile is one KPI: icon, big value, label. A non-empty id marks the value
-// for live updates; tone adds a text color class to the value.
+// StatTile is one readout: the value in mono tabular figures over its label.
+// Machine truth is monospace here and everywhere — these numbers are read in
+// columns and compared, not admired. A non-empty id marks the value for live
+// updates; tone adds a text color class to it.
 templ StatTile(icon, value, label, id, tone string) {
-	@card.Card() {
-		@card.Content(card.ContentProps{Class: "flex items-center gap-4 p-4"}) {
-			<div class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-foreground">
-				@IconClass(icon, 20, "")
+	<div class="min-w-0 py-0.5">
+		<div
+			class={ "truncate font-mono text-[1.6rem] font-medium leading-tight tracking-tight tabular-nums", tone }
+			if id != "" {
+				id={ id }
+			}
+		>{ value }</div>
+		<div class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+			<span class="shrink-0 opacity-60">
+				@IconClass(icon, 12, "")
+			</span>
+			<span class="truncate">{ label }</span>
+		</div>
+	</div>
+}
+
+// StatRow is the readout strip a page opens with: tiles ruled off from the
+// page above and below, no boxes. One grid rule for every page that has one.
+templ StatRow() {
+	<div class="mb-8 grid grid-cols-2 gap-x-8 gap-y-5 border-y py-4 sm:grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))]">
+		{ children... }
+	</div>
+}
+
+// DedupBar draws the one thing this whole product exists to do: the same
+// bytes stored once. The full bar is what was pushed; the solid part is what
+// is actually on disk, the rest is what deduplication saved. Ratio, both
+// quantities and their relationship in a single figure — so it is the loudest
+// element on the page, and every other number around it can stay quiet.
+templ DedupBar(logical, physical int64, ratio string, bytes func(int64) string) {
+	<div class="mb-8">
+		<div class="flex items-end justify-between gap-6">
+			<div>
+				<div class="font-mono text-5xl font-medium leading-none tracking-tighter tabular-nums text-brand">{ ratio }×</div>
+				<div class="mt-2 text-xs text-muted-foreground">{ T(ctx, "kpi.dedup") }</div>
 			</div>
-			<div class="min-w-0">
-				<div
-					class={ "truncate text-2xl font-semibold tabular-nums", tone }
-					if id != "" {
-						id={ id }
-					}
-				>{ value }</div>
-				<div class="truncate text-xs text-muted-foreground">{ label }</div>
+			<div class="text-right">
+				<div class="font-mono text-sm tabular-nums">{ bytes(logical) }</div>
+				<div class="text-xs text-muted-foreground">{ T(ctx, "kpi.logical") }</div>
 			</div>
-		}
-	}
+		</div>
+		@progress.Progress(progress.Props{
+			Value:    fillPct(physical, logical),
+			Class:    "mt-3 [&>div]:rounded-none [&>div]:bg-primary",
+			BarClass: "rounded-none bg-foreground/85",
+		})
+		<div class="mt-1.5 flex justify-between gap-4 text-xs">
+			<span class="min-w-0 truncate">
+				<span class="font-mono tabular-nums">{ bytes(physical) }</span>
+				<span class="text-muted-foreground">{ " " + T(ctx, "kpi.physical") }</span>
+			</span>
+			<span class="min-w-0 truncate">
+				<span class="font-mono tabular-nums text-brand">{ bytes(savedBytes(logical, physical)) }</span>
+				<span class="text-muted-foreground">{ " " + T(ctx, "kpi.saved") }</span>
+			</span>
+		</div>
+	</div>
+}
+
+// StoreHash sets a store-path hash the way people read one: the leading
+// characters at full contrast — the part anyone actually matches on — and the
+// tail dimmed. The hash is the identity of everything in a Nix store; it gets
+// to look like it.
+templ StoreHash(hash string) {
+	<span class="font-mono text-xs tracking-tight">
+		<span class="text-foreground/70">{ hashHead(hash) }</span><span class="text-muted-foreground/50">{ hashTail(hash) }</span>
+	</span>
 }
 
 // EmptyState is the shared empty-list block: icon, message, optional action.
 templ EmptyState(icon, msg string) {
-	@card.Card(card.Props{Class: "flex flex-col items-center gap-3 border-dashed bg-transparent px-6 py-12 text-center shadow-none"}) {
-		<span class="text-muted-foreground">
-			@IconClass(icon, 32, "")
+	<div class="flex flex-col items-center gap-3 border-y px-6 py-10 text-center">
+		<span class="text-muted-foreground/40">
+			@IconClass(icon, 24, "")
 		</span>
 		<p class="text-sm text-muted-foreground">{ msg }</p>
 		<div class="flex items-center gap-2">
 			{ children... }
 		</div>
-	}
+	</div>
 }
 
 // PagerNav renders prev/next controls; nothing when there is a single page.

@@ -85,7 +85,7 @@ func TestPageOf(t *testing.T) {
 
 func TestPathParts(t *testing.T) {
 	cases := []struct{ in, hash, name string }{
-		{"/nix/store/8kvxvr3pmsypxiypq4g8zy13glnfr7nx-glibc-2.42-67", "8kvxvr3p", "glibc-2.42-67"},
+		{"/nix/store/8kvxvr3pmsypxiypq4g8zy13glnfr7nx-glibc-2.42-67", "8kvxvr3pmsypxiypq4g8zy13glnfr7nx", "glibc-2.42-67"},
 		{"/nix/store/short-x", "short", "x"},
 		{"/nix/store/nodash", "", "nodash"},
 		{"not-a-store-path", "", "not-a-store-path"},
