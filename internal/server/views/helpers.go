@@ -525,3 +525,26 @@ var toastKinds = []toastKind{
 	{Key: "copied", MsgKey: "copy.done", Variant: toast.VariantSuccess, Duration: 2000},
 	{Key: "error", MsgKey: "toast.error", Variant: toast.VariantError, Duration: 6000},
 }
+
+// orgCreateAction is where the create-organization form posts: instance admins
+// create for the instance, everyone else for themselves.
+func orgCreateAction(isAdmin bool) string {
+	if isAdmin {
+		return "/admin/orgs"
+	}
+	return "/admin/neworg"
+}
+
+// canDeleteOrg reports whether the viewer may delete this organization — the
+// same rule the handler enforces: instance admin, or the organization's owner.
+func canDeleteOrg(d OrgsData, info OrgInfo) bool {
+	if d.IsAdmin {
+		return true
+	}
+	for _, m := range info.Members {
+		if m.UserName == d.Nav.UserName && m.Role == "owner" {
+			return true
+		}
+	}
+	return false
+}

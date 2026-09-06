@@ -7,11 +7,8 @@ import (
 
 	"github.com/templui/templui/components/badge"
 	"github.com/templui/templui/components/button"
-	"github.com/templui/templui/components/card"
 	"github.com/templui/templui/components/dialog"
-	"github.com/templui/templui/components/form"
 	"github.com/templui/templui/components/input"
-	"github.com/templui/templui/components/switch"
 	"github.com/templui/templui/components/table"
 )
 
@@ -23,7 +20,6 @@ type InstanceData struct {
 	RequireOK   bool
 	Plans       []store.Plan
 	Users       []store.User
-	Orgs        []OrgInfo // organizations only, never personal accounts
 	Flash       Flash
 }
 
@@ -35,46 +31,27 @@ templ Instance(d InstanceData) {
 		} else {
 			@PageHeader(T(ctx, "set.instance"), T(ctx, "inst.subtitle.single"))
 		}
-		<div class="grid gap-6">
+		<div class="grid gap-8">
 			if d.SelfService {
-				@policyCard(d)
+				@policySection(d)
 				@plansCard(d.Plans)
 			}
 			@usersCard(d.Nav.UserName, d.SelfService, d.Users)
-			@orgsCard(d.Orgs)
 			@maintCard()
 		</div>
 	}
 }
 
-// policyCard is the registration-policy panel (multi-tenant only).
-templ policyCard(d InstanceData) {
-	@card.Card() {
-		@card.Header() {
-			@card.Title() {
-				{ T(ctx, "inst.policy") }
-			}
-		}
-		@card.Content() {
-			<form method="post" action="/admin/settings/instance" class="space-y-3">
-				@form.ItemFlex(form.ItemProps{Class: "justify-between border-b py-3 last:border-0"}) {
-					@form.Label(form.LabelProps{For: "allow_registrations"}) {
-						{ T(ctx, "inst.regs") }
-					}
-					@switchcomp.Switch(switchcomp.Props{ID: "allow_registrations", Name: "allow_registrations", Value: "on", Checked: d.AllowRegs})
-				}
-				@form.ItemFlex(form.ItemProps{Class: "justify-between border-b py-3 last:border-0"}) {
-					@form.Label(form.LabelProps{For: "require_approval"}) {
-						{ T(ctx, "inst.approve") }
-					}
-					@switchcomp.Switch(switchcomp.Props{ID: "require_approval", Name: "require_approval", Value: "on", Checked: d.RequireOK})
-				}
-				@button.Button(button.Props{Type: button.TypeSubmit}) {
-					@Icon("check")
-					<span>{ T(ctx, "action.save") }</span>
-				}
-			</form>
-		}
+// policySection is the registration policy (multi-tenant only): two switches
+// that save the moment they are flipped, the way the account page's appearance
+// controls do. Nothing here is filled in, so nothing here is a card with a Save
+// button — it is a ruled section like the rest of the page.
+templ policySection(d InstanceData) {
+	@ListSection(T(ctx, "inst.policy"), nil) {
+		<form method="post" action="/admin/settings/instance" class="border-y" onchange="this.submit()">
+			@PermSwitchID("allow_registrations", "allow_registrations", "on", T(ctx, "inst.regs"), d.AllowRegs)
+			@PermSwitchID("require_approval", "require_approval", "on", T(ctx, "inst.approve"), d.RequireOK)
+		</form>
 	}
 }
 
@@ -270,68 +247,6 @@ templ newUserDialog(multiTenant bool) {
 					@input.Input(input.Props{ID: "nu-pw", Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "8"}})
 				}
 				@DialogFooter("dlg-user-new", "plus", T(ctx, "action.create"))
-			</form>
-		}
-	}
-}
-
-// orgsCard lists organizations with usage and holds the create-org dialog.
-templ orgsCard(orgs []OrgInfo) {
-	@ListSection(T(ctx, "org.title"), sectionAction(len(orgs) > 0, newOrgDialog("/admin/orgs"))) {
-		if len(orgs) == 0 {
-			@EmptyState("building-2", T(ctx, "empty.none")) {
-				@newOrgDialog("/admin/orgs")
-			}
-		} else {
-			@TableCard() {
-				@table.Table() {
-					@table.Body() {
-						for _, info := range orgs {
-							@table.Row() {
-								@table.Cell() {
-									<div class="flex items-center gap-2">
-										@Icon("building-2")
-										<a href={ templ.SafeURL("/admin/org/" + info.Account.Slug) } class="font-medium hover:underline">{ info.Account.Slug }</a>
-										@Meta() {
-											{ UsagePhrase(ctx, info) }
-										}
-									</div>
-								}
-								@table.Cell(table.CellProps{Class: "text-right"}) {
-									@ConfirmForm(Confirm{
-										ID:             "org-" + info.Account.Slug,
-										Action:         "/admin/org/" + info.Account.Slug + "/delete",
-										Title:          T(ctx, "org.deletetitle"),
-										Message:        Tf(ctx, "org.deletemsg", info.Account.Slug),
-										ConfirmLabel:   T(ctx, "action.delete"),
-										ConfirmIcon:    "trash-2",
-										Danger:         true,
-										TriggerIcon:    "trash-2",
-										IconOnly:       true,
-										TriggerTooltip: T(ctx, "action.delete"),
-										TriggerVariant: button.VariantGhost,
-									})
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
-templ newOrgDialog(action string) {
-	@dialog.Dialog(dialog.Props{ID: "dlg-org-new"}) {
-		@dialog.Trigger(dialog.TriggerProps{For: "dlg-org-new"}) {
-			@PlusButton(T(ctx, "action.new"))
-		}
-		@DialogBox(T(ctx, "org.new"), T(ctx, "org.newhint"), false) {
-			<form method="post" action={ templ.SafeURL(action) } class="mt-2 space-y-4">
-				@Field("org-name", T(ctx, "org.name")) {
-					@input.Input(input.Props{ID: "org-name", Name: "name", Placeholder: T(ctx, "ph.orgname"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
-				}
-				@DialogFooter("dlg-org-new", "plus", T(ctx, "action.create"))
 			</form>
 		}
 	}

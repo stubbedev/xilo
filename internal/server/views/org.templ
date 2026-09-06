@@ -7,6 +7,7 @@ import (
 	"github.com/stubbedev/xilo/internal/store"
 
 	"github.com/templui/templui/components/button"
+	"github.com/templui/templui/components/dialog"
 	"github.com/templui/templui/components/selectbox"
 	"github.com/templui/templui/components/table"
 )
@@ -28,9 +29,15 @@ templ Org(d OrgPageData) {
 		@Crumbs(Crumb{T(ctx, "org.title"), orgParent(d.Nav)}, Crumb{d.Info.Account.Slug, ""})
 		@PageHeaderCode(d.Info.Account.Slug, UsagePhrase(ctx, d.Info))
 		<div class="grid gap-8">
-			@ListSection(T(ctx, "org.members"), nil) {
+			// An empty list hides its header control: the empty state carries the
+			// only way in, and therefore the dialog it opens.
+			@ListSection(T(ctx, "org.members"), sectionAction(d.CanManage && len(d.Info.Members) > 0, addMemberDialog(d))) {
 				if len(d.Info.Members) == 0 {
-					@EmptyState("users", T(ctx, "empty.none"))
+					@EmptyState("users", T(ctx, "empty.none")) {
+						if d.CanManage {
+							@addMemberDialog(d)
+						}
+					}
 				} else {
 					@TableCard() {
 						@table.Table() {
@@ -78,39 +85,6 @@ templ Org(d OrgPageData) {
 						}
 					}
 				}
-				if d.CanManage {
-					if len(d.AllUsers) > 0 {
-						<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") } class="mt-6 flex flex-wrap items-end gap-2">
-							<div class="min-w-48 flex-1">
-								@Field("", T(ctx, "org.addmember")) {
-									@selectbox.SelectBox() {
-										@selectbox.Trigger(selectbox.TriggerProps{Name: "user_id"}) {
-											@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "org.pickuser")})
-										}
-										@selectbox.Content() {
-											for _, cand := range d.AllUsers {
-												@selectbox.Item(selectbox.ItemProps{Value: strconv.FormatInt(cand.ID, 10)}) {
-													{ cand.Name }
-												}
-											}
-										}
-									}
-								}
-							</div>
-							<div class="w-36">
-								@Field("", T(ctx, "users.role")) {
-									@roleSelect("role", "user")
-								}
-							</div>
-							@button.Button(button.Props{Type: button.TypeSubmit}) {
-								@Icon("user-plus")
-								<span>{ T(ctx, "action.add") }</span>
-							}
-						</form>
-					} else {
-						<p class="mt-6 text-sm text-muted-foreground">{ T(ctx, "org.nocandidates") }</p>
-					}
-				}
 			}
 			@ListSection(T(ctx, "org.caches"), nil) {
 				if len(d.Caches) == 0 {
@@ -129,6 +103,42 @@ templ Org(d OrgPageData) {
 				}
 			}
 		</div>
+	}
+}
+
+// addMemberDialog is the members section's create control: the trigger, or a
+// disabled one saying why, when there is nobody left to add.
+templ addMemberDialog(d OrgPageData) {
+	if len(d.AllUsers) == 0 {
+		@disabledCreate(T(ctx, "action.add"), T(ctx, "org.nocandidates"))
+	} else {
+		@dialog.Dialog(dialog.Props{ID: "dlg-member"}) {
+			@dialog.Trigger(dialog.TriggerProps{For: "dlg-member"}) {
+				@PlusButton(T(ctx, "action.add"))
+			}
+			@DialogBox(T(ctx, "org.addmember"), T(ctx, "org.addmemberhint"), false) {
+				<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") } class="mt-2 space-y-4">
+					@Field("", T(ctx, "org.member")) {
+						@selectbox.SelectBox() {
+							@selectbox.Trigger(selectbox.TriggerProps{Name: "user_id"}) {
+								@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "org.pickuser")})
+							}
+							@selectbox.Content() {
+								for _, cand := range d.AllUsers {
+									@selectbox.Item(selectbox.ItemProps{Value: strconv.FormatInt(cand.ID, 10)}) {
+										{ cand.Name }
+									}
+								}
+							}
+						}
+					}
+					@Field("", T(ctx, "users.role")) {
+						@roleSelect("role", "user")
+					}
+					@DialogFooter("dlg-member", "user-plus", T(ctx, "action.add"))
+				</form>
+			}
+		}
 	}
 }
 
@@ -162,11 +172,5 @@ func UsagePhrase(ctx context.Context, o OrgInfo) string {
 	return out
 }
 
-// orgParent is where the organizations list lives for this viewer: the
-// instance settings for admins, the account page for everyone else.
-func orgParent(n Nav) string {
-	if n.IsAdmin {
-		return "/admin/settings"
-	}
-	return "/admin/account"
-}
+// orgParent is the organizations list — one page for every viewer.
+func orgParent(Nav) string { return "/admin/orgs" }

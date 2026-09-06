@@ -156,8 +156,8 @@ var fr = map[string]string{
 
 	// instance settings + plans
 	"set.instance":         "Paramètres de l'instance",
-	"inst.subtitle":        "Règles, forfaits, utilisateurs et organisations.",
-	"inst.subtitle.single": "Utilisateurs, organisations et maintenance.",
+	"inst.subtitle":        "Règles, forfaits et utilisateurs.",
+	"inst.subtitle.single": "Utilisateurs et maintenance.",
 	"inst.policy":          "Règles d'inscription",
 	"inst.regs":            "Autoriser l'inscription libre",
 	"inst.approve":         "Exiger l'approbation d'un administrateur",
@@ -184,7 +184,6 @@ var fr = map[string]string{
 	"plan.retention":       "rétention",
 
 	// account
-	"acct.orgs":       "Organisations",
 	"acct.subtitle":   "Connecté en tant que %s.",
 	"acct.email":      "E-mail",
 	"acct.emailhint":  "Pour les notifications et la connexion.",
@@ -198,19 +197,21 @@ var fr = map[string]string{
 	"users.approve":   "Approuver",
 
 	// organizations
-	"org.title":        "Organisations",
-	"org.new":          "Nouvelle organisation",
-	"org.newhint":      "Un compte partagé que vous administrez.",
-	"org.name":         "Nom",
-	"org.deletetitle":  "Supprimer l'organisation ?",
-	"org.deletemsg":    "« %s » et ses caches seront supprimés.",
-	"org.members":      "Membres",
-	"org.membercount":  "%d membre",
-	"org.memberscount": "%d membres",
-	"org.caches":       "Caches",
-	"org.addmember":    "Ajouter un membre",
-	"org.removetitle":  "Retirer le membre ?",
-	"org.removemsg":    "%s perdra l'accès à %s.",
+	"org.title":         "Organisations",
+	"org.new":           "Nouvelle organisation",
+	"org.newhint":       "Un compte partagé que vous administrez.",
+	"org.name":          "Nom",
+	"org.deletetitle":   "Supprimer l'organisation ?",
+	"org.deletemsg":     "« %s » et ses caches seront supprimés.",
+	"org.members":       "Membres",
+	"org.membercount":   "%d membre",
+	"org.memberscount":  "%d membres",
+	"org.caches":        "Caches",
+	"org.addmember":     "Ajouter un membre",
+	"org.member":        "Utilisateur",
+	"org.addmemberhint": "Donne accès aux caches de cette organisation.",
+	"org.removetitle":   "Retirer le membre ?",
+	"org.removemsg":     "%s perdra l'accès à %s.",
 
 	// overview
 	"dash.title":    "Vue d'ensemble",
@@ -481,7 +482,7 @@ var fr = map[string]string{
 	"set.2fa.protect":     "Ajoutez un second facteur.",
 	"set.2fa.offmsg":      "Le mot de passe seul ensuite.",
 	"set.password":        "Votre mot de passe de connexion.",
-	"acct.orghint":        "Partagez des caches avec une équipe.",
+	"org.subtitle":        "Partagez des caches avec une équipe.",
 	"cd.rotate":           "Renouveler",
 	"tokens.manage":       "Gérer",
 	"flash.regpending":    "Inscription enregistrée. Un administrateur doit d'abord approuver votre compte.",
@@ -491,5 +492,4 @@ var fr = map[string]string{
 	"set.passkeys.hint":   "Clé matérielle, Touch ID ou Windows Hello.",
 	"cd.pushtoken":        "Jeton d'envoi",
 	"cd.pulltoken":        "Jeton de téléchargement",
-	"set.update":          "Mettre à jour",
 }

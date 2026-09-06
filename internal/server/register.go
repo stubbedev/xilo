@@ -337,16 +337,16 @@ func (s *Server) handleUserCreateOrg(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	if !store.ValidSlug(name) {
-		s.accountFlash(w, r, views.T(r.Context(), "flash.badorgname"))
+		s.orgsFlash(w, r, views.T(r.Context(), "flash.badorgname"))
 		return
 	}
 	if _, err := s.db.GetAccount(name); err == nil {
-		s.accountFlash(w, r, views.T(r.Context(), "flash.nametaken"))
+		s.orgsFlash(w, r, views.T(r.Context(), "flash.nametaken"))
 		return
 	}
 	org, err := s.db.EnsureAccount(name, "org")
 	if errors.Is(err, store.ErrSlugReserved) {
-		s.accountFlash(w, r, views.T(r.Context(), "flash.nametaken"))
+		s.orgsFlash(w, r, views.T(r.Context(), "flash.nametaken"))
 		return
 	}
 	if err != nil {
@@ -362,7 +362,7 @@ func (s *Server) handleUserCreateOrg(w http.ResponseWriter, r *http.Request) {
 		uiError(w, r, err)
 		return
 	}
-	s.accountFlash(w, r, views.Tf(r.Context(), "flash.orgcreated", name))
+	s.orgsFlash(w, r, views.Tf(r.Context(), "flash.orgcreated", name))
 }
 
 // ---- plan limit enforcement (create-time checks) ----

@@ -156,8 +156,8 @@ var ja = map[string]string{
 
 	// instance settings + plans
 	"set.instance":         "インスタンス設定",
-	"inst.subtitle":        "ポリシー、プラン、ユーザー、組織。",
-	"inst.subtitle.single": "ユーザー、組織、メンテナンス。",
+	"inst.subtitle":        "ポリシー、プラン、ユーザー。",
+	"inst.subtitle.single": "ユーザーとメンテナンス。",
 	"inst.policy":          "登録ポリシー",
 	"inst.regs":            "セルフ登録を許可する",
 	"inst.approve":         "管理者の承認を必須にする",
@@ -184,7 +184,6 @@ var ja = map[string]string{
 	"plan.retention":       "保持期間",
 
 	// account
-	"acct.orgs":       "組織",
 	"acct.subtitle":   "%s としてサインイン中。",
 	"acct.email":      "メールアドレス",
 	"acct.emailhint":  "通知とサインインに使います。",
@@ -198,19 +197,21 @@ var ja = map[string]string{
 	"users.approve":   "承認",
 
 	// organizations
-	"org.title":        "組織",
-	"org.new":          "新しい組織",
-	"org.newhint":      "あなたが管理する共有アカウントです。",
-	"org.name":         "名前",
-	"org.deletetitle":  "組織を削除しますか？",
-	"org.deletemsg":    "「%s」とそのキャッシュが削除されます。",
-	"org.members":      "メンバー",
-	"org.membercount":  "%d 人のメンバー",
-	"org.memberscount": "%d 人のメンバー",
-	"org.caches":       "キャッシュ",
-	"org.addmember":    "メンバーを追加",
-	"org.removetitle":  "メンバーを外しますか？",
-	"org.removemsg":    "%s は %s にアクセスできなくなります。",
+	"org.title":         "組織",
+	"org.new":           "新しい組織",
+	"org.newhint":       "あなたが管理する共有アカウントです。",
+	"org.name":          "名前",
+	"org.deletetitle":   "組織を削除しますか？",
+	"org.deletemsg":     "「%s」とそのキャッシュが削除されます。",
+	"org.members":       "メンバー",
+	"org.membercount":   "%d 人のメンバー",
+	"org.memberscount":  "%d 人のメンバー",
+	"org.caches":        "キャッシュ",
+	"org.addmember":     "メンバーを追加",
+	"org.member":        "ユーザー",
+	"org.addmemberhint": "この組織のキャッシュへのアクセスを許可します。",
+	"org.removetitle":   "メンバーを外しますか？",
+	"org.removemsg":     "%s は %s にアクセスできなくなります。",
 
 	// overview
 	"dash.title":    "概要",
@@ -481,7 +482,7 @@ var ja = map[string]string{
 	"set.2fa.protect":     "第二の要素を追加。",
 	"set.2fa.offmsg":      "以後はパスワードのみ。",
 	"set.password":        "サインイン用のパスワード。",
-	"acct.orghint":        "チームでキャッシュを共有。",
+	"org.subtitle":        "チームでキャッシュを共有。",
 	"cd.rotate":           "ローテーション",
 	"tokens.manage":       "管理",
 	"flash.regpending":    "登録しました。まず管理者の承認が必要です。",
@@ -491,5 +492,4 @@ var ja = map[string]string{
 	"set.passkeys.hint":   "ハードウェアキー、Touch ID、Windows Hello。",
 	"cd.pushtoken":        "アップロード用トークン",
 	"cd.pulltoken":        "ダウンロード用トークン",
-	"set.update":          "更新",
 }

@@ -156,8 +156,8 @@ var es = map[string]string{
 
 	// instance settings + plans
 	"set.instance":         "Ajustes de la instancia",
-	"inst.subtitle":        "Políticas, planes, usuarios y organizaciones.",
-	"inst.subtitle.single": "Usuarios, organizaciones y mantenimiento.",
+	"inst.subtitle":        "Políticas, planes y usuarios.",
+	"inst.subtitle.single": "Usuarios y mantenimiento.",
 	"inst.policy":          "Política de registro",
 	"inst.regs":            "Permitir el registro libre",
 	"inst.approve":         "Requerir aprobación del administrador",
@@ -184,7 +184,6 @@ var es = map[string]string{
 	"plan.retention":       "retención",
 
 	// account
-	"acct.orgs":       "Organizaciones",
 	"acct.subtitle":   "Sesión iniciada como %s.",
 	"acct.email":      "Correo",
 	"acct.emailhint":  "Para notificaciones e inicio de sesión.",
@@ -198,19 +197,21 @@ var es = map[string]string{
 	"users.approve":   "Aprobar",
 
 	// organizations
-	"org.title":        "Organizaciones",
-	"org.new":          "Nueva organización",
-	"org.newhint":      "Una cuenta compartida que tú administras.",
-	"org.name":         "Nombre",
-	"org.deletetitle":  "¿Eliminar la organización?",
-	"org.deletemsg":    "«%s» y sus cachés se eliminarán.",
-	"org.members":      "Miembros",
-	"org.membercount":  "%d miembro",
-	"org.memberscount": "%d miembros",
-	"org.caches":       "Cachés",
-	"org.addmember":    "Añadir miembro",
-	"org.removetitle":  "¿Quitar al miembro?",
-	"org.removemsg":    "%s perderá el acceso a %s.",
+	"org.title":         "Organizaciones",
+	"org.new":           "Nueva organización",
+	"org.newhint":       "Una cuenta compartida que tú administras.",
+	"org.name":          "Nombre",
+	"org.deletetitle":   "¿Eliminar la organización?",
+	"org.deletemsg":     "«%s» y sus cachés se eliminarán.",
+	"org.members":       "Miembros",
+	"org.membercount":   "%d miembro",
+	"org.memberscount":  "%d miembros",
+	"org.caches":        "Cachés",
+	"org.addmember":     "Añadir miembro",
+	"org.member":        "Usuario",
+	"org.addmemberhint": "Da acceso a las cachés de esta organización.",
+	"org.removetitle":   "¿Quitar al miembro?",
+	"org.removemsg":     "%s perderá el acceso a %s.",
 
 	// overview
 	"dash.title":    "Resumen",
@@ -481,7 +482,7 @@ var es = map[string]string{
 	"set.2fa.protect":     "Añade un segundo factor.",
 	"set.2fa.offmsg":      "Después, solo la contraseña.",
 	"set.password":        "Tu contraseña de inicio de sesión.",
-	"acct.orghint":        "Comparte cachés con un equipo.",
+	"org.subtitle":        "Comparte cachés con un equipo.",
 	"cd.rotate":           "Rotar",
 	"tokens.manage":       "Gestionar",
 	"flash.regpending":    "Registrado. Un administrador debe aprobar tu cuenta primero.",
@@ -491,5 +492,4 @@ var es = map[string]string{
 	"set.passkeys.hint":   "Llave física, Touch ID o Windows Hello.",
 	"cd.pushtoken":        "Token de subida",
 	"cd.pulltoken":        "Token de descarga",
-	"set.update":          "Actualizar",
 }

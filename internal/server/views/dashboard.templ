@@ -6,6 +6,7 @@ import (
 
 	"github.com/stubbedev/xilo/internal/store"
 
+	"github.com/templui/templui/components/badge"
 	"github.com/templui/templui/components/button"
 	"github.com/templui/templui/components/dialog"
 	"github.com/templui/templui/components/input"
@@ -206,18 +207,21 @@ templ tokenRow(d DashboardData, t store.Token) {
 			@PermBadges(displayPerms(t))
 		}
 		@table.Cell(table.CellProps{Class: "font-mono text-xs"}) {
-			if t.AccountID != 0 {
-				<span class="text-muted-foreground">{ t.Account }:</span>
-			}
 			if scopeAll(t.Caches) {
 				// Not "all caches": this scope grants no cache access at all,
-				// it grants instance-wide management. Say the dangerous thing.
+				// it grants instance-wide management. Say the dangerous thing —
+				// but as a badge, the mark this table already uses for a kind of
+				// thing. Red running text in a data column read as a failed row.
 				@WithTooltip(T(ctx, "tokens.roothint")) {
-					<span class="inline-flex items-center gap-1 text-destructive">
+					@badge.Badge(badge.Props{Variant: badge.VariantOutline, Class: "gap-1 text-warning"}) {
 						@Icon("shield-alert")
 						<span>{ T(ctx, "tokens.root") }</span>
-					</span>
+					}
 				}
+			} else if t.AccountID != 0 {
+				// account/cache — the shape a cache reference has everywhere else on
+				// the site. "default: ci" read as a label and a value.
+				<span class="text-muted-foreground">{ t.Account + "/" }</span>{ strings.Join(t.Caches, ", ") }
 			} else {
 				{ strings.Join(t.Caches, ", ") }
 			}

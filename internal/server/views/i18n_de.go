@@ -156,8 +156,8 @@ var de = map[string]string{
 
 	// instance settings + plans
 	"set.instance":         "Instanz-Einstellungen",
-	"inst.subtitle":        "Richtlinien, Tarife, Benutzer und Organisationen.",
-	"inst.subtitle.single": "Benutzer, Organisationen und Wartung.",
+	"inst.subtitle":        "Richtlinien, Tarife und Benutzer.",
+	"inst.subtitle.single": "Benutzer und Wartung.",
 	"inst.policy":          "Registrierungsrichtlinie",
 	"inst.regs":            "Selbstregistrierung erlauben",
 	"inst.approve":         "Freigabe durch Administrator verlangen",
@@ -184,7 +184,6 @@ var de = map[string]string{
 	"plan.retention":       "Aufbewahrung",
 
 	// account
-	"acct.orgs":       "Organisationen",
 	"acct.subtitle":   "Angemeldet als %s.",
 	"acct.email":      "E-Mail",
 	"acct.emailhint":  "Für Benachrichtigungen und die Anmeldung.",
@@ -198,19 +197,21 @@ var de = map[string]string{
 	"users.approve":   "Freigeben",
 
 	// organizations
-	"org.title":        "Organisationen",
-	"org.new":          "Neue Organisation",
-	"org.newhint":      "Ein gemeinsames Konto, das Sie verwalten.",
-	"org.name":         "Name",
-	"org.deletetitle":  "Organisation löschen?",
-	"org.deletemsg":    "„%s“ und ihre Caches werden entfernt.",
-	"org.members":      "Mitglieder",
-	"org.membercount":  "%d Mitglied",
-	"org.memberscount": "%d Mitglieder",
-	"org.caches":       "Caches",
-	"org.addmember":    "Mitglied hinzufügen",
-	"org.removetitle":  "Mitglied entfernen?",
-	"org.removemsg":    "%s verliert den Zugriff auf %s.",
+	"org.title":         "Organisationen",
+	"org.new":           "Neue Organisation",
+	"org.newhint":       "Ein gemeinsames Konto, das Sie verwalten.",
+	"org.name":          "Name",
+	"org.deletetitle":   "Organisation löschen?",
+	"org.deletemsg":     "„%s“ und ihre Caches werden entfernt.",
+	"org.members":       "Mitglieder",
+	"org.membercount":   "%d Mitglied",
+	"org.memberscount":  "%d Mitglieder",
+	"org.caches":        "Caches",
+	"org.addmember":     "Mitglied hinzufügen",
+	"org.member":        "Benutzer",
+	"org.addmemberhint": "Gibt jemandem Zugriff auf die Caches dieser Organisation.",
+	"org.removetitle":   "Mitglied entfernen?",
+	"org.removemsg":     "%s verliert den Zugriff auf %s.",
 
 	// overview
 	"dash.title":    "Übersicht",
@@ -481,7 +482,7 @@ var de = map[string]string{
 	"set.2fa.protect":     "Zweiten Faktor hinzufügen.",
 	"set.2fa.offmsg":      "Danach nur noch das Passwort.",
 	"set.password":        "Ihr Anmeldepasswort.",
-	"acct.orghint":        "Caches im Team teilen.",
+	"org.subtitle":        "Caches im Team teilen.",
 	"cd.rotate":           "Rotieren",
 	"tokens.manage":       "Verwalten",
 	"flash.regpending":    "Registriert. Ein Administrator muss Ihr Konto zuerst freigeben.",
@@ -491,5 +492,4 @@ var de = map[string]string{
 	"set.passkeys.hint":   "Sicherheitsschlüssel, Touch ID oder Windows Hello.",
 	"cd.pushtoken":        "Upload-Token",
 	"cd.pulltoken":        "Download-Token",
-	"set.update":          "Aktualisieren",
 }

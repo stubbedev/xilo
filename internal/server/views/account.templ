@@ -31,7 +31,12 @@ templ Account(d AccountData) {
 		// Two columns on a wide screen. Stacked full width, six identical cards
 		// made a 1800px scroll of the same box, and a password field a thousand
 		// pixels wide for eight characters.
-		<div class="grid items-start gap-6 lg:grid-cols-2">
+		//
+		// Columns rather than a grid: these panels are independent and wildly
+		// different heights, and a grid row is as tall as its tallest cell — so
+		// every short card sat above a hole the height of the one beside it.
+		// Cards flow down one column and into the next, packing tight.
+		<div class="gap-6 lg:columns-2 [&>*]:mb-6 [&>*]:break-inside-avoid">
 			@SettingsCard(T(ctx, "acct.email"), T(ctx, "acct.emailhint")) {
 				<form method="post" action="/admin/account/email" class="flex items-end gap-2">
 					@form.Item(form.ItemProps{Class: "flex-1"}) {
@@ -110,17 +115,12 @@ templ Account(d AccountData) {
 					} else {
 						@ActionRow(T(ctx, "set.2fa.protect")) {
 							<form method="post" action="/admin/account/totp/enroll">
-								@button.Button(button.Props{Type: button.TypeSubmit}) {
+								@button.Button(button.Props{Type: button.TypeSubmit, Size: button.SizeSm, Variant: button.VariantOutline}) {
 									@Icon("shield")
 									<span>{ T(ctx, "set.2fa.enable") }</span>
 								}
 							</form>
 						}
-				}
-			}
-			if d.CanCreateOrg {
-				@SettingsCard(T(ctx, "acct.orgs"), T(ctx, "acct.orghint")) {
-					@newOrgDialog("/admin/neworg")
 				}
 			}
 			@SettingsCard(T(ctx, "set.passkeys"), T(ctx, "set.passkeys.hint")) {
@@ -155,7 +155,7 @@ templ Account(d AccountData) {
 					</div>
 				}
 				@button.Button(button.Props{Size: button.SizeSm, Variant: button.VariantOutline, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": "xiloPasskeyRegister()"}}) {
-					@Icon("fingerprint-pattern")
+					@Icon("plus")
 					<span>{ T(ctx, "action.add") }</span>
 				}
 			}
@@ -174,7 +174,7 @@ templ Account(d AccountData) {
 						<span id="pw-hint" class="text-sm"></span>
 						@button.Button(button.Props{Type: button.TypeSubmit}) {
 							@Icon("check")
-							<span>{ T(ctx, "set.update") }</span>
+							<span>{ T(ctx, "action.save") }</span>
 						}
 					</div>
 				</form>

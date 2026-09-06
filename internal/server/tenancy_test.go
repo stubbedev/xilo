@@ -157,7 +157,7 @@ func TestAdminOrgAndMembers(t *testing.T) {
 	}
 	// create → creator becomes owner
 	path, b := postFlash(t, c, ts.URL+"/admin/orgs", url.Values{"name": {"acme"}})
-	if path != "/admin/settings" || !contains(b, "ready") {
+	if path != "/admin/orgs" || !contains(b, "ready") {
 		t.Errorf("create org → %s %.120q", path, b)
 	}
 	acme := mustAccount(t, db, "acme")
@@ -201,22 +201,22 @@ func TestAdminOrgAndMembers(t *testing.T) {
 	if path != "/admin/org/acme" || !contains(b, "Only the owner") {
 		t.Errorf("admin delete org → %s %.120q", path, b)
 	}
-	// instance admin deletes → settings flash, org gone
+	// instance admin deletes → organizations flash, org gone
 	path, b = postFlash(t, c, ts.URL+"/admin/org/acme/delete", nil)
-	if path != "/admin/settings" || !contains(b, "deleted") {
+	if path != "/admin/orgs" || !contains(b, "deleted") {
 		t.Errorf("owner delete org → %s %.120q", path, b)
 	}
 	if _, err := db.GetAccount("acme"); err == nil {
 		t.Error("acme survived delete")
 	}
 
-	// a non-instance org owner deletes their own org and lands on the dashboard
+	// a non-instance org owner deletes their own org and lands on the list
 	zed, _ := db.CreateUser("zed", "", passHash(t, "zedpass1234"), "user")
 	zorg, _ := db.EnsureAccount("zorg", "org")
 	db.MakeOwner(zorg.ID, zed.ID)
 	ze := loginAs(t, ts, "zed", "zedpass1234")
 	path, b = postFlash(t, ze.Client, ts.URL+"/admin/org/zorg/delete", nil)
-	if path != "/admin" || !contains(b, "deleted") {
+	if path != "/admin/orgs" || !contains(b, "deleted") {
 		t.Errorf("org owner delete → %s %.120q", path, b)
 	}
 	if _, err := db.GetAccount("zorg"); err == nil {
@@ -536,7 +536,7 @@ func TestUserCreateOrg(t *testing.T) {
 	}
 	// happy path: org inherits the plan, creator becomes owner
 	path, b := postFlash(t, quinn.Client, ts.URL+"/admin/neworg", url.Values{"name": {"qorg"}})
-	if path != "/admin/account" || !contains(b, "created") {
+	if path != "/admin/orgs" || !contains(b, "created") {
 		t.Fatalf("create org → %s %.120q", path, b)
 	}
 	qorg := mustAccount(t, db, "qorg")

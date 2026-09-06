@@ -1,0 +1,97 @@
+package views
+
+import (
+	"github.com/templui/templui/components/button"
+	"github.com/templui/templui/components/dialog"
+	"github.com/templui/templui/components/input"
+	"github.com/templui/templui/components/table"
+)
+
+// OrgsData is the organizations page: the teams the viewer can act in.
+// Instance admins see every organization on the instance.
+type OrgsData struct {
+	Nav       Nav
+	Orgs      []OrgInfo
+	CanCreate bool
+	IsAdmin   bool
+	Flash     Flash
+}
+
+// OrgsPage lists organizations. One page, not a card on the account page and a
+// second section in instance settings: an organization is a place you go, and
+// a thing that lives in two menus reads as two different things.
+templ OrgsPage(d OrgsData) {
+	@Layout(T(ctx, "org.title"), "orgs", d.Nav, d.Flash) {
+		@PageHeader(T(ctx, "org.title"), T(ctx, "org.subtitle")) {
+			// Nothing listed yet: the empty state carries the only create control.
+			if len(d.Orgs) > 0 && d.CanCreate {
+				@newOrgDialog(orgCreateAction(d.IsAdmin))
+			}
+		}
+		if len(d.Orgs) == 0 {
+			@EmptyState("building-2", T(ctx, "empty.none")) {
+				if d.CanCreate {
+					@newOrgDialog(orgCreateAction(d.IsAdmin))
+				}
+			}
+		} else {
+			@TableCard() {
+				@table.Table() {
+					@table.Body() {
+						for _, info := range d.Orgs {
+							@table.Row() {
+								@table.Cell() {
+									<div class="flex min-w-0 items-center gap-2">
+										@Icon("building-2")
+										<a href={ templ.SafeURL("/admin/org/" + info.Account.Slug) } class="font-medium hover:underline">{ info.Account.Slug }</a>
+										@Meta() {
+											{ UsagePhrase(ctx, info) }
+										}
+									</div>
+								}
+								@table.Cell(table.CellProps{Class: "text-right"}) {
+									if canDeleteOrg(d, info) {
+										@RowActions() {
+											@ConfirmForm(Confirm{
+												ID:             "org-" + info.Account.Slug,
+												Action:         "/admin/org/" + info.Account.Slug + "/delete",
+												Title:          T(ctx, "org.deletetitle"),
+												Message:        Tf(ctx, "org.deletemsg", info.Account.Slug),
+												ConfirmLabel:   T(ctx, "action.delete"),
+												ConfirmIcon:    "trash-2",
+												Danger:         true,
+												TriggerIcon:    "trash-2",
+												IconOnly:       true,
+												TriggerTooltip: T(ctx, "action.delete"),
+												TriggerVariant: button.VariantGhost,
+											})
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// newOrgDialog is the create-organization trigger + dialog. The action differs
+// by role: instance admins create for the instance, everyone else for
+// themselves (their plan has to allow it).
+templ newOrgDialog(action string) {
+	@dialog.Dialog(dialog.Props{ID: "dlg-org-new"}) {
+		@dialog.Trigger(dialog.TriggerProps{For: "dlg-org-new"}) {
+			@PlusButton(T(ctx, "action.new"))
+		}
+		@DialogBox(T(ctx, "org.new"), T(ctx, "org.newhint"), false) {
+			<form method="post" action={ templ.SafeURL(action) } class="mt-2 space-y-4">
+				@Field("org-name", T(ctx, "org.name")) {
+					@input.Input(input.Props{ID: "org-name", Name: "name", Placeholder: T(ctx, "ph.orgname"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
+				}
+				@DialogFooter("dlg-org-new", "plus", T(ctx, "action.create"))
+			</form>
+		}
+	}
+}

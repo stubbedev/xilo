@@ -156,8 +156,8 @@ var zh = map[string]string{
 
 	// instance settings + plans
 	"set.instance":         "实例设置",
-	"inst.subtitle":        "策略、套餐、用户与组织。",
-	"inst.subtitle.single": "用户、组织与维护。",
+	"inst.subtitle":        "策略、套餐与用户。",
+	"inst.subtitle.single": "用户与维护。",
 	"inst.policy":          "注册策略",
 	"inst.regs":            "允许自助注册",
 	"inst.approve":         "需要管理员审核",
@@ -184,7 +184,6 @@ var zh = map[string]string{
 	"plan.retention":       "保留期",
 
 	// account
-	"acct.orgs":       "组织",
 	"acct.subtitle":   "已登录为 %s。",
 	"acct.email":      "邮箱",
 	"acct.emailhint":  "用于通知和登录。",
@@ -198,19 +197,21 @@ var zh = map[string]string{
 	"users.approve":   "通过",
 
 	// organizations
-	"org.title":        "组织",
-	"org.new":          "新建组织",
-	"org.newhint":      "一个由你管理的共享账户。",
-	"org.name":         "名称",
-	"org.deletetitle":  "删除组织？",
-	"org.deletemsg":    "“%s”及其缓存将被移除。",
-	"org.members":      "成员",
-	"org.membercount":  "%d 位成员",
-	"org.memberscount": "%d 位成员",
-	"org.caches":       "缓存",
-	"org.addmember":    "添加成员",
-	"org.removetitle":  "移除成员？",
-	"org.removemsg":    "%s 将失去对 %s 的访问权限。",
+	"org.title":         "组织",
+	"org.new":           "新建组织",
+	"org.newhint":       "一个由你管理的共享账户。",
+	"org.name":          "名称",
+	"org.deletetitle":   "删除组织？",
+	"org.deletemsg":     "“%s”及其缓存将被移除。",
+	"org.members":       "成员",
+	"org.membercount":   "%d 位成员",
+	"org.memberscount":  "%d 位成员",
+	"org.caches":        "缓存",
+	"org.addmember":     "添加成员",
+	"org.member":        "用户",
+	"org.addmemberhint": "授予此组织缓存的访问权限。",
+	"org.removetitle":   "移除成员？",
+	"org.removemsg":     "%s 将失去对 %s 的访问权限。",
 
 	// overview
 	"dash.title":    "概览",
@@ -481,7 +482,7 @@ var zh = map[string]string{
 	"set.2fa.protect":     "添加第二重验证。",
 	"set.2fa.offmsg":      "之后仅由密码保护。",
 	"set.password":        "你的登录密码。",
-	"acct.orghint":        "与团队共享缓存。",
+	"org.subtitle":        "与团队共享缓存。",
 	"cd.rotate":           "轮换",
 	"tokens.manage":       "管理",
 	"flash.regpending":    "注册成功。需先由管理员审核通过。",
@@ -491,5 +492,4 @@ var zh = map[string]string{
 	"set.passkeys.hint":   "硬件密钥、Touch ID 或 Windows Hello。",
 	"cd.pushtoken":        "上传令牌",
 	"cd.pulltoken":        "下载令牌",
-	"set.update":          "更新",
 }

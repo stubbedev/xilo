@@ -169,7 +169,48 @@ func (s *Server) nav(r *http.Request, u *store.User) views.Nav {
 	if err != nil {
 		n.Contexts = nil
 	}
+	n.Orgs = s.cfg.SelfService && (s.userCanCreateOrg(u) || slices.ContainsFunc(n.Contexts, func(a store.Account) bool {
+		return a.Kind == "org"
+	}))
 	return n
+}
+
+// handleOrgsPage lists the organizations the viewer can act in — every one on
+// the instance for an admin, their own memberships for everyone else.
+func (s *Server) handleOrgsPage(w http.ResponseWriter, r *http.Request) {
+	u := s.requireUser(w, r)
+	if u == nil {
+		return
+	}
+	d := views.OrgsData{
+		Nav: s.nav(r, u), Flash: s.popFlash(w, r),
+		IsAdmin:   u.Role == "owner",
+		CanCreate: s.cfg.SelfService && s.userCanCreateOrg(u),
+	}
+	var accounts []store.Account
+	var err error
+	if d.IsAdmin {
+		accounts, err = s.db.ListAccounts()
+	} else {
+		accounts, err = s.db.UserAccounts(u.ID)
+	}
+	if err != nil {
+		uiError(w, r, err)
+		return
+	}
+	month := time.Now().UTC().Format("2006-01")
+	for _, acct := range accounts {
+		if acct.Kind != "org" { // personal accounts are not organizations
+			continue
+		}
+		info, err := s.orgInfo(acct, month)
+		if err != nil {
+			uiError(w, r, err)
+			return
+		}
+		d.Orgs = append(d.Orgs, info)
+	}
+	views.OrgsPage(d).Render(r.Context(), w)
 }
 
 // handleContext persists the account-context choice.
@@ -278,6 +319,7 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/account/email", s.handleAccountEmail)
 	mux.HandleFunc("POST /admin/account/appearance", s.handleAppearance)
 	mux.HandleFunc("POST /admin/context", s.handleContext)
+	mux.HandleFunc("GET /admin/orgs", s.handleOrgsPage)
 	mux.HandleFunc("GET /admin/org/{slug}", s.handleOrgPage)
 	mux.HandleFunc("GET /admin/status", s.handleStatus)
 	mux.HandleFunc("GET /admin/status/data", s.handleStatusData)
@@ -719,23 +761,6 @@ func (s *Server) renderInstance(w http.ResponseWriter, r *http.Request, flash vi
 		}
 		d.AllowRegs = s.db.SettingBool("allow_registrations", false)
 		d.RequireOK = s.db.SettingBool("require_approval", true)
-	}
-	accounts, err := s.db.ListAccounts()
-	if err != nil {
-		uiError(w, r, err)
-		return
-	}
-	month := time.Now().UTC().Format("2006-01")
-	for _, acct := range accounts {
-		if acct.Kind != "org" {
-			continue // personal accounts are not organizations
-		}
-		info, err := s.orgInfo(acct, month)
-		if err != nil {
-			uiError(w, r, err)
-			return
-		}
-		d.Orgs = append(d.Orgs, info)
 	}
 	views.Instance(d).Render(r.Context(), w)
 }
@@ -1826,6 +1851,11 @@ func (s *Server) instanceFlash(w http.ResponseWriter, r *http.Request, msg strin
 	s.flashRedirect(w, r, "/admin/settings", msg)
 }
 
+// orgsFlash lands the user back on the organizations page with a message.
+func (s *Server) orgsFlash(w http.ResponseWriter, r *http.Request, msg string) {
+	s.flashRedirect(w, r, "/admin/orgs", msg)
+}
+
 // accountFlash lands the user back on their account page with a message.
 func (s *Server) accountFlash(w http.ResponseWriter, r *http.Request, msg string) {
 	s.flashRedirect(w, r, "/admin/account", msg)
@@ -1947,12 +1977,12 @@ func (s *Server) handleCreateOrg(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" || strings.ContainsAny(name, "/ ") {
-		s.instanceFlash(w, r, views.T(r.Context(), "flash.badorgname"))
+		s.orgsFlash(w, r, views.T(r.Context(), "flash.badorgname"))
 		return
 	}
 	org, err := s.db.EnsureAccount(name, "org")
 	if errors.Is(err, store.ErrSlugReserved) {
-		s.instanceFlash(w, r, views.T(r.Context(), "flash.nametaken"))
+		s.orgsFlash(w, r, views.T(r.Context(), "flash.nametaken"))
 		return
 	}
 	if err != nil {
@@ -1962,7 +1992,7 @@ func (s *Server) handleCreateOrg(w http.ResponseWriter, r *http.Request) {
 	if u := s.currentUser(r); u != nil {
 		_ = s.db.MakeOwner(org.ID, u.ID)
 	}
-	s.instanceFlash(w, r, views.Tf(r.Context(), "flash.orgready", name))
+	s.orgsFlash(w, r, views.Tf(r.Context(), "flash.orgready", name))
 }
 
 // orgByPath resolves the {slug} path value to an ORG the acting user may
@@ -2006,11 +2036,7 @@ func (s *Server) handleDeleteOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	go s.runGC(context.Background())
-	if u.Role == "owner" {
-		s.instanceFlash(w, r, views.Tf(r.Context(), "flash.orgdeleted", ns.Slug))
-		return
-	}
-	s.flashRedirect(w, r, "/admin", views.Tf(r.Context(), "flash.orgdeleted", ns.Slug))
+	s.orgsFlash(w, r, views.Tf(r.Context(), "flash.orgdeleted", ns.Slug))
 }
 
 // handleSetMember adds a user (picked by id) to an org or changes their role.

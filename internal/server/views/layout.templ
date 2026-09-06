@@ -36,6 +36,7 @@ type Nav struct {
 	LoggedIn bool
 	UserName string
 	IsAdmin  bool            // instance admin (shows the Settings link)
+	Orgs     bool            // the viewer is in an organization, or may create one
 	Contexts []store.Account // the viewer's personal account + orgs
 	Active   string          // active context slug; "" = all accounts
 	Theme    string          // the user's palette id ("" = default), see theme.go
@@ -137,7 +138,7 @@ templ appSidebar(section string, nav Nav) {
 	@sidebar.Sidebar(sidebar.Props{ID: "app-sidebar", Collapsible: sidebar.CollapsibleIcon}) {
 		@sidebar.Header() {
 			<a href="/admin" class="flex items-center gap-2 px-2 py-1 font-semibold tracking-tight">
-				<span class="text-primary">
+				<span class="text-brand">
 					@Icon("box")
 				</span>
 				<span class="group-data-[tui-sidebar-state=collapsed]:hidden">Xilo</span>
@@ -153,6 +154,9 @@ templ appSidebar(section string, nav Nav) {
 				@sidebar.Menu() {
 					@navItem("/admin", T(ctx, "nav.caches"), "database", section == "caches")
 					@navItem("/admin/account", T(ctx, "nav.account"), "user", section == "account")
+				if nav.Orgs {
+					@navItem("/admin/orgs", T(ctx, "org.title"), "building-2", section == "orgs")
+				}
 					if nav.IsAdmin {
 						@navItem("/admin/settings", T(ctx, "nav.settings"), "settings", section == "settings")
 					}
@@ -243,7 +247,7 @@ templ userMenu() {
 templ footer() {
 	<footer class="border-t">
 		<div class="mx-auto w-full max-w-6xl px-4 py-5 text-center text-sm text-muted-foreground sm:px-6">
-			<span class="font-medium text-foreground">Xilo</span> · { T(ctx, "footer.tagline") }
+			<span class="font-medium text-foreground">Xilo</span>{ MetaSep }{ T(ctx, "footer.tagline") }
 		</div>
 	</footer>
 }
