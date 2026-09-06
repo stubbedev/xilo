@@ -141,14 +141,14 @@ templ editPlanDialog(p store.Plan) {
 templ planFormBody(action string, p *store.Plan, submitIcon, submitLabel, dlgID string) {
 	<form method="post" action={ templ.SafeURL(action) } class="mt-2 space-y-4">
 		@Field(dlgID+"-name", T(ctx, "plan.name")) {
-			@input.Input(input.Props{ID: dlgID + "-name", Name: "name", Value: planName(p), Placeholder: T(ctx, "ph.planname"), Required: true})
+			@input.Input(input.Props{ID: dlgID + "-name", Name: "name", Value: planName(p), Placeholder: T(ctx, "ph.planname"), Required: true, Attributes: templ.Attributes{"autocomplete": "off"}})
 		}
 		<div class="grid gap-4 sm:grid-cols-2">
 			@Field(dlgID+"-caches", T(ctx, "plan.maxcaches")) {
-				@input.Input(input.Props{ID: dlgID + "-caches", Name: "max_caches", Type: input.TypeNumber, Value: planLimit(p, "caches"), Placeholder: T(ctx, "ph.zerounlimited"), Attributes: templ.Attributes{"min": "0"}})
+				@input.Input(input.Props{ID: dlgID + "-caches", Name: "max_caches", Type: input.TypeNumber, Value: planLimit(p, "caches"), Placeholder: T(ctx, "ph.zerounlimited"), Attributes: templ.Attributes{"min": "0", "autocomplete": "off"}})
 			}
 			@Field(dlgID+"-members", T(ctx, "plan.maxmembers")) {
-				@input.Input(input.Props{ID: dlgID + "-members", Name: "max_members", Type: input.TypeNumber, Value: planLimit(p, "members"), Placeholder: T(ctx, "ph.zerounlimited"), Attributes: templ.Attributes{"min": "0"}})
+				@input.Input(input.Props{ID: dlgID + "-members", Name: "max_members", Type: input.TypeNumber, Value: planLimit(p, "members"), Placeholder: T(ctx, "ph.zerounlimited"), Attributes: templ.Attributes{"min": "0", "autocomplete": "off"}})
 			}
 		</div>
 		@Field("", T(ctx, "plan.maxstorage")) {
@@ -224,7 +224,7 @@ templ resetUserDialog(u store.User) {
 		@DialogBox(Tf(ctx, "users.resetfor", u.Name), T(ctx, "users.resethint"), false) {
 			<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/reset") } class="mt-2 space-y-4">
 				@Field("reset-pw-"+strconv.FormatInt(u.ID, 10), T(ctx, "users.newpw")) {
-					@input.Input(input.Props{ID: "reset-pw-" + strconv.FormatInt(u.ID, 10), Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "8"}})
+					@input.Input(input.Props{ID: "reset-pw-" + strconv.FormatInt(u.ID, 10), Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "off", "minlength": "8"}})
 				}
 				@DialogFooter(id, "key-round", T(ctx, "action.reset"))
 			</form>
@@ -240,13 +240,13 @@ templ newUserDialog(multiTenant bool) {
 		@DialogBox(T(ctx, "users.new"), T(ctx, "users.hint"), false) {
 			<form method="post" action="/admin/users" class="mt-2 space-y-4">
 				@Field("nu-name", T(ctx, "users.name")) {
-					@input.Input(input.Props{ID: "nu-name", Name: "username", Placeholder: T(ctx, "ph.newuser"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
+					@input.Input(input.Props{ID: "nu-name", Name: "username", Placeholder: T(ctx, "ph.newuser"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+", "autocomplete": "off"}})
 				}
 				@Field("nu-email", T(ctx, "users.email")) {
-					@input.Input(input.Props{ID: "nu-email", Name: "email", Type: input.TypeEmail, Placeholder: T(ctx, "ph.newemail"), Required: multiTenant})
+					@input.Input(input.Props{ID: "nu-email", Name: "email", Type: input.TypeEmail, Placeholder: T(ctx, "ph.newemail"), Required: multiTenant, Attributes: templ.Attributes{"autocomplete": "off"}})
 				}
 				@Field("nu-pw", T(ctx, "login.password")) {
-					@input.Input(input.Props{ID: "nu-pw", Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "8"}})
+					@input.Input(input.Props{ID: "nu-pw", Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "off", "minlength": "8"}})
 				}
 				@DialogFooter("dlg-user-new", "plus", T(ctx, "action.create"))
 			</form>

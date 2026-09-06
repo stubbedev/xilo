@@ -88,7 +88,7 @@ templ newOrgDialog(action string) {
 		@DialogBox(T(ctx, "org.new"), T(ctx, "org.newhint"), false) {
 			<form method="post" action={ templ.SafeURL(action) } class="mt-2 space-y-4">
 				@Field("org-name", T(ctx, "org.name")) {
-					@input.Input(input.Props{ID: "org-name", Name: "name", Placeholder: T(ctx, "ph.orgname"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
+					@input.Input(input.Props{ID: "org-name", Name: "name", Placeholder: T(ctx, "ph.orgname"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+", "autocomplete": "off"}})
 				}
 				@DialogFooter("dlg-org-new", "plus", T(ctx, "action.create"))
 			</form>

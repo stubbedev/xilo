@@ -15,7 +15,7 @@ import (
 
 templ Dashboard(d DashboardData) {
 	@Layout(T(ctx, "dash.title"), "caches", d.Nav, d.Flash) {
-		if d.Nav.Active != "" {
+		if len(d.Nav.Contexts) > 1 {
 			@PageHeader(T(ctx, "dash.title"), Tf(ctx, "dash.scopedto", d.Nav.Active))
 		} else {
 			@PageHeader(T(ctx, "dash.title"), T(ctx, "dash.subtitle"))
@@ -284,7 +284,7 @@ templ newCacheDialog(d DashboardData) {
 					@AccountSelect("namespace", defaultAccount(d), T(ctx, "caches.pickaccount"), d.Accounts)
 				}
 				@Field("cache-name", T(ctx, "caches.name")) {
-					@input.Input(input.Props{ID: "cache-name", Name: "name", Placeholder: T(ctx, "ph.cachename"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-zA-Z0-9_]+"}})
+					@input.Input(input.Props{ID: "cache-name", Name: "name", Placeholder: T(ctx, "ph.cachename"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-zA-Z0-9_]+", "autocomplete": "off"}})
 				}
 				if d.IsAdmin && len(d.Storages) > 1 {
 					@Field("", T(ctx, "caches.storage")) {
@@ -328,7 +328,7 @@ templ editTokenDialog(d DashboardData, t store.Token) {
 templ tokenFormBody(action string, t *store.Token, d DashboardData, submitIcon, submitLabel, dlgID string) {
 	<form method="post" action={ templ.SafeURL(action) } class="mt-2 space-y-4">
 		@Field(dlgID+"-name", T(ctx, "tokens.name")) {
-			@input.Input(input.Props{ID: dlgID + "-name", Name: "name", Value: tokenName(t), Placeholder: T(ctx, "ph.tokenname"), Required: true})
+			@input.Input(input.Props{ID: dlgID + "-name", Name: "name", Value: tokenName(t), Placeholder: T(ctx, "ph.tokenname"), Required: true, Attributes: templ.Attributes{"autocomplete": "off"}})
 		}
 		@FieldInfo("", T(ctx, "tokens.scope"), T(ctx, "tokens.scopehint")) {
 			@ScopeSelect("cache", tokenScopeValue(t, d), tokenScopeCaches(t, d))

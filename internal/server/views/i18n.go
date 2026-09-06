@@ -167,16 +167,15 @@ var en = map[string]string{
 	"role.pending":    "pending approval",
 
 	// nav / chrome
-	"nav.caches":      "Caches",
-	"nav.account":     "Account",
-	"nav.settings":    "Settings",
-	"nav.status":      "Status",
-	"nav.audit":       "Activities",
-	"nav.context":     "Viewing account",
-	"nav.allaccounts": "All",
-	"nav.logout":      "Log out",
-	"nav.theme":       "Theme",
-	"footer.tagline":  "self-hosted Nix cache",
+	"nav.caches":     "Caches",
+	"nav.account":    "Account",
+	"nav.settings":   "Settings",
+	"nav.status":     "Status",
+	"nav.audit":      "Activities",
+	"nav.context":    "Account",
+	"nav.logout":     "Log out",
+	"nav.theme":      "Theme",
+	"footer.tagline": "self-hosted Nix cache",
 
 	// status dashboard
 	"status.title":       "Status",

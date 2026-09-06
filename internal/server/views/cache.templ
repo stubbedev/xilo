@@ -168,7 +168,7 @@ templ cacheTokenDialog(d CacheData, id, label string, push, pull bool) {
 		@DialogBox(label, T(ctx, "cd.tokenhint"), true) {
 			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/tokens") } class="mt-2 space-y-4">
 				@Field(id+"-name", T(ctx, "tokens.name")) {
-					@input.Input(input.Props{ID: id + "-name", Name: "name", Value: d.Cache.Name, Placeholder: T(ctx, "ph.tokenname"), Required: true})
+					@input.Input(input.Props{ID: id + "-name", Name: "name", Value: d.Cache.Name, Placeholder: T(ctx, "ph.tokenname"), Required: true, Attributes: templ.Attributes{"autocomplete": "off"}})
 				}
 				@Field("", T(ctx, "tokens.scope")) {
 					@input.Input(input.Props{ID: id + "-scope", Value: d.Cache.Ref(), Disabled: true})

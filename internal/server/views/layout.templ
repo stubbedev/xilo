@@ -145,14 +145,6 @@ templ appSidebar(section string, nav Nav) {
 			</a>
 		}
 		@sidebar.Content() {
-			if len(nav.Contexts) > 1 {
-				@sidebar.Group() {
-					@sidebar.GroupLabel() {
-						{ T(ctx, "nav.context") }
-					}
-					@contextSwitcher(nav)
-				}
-			}
 			@sidebar.Group() {
 				@sidebar.Menu() {
 					@navItem("/admin", T(ctx, "nav.caches"), "database", section == "caches")
@@ -171,6 +163,9 @@ templ appSidebar(section string, nav Nav) {
 			}
 		}
 		@sidebar.Footer() {
+			if len(nav.Contexts) > 1 {
+				@contextSwitcher(nav)
+			}
 			@userMenu()
 		}
 	}
@@ -214,12 +209,9 @@ templ contextSwitcher(nav Nav) {
 	>
 		@selectbox.SelectBox() {
 			@selectbox.Trigger(selectbox.TriggerProps{Name: "ctx", Attributes: templ.Attributes{"aria-label": T(ctx, "nav.context")}}) {
-				@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "nav.allaccounts")})
+				@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "nav.context")})
 			}
-			@selectbox.Content(selectbox.ContentProps{NoSearch: noSearch(len(nav.Contexts) + 1)}) {
-				@selectbox.Item(selectbox.ItemProps{Value: "", Selected: nav.Active == ""}) {
-					{ T(ctx, "nav.allaccounts") }
-				}
+			@selectbox.Content(selectbox.ContentProps{NoSearch: noSearch(len(nav.Contexts))}) {
 				for _, c := range nav.Contexts {
 					@selectbox.Item(selectbox.ItemProps{Value: c.Slug, Selected: nav.Active == c.Slug}) {
 						{ c.Slug }
@@ -339,6 +331,9 @@ templ searchClearLayer() {
 					.forEach(function (el) {
 						if (el.dataset.searchClearOn) return;
 						el.dataset.searchClearOn = '1';
+						// Nothing typed in a search box is worth the browsers
+						// history dropdown covering the results underneath it.
+						el.setAttribute('autocomplete', 'off');
 						el.classList.add('pr-8');
 						var host = el.parentElement;
 						if (!host) return;

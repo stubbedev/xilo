@@ -137,21 +137,58 @@ func (s *Server) loggedIn(r *http.Request) bool { return s.currentUser(r) != nil
 
 const ctxCookie = "xilo_ctx"
 
-// activeContext resolves the account-context cookie for u: the slug of a
-// context they belong to (or any account for instance admins); "" = all.
+// activeContext is the one account the admin is looking at: the slug from the
+// context cookie when it still names an account this user may act in, and
+// otherwise their default. There is no "everything" context — an overview of
+// several accounts at once answers nobody's question about any of them, and it
+// made every figure on the page mean something different depending on a
+// setting two clicks away. The cookie may still be empty or stale (cleared on
+// a bad pick, or written before an account was deleted); that resolves here,
+// so callers can rely on getting an account.
 func (s *Server) activeContext(r *http.Request, u *store.User) string {
-	c, err := r.Cookie(ctxCookie)
-	if err != nil || c.Value == "" || u == nil {
+	if u == nil {
 		return ""
 	}
-	acc, err := s.db.GetAccount(c.Value)
-	if err != nil {
+	if c, err := r.Cookie(ctxCookie); err == nil && c.Value != "" {
+		if acc, err := s.db.GetAccount(c.Value); err == nil {
+			if u.Role == "owner" || s.db.MemberRole(acc.ID, u.ID) != "" {
+				return acc.Slug
+			}
+		}
+	}
+	return s.defaultContext(u)
+}
+
+// defaultContext is where a user starts before they have picked anything:
+// their own account, unless everything they can see lives somewhere else.
+// Landing an instance admin in an empty personal account while the instance's
+// caches sit in organizations reads as data gone missing, not as a scope.
+//
+// Only reached while the context cookie is absent or stale, so the extra
+// lookup costs nothing once someone has switched accounts once.
+func (s *Server) defaultContext(u *store.User) string {
+	personal := ""
+	if acc, err := s.db.GetAccount(u.Name); err == nil {
+		if u.Role == "owner" || s.db.MemberRole(acc.ID, u.ID) != "" {
+			personal = acc.Slug
+		}
+	}
+	if caches, err := s.visibleCaches(u); err == nil && len(caches) > 0 {
+		for _, c := range caches {
+			if c.Account == personal {
+				return personal // something of their own to look at
+			}
+		}
+		return caches[0].Account
+	}
+	if personal != "" {
+		return personal
+	}
+	accs, err := s.db.UserAccounts(u.ID)
+	if err != nil || len(accs) == 0 {
 		return ""
 	}
-	if u.Role == "owner" || s.db.MemberRole(acc.ID, u.ID) != "" {
-		return acc.Slug
-	}
-	return ""
+	return accs[0].Slug
 }
 
 // nav builds the header state for a signed-in user (zero Nav when signed out).
@@ -459,15 +496,12 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 		uiError(w, r, err)
 		return
 	}
-	if u.Role != "owner" || s.activeContext(r, u) != "" {
-		// Tenants — and any scoped context — see that footprint, not the
-		// instance's.
-		global = store.Global{Caches: int64(len(usages))}
-		for _, us := range usages {
-			global.Paths += us.Paths
-			global.StoredBytes += us.Bytes
-			global.LogicalBytes += us.Logical
-		}
+	// The page is always one account's, so the figures above it are too.
+	global = store.Global{Caches: int64(len(usages))}
+	for _, us := range usages {
+		global.Paths += us.Paths
+		global.StoredBytes += us.Bytes
+		global.LogicalBytes += us.Logical
 	}
 	tokens, err := s.visibleTokens(u)
 	if err != nil {

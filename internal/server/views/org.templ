@@ -25,7 +25,7 @@ type OrgPageData struct {
 
 // Org renders one organization.
 templ Org(d OrgPageData) {
-	@Layout(d.Info.Account.Slug, "", d.Nav, d.Flash) {
+	@Layout(d.Info.Account.Slug, "orgs", d.Nav, d.Flash) {
 		@Crumbs(Crumb{T(ctx, "org.title"), orgParent(d.Nav)}, Crumb{d.Info.Account.Slug, ""})
 		@PageHeaderCode(d.Info.Account.Slug, UsagePhrase(ctx, d.Info))
 		<div class="grid gap-8">

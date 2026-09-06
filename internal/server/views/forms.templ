@@ -138,7 +138,7 @@ templ DurationInput(name string, secs int64) {
 	<div class="flex gap-2">
 		@input.Input(input.Props{
 			Name: name + "_value", Type: input.TypeNumber, Value: durValue(secs),
-			Class: "min-w-0 flex-1", Attributes: templ.Attributes{"min": "0", "step": "1", "aria-label": T(ctx, "unit.duration")},
+			Class: "min-w-0 flex-1", Attributes: templ.Attributes{"min": "0", "step": "1", "autocomplete": "off", "aria-label": T(ctx, "unit.duration")},
 		})
 		<div class="w-28 shrink-0">
 			@selectbox.SelectBox() {
@@ -168,7 +168,7 @@ templ SizeInput(name string, bytes int64) {
 	<div class="flex gap-2">
 		@input.Input(input.Props{
 			Name: name + "_value", Type: input.TypeNumber, Value: sizeValue(bytes),
-			Class: "min-w-0 flex-1", Placeholder: T(ctx, "unit.unlimited"), Attributes: templ.Attributes{"min": "0", "step": "1", "aria-label": T(ctx, "paths.size")},
+			Class: "min-w-0 flex-1", Placeholder: T(ctx, "unit.unlimited"), Attributes: templ.Attributes{"min": "0", "step": "1", "autocomplete": "off", "aria-label": T(ctx, "paths.size")},
 		})
 		<div class="w-28 shrink-0">
 			@selectbox.SelectBox() {
@@ -196,7 +196,7 @@ templ PriorityField(value int) {
 	@FieldInfo("priority", T(ctx, "caches.priority"), T(ctx, "caches.priorityhint")) {
 		@input.Input(input.Props{
 			ID: "priority", Name: "priority", Type: input.TypeNumber, Value: strconv.Itoa(value),
-			Attributes: templ.Attributes{"min": "1", "max": "100"},
+			Attributes: templ.Attributes{"min": "1", "max": "100", "autocomplete": "off"},
 		})
 	}
 }
