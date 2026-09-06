@@ -198,10 +198,21 @@ templ PriorityField(value int) {
 
 // VisibilitySwitch toggles a cache's privacy; checked = private.
 templ VisibilitySwitch(private bool) {
-	@form.ItemFlex(form.ItemProps{Class: "justify-between border-b py-3 last:border-0"}) {
-		@fieldLabel("cache-private", T(ctx, "caches.private"), T(ctx, "caches.privatehint"))
-		@switchcomp.Switch(switchcomp.Props{ID: "cache-private", Name: "private", Value: "on", Checked: private})
+	@SwitchGroup() {
+		@form.ItemFlex(form.ItemProps{Class: "justify-between border-b py-3 last:border-0"}) {
+			@fieldLabel("cache-private", T(ctx, "caches.private"), T(ctx, "caches.privatehint"))
+			@switchcomp.Switch(switchcomp.Props{ID: "cache-private", Name: "private", Value: "on", Checked: private})
+		}
 	}
+}
+
+// SwitchGroup encloses the switch rows under one label. PermSwitchID already
+// rules its rows off from each other; the box is what separates the group from
+// the field above and below it.
+templ SwitchGroup() {
+	<div class="rounded-lg border px-3">
+		{ children... }
+	</div>
 }
 
 // PermSwitchID is a labelled switch row with an explicit DOM id — required
@@ -220,7 +231,9 @@ templ PermSwitchID(id, name, value, text string, checked bool) {
 templ ExpiryField(dlgID string, t *store.Token) {
 	@Field("", T(ctx, "tokens.expiry")) {
 		<div class="group/expiry space-y-2">
-			@PermSwitchID(dlgID+"-permanent", "permanent", "on", T(ctx, "tokens.permanent"), tokenPermanent(t))
+			@SwitchGroup() {
+				@PermSwitchID(dlgID+"-permanent", "permanent", "on", T(ctx, "tokens.permanent"), tokenPermanent(t))
+			}
 			<div class="group-has-[:checked]/expiry:hidden">
 				@TTLSelect(t)
 			</div>

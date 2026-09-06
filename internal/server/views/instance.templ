@@ -157,8 +157,10 @@ templ planFormBody(action string, p *store.Plan, submitIcon, submitLabel, dlgID 
 		@Field("", T(ctx, "plan.maxretention")) {
 			@DurationInput("plan_retention", planSecs(p))
 		}
-		@PermSwitchID(dlgID+"-orgs_allowed", "orgs_allowed", "on", T(ctx, "plan.orgsallowed"), p != nil && p.OrgsAllowed)
-		@PermSwitchID(dlgID+"-public", "public", "on", T(ctx, "plan.public"), p == nil || p.Public)
+		@SwitchGroup() {
+			@PermSwitchID(dlgID+"-orgs_allowed", "orgs_allowed", "on", T(ctx, "plan.orgsallowed"), p != nil && p.OrgsAllowed)
+			@PermSwitchID(dlgID+"-public", "public", "on", T(ctx, "plan.public"), p == nil || p.Public)
+		}
 		@DialogFooter(dlgID, submitIcon, submitLabel)
 	</form>
 }

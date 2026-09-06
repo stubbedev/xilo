@@ -97,10 +97,12 @@ templ CacheView(d CacheData) {
 		</div>
 		<div class="grid gap-8">
 			@SettingsCard(T(ctx, "cd.settings"), "") {
-				<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/configure") } class="grid gap-4 sm:grid-cols-3">
-						<div class="sm:col-span-3">
-							@VisibilitySwitch(!d.Cache.Public)
-						</div>
+				<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/configure") } class="space-y-4">
+					// items-end: the switch carries its label inside its box, the
+					// other three carry theirs above the control, so only their
+					// bottoms line up.
+					<div class="grid items-end gap-4 sm:grid-cols-2 xl:grid-cols-4">
+						@VisibilitySwitch(!d.Cache.Public)
 						@PriorityField(d.Cache.Priority)
 						@Field("", T(ctx, "cd.retention")) {
 							@DurationInput("retention", d.Cache.Retention)
@@ -108,13 +110,14 @@ templ CacheView(d CacheData) {
 						@Field("", T(ctx, "cd.maxsize")) {
 							@SizeInput("max", d.Cache.MaxBytes)
 						}
-						<div class="sm:col-span-3">
-							@button.Button(button.Props{Type: button.TypeSubmit}) {
-								@Icon("check")
-								<span>{ T(ctx, "action.save") }</span>
-							}
-						</div>
-					</form>
+					</div>
+					<div class="flex justify-end">
+						@button.Button(button.Props{Type: button.TypeSubmit}) {
+							@Icon("check")
+							<span>{ T(ctx, "action.save") }</span>
+						}
+					</div>
+				</form>
 			}
 			// Maintenance is two sentences and two buttons — a section with
 			// rules, not a panel: nothing here is submitted as a whole.
@@ -172,11 +175,11 @@ templ cacheTokenDialog(d CacheData, id, label string, push, pull bool) {
 					@input.Input(input.Props{ID: id + "-scope", Value: d.Cache.Ref(), Disabled: true})
 				}
 				@Field("", T(ctx, "tokens.perms")) {
-					<div>
+					@SwitchGroup() {
 						@PermSwitchID(id+"-push", "push", "on", T(ctx, "tokens.push"), push)
 						@PermSwitchID(id+"-pull", "pull", "on", T(ctx, "tokens.pull"), pull)
 						@PermSwitchID(id+"-manage", "manage", "on", T(ctx, "tokens.manage"), false)
-					</div>
+					}
 				}
 				@ExpiryField(id, nil)
 				@DialogFooter(id, "plus", T(ctx, "action.create"))
