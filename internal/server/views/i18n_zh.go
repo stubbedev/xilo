@@ -186,6 +186,7 @@ var zh = map[string]string{
 	// account
 	"acct.subtitle":   "已登录为 %s。",
 	"acct.email":      "邮箱",
+	"acct.signin":     "登录",
 	"acct.emailhint":  "用于通知和登录。",
 	"acct.appearance": "外观",
 	"acct.palette":    "配色",
@@ -328,8 +329,8 @@ var zh = map[string]string{
 	"set.pw.strong":   "强密码。",
 	"set.2fa":         "两步验证",
 	"set.2fa.on":      "已启用",
+	"set.2fa.off":     "已停用",
 	"set.2fa.disable": "停用",
-	"set.2fa.hint":    "来自身份验证器应用的动态验证码。",
 	"set.2fa.enable":  "启用",
 	"set.enroll":      "设置两步验证",
 
@@ -477,9 +478,9 @@ var zh = map[string]string{
 	"path.refshint":       "带链接的在该缓存中。",
 	"path.chunkshint":     "按 NAR 顺序。共享分块只存一次。",
 	"caches.privatehint":  "下载需要令牌。",
+	"caches.private":      "私有",
 	"caches.priorityhint": "数字越小越优先（1–100）。",
 	"tokens.roothint":     "可管理所有缓存、令牌和账户。",
-	"set.2fa.protect":     "添加第二重验证。",
 	"set.2fa.offmsg":      "之后仅由密码保护。",
 	"set.password":        "你的登录密码。",
 	"org.subtitle":        "与团队共享缓存。",
@@ -489,7 +490,6 @@ var zh = map[string]string{
 	"reg.err.username":    "只能用小写字母、数字、- 和 _。",
 	"reg.err.orgname":     "只能用小写字母、数字、- 和 _。",
 	"login.codesub":       "来自你的身份验证器应用。",
-	"set.passkeys.hint":   "硬件密钥、Touch ID 或 Windows Hello。",
 	"cd.pushtoken":        "上传令牌",
 	"cd.pulltoken":        "下载令牌",
 }

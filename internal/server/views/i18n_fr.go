@@ -186,6 +186,7 @@ var fr = map[string]string{
 	// account
 	"acct.subtitle":   "Connecté en tant que %s.",
 	"acct.email":      "E-mail",
+	"acct.signin":     "Connexion",
 	"acct.emailhint":  "Pour les notifications et la connexion.",
 	"acct.appearance": "Apparence",
 	"acct.palette":    "Palette",
@@ -328,8 +329,8 @@ var fr = map[string]string{
 	"set.pw.strong":   "Mot de passe robuste.",
 	"set.2fa":         "Double authentification",
 	"set.2fa.on":      "activée",
+	"set.2fa.off":     "désactivé",
 	"set.2fa.disable": "Désactiver",
-	"set.2fa.hint":    "Un code temporel issu d'une application d'authentification.",
 	"set.2fa.enable":  "Activer",
 	"set.enroll":      "Configurer la double authentification",
 
@@ -477,9 +478,9 @@ var fr = map[string]string{
 	"path.refshint":       "Celles qui sont liées sont dans ce cache.",
 	"path.chunkshint":     "Ordre du NAR. Chunks partagés stockés une fois.",
 	"caches.privatehint":  "Exiger un jeton pour télécharger.",
+	"caches.private":      "Privé",
 	"caches.priorityhint": "Le plus petit gagne (1–100).",
 	"tokens.roothint":     "Gère tous les caches, jetons et comptes.",
-	"set.2fa.protect":     "Ajoutez un second facteur.",
 	"set.2fa.offmsg":      "Le mot de passe seul ensuite.",
 	"set.password":        "Votre mot de passe de connexion.",
 	"org.subtitle":        "Partagez des caches avec une équipe.",
@@ -489,7 +490,6 @@ var fr = map[string]string{
 	"reg.err.username":    "Minuscules, chiffres, - et _ uniquement.",
 	"reg.err.orgname":     "Minuscules, chiffres, - et _ uniquement.",
 	"login.codesub":       "Depuis votre application d'authentification.",
-	"set.passkeys.hint":   "Clé matérielle, Touch ID ou Windows Hello.",
 	"cd.pushtoken":        "Jeton d'envoi",
 	"cd.pulltoken":        "Jeton de téléchargement",
 }

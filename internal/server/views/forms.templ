@@ -199,15 +199,8 @@ templ PriorityField(value int) {
 // VisibilitySwitch toggles a cache's privacy; checked = private.
 templ VisibilitySwitch(private bool) {
 	@form.ItemFlex(form.ItemProps{Class: "justify-between border-b py-3 last:border-0"}) {
-		@form.Item(form.ItemProps{Class: "space-y-0.5"}) {
-			@form.Label() {
-				{ T(ctx, "vis.private") }
-			}
-			@form.Description() {
-				{ T(ctx, "caches.privatehint") }
-			}
-		}
-		@switchcomp.Switch(switchcomp.Props{Name: "private", Value: "on", Checked: private})
+		@fieldLabel("cache-private", T(ctx, "caches.private"), T(ctx, "caches.privatehint"))
+		@switchcomp.Switch(switchcomp.Props{ID: "cache-private", Name: "private", Value: "on", Checked: private})
 	}
 }
 

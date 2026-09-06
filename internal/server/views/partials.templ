@@ -549,15 +549,17 @@ templ StatusIcon(status string) {
 	}
 }
 
-// VisBadge shows a cache's public/private state.
+// VisBadge shows a cache's public/private state. One weight for both: a
+// filled badge beside an outline one reads as two kinds of thing, when these
+// are two values of the same fact. The glyph and the word carry the
+// difference, and lowercase is a badge's own house style — the label case is
+// set here, not in six catalogs.
 templ VisBadge(public bool) {
-	if public {
-		@badge.Badge(badge.Props{Variant: badge.VariantSecondary, Class: "gap-1"}) {
+	@badge.Badge(badge.Props{Variant: badge.VariantOutline, Class: "gap-1 lowercase"}) {
+		if public {
 			@Icon("globe")
 			<span>{ T(ctx, "vis.public") }</span>
-		}
-	} else {
-		@badge.Badge(badge.Props{Variant: badge.VariantOutline, Class: "gap-1"}) {
+		} else {
 			@Icon("lock")
 			<span>{ T(ctx, "vis.private") }</span>
 		}
@@ -572,5 +574,23 @@ templ PermBadges(perms []string) {
 				{ T(ctx, "perm." + p) }
 			}
 		}
+	</div>
+}
+
+// SettingRow is one line of a settings list: what the setting is, what it
+// currently says, and the control that changes it. Label in prose, value in
+// machine truth (an address, a state), action on the right. Every credential
+// row on the account page is one of these, so the heights cannot drift.
+templ SettingRow(label, value string) {
+	<div class="flex flex-wrap items-center justify-between gap-3 py-3">
+		<div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+			<p class="text-sm font-medium">{ label }</p>
+			if value != "" {
+				<span class="min-w-0 truncate font-mono text-xs text-muted-foreground">{ value }</span>
+			}
+		</div>
+		<div class="flex shrink-0 items-center gap-2">
+			{ children... }
+		</div>
 	</div>
 }

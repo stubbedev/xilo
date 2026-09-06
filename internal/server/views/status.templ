@@ -3,7 +3,6 @@ package views
 import (
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/stubbedev/xilo/internal/store"
 
@@ -206,22 +205,29 @@ templ statusChart(c ChartData) {
 		@card.Content(card.ContentProps{Class: "relative"}) {
 			<p id={ "empty-" + c.ID } class={ "absolute inset-0 flex items-center justify-center text-sm text-muted-foreground", sparseClass(c.Points) }>{ T(ctx, "status.collecting") }</p>
 			@chart.Chart(chart.Props{
-				ID:          "chart-" + c.ID,
-				Variant:     chart.VariantLine,
-				Class:       "h-48",
+				ID:      "chart-" + c.ID,
+				Variant: chart.VariantLine,
+				Class:   "h-48",
+				// Time labels, because a series with no x axis cannot be read;
+				// horizontal grid only, because the level is what you compare and
+				// vertical rules just fence the line in. The ceiling is a round
+				// number above the peak (chartMax), so ticks land on round values
+				// and the axis stops rescaling under the line on every poll.
 				ShowXAxis:   true,
 				ShowYAxis:   true,
+				ShowXLabels: true,
 				ShowYLabels: true,
+				ShowYGrid:   true,
+				BeginAtZero: chart.Bool(true),
+				YMax:        chartMax(c.Points),
 				Data: chart.Data{
 					Labels: c.Labels,
 					Datasets: []chart.Dataset{{
-						Label:           c.Label,
-						Data:            c.Points,
-						BorderColor:     c.Color,
-						BackgroundColor: chartFill(c.Color),
-						BorderWidth:     2,
-						Tension:         0.3,
-						Fill:            true,
+						Label:       c.Label,
+						Data:        c.Points,
+						BorderColor: c.Color,
+						BorderWidth: 2,
+						Tension:     0.3,
 					}},
 				},
 			})
@@ -246,11 +252,6 @@ func peakClass(peak string) string {
 	return ""
 }
 
-// chartFill is the 15%-alpha area fill for a literal oklch line color.
-func chartFill(color string) string {
-	return strings.TrimSuffix(color, ")") + " / 0.15)"
-}
-
 // statusPollScript applies the /admin/status/data payload in place: KPI tile
 // text, chart headers, and chart datasets via Chart.js update('none') — no
 // DOM swaps, no re-render blink.
@@ -264,6 +265,55 @@ templ statusPollScript() {
 				var el = document.getElementById(id);
 				if (el) el.textContent = v;
 			}
+			// niceMax mirrors views.chartMax: the next 1/2/5×10ⁿ above the peak.
+			function niceMax(vals) {
+				var m = 0;
+				for (var i = 0; i < vals.length; i++) {
+					if (vals[i] > m) m = vals[i];
+				}
+				if (m <= 0) return 1;
+				var e = Math.pow(10, Math.floor(Math.log10(m)));
+				var steps = [1, 2, 5, 10];
+				for (var j = 0; j < steps.length; j++) {
+					if (m <= steps[j] * e) return steps[j] * e;
+				}
+				return 10 * e;
+			}
+			// scaleOpts reaches a chart's own config, never inst.options: that is a
+			// resolver proxy, and assigning an object into it writes the proxy back
+			// through itself until the stack runs out.
+			function scaleOpts(inst, axis) {
+				var o = inst.config.options || (inst.config.options = {});
+				o.scales = o.scales || {};
+				o.scales[axis] = o.scales[axis] || {};
+				return o.scales[axis];
+			}
+			// Time labels lie flat and Chart.js drops whatever will not fit, rather
+			// than raking every timestamp at 45 degrees. templui exposes no tick
+			// options, so this is done on the live instances.
+			function tuneAxes() {
+				if (!window.Chart) return;
+				document.querySelectorAll('canvas[data-tui-chart-id]').forEach(function (cv) {
+					var inst = Chart.getChart(cv.id);
+					if (!inst) return;
+					var x = scaleOpts(inst, 'x');
+					if (x.ticks && x.ticks.maxRotation === 0) return;
+					x.ticks = Object.assign({}, x.ticks, {
+						maxRotation: 0,
+						minRotation: 0,
+						autoSkipPadding: 16,
+					});
+					inst.update('none');
+				});
+			}
+			// templui builds its charts on its own listener, so there is no single
+			// moment to hook: try for a couple of seconds and stop once every
+			// instance is tuned (tuneAxes is a no-op on one it has already done).
+			var tuneTries = 0;
+			var tuneTimer = setInterval(function () {
+				tuneAxes();
+				if (++tuneTries > 12) clearInterval(tuneTimer);
+			}, 250);
 			function fmtLabel(ms, longSpan) {
 				var t = new Date(ms);
 				var hm =
@@ -310,11 +360,15 @@ templ statusPollScript() {
 					inst.data.labels = c.points.map(function (p) {
 						return fmtLabel(p[0], longSpan);
 					});
-					inst.data.datasets[0].data = c.points.map(function (p) {
+					var vals = c.points.map(function (p) {
 						return p[1];
 					});
+					inst.data.datasets[0].data = vals;
+					// Same ceiling rule as the server render — see chartMax.
+					scaleOpts(inst, 'y').max = niceMax(vals);
 					inst.update('none');
 				});
+				tuneAxes();
 			}
 			setInterval(function () {
 				fetch(cfg.url, { headers: { Accept: 'application/json' } })

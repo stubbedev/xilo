@@ -186,6 +186,7 @@ var es = map[string]string{
 	// account
 	"acct.subtitle":   "Sesión iniciada como %s.",
 	"acct.email":      "Correo",
+	"acct.signin":     "Inicio de sesión",
 	"acct.emailhint":  "Para notificaciones e inicio de sesión.",
 	"acct.appearance": "Apariencia",
 	"acct.palette":    "Paleta",
@@ -328,8 +329,8 @@ var es = map[string]string{
 	"set.pw.strong":   "Contraseña robusta.",
 	"set.2fa":         "Autenticación de doble factor",
 	"set.2fa.on":      "activada",
+	"set.2fa.off":     "desactivado",
 	"set.2fa.disable": "Desactivar",
-	"set.2fa.hint":    "Un código temporal de una aplicación de autenticación.",
 	"set.2fa.enable":  "Activar",
 	"set.enroll":      "Configurar el doble factor",
 
@@ -477,9 +478,9 @@ var es = map[string]string{
 	"path.refshint":       "Las enlazadas están en esta caché.",
 	"path.chunkshint":     "Orden NAR. Los chunks compartidos se guardan una vez.",
 	"caches.privatehint":  "Exigir un token para descargar.",
+	"caches.private":      "Privada",
 	"caches.priorityhint": "Gana el número más bajo (1–100).",
 	"tokens.roothint":     "Gestiona todas las cachés, tokens y cuentas.",
-	"set.2fa.protect":     "Añade un segundo factor.",
 	"set.2fa.offmsg":      "Después, solo la contraseña.",
 	"set.password":        "Tu contraseña de inicio de sesión.",
 	"org.subtitle":        "Comparte cachés con un equipo.",
@@ -489,7 +490,6 @@ var es = map[string]string{
 	"reg.err.username":    "Solo minúsculas, dígitos, - y _.",
 	"reg.err.orgname":     "Solo minúsculas, dígitos, - y _.",
 	"login.codesub":       "De tu aplicación de autenticación.",
-	"set.passkeys.hint":   "Llave física, Touch ID o Windows Hello.",
 	"cd.pushtoken":        "Token de subida",
 	"cd.pulltoken":        "Token de descarga",
 }

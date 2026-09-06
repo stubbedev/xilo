@@ -147,6 +147,9 @@ templ appSidebar(section string, nav Nav) {
 		@sidebar.Content() {
 			if len(nav.Contexts) > 1 {
 				@sidebar.Group() {
+					@sidebar.GroupLabel() {
+						{ T(ctx, "nav.context") }
+					}
 					@contextSwitcher(nav)
 				}
 			}

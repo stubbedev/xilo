@@ -186,6 +186,7 @@ var de = map[string]string{
 	// account
 	"acct.subtitle":   "Angemeldet als %s.",
 	"acct.email":      "E-Mail",
+	"acct.signin":     "Anmeldung",
 	"acct.emailhint":  "Für Benachrichtigungen und die Anmeldung.",
 	"acct.appearance": "Darstellung",
 	"acct.palette":    "Farbpalette",
@@ -328,8 +329,8 @@ var de = map[string]string{
 	"set.pw.strong":   "Starkes Passwort.",
 	"set.2fa":         "Zwei-Faktor-Authentifizierung",
 	"set.2fa.on":      "aktiviert",
+	"set.2fa.off":     "deaktiviert",
 	"set.2fa.disable": "Deaktivieren",
-	"set.2fa.hint":    "Ein zeitbasierter Code aus einer Authenticator-App.",
 	"set.2fa.enable":  "Aktivieren",
 	"set.enroll":      "Zwei-Faktor einrichten",
 
@@ -477,9 +478,9 @@ var de = map[string]string{
 	"path.refshint":       "Verlinkte liegen in diesem Cache.",
 	"path.chunkshint":     "NAR-Reihenfolge. Geteilte Chunks nur einmal gespeichert.",
 	"caches.privatehint":  "Token zum Herunterladen verlangen.",
+	"caches.private":      "Privat",
 	"caches.priorityhint": "Kleiner gewinnt (1–100).",
 	"tokens.roothint":     "Verwaltet jeden Cache, jedes Token und jedes Konto.",
-	"set.2fa.protect":     "Zweiten Faktor hinzufügen.",
 	"set.2fa.offmsg":      "Danach nur noch das Passwort.",
 	"set.password":        "Ihr Anmeldepasswort.",
 	"org.subtitle":        "Caches im Team teilen.",
@@ -489,7 +490,6 @@ var de = map[string]string{
 	"reg.err.username":    "Nur Kleinbuchstaben, Ziffern, - und _.",
 	"reg.err.orgname":     "Nur Kleinbuchstaben, Ziffern, - und _.",
 	"login.codesub":       "Aus Ihrer Authenticator-App.",
-	"set.passkeys.hint":   "Sicherheitsschlüssel, Touch ID oder Windows Hello.",
 	"cd.pushtoken":        "Upload-Token",
 	"cd.pulltoken":        "Download-Token",
 }

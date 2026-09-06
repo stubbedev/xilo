@@ -186,6 +186,7 @@ var ja = map[string]string{
 	// account
 	"acct.subtitle":   "%s としてサインイン中。",
 	"acct.email":      "メールアドレス",
+	"acct.signin":     "サインイン",
 	"acct.emailhint":  "通知とサインインに使います。",
 	"acct.appearance": "外観",
 	"acct.palette":    "配色",
@@ -328,8 +329,8 @@ var ja = map[string]string{
 	"set.pw.strong":   "強いパスワードです。",
 	"set.2fa":         "二要素認証",
 	"set.2fa.on":      "有効",
+	"set.2fa.off":     "無効",
 	"set.2fa.disable": "無効にする",
-	"set.2fa.hint":    "認証アプリが生成する時刻ベースのコードです。",
 	"set.2fa.enable":  "有効にする",
 	"set.enroll":      "二要素認証を設定",
 
@@ -477,9 +478,9 @@ var ja = map[string]string{
 	"path.refshint":       "リンクされているものはこのキャッシュにあります。",
 	"path.chunkshint":     "NAR 順。共有チャンクは一度だけ保存。",
 	"caches.privatehint":  "ダウンロードにトークンを必須にする。",
+	"caches.private":      "非公開",
 	"caches.priorityhint": "小さいほど優先 (1–100)。",
 	"tokens.roothint":     "すべてのキャッシュ・トークン・アカウントを管理します。",
-	"set.2fa.protect":     "第二の要素を追加。",
 	"set.2fa.offmsg":      "以後はパスワードのみ。",
 	"set.password":        "サインイン用のパスワード。",
 	"org.subtitle":        "チームでキャッシュを共有。",
@@ -489,7 +490,6 @@ var ja = map[string]string{
 	"reg.err.username":    "英小文字、数字、- と _ のみ。",
 	"reg.err.orgname":     "英小文字、数字、- と _ のみ。",
 	"login.codesub":       "認証アプリのコードです。",
-	"set.passkeys.hint":   "ハードウェアキー、Touch ID、Windows Hello。",
 	"cd.pushtoken":        "アップロード用トークン",
 	"cd.pulltoken":        "ダウンロード用トークン",
 }

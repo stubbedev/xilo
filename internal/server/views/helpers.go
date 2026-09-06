@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -547,4 +548,46 @@ func canDeleteOrg(d OrgsData, info OrgInfo) bool {
 		}
 	}
 	return false
+}
+
+// orDash is a value or an em dash: a settings row with nothing set says so in
+// the value column rather than leaving a hole.
+func orDash(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
+}
+
+// totpState is the word a two-factor row shows: enabled or disabled.
+func totpState(ctx context.Context, on bool) string {
+	if on {
+		return T(ctx, "set.2fa.on")
+	}
+	return T(ctx, "set.2fa.off")
+}
+
+// chartMax is the ceiling a status series is drawn against: the next
+// 1/2/5×10ⁿ above its peak. Round ceilings put ticks on round numbers (an
+// all-zero series stopped being labelled 0.2, 0.4, 0.6…), and a ceiling that
+// only moves between magnitudes keeps the axis still while the poller feeds
+// new points in under the line.
+func chartMax(points []float64) *float64 {
+	m := 0.0
+	for _, v := range points {
+		m = max(m, v)
+	}
+	if m <= 0 {
+		one := 1.0
+		return &one
+	}
+	e := math.Pow(10, math.Floor(math.Log10(m)))
+	for _, f := range []float64{1, 2, 5} {
+		if m <= f*e {
+			v := f * e
+			return &v
+		}
+	}
+	v := 10 * e
+	return &v
 }

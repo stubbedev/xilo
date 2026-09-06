@@ -950,7 +950,7 @@ func (s *Server) handleTOTPEnroll(w http.ResponseWriter, r *http.Request) {
 		uiError(w, r, err)
 		return
 	}
-	views.TOTPEnroll(s.nav(r, u), qr, secretB32(secret)).Render(r.Context(), w)
+	views.TOTPEnrollBody(qr, secretB32(secret), "").Render(r.Context(), w)
 }
 
 func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
@@ -962,7 +962,7 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 	if len(secret) == 0 || !totpVerify(secret, r.FormValue("code"), time.Now()) {
 		uri := totpURI(secret, "xilo", u.Name+"@"+hostOf(s.cfg.BaseURL))
 		qr, _ := totpQRDataURI(uri)
-		views.TOTPEnrollErr(s.nav(r, u), qr, secretB32(secret), views.T(r.Context(), "flash.badcode")).Render(r.Context(), w)
+		views.TOTPEnrollBody(qr, secretB32(secret), views.T(r.Context(), "flash.badcode")).Render(r.Context(), w)
 		return
 	}
 	if err := s.db.SetUserTOTPEnabled(u.ID, true); err != nil {
@@ -1827,6 +1827,10 @@ func (s *Server) flashRedirectCode(w http.ResponseWriter, r *http.Request, path,
 		Name: flashCookie, Value: v, Path: "/admin",
 		MaxAge: 60, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.secureCookies(),
 	})
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Redirect", path)
+		return
+	}
 	http.Redirect(w, r, path, http.StatusSeeOther)
 }
 

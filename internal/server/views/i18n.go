@@ -290,6 +290,7 @@ var en = map[string]string{
 	"org.subtitle":         "Share caches with a team.",
 	"acct.subtitle":        "Signed in as %s.",
 	"acct.email":           "Email",
+	"acct.signin":          "Sign-in",
 	"acct.emailaddr":       "Email address",
 	"acct.emailhint":       "For notifications and sign-in.",
 	"acct.appearance":      "Appearance",
@@ -354,6 +355,7 @@ var en = map[string]string{
 	"caches.priority":     "Priority",
 	"caches.priorityhint": "Lower wins (1–100).",
 	"caches.privatehint":  "Require a token to pull.",
+	"caches.private":      "Private",
 
 	// tokens
 	"tokens.title":     "Tokens",
@@ -458,10 +460,9 @@ var en = map[string]string{
 	"set.pw.strong":   "Strong password.",
 	"set.2fa":         "Two-factor authentication",
 	"set.2fa.on":      "enabled",
+	"set.2fa.off":     "disabled",
 	"set.2fa.disable": "Disable",
 	"set.2fa.offmsg":  "Password only from then on.",
-	"set.2fa.hint":    "A time-based code from an authenticator app.",
-	"set.2fa.protect": "Add a second factor.",
 	"set.2fa.enable":  "Enable",
 	"set.enroll":      "Set up two-factor",
 	"set.enrollhint":  "Scan it, then enter a code to confirm.",
@@ -550,10 +551,9 @@ var en = map[string]string{
 	"pager.next": "Next",
 
 	// passkeys
-	"set.passkeys":      "Passkeys",
-	"set.passkeys.hint": "A hardware key, Touch ID, or Windows Hello.",
-	"pk.removetitle":    "Remove passkey?",
-	"pk.removemsg":      "“%s” will no longer be able to sign in.",
+	"set.passkeys":   "Passkeys",
+	"pk.removetitle": "Remove passkey?",
+	"pk.removemsg":   "“%s” will no longer be able to sign in.",
 
 	// confirmations
 	"confirm.rotate": "The old key stops verifying immediately. Update trusted-public-keys everywhere.",
