@@ -216,7 +216,7 @@ templ contextSwitcher(nav Nav) {
 			@selectbox.Trigger(selectbox.TriggerProps{Name: "ctx", Attributes: templ.Attributes{"aria-label": T(ctx, "nav.context")}}) {
 				@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "nav.allaccounts")})
 			}
-			@selectbox.Content() {
+			@selectbox.Content(selectbox.ContentProps{NoSearch: noSearch(len(nav.Contexts) + 1)}) {
 				@selectbox.Item(selectbox.ItemProps{Value: "", Selected: nav.Active == ""}) {
 					{ T(ctx, "nav.allaccounts") }
 				}

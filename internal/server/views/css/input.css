@@ -712,6 +712,11 @@ input[type="radio"]:not(:disabled) { cursor: pointer; }
 /* Every select here is a required choice (unit, account, scope, palette); the
    clear-selection x would only ever produce an invalid form. */
 [data-tui-selectbox-clear-trigger] { display: none; }
+/* ...and with the x gone, the chevron has to stay. templui swaps one for the
+   other the moment a value is picked, so a select with something in it lost
+   the only mark that said it opens anything and read as a filled-in text box.
+   The chevron is the affordance; it is never traded away. */
+[data-tui-selectbox-chevron] { display: block; }
 /* Selectbox options: a hair of space between rows, and "selected" reads
    differently from "hovered" (primary tint vs accent). */
 .select-content .select-item + .select-item { margin-top: 2px; }

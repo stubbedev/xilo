@@ -61,7 +61,7 @@ templ AccountSelect(name, value, placeholder string, accounts []store.Account) {
 		@selectbox.Trigger(selectbox.TriggerProps{Name: name}) {
 			@selectbox.Value(selectbox.ValueProps{Placeholder: placeholder})
 		}
-		@selectbox.Content() {
+		@selectbox.Content(selectbox.ContentProps{NoSearch: noSearch(len(accounts))}) {
 			for _, a := range accounts {
 				@selectbox.Item(selectbox.ItemProps{Value: a.Slug, Selected: a.Slug == value}) {
 					{ a.Slug }
@@ -77,7 +77,7 @@ templ ScopeSelect(name, value string, caches []CacheUsage) {
 		@selectbox.Trigger(selectbox.TriggerProps{Name: name}) {
 			@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "tokens.pickcache")})
 		}
-		@selectbox.Content() {
+		@selectbox.Content(selectbox.ContentProps{NoSearch: noSearch(len(caches))}) {
 			for _, u := range caches {
 				@selectbox.Item(selectbox.ItemProps{Value: u.Cache.Ref(), Selected: u.Cache.Ref() == value}) {
 					{ u.Cache.Ref() }
@@ -93,7 +93,7 @@ templ StorageSelect(name, value string, storages []string) {
 		@selectbox.Trigger(selectbox.TriggerProps{Name: name}) {
 			@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "storage.default")})
 		}
-		@selectbox.Content() {
+		@selectbox.Content(selectbox.ContentProps{NoSearch: noSearch(len(storages))}) {
 			for _, s := range storages {
 				@selectbox.Item(selectbox.ItemProps{Value: s, Selected: s == value}) {
 					{ s }
@@ -122,7 +122,7 @@ templ TTLSelect(t *store.Token) {
 		@selectbox.Trigger(selectbox.TriggerProps{Name: "ttl"}) {
 			@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "ttl.keep")})
 		}
-		@selectbox.Content() {
+		@selectbox.Content(selectbox.ContentProps{NoSearch: noSearch(len(ttlPresets))}) {
 			for _, p := range ttlPresets {
 				@selectbox.Item(selectbox.ItemProps{Value: strconv.FormatInt(p.Secs, 10), Selected: t == nil && p.Secs == 30*86400}) {
 					{ T(ctx, p.Label) }
@@ -145,7 +145,7 @@ templ DurationInput(name string, secs int64) {
 				@selectbox.Trigger(selectbox.TriggerProps{Name: name + "_unit"}) {
 					@selectbox.Value(selectbox.ValueProps{})
 				}
-				@selectbox.Content() {
+				@selectbox.Content(selectbox.ContentProps{NoSearch: true}) {
 					@unitItem(name, "h", T(ctx, "unit.hours"), secs)
 					@unitItem(name, "d", T(ctx, "unit.days"), secs)
 					@unitItem(name, "mo", T(ctx, "unit.months"), secs)
@@ -175,7 +175,7 @@ templ SizeInput(name string, bytes int64) {
 				@selectbox.Trigger(selectbox.TriggerProps{Name: name + "_unit"}) {
 					@selectbox.Value(selectbox.ValueProps{})
 				}
-				@selectbox.Content() {
+				@selectbox.Content(selectbox.ContentProps{NoSearch: true}) {
 					@sizeUnitItem(name, "MiB", T(ctx, "unit.mib"), bytes)
 					@sizeUnitItem(name, "GiB", T(ctx, "unit.gib"), bytes)
 					@sizeUnitItem(name, "TiB", T(ctx, "unit.tib"), bytes)

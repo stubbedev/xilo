@@ -109,7 +109,7 @@ templ Account(d AccountData) {
 								@selectbox.Trigger(selectbox.TriggerProps{Name: "theme", Attributes: templ.Attributes{"aria-label": T(ctx, "acct.palette")}}) {
 									@selectbox.Value(selectbox.ValueProps{})
 								}
-								@selectbox.Content() {
+								@selectbox.Content(selectbox.ContentProps{NoSearch: noSearch(len(Palettes))}) {
 									for _, p := range Palettes {
 										@selectbox.Item(selectbox.ItemProps{Value: p.ID, Selected: p.ID == d.User.Theme}) {
 											{ p.Name }
@@ -125,7 +125,7 @@ templ Account(d AccountData) {
 								@selectbox.Trigger(selectbox.TriggerProps{Name: "locale", Attributes: templ.Attributes{"aria-label": T(ctx, "acct.language")}}) {
 									@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "acct.langauto")})
 								}
-								@selectbox.Content() {
+								@selectbox.Content(selectbox.ContentProps{NoSearch: noSearch(len(Locales) + 1)}) {
 									@selectbox.Item(selectbox.ItemProps{Value: "", Selected: d.User.Locale == ""}) {
 										{ T(ctx, "acct.langauto") }
 									}

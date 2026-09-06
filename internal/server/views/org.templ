@@ -123,7 +123,7 @@ templ addMemberDialog(d OrgPageData) {
 							@selectbox.Trigger(selectbox.TriggerProps{Name: "user_id"}) {
 								@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "org.pickuser")})
 							}
-							@selectbox.Content() {
+							@selectbox.Content(selectbox.ContentProps{NoSearch: noSearch(len(d.AllUsers))}) {
 								for _, cand := range d.AllUsers {
 									@selectbox.Item(selectbox.ItemProps{Value: strconv.FormatInt(cand.ID, 10)}) {
 										{ cand.Name }
@@ -148,7 +148,7 @@ templ roleSelect(name, value string) {
 		@selectbox.Trigger(selectbox.TriggerProps{Name: name}) {
 			@selectbox.Value(selectbox.ValueProps{})
 		}
-		@selectbox.Content() {
+		@selectbox.Content(selectbox.ContentProps{NoSearch: true}) {
 			@selectbox.Item(selectbox.ItemProps{Value: "user", Selected: value == "user"}) {
 				{ T(ctx, "role.user") }
 			}

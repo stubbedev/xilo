@@ -591,3 +591,12 @@ func chartMax(points []float64) *float64 {
 	v := 10 * e
 	return &v
 }
+
+// searchThreshold is the shortest list worth a search box inside a selectbox.
+// A list you can take in at a glance is faster to point at than to type into,
+// and the box costs a row of the popover, a focus stop and a keystroke of
+// doubt about whether typing filters or types into the field.
+const searchThreshold = 4
+
+// noSearch answers selectbox.ContentProps.NoSearch for a list of n options.
+func noSearch(n int) bool { return n <= searchThreshold }
