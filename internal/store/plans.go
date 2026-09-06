@@ -57,6 +57,9 @@ func (db *DB) UpdatePlan(p *Plan) error {
 	})
 }
 
+// ErrPlanInUse blocks deleting a plan an account still references.
+var ErrPlanInUse = errors.New("plan is in use by accounts")
+
 // DeletePlan refuses while any account still uses the plan.
 func (db *DB) DeletePlan(id int64) error {
 	return db.write(func(tx *sql.Tx) error {
@@ -65,7 +68,7 @@ func (db *DB) DeletePlan(id int64) error {
 			return err
 		}
 		if n > 0 {
-			return errors.New("plan is in use by accounts")
+			return ErrPlanInUse
 		}
 		_, err := tx.Exec(`DELETE FROM plans WHERE id=?`, id)
 		return err

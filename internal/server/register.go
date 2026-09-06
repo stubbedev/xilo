@@ -1,8 +1,8 @@
 package server
 
 import (
+	"context"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	netmail "net/mail"
@@ -59,7 +59,7 @@ func (s *Server) handleRegisterForm(w http.ResponseWriter, r *http.Request) {
 	}
 	plans, err := s.db.PublicPlans()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	views.Register(plans, views.Flash{}).Render(r.Context(), w)
@@ -73,12 +73,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// Registrations share the login limiter bucket: same bcrypt cost, same
 	// abuse profile.
 	if !s.logins.allow(s.clientIP(r)) {
-		http.Error(w, "too many attempts — wait a moment", http.StatusTooManyRequests)
+		uiFail(w, r, http.StatusTooManyRequests, views.T(r.Context(), "err.throttled"), nil)
 		return
 	}
 	plans, err := s.db.PublicPlans()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	fail := func(msg string) {
@@ -89,7 +89,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	email := strings.TrimSpace(r.FormValue("email"))
 	password := r.FormValue("password")
 	if !store.ValidSlug(username) {
-		fail(views.T("reg.err.username"))
+		fail(views.T(r.Context(), "reg.err.username"))
 		return
 	}
 	// Multi-tenant registration always requires a valid, verifiable email —
@@ -99,11 +99,11 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(password) < 8 {
-		fail(views.T("flash.pwshort"))
+		fail(views.T(r.Context(), "flash.pwshort"))
 		return
 	}
 	if len(password) > 72 {
-		fail(views.T("flash.pwlong"))
+		fail(views.T(r.Context(), "flash.pwlong"))
 		return
 	}
 
@@ -111,34 +111,34 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if pid, _ := strconv.ParseInt(r.FormValue("plan"), 10, 64); pid != 0 {
 		p, err := s.db.GetPlan(pid)
 		if err != nil || !p.Public {
-			fail(views.T("reg.err.plan"))
+			fail(views.T(r.Context(), "reg.err.plan"))
 			return
 		}
 		plan = p
 	} else if len(plans) > 0 {
-		fail(views.T("reg.err.plan"))
+		fail(views.T(r.Context(), "reg.err.plan"))
 		return
 	}
 
 	orgName := strings.TrimSpace(r.FormValue("org"))
 	if orgName != "" {
 		if plan == nil || !plan.OrgsAllowed {
-			fail(views.T("reg.err.noorgs"))
+			fail(views.T(r.Context(), "reg.err.noorgs"))
 			return
 		}
 		if !store.ValidSlug(orgName) {
-			fail(views.T("reg.err.orgname"))
+			fail(views.T(r.Context(), "reg.err.orgname"))
 			return
 		}
 		if _, err := s.db.GetAccount(orgName); err == nil {
-			fail(views.T("flash.nametaken"))
+			fail(views.T(r.Context(), "flash.nametaken"))
 			return
 		}
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	var u *store.User
@@ -148,7 +148,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		u, err = s.db.CreateUser(username, email, string(hash), "user")
 	}
 	if errors.Is(err, store.ErrNameTaken) {
-		fail(views.T("flash.nametaken"))
+		fail(views.T(r.Context(), "flash.nametaken"))
 		return
 	}
 	if err != nil {
@@ -156,7 +156,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		// raw driver error would confirm the email is registered (account
 		// enumeration) and leak schema/engine strings to an anonymous client.
 		log.Printf("register %q: %v", username, err)
-		fail(views.T("reg.err.failed"))
+		fail(views.T(r.Context(), "reg.err.failed"))
 		return
 	}
 	// Plan lands on the personal account (and the org, if any).
@@ -173,16 +173,18 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if u.Status == "pending" {
-		s.mailUser(u, "Registration received",
-			"Your account "+u.Name+" on "+s.cfg.BaseURL+" was created and is awaiting administrator approval. You will get another email once it is approved.")
-		s.mailAdmins("New registration awaiting approval",
-			"User "+u.Name+" registered on "+s.cfg.BaseURL+" and awaits approval in Settings.")
+		s.mailUser(u, views.T(r.Context(), "mail.pendingsub"),
+			views.Tf(r.Context(), "mail.pendingbody", u.Name, s.cfg.BaseURL))
+		s.mailAdmins(func(ctx context.Context) (string, string) {
+			return views.T(ctx, "mail.adminsub"),
+				views.Tf(ctx, "mail.adminbody", u.Name, s.cfg.BaseURL)
+		})
 		views.Login(false, s.hasPasskeys(), s.registrationOpen(),
-			views.Flash{Msg: views.T("flash.regpending"), OK: true}).Render(r.Context(), w)
+			views.Flash{Msg: views.T(r.Context(), "flash.regpending"), OK: true}).Render(r.Context(), w)
 		return
 	}
-	s.mailUser(u, "Welcome to "+s.cfg.BaseURL,
-		"Your account "+u.Name+" is active. Sign in at "+s.cfg.BaseURL+"/admin.")
+	s.mailUser(u, views.Tf(r.Context(), "mail.welcomesub", s.cfg.BaseURL),
+		views.Tf(r.Context(), "mail.welcomebody", u.Name, s.cfg.BaseURL))
 	s.grantSession(w, r, u.ID)
 }
 
@@ -197,11 +199,11 @@ func (s *Server) handleInstanceSettings(w http.ResponseWriter, r *http.Request) 
 			v = "1"
 		}
 		if err := s.db.SetSetting(key, v); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			uiError(w, r, err)
 			return
 		}
 	}
-	s.instanceFlash(w, r, views.T("flash.settingssaved"))
+	s.instanceFlash(w, r, views.T(r.Context(), "flash.settingssaved"))
 }
 
 // planFromForm reads the shared plan form fields.
@@ -232,14 +234,14 @@ func (s *Server) handleCreatePlan(w http.ResponseWriter, r *http.Request) {
 	}
 	p := planFromForm(r)
 	if p.Name == "" {
-		s.instanceFlash(w, r, views.T("flash.plannamereq"))
+		s.instanceFlash(w, r, views.T(r.Context(), "flash.plannamereq"))
 		return
 	}
 	if _, err := s.db.CreatePlan(&p); err != nil {
-		s.instanceFlash(w, r, views.T("flash.planfailed")+" "+err.Error())
+		s.flashStore(w, r, "/admin/settings", err)
 		return
 	}
-	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.plancreated"), p.Name))
+	s.instanceFlash(w, r, views.Tf(r.Context(), "flash.plancreated", p.Name))
 }
 
 func (s *Server) handleEditPlan(w http.ResponseWriter, r *http.Request) {
@@ -253,7 +255,7 @@ func (s *Server) handleEditPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	p := planFromForm(r)
@@ -262,10 +264,10 @@ func (s *Server) handleEditPlan(w http.ResponseWriter, r *http.Request) {
 		p.Name = cur.Name
 	}
 	if err := s.db.UpdatePlan(&p); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
-	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.planupdated"), p.Name))
+	s.instanceFlash(w, r, views.Tf(r.Context(), "flash.planupdated", p.Name))
 }
 
 func (s *Server) handleDeletePlan(w http.ResponseWriter, r *http.Request) {
@@ -274,10 +276,10 @@ func (s *Server) handleDeletePlan(w http.ResponseWriter, r *http.Request) {
 	}
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err := s.db.DeletePlan(id); err != nil {
-		s.instanceFlash(w, r, views.T("flash.deletefailed")+" "+err.Error())
+		s.flashStore(w, r, "/admin/settings", err)
 		return
 	}
-	s.instanceFlash(w, r, views.T("flash.plandeleted"))
+	s.instanceFlash(w, r, views.T(r.Context(), "flash.plandeleted"))
 }
 
 func (s *Server) handleApproveUser(w http.ResponseWriter, r *http.Request) {
@@ -289,12 +291,13 @@ func (s *Server) handleApproveUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.SetUserStatus(u.ID, "active"); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
-	s.mailUser(u, "Your account was approved",
-		"Your account "+u.Name+" on "+s.cfg.BaseURL+" is approved — sign in at "+s.cfg.BaseURL+"/admin.")
-	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.userapproved"), u.Name))
+	mctx := mailCtx(u)
+	s.mailUser(u, views.T(mctx, "mail.approvedsub"),
+		views.Tf(mctx, "mail.approvedbody", u.Name, s.cfg.BaseURL, s.cfg.BaseURL))
+	s.instanceFlash(w, r, views.Tf(r.Context(), "flash.userapproved", u.Name))
 }
 
 // userCanCreateOrg: instance admins always; otherwise the personal account's
@@ -329,25 +332,25 @@ func (s *Server) handleUserCreateOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.userCanCreateOrg(u) {
-		http.Error(w, "your plan does not include organizations", http.StatusForbidden)
+		uiFail(w, r, http.StatusForbidden, views.T(r.Context(), "err.noorgs"), nil)
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	if !store.ValidSlug(name) {
-		s.accountFlash(w, r, views.T("flash.badorgname"))
+		s.accountFlash(w, r, views.T(r.Context(), "flash.badorgname"))
 		return
 	}
 	if _, err := s.db.GetAccount(name); err == nil {
-		s.accountFlash(w, r, views.T("flash.nametaken"))
+		s.accountFlash(w, r, views.T(r.Context(), "flash.nametaken"))
 		return
 	}
 	org, err := s.db.EnsureAccount(name, "org")
 	if errors.Is(err, store.ErrSlugReserved) {
-		s.accountFlash(w, r, views.T("flash.nametaken"))
+		s.accountFlash(w, r, views.T(r.Context(), "flash.nametaken"))
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	if u.Role != "owner" {
@@ -356,17 +359,17 @@ func (s *Server) handleUserCreateOrg(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := s.db.MakeOwner(org.ID, u.ID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
-	s.accountFlash(w, r, fmt.Sprintf(views.T("flash.orgcreated"), name))
+	s.accountFlash(w, r, views.Tf(r.Context(), "flash.orgcreated", name))
 }
 
 // ---- plan limit enforcement (create-time checks) ----
 
 // checkCacheQuota returns an error when the account's plan caps caches and
 // the cap is reached.
-func (s *Server) checkCacheQuota(acc *store.Account) error {
+func (s *Server) checkCacheQuota(ctx context.Context, acc *store.Account) error {
 	plan, err := s.db.AccountPlan(acc)
 	if err != nil || plan == nil || plan.MaxCaches == 0 {
 		return err
@@ -376,7 +379,7 @@ func (s *Server) checkCacheQuota(acc *store.Account) error {
 		return err
 	}
 	if int64(len(caches)) >= plan.MaxCaches {
-		return fmt.Errorf("plan %q allows at most %d caches", plan.Name, plan.MaxCaches)
+		return errors.New(views.Tf(ctx, "quota.caches", plan.Name, plan.MaxCaches))
 	}
 	return nil
 }
@@ -384,7 +387,7 @@ func (s *Server) checkCacheQuota(acc *store.Account) error {
 // checkStorageQuota rejects pushes once an account's plan storage cap is
 // reached. Logical bytes (summed NarSize) are the quota currency; pulls keep
 // working — over-quota accounts go read-only, data is never auto-deleted.
-func (s *Server) checkStorageQuota(c *store.Cache) error {
+func (s *Server) checkStorageQuota(ctx context.Context, c *store.Cache) error {
 	acc, err := s.db.GetAccountByID(c.AccountID)
 	if err != nil {
 		return nil // account lookup failing must not block pushes
@@ -398,13 +401,13 @@ func (s *Server) checkStorageQuota(c *store.Cache) error {
 		return nil
 	}
 	if used >= plan.MaxStorage {
-		return fmt.Errorf("storage quota exceeded (plan %q, %d of %d bytes) — account is read-only for pushes", plan.Name, used, plan.MaxStorage)
+		return errors.New(views.Tf(ctx, "quota.storage", humanBytes(used), humanBytes(plan.MaxStorage), plan.Name))
 	}
 	return nil
 }
 
 // checkMemberQuota is the same gate for org membership.
-func (s *Server) checkMemberQuota(acc *store.Account) error {
+func (s *Server) checkMemberQuota(ctx context.Context, acc *store.Account) error {
 	plan, err := s.db.AccountPlan(acc)
 	if err != nil || plan == nil || plan.MaxMembers == 0 {
 		return err
@@ -414,7 +417,7 @@ func (s *Server) checkMemberQuota(acc *store.Account) error {
 		return err
 	}
 	if int64(len(members)) >= plan.MaxMembers {
-		return fmt.Errorf("plan %q allows at most %d members", plan.Name, plan.MaxMembers)
+		return errors.New(views.Tf(ctx, "quota.members", plan.Name, plan.MaxMembers))
 	}
 	return nil
 }

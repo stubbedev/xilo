@@ -80,38 +80,38 @@ var statusWindows = []struct {
 }{{10, "10m"}, {30, "30m"}, {60, "1h"}, {180, "3h"}, {720, "12h"}, {1440, "24h"}, {10080, "7d"}, {43200, "30d"}}
 
 templ StatusPage(d StatusData) {
-	@Layout(T("status.title"), "status", d.Nav, Flash{}) {
-		@PageHeader(T("status.title"), T("status.subtitle")) {
+	@Layout(T(ctx, "status.title"), "status", d.Nav, Flash{}) {
+		@PageHeader(T(ctx, "status.title"), T(ctx, "status.subtitle")) {
 			@statusSettings(d)
 		}
 		<div class="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4 xl:grid-cols-6">
 			if d.Healthy {
-				@StatTile("activity", T("status.ok"), T("status.health"), "st-health", "text-success")
+				@StatTile("activity", T(ctx, "status.ok"), T(ctx, "status.health"), "st-health", "text-success")
 			} else {
-				@StatTile("activity", T("status.err"), T("status.health"), "st-health", "text-destructive")
+				@StatTile("activity", T(ctx, "status.err"), T(ctx, "status.health"), "st-health", "text-destructive")
 			}
-			@StatTile("clock", d.Uptime, T("status.uptime"), "st-uptime", "")
-			@StatTile("target", d.HitPct, T("status.hits"), "st-hit", "")
-			@StatTile("hard-drive", d.Bytes(d.Global.StoredBytes), T("status.stored"), "st-stored", "")
-			@StatTile("package", Count(d.Global.Paths), T("kpi.paths"), "st-paths", "")
-			@StatTile("download", Count(d.NarServed), T("status.nars"), "st-nars", "")
-			@StatTile("network", Count(d.Requests), T("status.reqs"), "st-req", "")
-			@StatTile("shield", Count(d.AuthFails), T("status.authfail"), "st-auth", "")
-			@StatTile("upload", Count(d.PathsPushed), T("status.pushed"), "st-pushed", "")
-			@StatTile("copy", Count(d.PathsAdopted), T("status.adopted"), "st-adopted", "")
-			@StatTile("boxes", Count(d.ChunksRecv), T("status.chunks"), "st-chunks", "")
-			@StatTile("layers", Count(d.ChunksDedup), T("status.deduped"), "st-dedup", "")
+			@StatTile("clock", d.Uptime, T(ctx, "status.uptime"), "st-uptime", "")
+			@StatTile("target", d.HitPct, T(ctx, "status.hits"), "st-hit", "")
+			@StatTile("hard-drive", d.Bytes(d.Global.StoredBytes), T(ctx, "status.stored"), "st-stored", "")
+			@StatTile("package", Count(d.Global.Paths), T(ctx, "kpi.paths"), "st-paths", "")
+			@StatTile("download", Count(d.NarServed), T(ctx, "status.nars"), "st-nars", "")
+			@StatTile("network", Count(d.Requests), T(ctx, "status.reqs"), "st-req", "")
+			@StatTile("shield", Count(d.AuthFails), T(ctx, "status.authfail"), "st-auth", "")
+			@StatTile("upload", Count(d.PathsPushed), T(ctx, "status.pushed"), "st-pushed", "")
+			@StatTile("copy", Count(d.PathsAdopted), T(ctx, "status.adopted"), "st-adopted", "")
+			@StatTile("boxes", Count(d.ChunksRecv), T(ctx, "status.chunks"), "st-chunks", "")
+			@StatTile("layers", Count(d.ChunksDedup), T(ctx, "status.deduped"), "st-dedup", "")
 		</div>
 		<div class="grid gap-6 lg:grid-cols-2">
 			for _, c := range d.Charts {
 				@statusChart(c)
 			}
 		</div>
-		<p id="status-updated" class="mt-6 text-center text-xs text-muted-foreground">{ T("status.updated") } { d.Updated }</p>
+		<p id="status-updated" class="mt-6 text-center text-xs text-muted-foreground">{ T(ctx, "status.updated") } { d.Updated }</p>
 		@templ.JSONScript("status-poll", map[string]any{
 			"url": dataURL(d), "rate": d.Rate,
-			"ok": T("status.ok"), "err": T("status.err"),
-			"updated": T("status.updated"), "peak": T("status.peak"),
+			"ok": T(ctx, "status.ok"), "err": T(ctx, "status.err"),
+			"updated": T(ctx, "status.updated"), "peak": T(ctx, "status.peak"),
 		})
 		@statusPollScript()
 	}
@@ -123,8 +123,8 @@ templ StatusPage(d StatusData) {
 templ statusSettings(d StatusData) {
 	@sheet.Sheet(sheet.Props{ID: "status-settings"}) {
 		@sheet.Trigger(sheet.TriggerProps{For: "status-settings"}) {
-			@WithTooltip(T("status.settings")) {
-				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeIcon, Type: button.TypeButton, Attributes: templ.Attributes{"aria-label": T("status.settings")}}) {
+			@WithTooltip(T(ctx, "status.settings")) {
+				@button.Button(button.Props{Variant: button.VariantOutline, Size: button.SizeIcon, Type: button.TypeButton, Attributes: templ.Attributes{"aria-label": T(ctx, "status.settings")}}) {
 					@Icon("settings")
 				}
 			}
@@ -132,12 +132,12 @@ templ statusSettings(d StatusData) {
 		@sheet.Content() {
 			@sheet.Header() {
 				@sheet.Title() {
-					{ T("status.settings") }
+					{ T(ctx, "status.settings") }
 				}
 			}
 			<div class="space-y-6 p-4">
 				<div class="space-y-2">
-					<p class="text-sm font-medium">{ T("status.window") }</p>
+					<p class="text-sm font-medium">{ T(ctx, "status.window") }</p>
 					<div class="flex flex-wrap gap-1">
 						for _, wo := range statusWindows {
 							@button.Button(button.Props{Href: windowURL(d, wo.Min), Size: button.SizeSm, Variant: segVariant(wo.Min == d.Window)}) {
@@ -147,20 +147,20 @@ templ statusSettings(d StatusData) {
 					</div>
 				</div>
 				<form method="get" action="/admin/status" class="space-y-2">
-					<p class="text-sm font-medium">{ T("status.range") }</p>
+					<p class="text-sm font-medium">{ T(ctx, "status.range") }</p>
 					<input type="hidden" name="rate" value={ strconv.Itoa(d.Rate) }/>
 					@datepicker.DatePicker(datepicker.Props{
 						Name: "from", EndName: "to", Mode: calendar.SelectionModeRange,
 						Value: parseDate(d.From), EndValue: parseDate(d.To),
-						Placeholder: T("status.from"), EndPlaceholder: T("status.to"),
+						Placeholder: T(ctx, "status.from"), EndPlaceholder: T(ctx, "status.to"),
 					})
 					@button.Button(button.Props{Type: button.TypeSubmit, Size: button.SizeSm, Variant: segVariant(d.Window == 0), Class: "w-full"}) {
 						@Icon("calendar")
-						<span>{ T("status.apply") }</span>
+						<span>{ T(ctx, "status.apply") }</span>
 					}
 				</form>
 				<div class="space-y-2">
-					<p class="text-sm font-medium">{ T("status.autorefresh") }</p>
+					<p class="text-sm font-medium">{ T(ctx, "status.autorefresh") }</p>
 					<div class="flex flex-wrap gap-1">
 						for _, rt := range statusRates {
 							@button.Button(button.Props{Href: rateURL(d, rt), Size: button.SizeSm, Variant: segVariant(rt == d.Rate)}) {
@@ -184,13 +184,13 @@ templ statusChart(c ChartData) {
 				<span id={ "cur-" + c.ID } class="text-lg font-semibold tabular-nums">{ c.Cur }</span>
 				@badge.Badge(badge.Props{ID: "peak-" + c.ID, Variant: badge.VariantSecondary, Class: peakClass(c.Peak)}) {
 					if c.Peak != "" {
-						{ T("status.peak") } { c.Peak }
+						{ T(ctx, "status.peak") } { c.Peak }
 					}
 				}
 			</div>
 		}
 		@card.Content(card.ContentProps{Class: "relative"}) {
-			<p id={ "empty-" + c.ID } class={ "absolute inset-0 flex items-center justify-center text-sm text-muted-foreground", sparseClass(c.Points) }>{ T("status.collecting") }</p>
+			<p id={ "empty-" + c.ID } class={ "absolute inset-0 flex items-center justify-center text-sm text-muted-foreground", sparseClass(c.Points) }>{ T(ctx, "status.collecting") }</p>
 			@chart.Chart(chart.Props{
 				ID:          "chart-" + c.ID,
 				Variant:     chart.VariantLine,

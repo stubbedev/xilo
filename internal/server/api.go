@@ -72,7 +72,7 @@ func (s *Server) handleMissingPaths(w http.ResponseWriter, r *http.Request) {
 	if !s.requirePush(w, r, c) {
 		return
 	}
-	if err := s.checkStorageQuota(c); err != nil {
+	if err := s.checkStorageQuota(r.Context(), c); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
@@ -305,7 +305,7 @@ func (s *Server) handlePutPath(w http.ResponseWriter, r *http.Request) {
 	if !s.requirePush(w, r, c) {
 		return
 	}
-	if err := s.checkStorageQuota(c); err != nil {
+	if err := s.checkStorageQuota(r.Context(), c); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}

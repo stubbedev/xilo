@@ -1,6 +1,7 @@
 package views
 
 import (
+	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"slices"
@@ -250,9 +251,9 @@ func TokenStatus(t store.Token) string {
 }
 
 // TokenExpiry renders a token's expiry as a date, or "never".
-func TokenExpiry(t store.Token) string {
+func TokenExpiry(ctx context.Context, t store.Token) string {
 	if t.Expires == 0 {
-		return T("tok.never")
+		return T(ctx, "tok.never")
 	}
 	return time.Unix(t.Expires, 0).Format("2006-01-02")
 }
@@ -381,20 +382,20 @@ func ariaSort(s SortCtx, key string) string {
 }
 
 // Ago renders a unix timestamp as a coarse relative time ("3h ago").
-func Ago(ts int64) string {
+func Ago(ctx context.Context, ts int64) string {
 	if ts <= 0 {
-		return T("tok.never")
+		return T(ctx, "tok.never")
 	}
 	d := time.Since(time.Unix(ts, 0))
 	switch {
 	case d < time.Minute:
-		return T("time.justnow")
+		return T(ctx, "time.justnow")
 	case d < time.Hour:
-		return itoa(int64(d.Minutes())) + T("time.mago")
+		return Tf(ctx, "time.mago", int64(d.Minutes()))
 	case d < 24*time.Hour:
-		return itoa(int64(d.Hours())) + T("time.hago")
+		return Tf(ctx, "time.hago", int64(d.Hours()))
 	case d < 30*24*time.Hour:
-		return itoa(int64(d.Hours()/24)) + T("time.dago")
+		return Tf(ctx, "time.dago", int64(d.Hours()/24))
 	default:
 		return time.Unix(ts, 0).Format("2006-01-02")
 	}
@@ -412,19 +413,19 @@ func stamp(ts int64) string {
 }
 
 // planLimits summarizes a plan's caps in one line.
-func planLimits(p store.Plan) string {
+func planLimits(ctx context.Context, p store.Plan) string {
 	part := func(label string, v int64, fmtv string) string {
 		if v == 0 {
 			return ""
 		}
 		return label + " " + fmtv + " · "
 	}
-	out := part(T("plan.caches"), p.MaxCaches, itoa(p.MaxCaches)) +
-		part(T("plan.members"), p.MaxMembers, itoa(p.MaxMembers)) +
-		part(T("plan.storage"), p.MaxStorage, humanBytesV(p.MaxStorage)) +
-		part(T("plan.retention"), p.MaxRetention, itoa(p.MaxRetention/86400)+"d")
+	out := part(T(ctx, "plan.caches"), p.MaxCaches, itoa(p.MaxCaches)) +
+		part(T(ctx, "plan.members"), p.MaxMembers, itoa(p.MaxMembers)) +
+		part(T(ctx, "plan.storage"), p.MaxStorage, humanBytesV(p.MaxStorage)) +
+		part(T(ctx, "plan.retention"), p.MaxRetention, itoa(p.MaxRetention/86400)+"d")
 	if out == "" {
-		return T("plan.unlimited")
+		return T(ctx, "plan.unlimited")
 	}
 	return strings.TrimSuffix(out, " · ")
 }

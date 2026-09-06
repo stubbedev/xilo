@@ -1,6 +1,7 @@
 package views
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"net/url"
@@ -37,9 +38,9 @@ func capSuffix(cap int64, bytes func(int64) string) string {
 }
 
 // capLabel is like capSuffix for the per-cache stat tile.
-func capLabel(cap int64, bytes func(int64) string) string {
+func capLabel(ctx context.Context, cap int64, bytes func(int64) string) string {
 	if cap <= 0 {
-		return " (" + T("cache.nocap") + ")"
+		return " (" + T(ctx, "cache.nocap") + ")"
 	}
 	return " / " + bytes(cap)
 }
@@ -211,16 +212,18 @@ type OrgInfo struct {
 }
 
 // UsageLine renders "12 GiB stored (of 50 GiB) · 3 GiB egress this month".
-func (o OrgInfo) UsageLine() string {
-	out := humanBytesV(o.Used) + " " + T("acct.stored")
+func (o OrgInfo) UsageLine(ctx context.Context) string {
+	// One format string per clause, joined with " · ": a translator moves the
+	// words inside a clause, we only decide which clauses appear.
+	out := Tf(ctx, "acct.usestored", humanBytesV(o.Used))
 	if o.Plan != nil && o.Plan.MaxStorage > 0 {
-		out += " (" + T("acct.of") + " " + humanBytesV(o.Plan.MaxStorage) + ")"
+		out = Tf(ctx, "acct.useof", humanBytesV(o.Used), humanBytesV(o.Plan.MaxStorage))
 	}
 	if o.Egress > 0 {
-		out += " · " + humanBytesV(o.Egress) + " " + T("acct.egress")
+		out += " · " + Tf(ctx, "acct.useegress", humanBytesV(o.Egress))
 	}
 	if o.Plan != nil {
-		out += " · " + T("acct.plan") + " " + o.Plan.Name
+		out += " · " + Tf(ctx, "acct.useplan", o.Plan.Name)
 	}
 	return out
 }

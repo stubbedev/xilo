@@ -27,29 +27,29 @@ type AccountData struct {
 
 // Account is the personal page: sign-in identity and credentials.
 templ Account(d AccountData) {
-	@Layout(T("nav.account"), "account", d.Nav, d.Flash) {
-		@PageHeader(T("nav.account"), T("acct.subtitle")+" "+d.User.Name+".")
+	@Layout(T(ctx, "nav.account"), "account", d.Nav, d.Flash) {
+		@PageHeader(T(ctx, "nav.account"), Tf(ctx, "acct.subtitle", d.User.Name))
 		<div class="grid gap-6">
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						{ T("acct.email") }
+						{ T(ctx, "acct.email") }
 					}
 					@card.Description() {
-						{ T("acct.emailhint") }
+						{ T(ctx, "acct.emailhint") }
 					}
 				}
 				@card.Content() {
 					<form method="post" action="/admin/account/email" class="flex items-end gap-2">
 						@form.Item(form.ItemProps{Class: "flex-1"}) {
 							@form.Label(form.LabelProps{For: "email"}) {
-								{ T("acct.emailaddr") }
+								{ T(ctx, "acct.emailaddr") }
 							}
-							@input.Input(input.Props{ID: "email", Name: "email", Type: input.TypeEmail, Value: d.User.Email, Placeholder: T("ph.email"), Attributes: templ.Attributes{"autocomplete": "email"}})
+							@input.Input(input.Props{ID: "email", Name: "email", Type: input.TypeEmail, Value: d.User.Email, Placeholder: T(ctx, "ph.email"), Attributes: templ.Attributes{"autocomplete": "email"}})
 						}
 						@button.Button(button.Props{Type: button.TypeSubmit}) {
 							@Icon("check")
-							<span>{ T("action.save") }</span>
+							<span>{ T(ctx, "action.save") }</span>
 						}
 					</form>
 				}
@@ -57,17 +57,17 @@ templ Account(d AccountData) {
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						{ T("acct.appearance") }
+						{ T(ctx, "acct.appearance") }
 					}
 					@card.Description() {
-						{ T("acct.appearancehint") }
+						{ T(ctx, "acct.appearancehint") }
 					}
 				}
 				@card.Content() {
-					<form method="post" action="/admin/account/theme" class="max-w-md" onchange="if (event.target.name === 'theme') this.submit()">
-						@Field("", T("acct.palette")) {
+					<form method="post" action="/admin/account/appearance" class="grid max-w-md gap-4" onchange="if (event.target.name === 'theme' || event.target.name === 'locale') this.submit()">
+						@Field("", T(ctx, "acct.palette")) {
 							@selectbox.SelectBox() {
-								@selectbox.Trigger(selectbox.TriggerProps{Name: "theme", Attributes: templ.Attributes{"aria-label": T("acct.palette")}}) {
+								@selectbox.Trigger(selectbox.TriggerProps{Name: "theme", Attributes: templ.Attributes{"aria-label": T(ctx, "acct.palette")}}) {
 									@selectbox.Value(selectbox.ValueProps{})
 								}
 								@selectbox.Content() {
@@ -79,21 +79,38 @@ templ Account(d AccountData) {
 								}
 							}
 						}
+						@Field("", T(ctx, "acct.language")) {
+							@selectbox.SelectBox() {
+								@selectbox.Trigger(selectbox.TriggerProps{Name: "locale", Attributes: templ.Attributes{"aria-label": T(ctx, "acct.language")}}) {
+									@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "acct.langauto")})
+								}
+								@selectbox.Content() {
+									@selectbox.Item(selectbox.ItemProps{Value: "", Selected: d.User.Locale == ""}) {
+										{ T(ctx, "acct.langauto") }
+									}
+									for _, l := range Locales {
+										@selectbox.Item(selectbox.ItemProps{Value: l.ID, Selected: l.ID == d.User.Locale}) {
+											{ l.Name }
+										}
+									}
+								}
+							}
+						}
 					</form>
 				}
 			}
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						{ T("set.passkeys") }
+						{ T(ctx, "set.passkeys") }
 					}
 					@card.Description() {
-						{ T("set.passkeys.hint") }
+						{ T(ctx, "set.passkeys.hint") }
 					}
 				}
 				@card.Content(card.ContentProps{Class: "space-y-4"}) {
 					if len(d.Passkeys) == 0 {
-						@EmptyState("fingerprint-pattern", T("set.passkeys.empty"))
+						@EmptyState("fingerprint-pattern", T(ctx, "set.passkeys.empty"))
 					} else {
 						@ListBox() {
 							@table.Table() {
@@ -104,21 +121,21 @@ templ Account(d AccountData) {
 												<div class="flex items-center gap-2 text-sm">
 													@Icon("fingerprint-pattern")
 													<span class="font-medium">{ pk.Name }</span>
-													<span class="text-muted-foreground">· { Ago(pk.Created) }</span>
+													<span class="text-muted-foreground">· { Ago(ctx, pk.Created) }</span>
 												</div>
 											}
 											@table.Cell(table.CellProps{Class: "text-right"}) {
 												@ConfirmForm(Confirm{
 													ID:             "pk-" + strconv.FormatInt(pk.ID, 10),
 													Action:         "/admin/passkeys/" + strconv.FormatInt(pk.ID, 10) + "/delete",
-													Title:          T("pk.removetitle"),
-													Message:        "“" + pk.Name + "” " + T("pk.removemsg"),
-													ConfirmLabel:   T("set.passkeys.remove"),
+													Title:          T(ctx, "pk.removetitle"),
+													Message:        Tf(ctx, "pk.removemsg", pk.Name),
+													ConfirmLabel:   T(ctx, "set.passkeys.remove"),
 													ConfirmIcon:    "trash-2",
 													Danger:         true,
 													TriggerIcon:    "trash-2",
 													IconOnly:       true,
-													TriggerTooltip: T("action.remove"),
+													TriggerTooltip: T(ctx, "action.remove"),
 													TriggerVariant: button.VariantGhost,
 												})
 											}
@@ -130,17 +147,17 @@ templ Account(d AccountData) {
 					}
 					@button.Button(button.Props{Size: button.SizeSm, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": "xiloPasskeyRegister()"}}) {
 						@Icon("fingerprint-pattern")
-						<span>{ T("set.passkeys.add") }</span>
+						<span>{ T(ctx, "set.passkeys.add") }</span>
 					}
 				}
 			}
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						{ T("set.2fa") }
+						{ T(ctx, "set.2fa") }
 					}
 					@card.Description() {
-						{ T("set.2fa.hint") }
+						{ T(ctx, "set.2fa.hint") }
 					}
 				}
 				@card.Content() {
@@ -149,32 +166,32 @@ templ Account(d AccountData) {
 							<div class="flex items-center gap-2 text-sm">
 								@badge.Badge(badge.Props{Variant: badge.VariantDefault, Class: "gap-1"}) {
 									@Icon("shield-check")
-									<span>{ T("set.2fa.on") }</span>
+									<span>{ T(ctx, "set.2fa.on") }</span>
 								}
 							</div>
 							@ConfirmForm(Confirm{
 								ID:             "totp-off",
 								Action:         "/admin/account/totp/disable",
-								Title:          T("confirm.2fa"),
-								Message:        T("set.2fa.offmsg"),
-								ConfirmLabel:   T("set.2fa.disable"),
+								Title:          T(ctx, "confirm.2fa"),
+								Message:        T(ctx, "set.2fa.offmsg"),
+								ConfirmLabel:   T(ctx, "set.2fa.disable"),
 								ConfirmIcon:    "shield-off",
 								Danger:         true,
-								TriggerLabel:   T("set.2fa.disable"),
+								TriggerLabel:   T(ctx, "set.2fa.disable"),
 								TriggerIcon:    "shield-off",
 								TriggerVariant: button.VariantOutline,
 							}) {
-								@Field("totp-off-current", T("set.current")) {
+								@Field("totp-off-current", T(ctx, "set.current")) {
 									@input.Input(input.Props{ID: "totp-off-current", Name: "current", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "current-password"}})
 								}
 							}
 						</div>
 					} else {
-						@ActionRow(T("set.2fa.protect")) {
+						@ActionRow(T(ctx, "set.2fa.protect")) {
 							<form method="post" action="/admin/account/totp/enroll">
 								@button.Button(button.Props{Type: button.TypeSubmit}) {
 									@Icon("shield")
-									<span>{ T("set.2fa.enable") }</span>
+									<span>{ T(ctx, "set.2fa.enable") }</span>
 								}
 							</form>
 						}
@@ -183,39 +200,39 @@ templ Account(d AccountData) {
 			}
 			if d.CanCreateOrg {
 				@card.Card() {
-					@CardHeaderRow(T("acct.orgs")) {
+					@CardHeaderRow(T(ctx, "acct.orgs")) {
 						@newOrgDialog("/admin/neworg")
 					}
 					@card.Content() {
-						<p class="text-sm text-muted-foreground">{ T("acct.orghint") }</p>
+						<p class="text-sm text-muted-foreground">{ T(ctx, "acct.orghint") }</p>
 					}
 				}
 			}
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						{ T("login.password") }
+						{ T(ctx, "login.password") }
 					}
 					@card.Description() {
-						{ T("set.password") }
+						{ T(ctx, "set.password") }
 					}
 				}
 				@card.Content() {
 					<form method="post" action="/admin/account/password" class="space-y-4">
-						@Field("cur-pw", T("set.current")) {
+						@Field("cur-pw", T(ctx, "set.current")) {
 							@input.Input(input.Props{ID: "cur-pw", Name: "current", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "current-password"}})
 						}
-						@Field("new-pw", T("set.new")) {
+						@Field("new-pw", T(ctx, "set.new")) {
 							@input.Input(input.Props{ID: "new-pw", Name: "new", Type: input.TypePassword, Required: true, Attributes: pwCheckAttrs()})
 						}
-						@Field("new-pw2", T("set.new2")) {
+						@Field("new-pw2", T(ctx, "set.new2")) {
 							@input.Input(input.Props{ID: "new-pw2", Name: "confirm", Type: input.TypePassword, Required: true, Attributes: pwCheckAttrs()})
 						}
 						<div class="flex flex-wrap items-center justify-between gap-3">
 							<span id="pw-hint" class="text-sm"></span>
 							@button.Button(button.Props{Type: button.TypeSubmit}) {
 								@Icon("check")
-								<span>{ T("set.update") }</span>
+								<span>{ T(ctx, "set.update") }</span>
 							}
 						</div>
 					</form>
@@ -243,13 +260,13 @@ func pwCheckAttrs() templ.Attributes {
 templ PwHint(state string) {
 	switch state {
 		case "short":
-			<span class="text-warning">{ T("set.pw.short") }</span>
+			<span class="text-warning">{ T(ctx, "set.pw.short") }</span>
 		case "mismatch":
-			<span class="text-warning">{ T("set.pw.mismatch") }</span>
+			<span class="text-warning">{ T(ctx, "flash.pwmismatch") }</span>
 		case "weak":
-			<span class="text-warning">{ T("set.pw.weak") }</span>
+			<span class="text-warning">{ T(ctx, "set.pw.weak") }</span>
 		case "strong":
-			<span class="text-success">{ T("set.pw.strong") }</span>
+			<span class="text-success">{ T(ctx, "set.pw.strong") }</span>
 	}
 }
 
@@ -262,14 +279,14 @@ templ TOTPEnrollErr(nav Nav, qrDataURI, secret, errMsg string) {
 }
 
 templ totpEnrollPage(nav Nav, qrDataURI, secret, errMsg string) {
-	@Layout(T("set.enroll"), "account", nav, Flash{Msg: errMsg}) {
-		@PageHeader(T("set.enroll"), T("set.enrollhint"))
+	@Layout(T(ctx, "set.enroll"), "account", nav, Flash{Msg: errMsg}) {
+		@PageHeader(T(ctx, "set.enroll"), T(ctx, "set.enrollhint"))
 		<div class="mx-auto max-w-md">
 			@card.Card() {
 				@card.Content(card.ContentProps{Class: "flex flex-col items-center gap-4"}) {
-					<img class="rounded-lg border bg-white p-2" width="200" height="200" src={ qrDataURI } alt={ T("set.qralt") }/>
+					<img class="rounded-lg border bg-white p-2" width="200" height="200" src={ qrDataURI } alt={ T(ctx, "set.qralt") }/>
 					<div class="text-center text-sm text-muted-foreground">
-						<p>{ T("set.manual") }</p>
+						<p>{ T(ctx, "set.manual") }</p>
 						<code class="font-mono text-xs">{ secret }</code>
 					</div>
 					<form method="post" action="/admin/account/totp/enable" class="flex w-full flex-col items-center gap-4">
@@ -288,7 +305,7 @@ templ totpEnrollPage(nav Nav, qrDataURI, secret, errMsg string) {
 						}
 						@button.Button(button.Props{Type: button.TypeSubmit, FullWidth: true}) {
 							@Icon("check")
-							<span>{ T("set.confirmenable") }</span>
+							<span>{ T(ctx, "set.confirmenable") }</span>
 						}
 					</form>
 				}

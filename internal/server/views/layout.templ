@@ -46,7 +46,7 @@ type Nav struct {
 templ Layout(title, section string, nav Nav, flash Flash) {
 	<!DOCTYPE html>
 	<html
-		lang="en"
+		lang={ LocaleFrom(ctx) }
 		class="h-full"
 		if nav.Theme != "" {
 			data-palette={ nav.Theme }
@@ -149,14 +149,14 @@ templ appSidebar(section string, nav Nav) {
 			}
 			@sidebar.Group() {
 				@sidebar.Menu() {
-					@navItem("/admin", T("nav.caches"), "database", section == "caches")
-					@navItem("/admin/account", T("nav.account"), "user", section == "account")
+					@navItem("/admin", T(ctx, "nav.caches"), "database", section == "caches")
+					@navItem("/admin/account", T(ctx, "nav.account"), "user", section == "account")
 					if nav.IsAdmin {
-						@navItem("/admin/settings", T("nav.settings"), "settings", section == "settings")
+						@navItem("/admin/settings", T(ctx, "nav.settings"), "settings", section == "settings")
 					}
-					@navItem("/admin/status", T("nav.status"), "activity", section == "status")
+					@navItem("/admin/status", T(ctx, "nav.status"), "activity", section == "status")
 					if nav.IsAdmin {
-						@navItem("/admin/audit", T("nav.audit"), "scroll-text", section == "audit")
+						@navItem("/admin/audit", T(ctx, "nav.audit"), "scroll-text", section == "audit")
 					}
 				}
 			}
@@ -177,10 +177,10 @@ templ navItem(href, text, icon string, active bool) {
 }
 
 templ themeToggle() {
-	@WithTooltip(T("nav.theme")) {
+	@WithTooltip(T(ctx, "nav.theme")) {
 		@button.Button(button.Props{
 			Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton,
-			Attributes: templ.Attributes{"onclick": "xiloTheme()", "aria-label": T("nav.theme")},
+			Attributes: templ.Attributes{"onclick": "xiloTheme()", "aria-label": T(ctx, "nav.theme")},
 		}) {
 			<span class="hidden dark:block">
 				@Icon("sun")
@@ -204,12 +204,12 @@ templ contextSwitcher(nav Nav) {
 		onchange="if (event.target.name === 'ctx') this.submit()"
 	>
 		@selectbox.SelectBox() {
-			@selectbox.Trigger(selectbox.TriggerProps{Name: "ctx", Attributes: templ.Attributes{"aria-label": T("nav.context")}}) {
-				@selectbox.Value(selectbox.ValueProps{Placeholder: T("nav.allaccounts")})
+			@selectbox.Trigger(selectbox.TriggerProps{Name: "ctx", Attributes: templ.Attributes{"aria-label": T(ctx, "nav.context")}}) {
+				@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "nav.allaccounts")})
 			}
 			@selectbox.Content() {
 				@selectbox.Item(selectbox.ItemProps{Value: "", Selected: nav.Active == ""}) {
-					{ T("nav.allaccounts") }
+					{ T(ctx, "nav.allaccounts") }
 				}
 				for _, c := range nav.Contexts {
 					@selectbox.Item(selectbox.ItemProps{Value: c.Slug, Selected: nav.Active == c.Slug}) {
@@ -225,14 +225,14 @@ templ contextSwitcher(nav Nav) {
 // collapsed rail, where the tooltip names it).
 templ userMenu() {
 	<form method="post" action="/admin/logout">
-		@WithTooltip(T("nav.logout")) {
+		@WithTooltip(T(ctx, "nav.logout")) {
 			@button.Button(button.Props{
 				Variant: button.VariantOutline, Type: button.TypeSubmit, FullWidth: true, Size: button.SizeSm,
 				Class:      "gap-2 text-destructive hover:text-destructive group-data-[tui-sidebar-state=collapsed]:px-0",
-				Attributes: templ.Attributes{"aria-label": T("nav.logout")},
+				Attributes: templ.Attributes{"aria-label": T(ctx, "nav.logout")},
 			}) {
 				@Icon("log-out")
-				<span class="group-data-[tui-sidebar-state=collapsed]:hidden">{ T("nav.logout") }</span>
+				<span class="group-data-[tui-sidebar-state=collapsed]:hidden">{ T(ctx, "nav.logout") }</span>
 			}
 		}
 	</form>
@@ -241,7 +241,7 @@ templ userMenu() {
 templ footer() {
 	<footer class="border-t">
 		<div class="mx-auto w-full max-w-6xl px-4 py-5 text-center text-sm text-muted-foreground sm:px-6">
-			<span class="font-medium text-foreground">Xilo</span> { T("footer.tagline") }
+			<span class="font-medium text-foreground">Xilo</span> · { T(ctx, "footer.tagline") }
 		</div>
 	</footer>
 }
@@ -261,7 +261,7 @@ templ toastLayer() {
 	for _, k := range toastKinds {
 		<template data-toast-kind={ k.Key }>
 			@toast.Toast(toast.Props{
-				Description: T(k.MsgKey),
+				Description: T(ctx, k.MsgKey),
 				Variant:     k.Variant,
 				Position:    toast.PositionBottomRight,
 				Duration:    k.Duration,
@@ -399,16 +399,16 @@ templ CopyField(value string) {
 
 // NotFound is the styled 404 page for browser routes.
 templ NotFound(nav Nav) {
-	@Layout(T("nf.doc"), "", nav, Flash{}) {
+	@Layout(T(ctx, "nf.doc"), "", nav, Flash{}) {
 		<div class="flex flex-col items-center gap-4 py-24 text-center">
 			<span class="text-muted-foreground">
 				@IconClass("compass", 48, "")
 			</span>
-			<h1 class="text-2xl font-semibold">{ T("nf.title") }</h1>
-			<p class="text-muted-foreground">{ T("nf.sub") }</p>
+			<h1 class="text-2xl font-semibold">{ T(ctx, "nf.title") }</h1>
+			<p class="text-muted-foreground">{ T(ctx, "nf.sub") }</p>
 			@button.Button(button.Props{Href: "/admin", Variant: button.VariantOutline}) {
 				@Icon("arrow-left")
-				<span>{ T("nf.back") }</span>
+				<span>{ T(ctx, "nf.back") }</span>
 			}
 		</div>
 	}

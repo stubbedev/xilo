@@ -21,6 +21,7 @@ type User struct {
 	Status      string // "active" | "pending" (awaiting approval)
 	TOTPEnabled bool
 	Theme       string // dashboard palette id ("" = default); light/dark is a browser choice
+	Locale      string // UI language id ("" = fall back to Accept-Language)
 	Created     int64
 }
 
@@ -29,12 +30,12 @@ type User struct {
 // client is fine — unlike an email collision, which must stay generic.
 var ErrNameTaken = errors.New("name already taken")
 
-const userCols = `id,username,COALESCE(email,''),password_hash,role,status,totp_enabled,theme,created`
+const userCols = `id,username,COALESCE(email,''),password_hash,role,status,totp_enabled,theme,locale,created`
 
 func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	var totp int
-	if err := row.Scan(&u.ID, &u.Name, &u.Email, &u.PassHash, &u.Role, &u.Status, &totp, &u.Theme, &u.Created); err != nil {
+	if err := row.Scan(&u.ID, &u.Name, &u.Email, &u.PassHash, &u.Role, &u.Status, &totp, &u.Theme, &u.Locale, &u.Created); err != nil {
 		return nil, err
 	}
 	u.TOTPEnabled = totp != 0
@@ -175,6 +176,14 @@ func (db *DB) SetUserEmail(id int64, email string) error {
 func (db *DB) SetUserTheme(id int64, theme string) error {
 	return db.write(func(tx *sql.Tx) error {
 		_, err := tx.Exec(`UPDATE users SET theme=? WHERE id=?`, theme, id)
+		return err
+	})
+}
+
+// SetUserLocale stores the user's UI language id ("" = follow the browser).
+func (db *DB) SetUserLocale(id int64, locale string) error {
+	return db.write(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE users SET locale=? WHERE id=?`, locale, id)
 		return err
 	})
 }

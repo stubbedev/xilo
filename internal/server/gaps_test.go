@@ -182,7 +182,7 @@ func TestAdminGatesAnonymousAndMissing(t *testing.T) {
 		"/admin/cache/default/x/configure", "/admin/tokens", "/admin/tokens/1/edit",
 		"/admin/tokens/1/revoke", "/admin/account/password",
 		"/admin/account/totp/enroll", "/admin/account/totp/enable",
-		"/admin/account/totp/disable", "/admin/account/theme", "/admin/passkeys/register/begin",
+		"/admin/account/totp/disable", "/admin/account/appearance", "/admin/passkeys/register/begin",
 		"/admin/passkeys/register/finish", "/admin/passkeys/1/delete",
 	} {
 		resp, err := nr.Post(ts.URL+p, "application/x-www-form-urlencoded", nil)

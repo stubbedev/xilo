@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"math"
 	"net/http"
@@ -219,7 +220,7 @@ func (s *Server) requireUser(w http.ResponseWriter, r *http.Request) *store.User
 		return nil
 	}
 	if r.Method == http.MethodPost && !s.sameOrigin(r) {
-		http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+		uiFail(w, r, http.StatusForbidden, views.T(r.Context(), "err.crossorigin"), nil)
 		return nil
 	}
 	return u
@@ -233,7 +234,7 @@ func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	if u.Role != "owner" {
-		http.Error(w, "instance superadmin required", http.StatusForbidden)
+		uiFail(w, r, http.StatusForbidden, views.T(r.Context(), "err.superadmin"), nil)
 		return false
 	}
 	return true
@@ -275,7 +276,7 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/settings", s.handleInstancePage)
 	mux.HandleFunc("GET /admin/account", s.handleAccountPage)
 	mux.HandleFunc("POST /admin/account/email", s.handleAccountEmail)
-	mux.HandleFunc("POST /admin/account/theme", s.handleAccountTheme)
+	mux.HandleFunc("POST /admin/account/appearance", s.handleAppearance)
 	mux.HandleFunc("POST /admin/context", s.handleContext)
 	mux.HandleFunc("GET /admin/org/{slug}", s.handleOrgPage)
 	mux.HandleFunc("GET /admin/status", s.handleStatus)
@@ -389,7 +390,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 	}
 	caches, err := s.visibleCaches(u)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	// Context switcher: scope to the chosen account.
@@ -406,14 +407,14 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 	for _, c := range caches {
 		st, err := s.db.StatsFor(c.ID)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			uiError(w, r, err)
 			return
 		}
 		usages = append(usages, views.CacheUsage{Cache: c, Bytes: st.PhysicalBytes, Logical: st.LogicalBytes, Paths: st.Paths})
 	}
 	global, err := s.db.GlobalStatsFor()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	if u.Role != "owner" || s.activeContext(r, u) != "" {
@@ -428,7 +429,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 	}
 	tokens, err := s.visibleTokens(u)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	// Scope tokens to the chosen account, same as caches and the KPIs.
@@ -443,7 +444,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 	}
 	owned, err := s.ownedAccounts(u)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	// The full visible list, captured before search/paging mutate `usages`
@@ -504,7 +505,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !s.logins.allow(s.clientIP(r)) {
 		s.metrics.authFailures.Add(1)
 		w.WriteHeader(http.StatusTooManyRequests)
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T("flash.ratelimited")}).Render(r.Context(), w)
+		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T(r.Context(), "err.throttled")}).Render(r.Context(), w)
 		return
 	}
 	u, err := s.db.GetUserByLogin(strings.TrimSpace(r.FormValue("username")))
@@ -516,19 +517,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// Burn a bcrypt anyway so unknown usernames cost the same as wrong
 		// passwords (no user-enumeration timing signal).
 		bcrypt.CompareHashAndPassword([]byte("$2a$10$0000000000000000000000000000000000000000000000000000"), []byte(r.FormValue("password")))
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T("flash.badlogin")}).Render(r.Context(), w)
+		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T(r.Context(), "flash.badlogin")}).Render(r.Context(), w)
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(u.PassHash), []byte(r.FormValue("password"))) != nil {
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T("flash.badlogin")}).Render(r.Context(), w)
+		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T(r.Context(), "flash.badlogin")}).Render(r.Context(), w)
 		return
 	}
 	if u.Status == "pending" {
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T("flash.awaiting")}).Render(r.Context(), w)
+		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T(r.Context(), "flash.awaiting")}).Render(r.Context(), w)
 		return
 	}
 	// Password accepted. With 2FA on, the code is a second step gated by a
@@ -536,7 +537,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if u.TOTPEnabled {
 		pid, err := s.sess.createPending(u.ID)
 		if err != nil {
-			http.Error(w, "session error", http.StatusInternalServerError)
+			uiFail(w, r, http.StatusInternalServerError, views.T(r.Context(), "err.session"), err)
 			return
 		}
 		views.LoginCode(pid, views.Flash{}).Render(r.Context(), w)
@@ -551,13 +552,13 @@ func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
 	if !s.logins.allow(s.clientIP(r)) {
 		s.metrics.authFailures.Add(1)
 		w.WriteHeader(http.StatusTooManyRequests)
-		views.LoginCode(r.FormValue("pending"), views.Flash{Msg: views.T("flash.ratelimited")}).Render(r.Context(), w)
+		views.LoginCode(r.FormValue("pending"), views.Flash{Msg: views.T(r.Context(), "err.throttled")}).Render(r.Context(), w)
 		return
 	}
 	pid := r.FormValue("pending")
 	uid, ok := s.sess.pendingUser(pid)
 	if !ok {
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T("flash.loginexpired")}).Render(r.Context(), w)
+		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T(r.Context(), "flash.loginexpired")}).Render(r.Context(), w)
 		return
 	}
 	secret, on, _ := s.db.UserTOTP(uid)
@@ -572,7 +573,7 @@ func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
 		// retried against the ±1-step window for its whole 3-min lifetime;
 		// the user re-does the password step, which the limiter throttles.
 		s.sess.consumePending(pid)
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T("flash.bad2fa")}).Render(r.Context(), w)
+		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T(r.Context(), "flash.bad2fa")}).Render(r.Context(), w)
 		return
 	}
 	s.sess.consumePending(pid)
@@ -583,7 +584,7 @@ func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
 func (s *Server) grantSession(w http.ResponseWriter, r *http.Request, userID int64) {
 	id, err := s.sess.create(userID)
 	if err != nil {
-		http.Error(w, "session error", http.StatusInternalServerError)
+		uiFail(w, r, http.StatusInternalServerError, views.T(r.Context(), "err.session"), err)
 		return
 	}
 	s.setSessionCookie(w, id)
@@ -610,7 +611,7 @@ func (s *Server) handleAccountPage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) renderAccount(w http.ResponseWriter, r *http.Request, u *store.User, flash views.Flash) {
 	pks, err := s.db.ListUserPasskeys(u.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	views.Account(views.AccountData{
@@ -628,25 +629,25 @@ func (s *Server) handleAccountEmail(w http.ResponseWriter, r *http.Request) {
 	}
 	email := strings.TrimSpace(r.FormValue("email"))
 	if s.cfg.SelfService && !validEmail(email) {
-		s.accountFlash(w, r, views.T("flash.emailreq"))
+		s.accountFlash(w, r, views.T(r.Context(), "flash.emailreq"))
 		return
 	}
 	if err := s.db.SetUserEmail(u.ID, email); err != nil {
-		s.accountFlash(w, r, views.T("flash.emailfailed")+" "+err.Error())
+		s.flashErr(w, r, "/admin/account", views.T(r.Context(), "flash.emailfailed"), err)
 		return
 	}
 	u.Email = email
-	msg := views.T("flash.emailsaved")
+	msg := views.T(r.Context(), "flash.emailsaved")
 	if email == "" {
-		msg = views.T("flash.emailcleared")
+		msg = views.T(r.Context(), "flash.emailcleared")
 	}
 	s.accountFlash(w, r, msg)
 }
 
-// handleAccountTheme saves the user's dashboard palette. Unknown ids fall
+// handleAppearance saves the user's palette and UI language. Unknown ids fall
 // back to the default rather than erroring: the only way to send one is to
-// edit the form.
-func (s *Server) handleAccountTheme(w http.ResponseWriter, r *http.Request) {
+// edit the form. An empty locale means "follow the browser".
+func (s *Server) handleAppearance(w http.ResponseWriter, r *http.Request) {
 	u := s.requireUser(w, r)
 	if u == nil {
 		return
@@ -655,11 +656,20 @@ func (s *Server) handleAccountTheme(w http.ResponseWriter, r *http.Request) {
 	if !views.ValidPalette(theme) {
 		theme = ""
 	}
+	locale := r.FormValue("locale")
+	if locale != "" && !views.ValidLocale(locale) {
+		locale = ""
+	}
 	if err := s.db.SetUserTheme(u.ID, theme); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
-	s.accountFlash(w, r, views.T("flash.themesaved"))
+	if err := s.db.SetUserLocale(u.ID, locale); err != nil {
+		uiError(w, r, err)
+		return
+	}
+	// Flash in the language just chosen, not the one the page was rendered in.
+	s.accountFlash(w, r, views.T(views.WithLocale(r.Context(), locale), "flash.appearancesaved"))
 }
 
 func (s *Server) handleInstancePage(w http.ResponseWriter, r *http.Request) {
@@ -690,7 +700,7 @@ func (s *Server) renderInstance(w http.ResponseWriter, r *http.Request, flash vi
 		return
 	}
 	if u.Role != "owner" { // defense in depth: never leak the instance page
-		http.Error(w, "instance superadmin required", http.StatusForbidden)
+		uiFail(w, r, http.StatusForbidden, views.T(r.Context(), "err.superadmin"), nil)
 		return
 	}
 	d := views.InstanceData{
@@ -699,12 +709,12 @@ func (s *Server) renderInstance(w http.ResponseWriter, r *http.Request, flash vi
 	}
 	var err error
 	if d.Users, err = s.db.ListUsers(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	if s.cfg.SelfService {
 		if d.Plans, err = s.db.ListPlans(); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			uiError(w, r, err)
 			return
 		}
 		d.AllowRegs = s.db.SettingBool("allow_registrations", false)
@@ -712,7 +722,7 @@ func (s *Server) renderInstance(w http.ResponseWriter, r *http.Request, flash vi
 	}
 	accounts, err := s.db.ListAccounts()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	month := time.Now().UTC().Format("2006-01")
@@ -722,7 +732,7 @@ func (s *Server) renderInstance(w http.ResponseWriter, r *http.Request, flash vi
 		}
 		info, err := s.orgInfo(acct, month)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			uiError(w, r, err)
 			return
 		}
 		d.Orgs = append(d.Orgs, info)
@@ -747,7 +757,7 @@ func (s *Server) renderOrg(w http.ResponseWriter, r *http.Request, u *store.User
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	if u.Role != "owner" && s.db.MemberRole(acct.ID, u.ID) == "" {
@@ -756,12 +766,12 @@ func (s *Server) renderOrg(w http.ResponseWriter, r *http.Request, u *store.User
 	}
 	info, err := s.orgInfo(*acct, time.Now().UTC().Format("2006-01"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	caches, err := s.db.ListAccountCaches(acct.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	d := views.OrgPageData{
@@ -771,7 +781,7 @@ func (s *Server) renderOrg(w http.ResponseWriter, r *http.Request, u *store.User
 	for _, c := range caches {
 		st, err := s.db.StatsFor(c.ID)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			uiError(w, r, err)
 			return
 		}
 		d.Caches = append(d.Caches, views.CacheUsage{Cache: c, Bytes: st.PhysicalBytes, Paths: st.Paths})
@@ -780,7 +790,7 @@ func (s *Server) renderOrg(w http.ResponseWriter, r *http.Request, u *store.User
 	if d.CanManage {
 		users, err := s.db.ListUsers()
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			uiError(w, r, err)
 			return
 		}
 		member := map[int64]bool{}
@@ -806,43 +816,43 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(u.PassHash), []byte(r.FormValue("current"))) != nil {
-		s.accountFlash(w, r, views.T("flash.pwwrong"))
+		s.accountFlash(w, r, views.T(r.Context(), "flash.pwwrong"))
 		return
 	}
 	next := r.FormValue("new")
 	if len(next) > 72 {
 		// bcrypt rejects inputs past 72 bytes; catch it as a validation error
 		// rather than a 500 from GenerateFromPassword below.
-		s.accountFlash(w, r, views.T("flash.pwlong"))
+		s.accountFlash(w, r, views.T(r.Context(), "flash.pwlong"))
 		return
 	}
 	switch pwState(next, r.FormValue("confirm")) {
 	case "short", "":
-		s.accountFlash(w, r, views.T("flash.pwshort"))
+		s.accountFlash(w, r, views.T(r.Context(), "flash.pwshort"))
 		return
 	case "mismatch":
-		s.accountFlash(w, r, views.T("flash.pwmismatch"))
+		s.accountFlash(w, r, views.T(r.Context(), "flash.pwmismatch"))
 		return
 	}
 	nh, err := bcrypt.GenerateFromPassword([]byte(next), bcrypt.DefaultCost)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	if err := s.db.SetUserPassword(u.ID, string(nh)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	// Invalidate every existing session (a stolen cookie must not outlive the
 	// change), then re-issue one for this browser so the user stays signed in.
 	if err := s.db.DropUserSessions(u.ID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	if id, err := s.sess.create(u.ID); err == nil {
 		s.setSessionCookie(w, id)
 	}
-	s.accountFlash(w, r, views.T("flash.pwchanged"))
+	s.accountFlash(w, r, views.T(r.Context(), "flash.pwchanged"))
 }
 
 // pwState is the single source of truth for new-password validation: the
@@ -887,7 +897,7 @@ func pwState(pw, confirm string) string {
 // it never mutates, so a session (no same-origin dance) is enough.
 func (s *Server) handlePasswordCheck(w http.ResponseWriter, r *http.Request) {
 	if !s.loggedIn(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		uiFail(w, r, http.StatusUnauthorized, views.T(r.Context(), "err.unauthorized"), nil)
 		return
 	}
 	views.PwHint(pwState(r.FormValue("new"), r.FormValue("confirm"))).Render(r.Context(), w)
@@ -902,17 +912,17 @@ func (s *Server) handleTOTPEnroll(w http.ResponseWriter, r *http.Request) {
 	}
 	secret, err := newTOTPSecret()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	if err := s.db.SetUserTOTPSecret(u.ID, secret); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	uri := totpURI(secret, "xilo", u.Name+"@"+hostOf(s.cfg.BaseURL))
 	qr, err := totpQRDataURI(uri)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	views.TOTPEnroll(s.nav(r, u), qr, secretB32(secret)).Render(r.Context(), w)
@@ -927,15 +937,15 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 	if len(secret) == 0 || !totpVerify(secret, r.FormValue("code"), time.Now()) {
 		uri := totpURI(secret, "xilo", u.Name+"@"+hostOf(s.cfg.BaseURL))
 		qr, _ := totpQRDataURI(uri)
-		views.TOTPEnrollErr(s.nav(r, u), qr, secretB32(secret), views.T("flash.badcode")).Render(r.Context(), w)
+		views.TOTPEnrollErr(s.nav(r, u), qr, secretB32(secret), views.T(r.Context(), "flash.badcode")).Render(r.Context(), w)
 		return
 	}
 	if err := s.db.SetUserTOTPEnabled(u.ID, true); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	u.TOTPEnabled = true
-	s.accountFlash(w, r, views.T("flash.totpon"))
+	s.accountFlash(w, r, views.T(r.Context(), "flash.totpon"))
 }
 
 func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
@@ -947,11 +957,11 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 	// the current password (as changing it does). A borrowed/hijacked session
 	// alone must not be able to strip 2FA.
 	if bcrypt.CompareHashAndPassword([]byte(u.PassHash), []byte(r.FormValue("current"))) != nil {
-		s.accountFlash(w, r, views.T("flash.pwwrong"))
+		s.accountFlash(w, r, views.T(r.Context(), "flash.pwwrong"))
 		return
 	}
 	if err := s.db.SetUserTOTPEnabled(u.ID, false); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	u.TOTPEnabled = false
@@ -962,7 +972,7 @@ func (s *Server) handleTOTPDisable(w http.ResponseWriter, r *http.Request) {
 			s.setSessionCookie(w, id)
 		}
 	}
-	s.accountFlash(w, r, views.T("flash.totpoff"))
+	s.accountFlash(w, r, views.T(r.Context(), "flash.totpoff"))
 }
 
 // secureCookies marks session cookies Secure when the public base URL is HTTPS
@@ -1162,11 +1172,11 @@ func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
 	if ns == "" {
 		// No silent "default" account: the picker always offers one, and
 		// inventing a name here created an organization nobody asked for.
-		s.flashRedirect(w, r, "/admin", views.T("flash.pickaccount"))
+		s.flashRedirect(w, r, "/admin", views.T(r.Context(), "flash.pickaccount"))
 		return
 	}
 	if strings.Contains(name, "/") || strings.Contains(ns, "/") {
-		s.flashRedirect(w, r, "/admin", views.T("flash.badname"))
+		s.flashRedirect(w, r, "/admin", views.T(r.Context(), "flash.badname"))
 		return
 	}
 	// Instance admins may create caches anywhere (minting the account on the
@@ -1175,10 +1185,11 @@ func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
 	if u.Role != "owner" {
 		acc, err := s.db.GetAccount(ns)
 		if err != nil || !s.canManage(u, acc.ID) {
-			s.flashRedirect(w, r, "/admin", views.T("flash.notadmin"))
+			s.flashRedirect(w, r, "/admin", views.T(r.Context(), "flash.notadmin"))
 			return
 		}
-		if err := s.checkCacheQuota(acc); err != nil {
+		if err := s.checkCacheQuota(r.Context(), acc); err != nil {
+			// The quota message is itself a catalog string (quota.caches).
 			s.flashRedirect(w, r, "/admin", err.Error())
 			return
 		}
@@ -1187,19 +1198,19 @@ func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
 	public := r.FormValue("private") == ""
 	stName, err := s.resolveStorage(r.FormValue("storage"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		uiFail(w, r, http.StatusBadRequest, views.T(r.Context(), "err.storage"), err)
 		return
 	}
 	c, err := s.db.CreateCache(ns, name, public, priority)
 	if err != nil {
-		s.flashRedirect(w, r, "/admin", fmt.Sprintf(views.T("flash.cachefailed"), err))
+		s.flashStore(w, r, "/admin", err)
 		return
 	}
 	if err := s.assignStorage(c, stName); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
-	s.flashRedirect(w, r, "/admin/cache/"+c.Ref(), fmt.Sprintf(views.T("flash.cachecreated"), c.Ref()))
+	s.flashRedirect(w, r, "/admin/cache/"+c.Ref(), views.Tf(r.Context(), "flash.cachecreated", c.Ref()))
 }
 
 // notFound renders the styled 404 page (browser routes only).
@@ -1230,7 +1241,7 @@ func (s *Server) cacheForUser(w http.ResponseWriter, r *http.Request, u *store.U
 		return nil, false
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return nil, false
 	}
 	if u.Role != "owner" && s.db.MemberRole(c.AccountID, u.ID) == "" {
@@ -1246,7 +1257,7 @@ func (s *Server) cacheForUser(w http.ResponseWriter, r *http.Request, u *store.U
 func (s *Server) renderCache(w http.ResponseWriter, r *http.Request, u *store.User, c *store.Cache, flash views.Flash, secret string) {
 	st, err := s.db.StatsFor(c.ID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	dedup := "1.00"
@@ -1258,7 +1269,7 @@ func (s *Server) renderCache(w http.ResponseWriter, r *http.Request, u *store.Us
 	skey, sdir := sortParams(r, "sort", "dir", "path", "size", "pulled")
 	paths, total, err := s.db.SearchPaths(c.ID, q, perPage, (page-1)*perPage, skey, sdir)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	pages := max(int((total+int64(perPage)-1)/int64(perPage)), 1)
@@ -1267,7 +1278,7 @@ func (s *Server) renderCache(w http.ResponseWriter, r *http.Request, u *store.Us
 		page = pages
 		paths, total, err = s.db.SearchPaths(c.ID, q, perPage, (page-1)*perPage, skey, sdir)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			uiError(w, r, err)
 			return
 		}
 	}
@@ -1321,7 +1332,7 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	skey, sdir := sortParams(r, "sort", "dir", "time", "actor", "method", "path", "status")
 	entries, total, err := s.db.SearchAudit(q, method, status, perPage, (page-1)*perPage, skey, sdir)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	pages := max(int((total+int64(perPage)-1)/int64(perPage)), 1)
@@ -1329,13 +1340,13 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		page = pages
 		entries, total, err = s.db.SearchAudit(q, method, status, perPage, (page-1)*perPage, skey, sdir)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			uiError(w, r, err)
 			return
 		}
 	}
 	stats, err := s.db.AuditStats()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	views.AuditPage(views.AuditData{
@@ -1375,7 +1386,7 @@ func (s *Server) handlePathDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	// A path whose chunks were lost (what fsck reports) still gets a page: the
@@ -1383,7 +1394,7 @@ func (s *Server) handlePathDetail(w http.ResponseWriter, r *http.Request) {
 	chunks, err := s.db.ChunkKeys(c.Storage, p.Chunks)
 	broken := errors.Is(err, store.ErrNotFound)
 	if err != nil && !broken {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	if broken {
@@ -1403,7 +1414,7 @@ func (s *Server) handlePathDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	missing, err := s.db.MissingPaths(c.ID, refHashes)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	present := make(map[string]bool, len(refHashes))
@@ -1442,7 +1453,7 @@ func (s *Server) manageCache(w http.ResponseWriter, r *http.Request) (*store.Cac
 		return nil, false
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return nil, false
 	}
 	if !s.canManage(u, c.AccountID) {
@@ -1469,7 +1480,7 @@ func (s *Server) handleConfigureCache(w http.ResponseWriter, r *http.Request) {
 		maxBytes = b
 	}
 	if err := s.db.UpdateCache(c.ID, public, priority, retention, maxBytes); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	http.Redirect(w, r, "/admin/cache/"+c.Ref(), http.StatusSeeOther)
@@ -1482,10 +1493,10 @@ func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
 	}
 	nc, err := s.db.RotateKey(c.ID, c.Name)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
-	s.flashRedirectCode(w, r, "/admin/cache/"+c.Ref(), views.T("flash.rotated"), nc.PubKey)
+	s.flashRedirectCode(w, r, "/admin/cache/"+c.Ref(), views.T(r.Context(), "flash.rotated"), nc.PubKey)
 }
 
 func (s *Server) handleDeleteCache(w http.ResponseWriter, r *http.Request) {
@@ -1494,10 +1505,10 @@ func (s *Server) handleDeleteCache(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.DeleteCache(c.ID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
-	s.flashRedirect(w, r, "/admin", fmt.Sprintf(views.T("flash.cachedeleted"), c.Ref()))
+	s.flashRedirect(w, r, "/admin", views.Tf(r.Context(), "flash.cachedeleted", c.Ref()))
 }
 
 // tokenScope resolves the account a new token belongs to — always the acting
@@ -1546,7 +1557,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.FormValue("name"))
 	nsID, _, caches, err := s.tokenScope(u, r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
+		uiFail(w, r, http.StatusForbidden, views.T(r.Context(), "flash.notadmin"), err)
 		return
 	}
 	perms := formPerms(r)
@@ -1561,11 +1572,11 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 	}
 	secret, t, err := s.db.CreateToken(nsID, name, caches, perms, expires)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		uiFail(w, r, http.StatusBadRequest, views.T(r.Context(), "err.tokenfailed"), err)
 		return
 	}
 	s.renderDashboard(w, r, views.Flash{
-		Msg:  fmt.Sprintf(views.T("flash.tokencreated"), t.Name),
+		Msg:  views.Tf(r.Context(), "flash.tokencreated", t.Name),
 		Code: secret,
 	})
 }
@@ -1584,7 +1595,7 @@ func (s *Server) handleCacheToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.canManage(u, c.AccountID) {
-		s.flashRedirect(w, r, "/admin/cache/"+c.Ref(), views.T("flash.notadmin"))
+		s.flashRedirect(w, r, "/admin/cache/"+c.Ref(), views.T(r.Context(), "flash.notadmin"))
 		return
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
@@ -1603,12 +1614,12 @@ func (s *Server) handleCacheToken(w http.ResponseWriter, r *http.Request) {
 	}
 	secret, t, err := s.db.CreateToken(c.AccountID, name, []string{c.Name}, perms, expires)
 	if err != nil {
-		s.flashRedirect(w, r, "/admin/cache/"+c.Ref(), err.Error())
+		s.flashErr(w, r, "/admin/cache/"+c.Ref(), views.T(r.Context(), "err.tokenfailed"), err)
 		return
 	}
 	// Rendered, not redirected: the secret exists only in this response.
 	s.renderCache(w, r, u, c, views.Flash{
-		Msg: fmt.Sprintf(views.T("flash.tokencreated"), t.Name), Code: secret,
+		Msg: views.Tf(r.Context(), "flash.tokencreated", t.Name), Code: secret,
 	}, secret)
 }
 
@@ -1626,7 +1637,7 @@ func (s *Server) manageToken(w http.ResponseWriter, r *http.Request) (*store.Tok
 		return nil, nil, false
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return nil, nil, false
 	}
 	if t.AccountID == 0 && u.Role != "owner" {
@@ -1657,7 +1668,7 @@ func (s *Server) handleEditToken(w http.ResponseWriter, r *http.Request) {
 		if t.AccountID != 0 {
 			bare, cut := strings.CutPrefix(c, t.Account+"/")
 			if !cut {
-				http.Error(w, "scope must be a cache in "+t.Account, http.StatusBadRequest)
+				uiFail(w, r, http.StatusBadRequest, views.Tf(r.Context(), "err.tokenscope", t.Account), nil)
 				return
 			}
 			caches = []string{bare}
@@ -1682,10 +1693,10 @@ func (s *Server) handleEditToken(w http.ResponseWriter, r *http.Request) {
 		expires = time.Now().Unix() + secs
 	}
 	if err := s.db.UpdateToken(t.ID, name, caches, perms, expires); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
-	s.flashRedirect(w, r, "/admin", views.T("flash.tokenupdated"))
+	s.flashRedirect(w, r, "/admin", views.T(r.Context(), "flash.tokenupdated"))
 }
 
 func (s *Server) handleRevokeToken(w http.ResponseWriter, r *http.Request) {
@@ -1694,10 +1705,10 @@ func (s *Server) handleRevokeToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.db.RevokeToken(t.ID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
-	s.flashRedirect(w, r, "/admin", views.T("flash.tokenrevoked"))
+	s.flashRedirect(w, r, "/admin", views.T(r.Context(), "flash.tokenrevoked"))
 }
 
 func (s *Server) handleGC(w http.ResponseWriter, r *http.Request) {
@@ -1706,15 +1717,72 @@ func (s *Server) handleGC(w http.ResponseWriter, r *http.Request) {
 	}
 	deleted, freed, err := s.runGC(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
-	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.gcdone"), deleted, humanBytes(freed)))
+	s.instanceFlash(w, r, views.Tf(r.Context(), "flash.gcdone", deleted, humanBytes(freed)))
 }
 
 // ---- user management (admin role only) ----
 
 const flashCookie = "xilo_flash"
+
+// uiFail ends a browser request with a translated sentence and logs whatever
+// really went wrong. Raw Go errors (library text, SQL, filesystem paths) are
+// for the operator's log, never for the page: the user cannot act on them and
+// they cannot be translated. Every hard error on an /admin route goes through
+// here or through uiError; the API surfaces keep their own wire-contract text.
+func uiFail(w http.ResponseWriter, r *http.Request, status int, msg string, err error) {
+	if err != nil {
+		log.Printf("admin: %s %s: %v", r.Method, r.URL.Path, err)
+	}
+	http.Error(w, msg, status)
+}
+
+// uiError is uiFail for the failures a user can do nothing about.
+func uiError(w http.ResponseWriter, r *http.Request, err error) {
+	uiFail(w, r, http.StatusInternalServerError, views.T(r.Context(), "err.internal"), err)
+}
+
+// flashErr is flashRedirect for a failed action: the user gets a translated
+// sentence, the log gets the Go error. Use it wherever the old code flashed
+// err.Error() straight onto the page.
+func (s *Server) flashErr(w http.ResponseWriter, r *http.Request, path, msg string, err error) {
+	log.Printf("admin: %s %s: %v", r.Method, r.URL.Path, err)
+	s.flashRedirect(w, r, path, msg)
+}
+
+// storeMsg is the store's user-facing refusals and the catalog key each one
+// reads as. The sentinel carries English for the CLI and the log; the page
+// gets the translation.
+var storeMsg = []struct {
+	err error
+	key string
+}{
+	{store.ErrNotOrg, "flash.notorg"},
+	{store.ErrBadRole, "flash.badrole"},
+	{store.ErrOwnerRole, "flash.ownerrole"},
+	{store.ErrPersonalOrg, "flash.personalorg"},
+	{store.ErrHasOwner, "flash.hasowner"},
+	{store.ErrOwnerLocked, "flash.ownerlocked"},
+	{store.ErrPlanInUse, "flash.planinuse"},
+	{store.ErrNameTaken, "flash.nametaken"},
+	{store.ErrSlugReserved, "flash.slugreserved"},
+	{store.ErrNotFound, "flash.nouser"},
+}
+
+// flashStore lands a failed write back on path. A refusal the user can act on
+// gets its own sentence; anything else is an internal failure, so it gets the
+// generic one and the detail goes to the log.
+func (s *Server) flashStore(w http.ResponseWriter, r *http.Request, path string, err error) {
+	for _, m := range storeMsg {
+		if errors.Is(err, m.err) {
+			s.flashRedirect(w, r, path, views.T(r.Context(), m.key))
+			return
+		}
+	}
+	s.flashErr(w, r, path, views.T(r.Context(), "flash.savefailed"), err)
+}
 
 // flashRedirect stores a one-shot flash in a cookie and 303-redirects (PRG:
 // a refresh re-fetches the page instead of re-executing the action). Never
@@ -1771,27 +1839,27 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	email := strings.TrimSpace(r.FormValue("email"))
 	pw := r.FormValue("password")
 	if name == "" {
-		s.instanceFlash(w, r, views.T("flash.userreq"))
+		s.instanceFlash(w, r, views.T(r.Context(), "flash.userreq"))
 		return
 	}
 	if s.cfg.SelfService && !validEmail(email) {
-		s.instanceFlash(w, r, views.T("flash.emailreq"))
+		s.instanceFlash(w, r, views.T(r.Context(), "flash.emailreq"))
 		return
 	}
 	if len(pw) < 8 {
-		s.instanceFlash(w, r, views.T("flash.pwshort"))
+		s.instanceFlash(w, r, views.T(r.Context(), "flash.pwshort"))
 		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	if _, err := s.db.CreateUser(name, email, string(hash), "user"); err != nil {
-		s.instanceFlash(w, r, views.T("flash.userfailed")+" "+err.Error())
+		s.flashStore(w, r, "/admin/settings", err)
 		return
 	}
-	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.usercreated"), name))
+	s.instanceFlash(w, r, views.Tf(r.Context(), "flash.usercreated", name))
 }
 
 // userByPath resolves the {id} path value to a user, or writes 404.
@@ -1803,7 +1871,7 @@ func (s *Server) userByPath(w http.ResponseWriter, r *http.Request) (*store.User
 		return nil, false
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return nil, false
 	}
 	return u, true
@@ -1819,29 +1887,29 @@ func (s *Server) handleUserReset(w http.ResponseWriter, r *http.Request) {
 	}
 	pw := r.FormValue("password")
 	if len(pw) < 8 {
-		s.instanceFlash(w, r, views.T("flash.pwshort"))
+		s.instanceFlash(w, r, views.T(r.Context(), "flash.pwshort"))
 		return
 	}
 	if len(pw) > 72 {
-		s.instanceFlash(w, r, views.T("flash.pwlong"))
+		s.instanceFlash(w, r, views.T(r.Context(), "flash.pwlong"))
 		return
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	if err := s.db.SetUserPassword(u.ID, string(hash)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	// Admin reset targets another user: log them out everywhere so any live
 	// (possibly attacker-held) session dies with the old password.
 	if err := s.db.DropUserSessions(u.ID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
-	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.pwreset"), u.Name))
+	s.instanceFlash(w, r, views.Tf(r.Context(), "flash.pwreset", u.Name))
 }
 
 func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
@@ -1853,22 +1921,22 @@ func (s *Server) handleUserDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if acting := s.currentUser(r); acting != nil && acting.ID == u.ID {
-		s.instanceFlash(w, r, views.T("flash.delself"))
+		s.instanceFlash(w, r, views.T(r.Context(), "flash.delself"))
 		return
 	}
 	if u.Role == "owner" {
-		s.instanceFlash(w, r, views.T("flash.delowner"))
+		s.instanceFlash(w, r, views.T(r.Context(), "flash.delowner"))
 		return
 	}
 	if s.db.OwnsOrgs(u.ID) {
-		s.instanceFlash(w, r, views.T("flash.ownsorgs"))
+		s.instanceFlash(w, r, views.T(r.Context(), "flash.ownsorgs"))
 		return
 	}
 	if err := s.db.DeleteUser(u.ID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
-	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.userdeleted"), u.Name))
+	s.instanceFlash(w, r, views.Tf(r.Context(), "flash.userdeleted", u.Name))
 }
 
 // ---- account management ----
@@ -1879,22 +1947,22 @@ func (s *Server) handleCreateOrg(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" || strings.ContainsAny(name, "/ ") {
-		s.instanceFlash(w, r, views.T("flash.badorgname"))
+		s.instanceFlash(w, r, views.T(r.Context(), "flash.badorgname"))
 		return
 	}
 	org, err := s.db.EnsureAccount(name, "org")
 	if errors.Is(err, store.ErrSlugReserved) {
-		s.instanceFlash(w, r, views.T("flash.nametaken"))
+		s.instanceFlash(w, r, views.T(r.Context(), "flash.nametaken"))
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	if u := s.currentUser(r); u != nil {
 		_ = s.db.MakeOwner(org.ID, u.ID)
 	}
-	s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.orgready"), name))
+	s.instanceFlash(w, r, views.Tf(r.Context(), "flash.orgready", name))
 }
 
 // orgByPath resolves the {slug} path value to an ORG the acting user may
@@ -1910,7 +1978,7 @@ func (s *Server) orgByPath(w http.ResponseWriter, r *http.Request) (*store.Accou
 		return nil, nil, false
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return nil, nil, false
 	}
 	if !s.canManage(u, ns.ID) {
@@ -1930,19 +1998,19 @@ func (s *Server) handleDeleteOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if u.Role != "owner" && s.db.MemberRole(ns.ID, u.ID) != "owner" {
-		s.flashRedirect(w, r, "/admin/org/"+ns.Slug, views.T("flash.ownerdelete"))
+		s.flashRedirect(w, r, "/admin/org/"+ns.Slug, views.T(r.Context(), "flash.ownerdelete"))
 		return
 	}
 	if err := s.db.DeleteOrg(ns.ID); err != nil {
-		s.flashRedirect(w, r, "/admin/org/"+ns.Slug, views.T("flash.deletefailed")+" "+err.Error())
+		s.flashStore(w, r, "/admin/org/"+ns.Slug, err)
 		return
 	}
 	go s.runGC(context.Background())
 	if u.Role == "owner" {
-		s.instanceFlash(w, r, fmt.Sprintf(views.T("flash.orgdeleted"), ns.Slug))
+		s.instanceFlash(w, r, views.Tf(r.Context(), "flash.orgdeleted", ns.Slug))
 		return
 	}
-	s.flashRedirect(w, r, "/admin", fmt.Sprintf(views.T("flash.orgdeleted"), ns.Slug))
+	s.flashRedirect(w, r, "/admin", views.Tf(r.Context(), "flash.orgdeleted", ns.Slug))
 }
 
 // handleSetMember adds a user (picked by id) to an org or changes their role.
@@ -1955,11 +2023,11 @@ func (s *Server) handleSetMember(w http.ResponseWriter, r *http.Request) {
 	uid, _ := strconv.ParseInt(r.FormValue("user_id"), 10, 64)
 	target, err := s.db.GetUser(uid)
 	if errors.Is(err, store.ErrNotFound) {
-		s.flashRedirect(w, r, "/admin/org/"+ns.Slug, views.T("flash.nouser"))
+		s.flashRedirect(w, r, "/admin/org/"+ns.Slug, views.T(r.Context(), "flash.nouser"))
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	role := "user"
@@ -1967,17 +2035,18 @@ func (s *Server) handleSetMember(w http.ResponseWriter, r *http.Request) {
 		role = "admin"
 	}
 	if s.db.MemberRole(ns.ID, target.ID) == "" { // adding, not editing
-		if err := s.checkMemberQuota(ns); err != nil {
+		if err := s.checkMemberQuota(r.Context(), ns); err != nil {
+			// The quota message is itself a catalog string (quota.members).
 			s.flashRedirect(w, r, "/admin/org/"+ns.Slug, err.Error())
 			return
 		}
 	}
 	if err := s.db.SetMember(ns.ID, target.ID, role); err != nil {
-		s.flashRedirect(w, r, "/admin/org/"+ns.Slug, err.Error())
+		s.flashStore(w, r, "/admin/org/"+ns.Slug, err)
 		return
 	}
 	s.notifyOrgMembership(target, ns.Slug, role)
-	s.flashRedirect(w, r, "/admin/org/"+ns.Slug, fmt.Sprintf(views.T("flash.memberrole"), target.Name, views.T("role."+role), ns.Slug))
+	s.flashRedirect(w, r, "/admin/org/"+ns.Slug, views.Tf(r.Context(), "flash.memberrole", target.Name, views.T(r.Context(), "role."+role), ns.Slug))
 }
 
 func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
@@ -1987,10 +2056,10 @@ func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 	}
 	uid, _ := strconv.ParseInt(r.PathValue("uid"), 10, 64)
 	if err := s.db.RemoveMember(ns.ID, uid); err != nil {
-		s.flashRedirect(w, r, "/admin/org/"+ns.Slug, err.Error())
+		s.flashStore(w, r, "/admin/org/"+ns.Slug, err)
 		return
 	}
-	s.flashRedirect(w, r, "/admin/org/"+ns.Slug, views.T("flash.memberremoved"))
+	s.flashRedirect(w, r, "/admin/org/"+ns.Slug, views.T(r.Context(), "flash.memberremoved"))
 }
 
 // mailUser sends a transactional notice to one user (no-op without email or
@@ -2001,23 +2070,35 @@ func (s *Server) mailUser(u *store.User, subject, body string) {
 	}
 }
 
-// mailAdmins notifies every instance admin that has an email address.
-func (s *Server) mailAdmins(subject, body string) {
+// mailAdmins notifies every instance admin that has an email address, each
+// one in their own language — hence the callback rather than a rendered pair.
+func (s *Server) mailAdmins(render func(ctx context.Context) (subject, body string)) {
 	users, err := s.db.ListUsers()
 	if err != nil {
 		return
 	}
 	for _, u := range users {
 		if u.Role == "owner" && u.Email != "" {
+			subject, body := render(mailCtx(&u))
 			mail.Go(s.cfg.SMTP.Mail(), u.Email, subject, body)
 		}
 	}
 }
 
+// mailCtx is the context a transactional email renders in: the recipient's
+// language, never the language of whoever triggered the send.
+func mailCtx(u *store.User) context.Context {
+	if u == nil {
+		return context.Background()
+	}
+	return views.WithLocale(context.Background(), u.Locale)
+}
+
 // notifyOrgMembership emails a user about being added to an organization.
 func (s *Server) notifyOrgMembership(u *store.User, org, role string) {
-	s.mailUser(u, "You were added to "+org,
-		"You are now a "+role+" of the organization "+org+" on "+s.cfg.BaseURL+".")
+	ctx := mailCtx(u)
+	s.mailUser(u, views.Tf(ctx, "mail.orgsub", org),
+		views.Tf(ctx, "mail.orgbody", views.T(ctx, "role."+role), org, s.cfg.BaseURL))
 }
 
 // formPerms reads the token permission checkboxes shared by the create and

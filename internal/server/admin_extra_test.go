@@ -160,7 +160,7 @@ func TestAdminCacheCRUD(t *testing.T) {
 	// duplicate name → flash + redirect back to the dashboard (PRG), and the
 	// landing page carries the error message.
 	resp, _ = c.PostForm(ts.URL+"/admin/caches", url.Values{"name": {"web"}, "namespace": {"default"}})
-	if b := body(t, resp); resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin" || !contains(b, "Could not create cache") {
+	if b := body(t, resp); resp.StatusCode != http.StatusOK || resp.Request.URL.Path != "/admin" || !contains(b, "That name is taken") {
 		t.Errorf("duplicate cache name → %d at %s", resp.StatusCode, resp.Request.URL.Path)
 	}
 
@@ -307,7 +307,7 @@ func TestAdminGC(t *testing.T) {
 	}
 	c := adminClient(t, ts)
 	resp, _ := c.PostForm(ts.URL+"/admin/gc", nil)
-	if b := body(t, resp); !strings.Contains(b, "GC done") {
+	if b := body(t, resp); !strings.Contains(b, "Removed") {
 		t.Fatalf("gc response: %q", b)
 	}
 	if resp, _ := http.Get(ts.URL + "/c/default/c/" + h32 + ".narinfo"); resp.StatusCode != http.StatusNotFound {

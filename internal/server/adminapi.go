@@ -152,7 +152,7 @@ func (s *Server) apiCreateCache(w http.ResponseWriter, r *http.Request) {
 			apiError(w, http.StatusBadRequest, "unknown account")
 			return
 		}
-		if err := s.checkCacheQuota(acc); err != nil {
+		if err := s.checkCacheQuota(r.Context(), acc); err != nil {
 			apiError(w, http.StatusForbidden, err.Error())
 			return
 		}

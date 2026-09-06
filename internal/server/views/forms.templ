@@ -70,7 +70,7 @@ templ AccountSelect(name, value, placeholder string, accounts []store.Account) {
 templ ScopeSelect(name, value string, caches []CacheUsage) {
 	@selectbox.SelectBox() {
 		@selectbox.Trigger(selectbox.TriggerProps{Name: name}) {
-			@selectbox.Value(selectbox.ValueProps{Placeholder: T("tokens.pickcache")})
+			@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "tokens.pickcache")})
 		}
 		@selectbox.Content() {
 			for _, u := range caches {
@@ -86,7 +86,7 @@ templ ScopeSelect(name, value string, caches []CacheUsage) {
 templ StorageSelect(name, value string, storages []string) {
 	@selectbox.SelectBox() {
 		@selectbox.Trigger(selectbox.TriggerProps{Name: name}) {
-			@selectbox.Value(selectbox.ValueProps{Placeholder: T("storage.default")})
+			@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "storage.default")})
 		}
 		@selectbox.Content() {
 			for _, s := range storages {
@@ -115,12 +115,12 @@ var ttlPresets = []struct {
 templ TTLSelect(t *store.Token) {
 	@selectbox.SelectBox() {
 		@selectbox.Trigger(selectbox.TriggerProps{Name: "ttl"}) {
-			@selectbox.Value(selectbox.ValueProps{Placeholder: T("ttl.keep")})
+			@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "ttl.keep")})
 		}
 		@selectbox.Content() {
 			for _, p := range ttlPresets {
 				@selectbox.Item(selectbox.ItemProps{Value: strconv.FormatInt(p.Secs, 10), Selected: t == nil && p.Secs == 30*86400}) {
-					{ T(p.Label) }
+					{ T(ctx, p.Label) }
 				}
 			}
 		}
@@ -133,7 +133,7 @@ templ DurationInput(name string, secs int64) {
 	<div class="flex gap-2">
 		@input.Input(input.Props{
 			Name: name + "_value", Type: input.TypeNumber, Value: durValue(secs),
-			Class: "min-w-0 flex-1", Attributes: templ.Attributes{"min": "0", "step": "1", "aria-label": T("unit.duration")},
+			Class: "min-w-0 flex-1", Attributes: templ.Attributes{"min": "0", "step": "1", "aria-label": T(ctx, "unit.duration")},
 		})
 		<div class="w-28 shrink-0">
 			@selectbox.SelectBox() {
@@ -141,10 +141,10 @@ templ DurationInput(name string, secs int64) {
 					@selectbox.Value(selectbox.ValueProps{})
 				}
 				@selectbox.Content() {
-					@unitItem(name, "h", T("unit.hours"), secs)
-					@unitItem(name, "d", T("unit.days"), secs)
-					@unitItem(name, "mo", T("unit.months"), secs)
-					@unitItem(name, "y", T("unit.years"), secs)
+					@unitItem(name, "h", T(ctx, "unit.hours"), secs)
+					@unitItem(name, "d", T(ctx, "unit.days"), secs)
+					@unitItem(name, "mo", T(ctx, "unit.months"), secs)
+					@unitItem(name, "y", T(ctx, "unit.years"), secs)
 				}
 			}
 		</div>
@@ -163,7 +163,7 @@ templ SizeInput(name string, bytes int64) {
 	<div class="flex gap-2">
 		@input.Input(input.Props{
 			Name: name + "_value", Type: input.TypeNumber, Value: sizeValue(bytes),
-			Class: "min-w-0 flex-1", Placeholder: T("unit.unlimited"), Attributes: templ.Attributes{"min": "0", "step": "1", "aria-label": T("paths.size")},
+			Class: "min-w-0 flex-1", Placeholder: T(ctx, "unit.unlimited"), Attributes: templ.Attributes{"min": "0", "step": "1", "aria-label": T(ctx, "paths.size")},
 		})
 		<div class="w-28 shrink-0">
 			@selectbox.SelectBox() {
@@ -171,9 +171,9 @@ templ SizeInput(name string, bytes int64) {
 					@selectbox.Value(selectbox.ValueProps{})
 				}
 				@selectbox.Content() {
-					@sizeUnitItem(name, "MiB", T("unit.mib"), bytes)
-					@sizeUnitItem(name, "GiB", T("unit.gib"), bytes)
-					@sizeUnitItem(name, "TiB", T("unit.tib"), bytes)
+					@sizeUnitItem(name, "MiB", T(ctx, "unit.mib"), bytes)
+					@sizeUnitItem(name, "GiB", T(ctx, "unit.gib"), bytes)
+					@sizeUnitItem(name, "TiB", T(ctx, "unit.tib"), bytes)
 				}
 			}
 		</div>
@@ -188,7 +188,7 @@ templ sizeUnitItem(name, unit, label string, bytes int64) {
 
 // PriorityField is the 1–100 substituter-priority number input.
 templ PriorityField(value int) {
-	@FieldInfo("priority", T("caches.priority"), T("caches.priorityhint")) {
+	@FieldInfo("priority", T(ctx, "caches.priority"), T(ctx, "caches.priorityhint")) {
 		@input.Input(input.Props{
 			ID: "priority", Name: "priority", Type: input.TypeNumber, Value: strconv.Itoa(value),
 			Attributes: templ.Attributes{"min": "1", "max": "100"},
@@ -201,10 +201,10 @@ templ VisibilitySwitch(private bool) {
 	@form.ItemFlex(form.ItemProps{Class: "justify-between rounded-lg border p-3"}) {
 		@form.Item(form.ItemProps{Class: "space-y-0.5"}) {
 			@form.Label() {
-				{ T("vis.private") }
+				{ T(ctx, "vis.private") }
 			}
 			@form.Description() {
-				{ T("caches.privatehint") }
+				{ T(ctx, "caches.privatehint") }
 			}
 		}
 		@switchcomp.Switch(switchcomp.Props{Name: "private", Value: "on", Checked: private})
@@ -225,9 +225,9 @@ templ PermSwitchID(id, name, value, text string, checked bool) {
 // ExpiryField is the token expiry control: a "never" switch that hides the
 // TTL presets while on. t is nil on create.
 templ ExpiryField(dlgID string, t *store.Token) {
-	@Field("", T("tokens.expiry")) {
+	@Field("", T(ctx, "tokens.expiry")) {
 		<div class="group/expiry space-y-2">
-			@PermSwitchID(dlgID+"-permanent", "permanent", "on", T("tokens.permanent"), tokenPermanent(t))
+			@PermSwitchID(dlgID+"-permanent", "permanent", "on", T(ctx, "tokens.permanent"), tokenPermanent(t))
 			<div class="group-has-[:checked]/expiry:hidden">
 				@TTLSelect(t)
 			</div>

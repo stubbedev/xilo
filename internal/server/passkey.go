@@ -167,17 +167,17 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 	}
 	wan, err := s.webAuthn()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	user, err := s.loadUserPasskeys(u)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	opts, sd, err := wan.BeginRegistration(user)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	s.ceremony.putReg(sd, u.ID)
@@ -191,26 +191,26 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 	}
 	wan, err := s.webAuthn()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	sd, regUser := s.ceremony.takeReg()
 	if sd == nil || regUser != u.ID {
-		http.Error(w, "registration expired — try again", http.StatusBadRequest)
+		uiFail(w, r, http.StatusBadRequest, views.T(r.Context(), "err.pkexpired"), nil)
 		return
 	}
 	user, err := s.loadUserPasskeys(u)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	cred, err := wan.FinishRegistration(user, *sd, r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		uiFail(w, r, http.StatusBadRequest, views.T(r.Context(), "err.pkregister"), err)
 		return
 	}
 	if !cred.Flags.UserVerified {
-		http.Error(w, "passkey must verify the user (PIN or biometric)", http.StatusBadRequest)
+		uiFail(w, r, http.StatusBadRequest, views.T(r.Context(), "err.pkverify"), nil)
 		return
 	}
 	// Autoname server-side: "<user>@<hostname>". Client-supplied names went
@@ -218,11 +218,11 @@ func (s *Server) handlePasskeyRegisterFinish(w http.ResponseWriter, r *http.Requ
 	name := s.passkeyName(u)
 	blob, err := json.Marshal(cred)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	if err := s.db.AddPasskey(u.ID, name, blob); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	jsonOut(w, map[string]bool{"ok": true})
@@ -235,30 +235,30 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err := s.db.DeletePasskey(u.ID, id); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
-	s.accountFlash(w, r, views.T("flash.pkremoved"))
+	s.accountFlash(w, r, views.T(r.Context(), "flash.pkremoved"))
 }
 
 func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request) {
 	wan, err := s.webAuthn()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	user, err := s.loadAllPasskeys()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	if len(user.creds) == 0 {
-		http.Error(w, "no passkeys registered", http.StatusBadRequest)
+		uiFail(w, r, http.StatusBadRequest, views.T(r.Context(), "err.pknone"), nil)
 		return
 	}
 	opts, sd, err := wan.BeginLogin(user, webauthn.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	s.ceremony.putLogin(sd)
@@ -278,22 +278,22 @@ func (s *Server) handlePasskeyLoginBegin(w http.ResponseWriter, r *http.Request)
 func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 	wan, err := s.webAuthn()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	sd := s.ceremony.takeLogin()
 	if sd == nil {
-		http.Error(w, "sign-in expired — try again", http.StatusBadRequest)
+		uiFail(w, r, http.StatusBadRequest, views.T(r.Context(), "err.pkloginexp"), nil)
 		return
 	}
 	parsed, err := protocol.ParseCredentialRequestResponseBody(r.Body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		uiFail(w, r, http.StatusBadRequest, views.T(r.Context(), "err.pksignin"), err)
 		return
 	}
 	all, err := s.loadAllPasskeys()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	var owner passkeyUser
@@ -305,16 +305,16 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 		}
 	}
 	if ownerID == 0 {
-		http.Error(w, "unknown credential", http.StatusUnauthorized)
+		uiFail(w, r, http.StatusUnauthorized, views.T(r.Context(), "err.pkunknown"), nil)
 		return
 	}
 	u, err := s.db.GetUser(ownerID)
 	if err != nil {
-		http.Error(w, "credential has no owner", http.StatusUnauthorized)
+		uiFail(w, r, http.StatusUnauthorized, views.T(r.Context(), "err.pkowner"), nil)
 		return
 	}
 	if owner, err = s.loadUserPasskeys(u); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		uiError(w, r, err)
 		return
 	}
 	if h := parsed.Response.UserHandle; len(h) > 0 {
@@ -323,13 +323,13 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 	sd.UserID = owner.id
 	cred, err := wan.ValidateLogin(owner, *sd, parsed)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		uiFail(w, r, http.StatusUnauthorized, views.T(r.Context(), "err.pksignin"), err)
 		return
 	}
 	// The passkey stands in for password + TOTP, so possession alone is not
 	// enough — demand the user-verified flag the assertion carries.
 	if !cred.Flags.UserVerified {
-		http.Error(w, "passkey did not verify the user", http.StatusUnauthorized)
+		uiFail(w, r, http.StatusUnauthorized, views.T(r.Context(), "err.pkverify"), nil)
 		return
 	}
 	// Persist the updated sign counter / clone-detection state.
@@ -338,7 +338,7 @@ func (s *Server) handlePasskeyLoginFinish(w http.ResponseWriter, r *http.Request
 	}
 	id, err := s.sess.create(ownerID)
 	if err != nil {
-		http.Error(w, "session error", http.StatusInternalServerError)
+		uiFail(w, r, http.StatusInternalServerError, views.T(r.Context(), "err.session"), err)
 		return
 	}
 	s.setSessionCookie(w, id)

@@ -89,6 +89,15 @@ func (db *DB) CreateCache(account, name string, public bool, priority int) (*Cac
 		return nil, err
 	}
 	err = db.write(func(tx *sql.Tx) error {
+		// Check the name before inserting, the way createUser does: the bare
+		// UNIQUE violation is driver-specific text with no sentinel to match,
+		// so the admin UI could only ever have shown it raw.
+		var taken int
+		if err := tx.QueryRow(`SELECT 1 FROM caches WHERE account_id=? AND name=?`, c.AccountID, c.Name).Scan(&taken); err == nil {
+			return ErrNameTaken
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
 		// RETURNING instead of LastInsertId — works on both SQLite and
 		// Postgres (pgx does not implement LastInsertId).
 		return tx.QueryRow(

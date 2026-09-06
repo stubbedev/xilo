@@ -50,6 +50,19 @@ func ValidSlug(s string) bool {
 // different kind and must not be adopted (see EnsureAccount).
 var ErrSlugReserved = errors.New("account name is reserved")
 
+// Membership refusals the admin UI turns into flashes. They are sentinels,
+// not sentences: internal/server maps each to an i18n key (flashStore), so
+// the wording a user reads lives in one catalog instead of down here. The
+// text stays as the CLI and log rendering.
+var (
+	ErrNotOrg      = errors.New("only organizations can be deleted")
+	ErrBadRole     = errors.New("grantable roles are admin and user")
+	ErrOwnerRole   = errors.New("the owner's role cannot be changed")
+	ErrPersonalOrg = errors.New("personal accounts cannot have additional members")
+	ErrHasOwner    = errors.New("account already has an owner")
+	ErrOwnerLocked = errors.New("the owner cannot be removed")
+)
+
 // EnsureAccount returns the account with the given slug, creating it (with
 // the given kind) if missing.
 //
@@ -175,7 +188,7 @@ func (db *DB) DeleteOrg(id int64) error {
 			return err
 		}
 		if kind != "org" {
-			return errors.New("only organizations can be deleted")
+			return ErrNotOrg
 		}
 		for _, q := range []string{
 			`DELETE FROM account_members WHERE account_id=?`,
@@ -200,7 +213,7 @@ func (db *DB) DeleteOrg(id int64) error {
 // the UI.
 func (db *DB) SetMember(accountID, userID int64, role string) error {
 	if role != "admin" && role != "user" {
-		return errors.New("grantable roles are admin and user")
+		return ErrBadRole
 	}
 	return db.write(func(tx *sql.Tx) error {
 		var kind string
@@ -210,10 +223,10 @@ func (db *DB) SetMember(accountID, userID int64, role string) error {
 		var cur string
 		isMember := tx.QueryRow(`SELECT role FROM account_members WHERE account_id=? AND user_id=?`, accountID, userID).Scan(&cur) == nil
 		if isMember && cur == "owner" {
-			return errors.New("the owner's role cannot be changed")
+			return ErrOwnerRole
 		}
 		if kind != "org" && !isMember {
-			return errors.New("personal accounts cannot have additional members")
+			return ErrPersonalOrg
 		}
 		_, err := tx.Exec(`INSERT INTO account_members (account_id, user_id, role) VALUES (?,?,?)
 			 ON CONFLICT (account_id, user_id) DO UPDATE SET role=excluded.role`, accountID, userID, role)
@@ -227,7 +240,7 @@ func (db *DB) MakeOwner(accountID, userID int64) error {
 	return db.write(func(tx *sql.Tx) error {
 		var one int
 		if tx.QueryRow(`SELECT 1 FROM account_members WHERE account_id=? AND role='owner'`, accountID).Scan(&one) == nil {
-			return errors.New("account already has an owner")
+			return ErrHasOwner
 		}
 		_, err := tx.Exec(`INSERT INTO account_members (account_id, user_id, role) VALUES (?,?,'owner')
 			 ON CONFLICT (account_id, user_id) DO UPDATE SET role='owner'`, accountID, userID)
@@ -241,7 +254,7 @@ func (db *DB) RemoveMember(accountID, userID int64) error {
 	return db.write(func(tx *sql.Tx) error {
 		var cur string
 		if tx.QueryRow(`SELECT role FROM account_members WHERE account_id=? AND user_id=?`, accountID, userID).Scan(&cur) == nil && cur == "owner" {
-			return errors.New("the owner cannot be removed")
+			return ErrOwnerLocked
 		}
 		_, err := tx.Exec(`DELETE FROM account_members WHERE account_id=? AND user_id=?`, accountID, userID)
 		return err

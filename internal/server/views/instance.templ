@@ -29,11 +29,11 @@ type InstanceData struct {
 
 // Instance is the general settings page (instance admins).
 templ Instance(d InstanceData) {
-	@Layout(T("nav.settings"), "settings", d.Nav, d.Flash) {
+	@Layout(T(ctx, "nav.settings"), "settings", d.Nav, d.Flash) {
 		if d.SelfService {
-			@PageHeader(T("set.instance"), T("inst.subtitle"))
+			@PageHeader(T(ctx, "set.instance"), T(ctx, "inst.subtitle"))
 		} else {
-			@PageHeader(T("set.instance"), T("inst.subtitle.single"))
+			@PageHeader(T(ctx, "set.instance"), T(ctx, "inst.subtitle.single"))
 		}
 		<div class="grid gap-6">
 			if d.SelfService {
@@ -52,26 +52,26 @@ templ policyCard(d InstanceData) {
 	@card.Card() {
 		@card.Header() {
 			@card.Title() {
-				{ T("inst.policy") }
+				{ T(ctx, "inst.policy") }
 			}
 		}
 		@card.Content() {
 			<form method="post" action="/admin/settings/instance" class="space-y-3">
 				@form.ItemFlex(form.ItemProps{Class: "justify-between rounded-lg border p-3"}) {
 					@form.Label(form.LabelProps{For: "allow_registrations"}) {
-						{ T("inst.regs") }
+						{ T(ctx, "inst.regs") }
 					}
 					@switchcomp.Switch(switchcomp.Props{ID: "allow_registrations", Name: "allow_registrations", Value: "on", Checked: d.AllowRegs})
 				}
 				@form.ItemFlex(form.ItemProps{Class: "justify-between rounded-lg border p-3"}) {
 					@form.Label(form.LabelProps{For: "require_approval"}) {
-						{ T("inst.approve") }
+						{ T(ctx, "inst.approve") }
 					}
 					@switchcomp.Switch(switchcomp.Props{ID: "require_approval", Name: "require_approval", Value: "on", Checked: d.RequireOK})
 				}
 				@button.Button(button.Props{Type: button.TypeSubmit}) {
 					@Icon("check")
-					<span>{ T("inst.savepolicy") }</span>
+					<span>{ T(ctx, "inst.savepolicy") }</span>
 				}
 			</form>
 		}
@@ -81,14 +81,14 @@ templ policyCard(d InstanceData) {
 // plansCard lists plans and holds the create-plan dialog.
 templ plansCard(plans []store.Plan) {
 	@card.Card() {
-		@CardHeaderRow(T("set.plans")) {
+		@CardHeaderRow(T(ctx, "set.plans")) {
 			@newPlanDialog()
 		}
 		@card.Content(card.ContentProps{Class: "space-y-2"}) {
 			if len(plans) == 0 {
-				@EmptyState("layers", T("plan.empty")) {
+				@EmptyState("layers", T(ctx, "plan.empty")) {
 					@dialog.Trigger(dialog.TriggerProps{For: "dlg-plan-new"}) {
-						@PlusButton(T("plan.new"))
+						@PlusButton(T(ctx, "plan.new"))
 					}
 				}
 			} else {
@@ -105,10 +105,10 @@ templ plansCard(plans []store.Plan) {
 											}
 											if p.OrgsAllowed {
 												@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
-													{ T("plan.orgs") }
+													{ T(ctx, "plan.orgs") }
 												}
 											}
-											<span class="text-xs text-muted-foreground tabular-nums">{ planLimits(p) }</span>
+											<span class="text-xs text-muted-foreground tabular-nums">{ planLimits(ctx, p) }</span>
 										</div>
 									}
 									@table.Cell(table.CellProps{Class: "text-right"}) {
@@ -117,14 +117,14 @@ templ plansCard(plans []store.Plan) {
 											@ConfirmForm(Confirm{
 												ID:             "plan-" + strconv.FormatInt(p.ID, 10),
 												Action:         "/admin/plans/" + strconv.FormatInt(p.ID, 10) + "/delete",
-												Title:          T("plan.deletetitle"),
-												Message:        T("plan.delmsg.pre") + " “" + p.Name + "” " + T("plan.delmsg.post"),
-												ConfirmLabel:   T("plan.delete"),
+												Title:          T(ctx, "plan.deletetitle"),
+												Message:        Tf(ctx, "plan.deletemsg", p.Name),
+												ConfirmLabel:   T(ctx, "plan.delete"),
 												ConfirmIcon:    "trash-2",
 												Danger:         true,
 												TriggerIcon:    "trash-2",
 												IconOnly:       true,
-												TriggerTooltip: T("action.delete"),
+												TriggerTooltip: T(ctx, "action.delete"),
 												TriggerVariant: button.VariantGhost,
 											})
 										</div>
@@ -142,10 +142,10 @@ templ plansCard(plans []store.Plan) {
 templ newPlanDialog() {
 	@dialog.Dialog(dialog.Props{ID: "dlg-plan-new"}) {
 		@dialog.Trigger(dialog.TriggerProps{For: "dlg-plan-new"}) {
-			@PlusButton(T("plan.new"))
+			@PlusButton(T(ctx, "plan.new"))
 		}
-		@DialogBox(T("plan.new"), T("plan.hint"), true) {
-			@planFormBody("/admin/plans", nil, "plus", T("plan.create"), "dlg-plan-new")
+		@DialogBox(T(ctx, "plan.new"), T(ctx, "plan.hint"), true) {
+			@planFormBody("/admin/plans", nil, "plus", T(ctx, "plan.create"), "dlg-plan-new")
 		}
 	}
 }
@@ -155,10 +155,10 @@ templ editPlanDialog(p store.Plan) {
 	{{ id := "dlg-plan-edit-" + strconv.FormatInt(p.ID, 10) }}
 	@dialog.Dialog(dialog.Props{ID: id}) {
 		@dialog.Trigger(dialog.TriggerProps{For: id}) {
-			@RowAction("square-pen", T("action.edit"), false)
+			@RowAction("square-pen", T(ctx, "action.edit"), false)
 		}
-		@DialogBox(T("plan.edit"), T("plan.hint"), true) {
-			@planFormBody("/admin/plans/"+strconv.FormatInt(p.ID, 10)+"/edit", &p, "check", T("action.savechanges"), id)
+		@DialogBox(T(ctx, "plan.edit"), T(ctx, "plan.hint"), true) {
+			@planFormBody("/admin/plans/"+strconv.FormatInt(p.ID, 10)+"/edit", &p, "check", T(ctx, "action.savechanges"), id)
 		}
 	}
 }
@@ -166,25 +166,25 @@ templ editPlanDialog(p store.Plan) {
 // planFormBody is the shared create/edit plan form; p is nil on create.
 templ planFormBody(action string, p *store.Plan, submitIcon, submitLabel, dlgID string) {
 	<form method="post" action={ templ.SafeURL(action) } class="mt-2 space-y-4">
-		@Field(dlgID+"-name", T("plan.name")) {
-			@input.Input(input.Props{ID: dlgID + "-name", Name: "name", Value: planName(p), Placeholder: T("ph.planname"), Required: true})
+		@Field(dlgID+"-name", T(ctx, "plan.name")) {
+			@input.Input(input.Props{ID: dlgID + "-name", Name: "name", Value: planName(p), Placeholder: T(ctx, "ph.planname"), Required: true})
 		}
 		<div class="grid gap-4 sm:grid-cols-2">
-			@Field(dlgID+"-caches", T("plan.maxcaches")) {
-				@input.Input(input.Props{ID: dlgID + "-caches", Name: "max_caches", Type: input.TypeNumber, Value: planLimit(p, "caches"), Placeholder: T("ph.zerounlimited"), Attributes: templ.Attributes{"min": "0"}})
+			@Field(dlgID+"-caches", T(ctx, "plan.maxcaches")) {
+				@input.Input(input.Props{ID: dlgID + "-caches", Name: "max_caches", Type: input.TypeNumber, Value: planLimit(p, "caches"), Placeholder: T(ctx, "ph.zerounlimited"), Attributes: templ.Attributes{"min": "0"}})
 			}
-			@Field(dlgID+"-members", T("plan.maxmembers")) {
-				@input.Input(input.Props{ID: dlgID + "-members", Name: "max_members", Type: input.TypeNumber, Value: planLimit(p, "members"), Placeholder: T("ph.zerounlimited"), Attributes: templ.Attributes{"min": "0"}})
+			@Field(dlgID+"-members", T(ctx, "plan.maxmembers")) {
+				@input.Input(input.Props{ID: dlgID + "-members", Name: "max_members", Type: input.TypeNumber, Value: planLimit(p, "members"), Placeholder: T(ctx, "ph.zerounlimited"), Attributes: templ.Attributes{"min": "0"}})
 			}
 		</div>
-		@Field("", T("plan.maxstorage")) {
+		@Field("", T(ctx, "plan.maxstorage")) {
 			@SizeInput("plan_storage", planBytes(p))
 		}
-		@Field("", T("plan.maxretention")) {
+		@Field("", T(ctx, "plan.maxretention")) {
 			@DurationInput("plan_retention", planSecs(p))
 		}
-		@PermSwitchID(dlgID+"-orgs_allowed", "orgs_allowed", "on", T("plan.orgsallowed"), p != nil && p.OrgsAllowed)
-		@PermSwitchID(dlgID+"-public", "public", "on", T("plan.public"), p == nil || p.Public)
+		@PermSwitchID(dlgID+"-orgs_allowed", "orgs_allowed", "on", T(ctx, "plan.orgsallowed"), p != nil && p.OrgsAllowed)
+		@PermSwitchID(dlgID+"-public", "public", "on", T(ctx, "plan.public"), p == nil || p.Public)
 		@DialogFooter(dlgID, submitIcon, submitLabel)
 	</form>
 }
@@ -192,7 +192,7 @@ templ planFormBody(action string, p *store.Plan, submitIcon, submitLabel, dlgID 
 // usersCard is the user administration block.
 templ usersCard(actingName string, multiTenant bool, users []store.User) {
 	@card.Card() {
-		@CardHeaderRow(T("set.users")) {
+		@CardHeaderRow(T(ctx, "set.users")) {
 			@newUserDialog(multiTenant)
 		}
 		@card.Content() {
@@ -214,7 +214,7 @@ templ usersCard(actingName string, multiTenant bool, users []store.User) {
 									<div class="flex justify-end gap-1">
 										if u.Status == "pending" {
 											<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/approve") }>
-												@RowAction("user-check", T("users.approve"), true)
+												@RowAction("user-check", T(ctx, "users.approve"), true)
 											</form>
 										}
 										@resetUserDialog(u)
@@ -222,14 +222,14 @@ templ usersCard(actingName string, multiTenant bool, users []store.User) {
 											@ConfirmForm(Confirm{
 												ID:             "del-user-" + strconv.FormatInt(u.ID, 10),
 												Action:         "/admin/users/" + strconv.FormatInt(u.ID, 10) + "/delete",
-												Title:          T("users.deletetitle"),
-												Message:        "“" + u.Name + "” " + T("users.deletemsg"),
-												ConfirmLabel:   T("users.delete"),
+												Title:          T(ctx, "users.deletetitle"),
+												Message:        Tf(ctx, "users.deletemsg", u.Name),
+												ConfirmLabel:   T(ctx, "users.delete"),
 												ConfirmIcon:    "trash-2",
 												Danger:         true,
 												TriggerIcon:    "trash-2",
 												IconOnly:       true,
-												TriggerTooltip: T("action.delete"),
+												TriggerTooltip: T(ctx, "action.delete"),
 												TriggerVariant: button.VariantGhost,
 											})
 										}
@@ -248,14 +248,14 @@ templ resetUserDialog(u store.User) {
 	{{ id := "dlg-user-reset-" + strconv.FormatInt(u.ID, 10) }}
 	@dialog.Dialog(dialog.Props{ID: id}) {
 		@dialog.Trigger(dialog.TriggerProps{For: id}) {
-			@RowAction("key-round", T("users.reset"), false)
+			@RowAction("key-round", T(ctx, "users.reset"), false)
 		}
-		@DialogBox(T("users.resetfor")+" "+u.Name, T("users.resethint"), false) {
+		@DialogBox(Tf(ctx, "users.resetfor", u.Name), T(ctx, "users.resethint"), false) {
 			<form method="post" action={ templ.SafeURL("/admin/users/" + strconv.FormatInt(u.ID, 10) + "/reset") } class="mt-2 space-y-4">
-				@Field("reset-pw-"+strconv.FormatInt(u.ID, 10), T("users.newpw")) {
+				@Field("reset-pw-"+strconv.FormatInt(u.ID, 10), T(ctx, "users.newpw")) {
 					@input.Input(input.Props{ID: "reset-pw-" + strconv.FormatInt(u.ID, 10), Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "8"}})
 				}
-				@DialogFooter(id, "key-round", T("users.reset"))
+				@DialogFooter(id, "key-round", T(ctx, "users.reset"))
 			</form>
 		}
 	}
@@ -264,20 +264,20 @@ templ resetUserDialog(u store.User) {
 templ newUserDialog(multiTenant bool) {
 	@dialog.Dialog(dialog.Props{ID: "dlg-user-new"}) {
 		@dialog.Trigger(dialog.TriggerProps{For: "dlg-user-new"}) {
-			@PlusButton(T("users.new"))
+			@PlusButton(T(ctx, "users.new"))
 		}
-		@DialogBox(T("users.new"), T("users.hint"), false) {
+		@DialogBox(T(ctx, "users.new"), T(ctx, "users.hint"), false) {
 			<form method="post" action="/admin/users" class="mt-2 space-y-4">
-				@Field("nu-name", T("users.name")) {
-					@input.Input(input.Props{ID: "nu-name", Name: "username", Placeholder: T("ph.newuser"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
+				@Field("nu-name", T(ctx, "users.name")) {
+					@input.Input(input.Props{ID: "nu-name", Name: "username", Placeholder: T(ctx, "ph.newuser"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
 				}
-				@Field("nu-email", T("users.email")) {
-					@input.Input(input.Props{ID: "nu-email", Name: "email", Type: input.TypeEmail, Placeholder: T("ph.newemail"), Required: multiTenant})
+				@Field("nu-email", T(ctx, "users.email")) {
+					@input.Input(input.Props{ID: "nu-email", Name: "email", Type: input.TypeEmail, Placeholder: T(ctx, "ph.newemail"), Required: multiTenant})
 				}
-				@Field("nu-pw", T("login.password")) {
+				@Field("nu-pw", T(ctx, "login.password")) {
 					@input.Input(input.Props{ID: "nu-pw", Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "8"}})
 				}
-				@DialogFooter("dlg-user-new", "plus", T("users.create"))
+				@DialogFooter("dlg-user-new", "plus", T(ctx, "users.create"))
 			</form>
 		}
 	}
@@ -286,14 +286,14 @@ templ newUserDialog(multiTenant bool) {
 // orgsCard lists organizations with usage and holds the create-org dialog.
 templ orgsCard(orgs []OrgInfo) {
 	@card.Card() {
-		@CardHeaderRow(T("org.title")) {
+		@CardHeaderRow(T(ctx, "org.title")) {
 			@newOrgDialog("/admin/orgs")
 		}
 		@card.Content(card.ContentProps{Class: "space-y-4"}) {
 			if len(orgs) == 0 {
-				@EmptyState("building-2", T("org.empty")) {
+				@EmptyState("building-2", T(ctx, "org.empty")) {
 					@dialog.Trigger(dialog.TriggerProps{For: "dlg-org-new"}) {
-						@PlusButton(T("org.new"))
+						@PlusButton(T(ctx, "org.new"))
 					}
 				}
 			} else {
@@ -306,21 +306,21 @@ templ orgsCard(orgs []OrgInfo) {
 										<div class="flex items-center gap-2">
 											@Icon("building-2")
 											<a href={ templ.SafeURL("/admin/org/" + info.Account.Slug) } class="font-medium hover:underline">{ info.Account.Slug }</a>
-											<span class="text-xs text-muted-foreground tabular-nums">{ UsagePhrase(info) }</span>
+											<span class="text-xs text-muted-foreground tabular-nums">{ UsagePhrase(ctx, info) }</span>
 										</div>
 									}
 									@table.Cell(table.CellProps{Class: "text-right"}) {
 										@ConfirmForm(Confirm{
 											ID:             "org-" + info.Account.Slug,
 											Action:         "/admin/org/" + info.Account.Slug + "/delete",
-											Title:          T("org.deletetitle"),
-											Message:        "“" + info.Account.Slug + "” " + T("org.deletemsg"),
-											ConfirmLabel:   T("org.delete"),
+											Title:          T(ctx, "org.deletetitle"),
+											Message:        Tf(ctx, "org.deletemsg", info.Account.Slug),
+											ConfirmLabel:   T(ctx, "org.delete"),
 											ConfirmIcon:    "trash-2",
 											Danger:         true,
 											TriggerIcon:    "trash-2",
 											IconOnly:       true,
-											TriggerTooltip: T("action.delete"),
+											TriggerTooltip: T(ctx, "action.delete"),
 											TriggerVariant: button.VariantGhost,
 										})
 									}
@@ -337,14 +337,14 @@ templ orgsCard(orgs []OrgInfo) {
 templ newOrgDialog(action string) {
 	@dialog.Dialog(dialog.Props{ID: "dlg-org-new"}) {
 		@dialog.Trigger(dialog.TriggerProps{For: "dlg-org-new"}) {
-			@PlusButton(T("org.new"))
+			@PlusButton(T(ctx, "org.new"))
 		}
-		@DialogBox(T("org.new"), T("org.newhint"), false) {
+		@DialogBox(T(ctx, "org.new"), T(ctx, "org.newhint"), false) {
 			<form method="post" action={ templ.SafeURL(action) } class="mt-2 space-y-4">
-				@Field("org-name", T("org.name")) {
-					@input.Input(input.Props{ID: "org-name", Name: "name", Placeholder: T("ph.orgname"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
+				@Field("org-name", T(ctx, "org.name")) {
+					@input.Input(input.Props{ID: "org-name", Name: "name", Placeholder: T(ctx, "ph.orgname"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
 				}
-				@DialogFooter("dlg-org-new", "plus", T("org.create"))
+				@DialogFooter("dlg-org-new", "plus", T(ctx, "org.create"))
 			</form>
 		}
 	}
@@ -355,20 +355,20 @@ templ maintCard() {
 	@card.Card() {
 		@card.Header() {
 			@card.Title() {
-				{ T("inst.maint") }
+				{ T(ctx, "inst.maint") }
 			}
 		}
 		@card.Content() {
-			@ActionRow(T("inst.gcdesc")) {
+			@ActionRow(T(ctx, "inst.gcdesc")) {
 				@ConfirmForm(Confirm{
 					ID:           "gc",
 					Action:       "/admin/gc",
-					Title:        T("inst.gctitle"),
-					Message:      T("inst.gcmsg"),
-					ConfirmLabel: T("inst.gcrun"),
+					Title:        T(ctx, "inst.gctitle"),
+					Message:      T(ctx, "inst.gcmsg"),
+					ConfirmLabel: T(ctx, "inst.gcrun"),
 					ConfirmIcon:  "recycle",
 					Danger:       true,
-					TriggerLabel: T("inst.gcrun"),
+					TriggerLabel: T(ctx, "inst.gcrun"),
 					TriggerIcon:  "recycle",
 				})
 			}

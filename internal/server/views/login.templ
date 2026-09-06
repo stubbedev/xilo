@@ -123,7 +123,7 @@ templ webauthnScript() {
 // AuthShell is the minimal centered chrome for signed-out pages.
 templ AuthShell(title string, flash Flash) {
 	<!DOCTYPE html>
-	<html lang="en" class="h-full">
+	<html lang={ LocaleFrom(ctx) } class="h-full">
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -177,32 +177,32 @@ templ AuthShell(title string, flash Flash) {
 }
 
 templ Login(noPassword, hasPasskeys, canRegister bool, flash Flash) {
-	@AuthShell(T("login.title"), flash) {
+	@AuthShell(T(ctx, "login.title"), flash) {
 		@card.Card() {
 			@card.Header() {
 				@card.Title() {
-					{ T("login.title") }
+					{ T(ctx, "login.title") }
 				}
 				@card.Description() {
-					{ T("login.subtitle") }
+					{ T(ctx, "login.subtitle") }
 				}
 			}
 			@card.Content(card.ContentProps{Class: "space-y-4"}) {
 				<form method="post" action="/admin/login" class="space-y-4">
-					@Field("username", T("login.username")) {
-						@input.Input(input.Props{ID: "username", Name: "username", Placeholder: T("login.userph"), Required: true, Attributes: templ.Attributes{"autocomplete": "username", "autofocus": true}})
+					@Field("username", T(ctx, "login.username")) {
+						@input.Input(input.Props{ID: "username", Name: "username", Placeholder: T(ctx, "login.userph"), Required: true, Attributes: templ.Attributes{"autocomplete": "username", "autofocus": true}})
 					}
-					@Field("password", T("login.password")) {
+					@Field("password", T(ctx, "login.password")) {
 						@input.Input(input.Props{ID: "password", Name: "password", Type: input.TypePassword, Attributes: templ.Attributes{"autocomplete": "current-password"}})
 					}
 					@button.Button(button.Props{Type: button.TypeSubmit, FullWidth: true}) {
-						{ T("login.submit") }
+						{ T(ctx, "login.submit") }
 					}
 				</form>
 				if hasPasskeys {
 					@button.Button(button.Props{Variant: button.VariantOutline, FullWidth: true, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": "xiloPasskeyLogin()"}}) {
 						@Icon("fingerprint-pattern")
-						<span>{ T("login.passkey") }</span>
+						<span>{ T(ctx, "login.passkey") }</span>
 					}
 				}
 			}
@@ -210,10 +210,10 @@ templ Login(noPassword, hasPasskeys, canRegister bool, flash Flash) {
 				@card.Footer(card.FooterProps{Class: "justify-center"}) {
 					<p class="text-center text-sm text-muted-foreground">
 						if canRegister {
-							{ T("login.needacct") } <a href="/register" class="font-medium text-foreground underline-offset-4 hover:underline">{ T("login.register") }</a>
+							{ T(ctx, "login.needacct") } <a href="/register" class="font-medium text-foreground underline-offset-4 hover:underline">{ T(ctx, "login.register") }</a>
 						}
 						if noPassword {
-							{ T("login.nopassword") }
+							{ T(ctx, "login.nopassword") }
 						}
 					</p>
 				}
@@ -223,14 +223,14 @@ templ Login(noPassword, hasPasskeys, canRegister bool, flash Flash) {
 }
 
 templ LoginCode(pending string, flash Flash) {
-	@AuthShell(T("login.twofactor"), flash) {
+	@AuthShell(T(ctx, "login.twofactor"), flash) {
 		@card.Card() {
 			@card.Header() {
 				@card.Title() {
-					{ T("login.codetitle") }
+					{ T(ctx, "login.codetitle") }
 				}
 				@card.Description() {
-					{ T("login.codesub") }
+					{ T(ctx, "login.codesub") }
 				}
 			}
 			@card.Content() {
@@ -250,12 +250,12 @@ templ LoginCode(pending string, flash Flash) {
 						}
 					}
 					@button.Button(button.Props{Type: button.TypeSubmit, FullWidth: true}) {
-						{ T("login.verify") }
+						{ T(ctx, "login.verify") }
 					}
 				</form>
 			}
 			@card.Footer(card.FooterProps{Class: "justify-center"}) {
-				<a href="/admin" class="text-sm text-muted-foreground hover:text-foreground">{ T("login.back") }</a>
+				<a href="/admin" class="text-sm text-muted-foreground hover:text-foreground">{ T(ctx, "login.back") }</a>
 			}
 		}
 	}
@@ -264,31 +264,31 @@ templ LoginCode(pending string, flash Flash) {
 // Register is the self-signup page. Picking a plan whose data-orgs is true
 // reveals the org-name field via a small inline script.
 templ Register(plans []store.Plan, flash Flash) {
-	@AuthShell(T("login.register"), flash) {
+	@AuthShell(T(ctx, "login.register"), flash) {
 		@card.Card() {
 			@card.Header() {
 				@card.Title() {
-					{ T("reg.title") }
+					{ T(ctx, "reg.title") }
 				}
 				@card.Description() {
-					{ T("reg.subtitle") }
+					{ T(ctx, "reg.subtitle") }
 				}
 			}
 			@card.Content() {
 				<form method="post" action="/register" class="space-y-4">
-					@Field("r-username", T("reg.username")) {
-						@input.Input(input.Props{ID: "r-username", Name: "username", Required: true, Placeholder: T("reg.userph"), Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+", "autocomplete": "username", "autofocus": true}})
+					@Field("r-username", T(ctx, "reg.username")) {
+						@input.Input(input.Props{ID: "r-username", Name: "username", Required: true, Placeholder: T(ctx, "reg.userph"), Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+", "autocomplete": "username", "autofocus": true}})
 					}
-					@Field("r-email", T("reg.email")) {
+					@Field("r-email", T(ctx, "reg.email")) {
 						@input.Input(input.Props{ID: "r-email", Name: "email", Type: input.TypeEmail, Required: true, Attributes: templ.Attributes{"autocomplete": "email"}})
 					}
-					@Field("r-password", T("reg.password")) {
+					@Field("r-password", T(ctx, "reg.password")) {
 						@input.Input(input.Props{ID: "r-password", Name: "password", Type: input.TypePassword, Required: true, Attributes: templ.Attributes{"autocomplete": "new-password", "minlength": "8"}})
 					}
 					if len(plans) > 0 {
 						<div class="space-y-2">
 							@label.Label() {
-								{ T("reg.plan") }
+								{ T(ctx, "reg.plan") }
 							}
 							<div class="space-y-2" onchange="document.getElementById('org-field').hidden = document.querySelector('input[name=plan]:checked').dataset.orgs !== 'true'">
 								for i, p := range plans {
@@ -296,25 +296,25 @@ templ Register(plans []store.Plan, flash Flash) {
 										@radio.Radio(radio.Props{Name: "plan", Value: strconv.FormatInt(p.ID, 10), Checked: i == 0, Attributes: templ.Attributes{"data-orgs": strconv.FormatBool(p.OrgsAllowed)}})
 										<span class="space-y-0.5">
 											<span class="block text-sm font-medium">{ p.Name }</span>
-											<span class="block text-xs text-muted-foreground">{ planLimits(p) }</span>
+											<span class="block text-xs text-muted-foreground">{ planLimits(ctx, p) }</span>
 										</span>
 									}
 								}
 							</div>
 							<div id="org-field" hidden?={ !(len(plans) > 0 && plans[0].OrgsAllowed) }>
-								@FieldInfo("r-org", T("reg.org"), T("reg.orghint")) {
-									@input.Input(input.Props{ID: "r-org", Name: "org", Placeholder: T("ph.orgname"), Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
+								@FieldInfo("r-org", T(ctx, "reg.org"), T(ctx, "reg.orghint")) {
+									@input.Input(input.Props{ID: "r-org", Name: "org", Placeholder: T(ctx, "ph.orgname"), Attributes: templ.Attributes{"pattern": "[-a-z0-9_]+"}})
 								}
 							</div>
 						</div>
 					}
 					@button.Button(button.Props{Type: button.TypeSubmit, FullWidth: true}) {
-						{ T("reg.submit") }
+						{ T(ctx, "reg.submit") }
 					}
 				</form>
 			}
 			@card.Footer(card.FooterProps{Class: "justify-center"}) {
-				<a href="/admin" class="text-sm text-muted-foreground hover:text-foreground">{ T("login.back") }</a>
+				<a href="/admin" class="text-sm text-muted-foreground hover:text-foreground">{ T(ctx, "login.back") }</a>
 			}
 		}
 	}

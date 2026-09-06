@@ -192,7 +192,7 @@ templ DialogFooter(dlgID, icon, label string) {
 	@dialog.Footer() {
 		@dialog.Close(dialog.CloseProps{For: dlgID}) {
 			@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
-				{ T("action.cancel") }
+				{ T(ctx, "action.cancel") }
 			}
 		}
 		@button.Button(button.Props{Type: button.TypeSubmit}) {
@@ -263,13 +263,13 @@ templ PagerNav(p Pager) {
 		@pagination.Pagination(pagination.Props{Class: "mt-4"}) {
 			@pagination.Content() {
 				@pagination.Item() {
-					@pagination.Previous(pagination.PreviousProps{Href: p.Prev, Disabled: p.Prev == "", Label: T("pager.prev"), Attributes: hxSwapAttrs(p.Prev, p.Target)})
+					@pagination.Previous(pagination.PreviousProps{Href: p.Prev, Disabled: p.Prev == "", Label: T(ctx, "pager.prev"), Attributes: hxSwapAttrs(p.Prev, p.Target)})
 				}
 				@pagination.Item() {
 					<span class="px-2 text-sm text-muted-foreground tabular-nums">{ itoa(int64(p.Page)) } / { itoa(int64(p.Pages)) }</span>
 				}
 				@pagination.Item() {
-					@pagination.Next(pagination.NextProps{Href: p.Next, Disabled: p.Next == "", Label: T("pager.next"), Attributes: hxSwapAttrs(p.Next, p.Target)})
+					@pagination.Next(pagination.NextProps{Href: p.Next, Disabled: p.Next == "", Label: T(ctx, "pager.next"), Attributes: hxSwapAttrs(p.Next, p.Target)})
 				}
 			}
 		}
@@ -333,7 +333,7 @@ templ ConfirmForm(c Confirm) {
 				@dialog.Footer() {
 					@dialog.Close(dialog.CloseProps{For: c.ID}) {
 						@button.Button(button.Props{Variant: button.VariantOutline, Type: button.TypeButton}) {
-							{ T("action.cancel") }
+							{ T(ctx, "action.cancel") }
 						}
 					}
 					@button.Button(button.Props{Variant: confirmVariant(c.Danger), Type: button.TypeSubmit}) {
@@ -361,8 +361,8 @@ templ confirmTriggerButton(c Confirm) {
 // RoleIcon is a person's role as one glyph with the role name in a tooltip
 // and aria-label: superadmin / owner / admin / user / pending.
 templ RoleIcon(role string) {
-	@WithTooltip(T("role." + role)) {
-		<span class={ "inline-flex", roleTone(role) } role="img" aria-label={ T("role." + role) }>
+	@WithTooltip(T(ctx, "role." + role)) {
+		<span class={ "inline-flex", roleTone(role) } role="img" aria-label={ T(ctx, "role." + role) }>
 			@Icon(roleIcon(role))
 		</span>
 	}
@@ -371,8 +371,8 @@ templ RoleIcon(role string) {
 // StatusIcon renders a token's status as one glyph (check, clock, ban); the
 // word rides in the tooltip and the aria-label.
 templ StatusIcon(status string) {
-	@WithTooltip(T("tok." + status)) {
-		<span class={ "inline-flex", statusTone(status) } role="img" aria-label={ T("tok." + status) }>
+	@WithTooltip(T(ctx, "tok." + status)) {
+		<span class={ "inline-flex", statusTone(status) } role="img" aria-label={ T(ctx, "tok." + status) }>
 			@Icon(statusIcon(status))
 		</span>
 	}
@@ -383,12 +383,12 @@ templ VisBadge(public bool) {
 	if public {
 		@badge.Badge(badge.Props{Variant: badge.VariantSecondary, Class: "gap-1"}) {
 			@Icon("globe")
-			<span>{ T("vis.public") }</span>
+			<span>{ T(ctx, "vis.public") }</span>
 		}
 	} else {
 		@badge.Badge(badge.Props{Variant: badge.VariantOutline, Class: "gap-1"}) {
 			@Icon("lock")
-			<span>{ T("vis.private") }</span>
+			<span>{ T(ctx, "vis.private") }</span>
 		}
 	}
 }
@@ -398,7 +398,7 @@ templ PermBadges(perms []string) {
 	<div class="flex flex-wrap gap-1">
 		for _, p := range perms {
 			@badge.Badge(badge.Props{Variant: badge.VariantSecondary}) {
-				{ T("perm." + p) }
+				{ T(ctx, "perm." + p) }
 			}
 		}
 	</div>

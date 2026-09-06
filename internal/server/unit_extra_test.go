@@ -558,7 +558,7 @@ func TestStatusSeriesWindows(t *testing.T) {
 	}
 
 	// page view model
-	d := s.statusData(statusRangeQ{WinMin: 10})
+	d := s.statusData(context.Background(), statusRangeQ{WinMin: 10})
 	if len(d.Charts) != 4 || !d.Healthy {
 		t.Fatalf("status data: %+v", d)
 	}

@@ -69,7 +69,7 @@ func TestSmokeAllComponents(t *testing.T) {
 		{"Account", views.Account(views.AccountData{Nav: views.Nav{LoggedIn: true, UserName: "admin"}, User: &store.User{Name: "admin", Role: "owner", Theme: "catppuccin"}, Passkeys: []store.Passkey{{ID: 1, Name: "yubikey", Created: 1}}}), "Appearance"},
 		{"Instance", views.Instance(views.InstanceData{Nav: views.Nav{LoggedIn: true, UserName: "admin", IsAdmin: true}, Users: []store.User{{ID: 1, Name: "admin", Role: "owner"}}, Orgs: []views.OrgInfo{{Account: store.Account{ID: 1, Slug: "acme", Kind: "org"}, Members: []store.AccountMember{{UserID: 1, UserName: "admin", Role: "admin"}}}}, SelfService: true, AllowRegs: true, Plans: []store.Plan{{ID: 1, Name: "free", MaxCaches: 3, Public: true}}, Flash: views.Flash{Msg: "saved"}}), "saved"},
 		{"PwHint-empty", views.PwHint(""), ""},
-		{"PwHint-short", views.PwHint("short"), "short"},
+		{"PwHint-short", views.PwHint("short"), "At least 8"},
 		{"PwHint-weak", views.PwHint("weak"), "Weak"},
 		{"PwHint-strong", views.PwHint("strong"), "Strong"},
 		{"PwHint-mismatch", views.PwHint("mismatch"), "match"},
@@ -344,10 +344,10 @@ func TestTokenHelpers(t *testing.T) {
 	if !views.TokenActive(active) || views.TokenActive(revoked) || views.TokenActive(expired) {
 		t.Fatal("TokenActive misclassifies")
 	}
-	if views.TokenExpiry(active) != "never" {
-		t.Fatalf("TokenExpiry(never) = %q", views.TokenExpiry(active))
+	if views.TokenExpiry(context.Background(), active) != "never" {
+		t.Fatalf("TokenExpiry(never) = %q", views.TokenExpiry(context.Background(), active))
 	}
-	if got := views.TokenExpiry(store.Token{Expires: 86400}); got != time.Unix(86400, 0).Format("2006-01-02") {
+	if got := views.TokenExpiry(context.Background(), store.Token{Expires: 86400}); got != time.Unix(86400, 0).Format("2006-01-02") {
 		t.Fatalf("TokenExpiry(date) = %q", got)
 	}
 }
@@ -384,17 +384,17 @@ func TestAgo(t *testing.T) {
 		{now - 60*86400, time.Unix(now-60*86400, 0).Format("2006-01-02")},
 	}
 	for _, c := range cases {
-		if got := views.Ago(c.ts); got != c.want {
+		if got := views.Ago(context.Background(), c.ts); got != c.want {
 			t.Errorf("Ago(%d) = %q, want %q", c.ts, got, c.want)
 		}
 	}
 }
 
 func TestT(t *testing.T) {
-	if views.T("tok.never") != "never" {
-		t.Fatalf("T(tok.never) = %q", views.T("tok.never"))
+	if views.T(context.Background(), "tok.never") != "never" {
+		t.Fatalf("T(tok.never) = %q", views.T(context.Background(), "tok.never"))
 	}
-	if views.T("no.such.key") != "no.such.key" {
+	if views.T(context.Background(), "no.such.key") != "no.such.key" {
 		t.Fatal("unknown key must echo the id")
 	}
 }

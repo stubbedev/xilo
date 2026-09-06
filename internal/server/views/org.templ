@@ -1,6 +1,7 @@
 package views
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/stubbedev/xilo/internal/store"
@@ -25,18 +26,18 @@ type OrgPageData struct {
 // Org renders one organization.
 templ Org(d OrgPageData) {
 	@Layout(d.Info.Account.Slug, "", d.Nav, d.Flash) {
-		@Crumbs(Crumb{T("org.title"), orgParent(d.Nav)}, Crumb{d.Info.Account.Slug, ""})
-		@PageHeader(d.Info.Account.Slug, UsagePhrase(d.Info))
+		@Crumbs(Crumb{T(ctx, "org.title"), orgParent(d.Nav)}, Crumb{d.Info.Account.Slug, ""})
+		@PageHeader(d.Info.Account.Slug, UsagePhrase(ctx, d.Info))
 		<div class="grid gap-6">
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						{ T("org.members") }
+						{ T(ctx, "org.members") }
 					}
 				}
 				@card.Content(card.ContentProps{Class: "space-y-4"}) {
 					if len(d.Info.Members) == 0 {
-						@EmptyState("users", T("org.membersempty"))
+						@EmptyState("users", T(ctx, "org.membersempty"))
 					} else {
 						@ListBox() {
 							@table.Table() {
@@ -56,23 +57,23 @@ templ Org(d OrgPageData) {
 															<input type="hidden" name="user_id" value={ strconv.FormatInt(m.UserID, 10) }/>
 															if m.Role == "admin" {
 																<input type="hidden" name="role" value="user"/>
-																@RowAction("user-minus", T("users.demote"), true)
+																@RowAction("user-minus", T(ctx, "users.demote"), true)
 															} else {
 																<input type="hidden" name="role" value="admin"/>
-																@RowAction("user-plus", T("users.promote"), true)
+																@RowAction("user-plus", T(ctx, "users.promote"), true)
 															}
 														</form>
 														@ConfirmForm(Confirm{
 															ID:             "rm-member-" + strconv.FormatInt(m.UserID, 10),
 															Action:         "/admin/org/" + d.Info.Account.Slug + "/members/" + strconv.FormatInt(m.UserID, 10) + "/remove",
-															Title:          T("org.removetitle"),
-															Message:        m.UserName + " " + T("org.removemsg") + " " + d.Info.Account.Slug + ".",
-															ConfirmLabel:   T("ns.removemember"),
+															Title:          T(ctx, "org.removetitle"),
+															Message:        Tf(ctx, "org.removemsg", m.UserName, d.Info.Account.Slug),
+															ConfirmLabel:   T(ctx, "ns.removemember"),
 															ConfirmIcon:    "trash-2",
 															Danger:         true,
 															TriggerIcon:    "trash-2",
 															IconOnly:       true,
-															TriggerTooltip: T("action.remove"),
+															TriggerTooltip: T(ctx, "action.remove"),
 															TriggerVariant: button.VariantGhost,
 														})
 													</div>
@@ -88,10 +89,10 @@ templ Org(d OrgPageData) {
 						if len(d.AllUsers) > 0 {
 							<form method="post" action={ templ.SafeURL("/admin/org/" + d.Info.Account.Slug + "/members") } class="flex flex-wrap items-end gap-2">
 								<div class="min-w-48 flex-1">
-									@Field("", T("org.addmember")) {
+									@Field("", T(ctx, "org.addmember")) {
 										@selectbox.SelectBox() {
 											@selectbox.Trigger(selectbox.TriggerProps{Name: "user_id"}) {
-												@selectbox.Value(selectbox.ValueProps{Placeholder: T("org.pickuser")})
+												@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "org.pickuser")})
 											}
 											@selectbox.Content() {
 												for _, cand := range d.AllUsers {
@@ -104,17 +105,17 @@ templ Org(d OrgPageData) {
 									}
 								</div>
 								<div class="w-36">
-									@Field("", T("users.role")) {
+									@Field("", T(ctx, "users.role")) {
 										@roleSelect("role", "user")
 									}
 								</div>
 								@button.Button(button.Props{Type: button.TypeSubmit}) {
 									@Icon("user-plus")
-									<span>{ T("ns.addmember") }</span>
+									<span>{ T(ctx, "ns.addmember") }</span>
 								}
 							</form>
 						} else {
-							<p class="text-sm text-muted-foreground">{ T("org.nocandidates") }</p>
+							<p class="text-sm text-muted-foreground">{ T(ctx, "org.nocandidates") }</p>
 						}
 					}
 				}
@@ -122,15 +123,15 @@ templ Org(d OrgPageData) {
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						{ T("org.caches") }
+						{ T(ctx, "org.caches") }
 					}
 				}
 				@card.Content() {
 					if len(d.Caches) == 0 {
-						@EmptyState("database", T("org.cachesempty")) {
+						@EmptyState("database", T(ctx, "org.cachesempty")) {
 							@button.Button(button.Props{Href: "/admin", Size: button.SizeSm}) {
 								@Icon("plus")
-								<span>{ T("caches.new") }</span>
+								<span>{ T(ctx, "caches.new") }</span>
 							}
 						}
 					} else {
@@ -154,10 +155,10 @@ templ roleSelect(name, value string) {
 		}
 		@selectbox.Content() {
 			@selectbox.Item(selectbox.ItemProps{Value: "user", Selected: value == "user"}) {
-				{ T("role.user") }
+				{ T(ctx, "role.user") }
 			}
 			@selectbox.Item(selectbox.ItemProps{Value: "admin", Selected: value == "admin"}) {
-				{ T("role.admin") }
+				{ T(ctx, "role.admin") }
 			}
 		}
 	}
@@ -165,14 +166,13 @@ templ roleSelect(name, value string) {
 
 // UsagePhrase renders "12 GiB stored (of 50 GiB) · 3 GiB served this month ·
 // plan team · N members".
-func UsagePhrase(o OrgInfo) string {
-	out := o.UsageLine()
-	switch n := len(o.Members); n {
-	case 0:
-	case 1:
-		out += " · 1 " + T("org.memberword")
-	default:
-		out += " · " + strconv.Itoa(n) + " " + T("org.membersword")
+func UsagePhrase(ctx context.Context, o OrgInfo) string {
+	out := o.UsageLine(ctx)
+	switch n := len(o.Members); {
+	case n == 1:
+		out += " · " + Tf(ctx, "org.membercount", n)
+	case n > 1:
+		out += " · " + Tf(ctx, "org.memberscount", n)
 	}
 	return out
 }

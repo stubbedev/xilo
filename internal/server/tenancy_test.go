@@ -59,7 +59,7 @@ func TestAdminUserLifecycle(t *testing.T) {
 	}
 	// duplicate name
 	_, b = postFlash(t, c, ts.URL+"/admin/users", url.Values{"username": {"walter"}, "password": {"walterpass1"}})
-	if !contains(b, "Could not create user") {
+	if !contains(b, "That name is taken") {
 		t.Errorf("duplicate user: %.120q", b)
 	}
 
@@ -131,7 +131,7 @@ func TestAdminUserCreateRequiresEmailMT(t *testing.T) {
 	c := adminClient(t, ts)
 
 	_, b := postFlash(t, c, ts.URL+"/admin/users", url.Values{"username": {"noemail"}, "password": {"longenough1"}})
-	if !contains(b, "valid email address is required") {
+	if !contains(b, "requires a valid email address") {
 		t.Errorf("MT create without email: %.120q", b)
 	}
 	_, b = postFlash(t, c, ts.URL+"/admin/users", url.Values{
@@ -333,17 +333,17 @@ func TestAccountEmail(t *testing.T) {
 	}
 	// duplicate email (unique index) surfaces as a flash, not a 500
 	_, b = postFlash(t, c, ts.URL+"/admin/account/email", url.Values{"email": {"eve@example.com"}})
-	if !contains(b, "Could not save email") {
+	if !contains(b, "Could not save your email address") {
 		t.Errorf("dup email: %.120q", b)
 	}
 	// clearing is allowed in single-tenant mode
 	// Palette: a known id sticks and reaches the <html> tag; junk falls back
 	// to the default instead of erroring.
-	_, b = postFlash(t, c, ts.URL+"/admin/account/theme", url.Values{"theme": {"catppuccin"}})
-	if !contains(b, "Palette saved") || !contains(b, `data-palette="catppuccin"`) {
+	_, b = postFlash(t, c, ts.URL+"/admin/account/appearance", url.Values{"theme": {"catppuccin"}})
+	if !contains(b, "Appearance saved") || !contains(b, `data-palette="catppuccin"`) {
 		t.Errorf("theme not applied:\n%s", b[:min(len(b), 400)])
 	}
-	_, b = postFlash(t, c, ts.URL+"/admin/account/theme", url.Values{"theme": {"hotdog-stand"}})
+	_, b = postFlash(t, c, ts.URL+"/admin/account/appearance", url.Values{"theme": {"hotdog-stand"}})
 	if contains(b, "data-palette=") {
 		t.Error("unknown palette was stored")
 	}
@@ -362,7 +362,7 @@ func TestAccountEmailRequiredMT(t *testing.T) {
 	c := adminClient(t, ts)
 	for _, bad := range []string{"", "not-an-email"} {
 		_, b := postFlash(t, c, ts.URL+"/admin/account/email", url.Values{"email": {bad}})
-		if !contains(b, "valid email address is required") {
+		if !contains(b, "requires a valid email address") {
 			t.Errorf("MT email %q: %.120q", bad, b)
 		}
 	}

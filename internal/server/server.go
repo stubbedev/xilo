@@ -192,10 +192,29 @@ func (s *Server) RunContext(ctx context.Context) error {
 	}
 }
 
+// uiLocale is the language to render this request in: the signed-in user's
+// saved preference, else what the browser asked for, else English.
+//
+// ponytail: one extra currentUser (a session hit plus a user row) per admin
+// request. Human-paced traffic, so it stays cheaper than caching it; if the
+// admin ever gets hot, memoize the session→user lookup instead.
+func (s *Server) uiLocale(r *http.Request) string {
+	if u := s.currentUser(r); u != nil && u.Locale != "" {
+		return u.Locale
+	}
+	return views.MatchLocale(r.Header.Get("Accept-Language"))
+}
+
 // middleware wraps the mux with panic recovery + request logging.
 func (s *Server) middleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		// Everything that renders UI gets the viewer's language on its
+		// context, where views.T reads it. The binary-cache protocol renders
+		// none and is the hot path, so it skips the lookup entirely.
+		if !isCacheTraffic(r.URL.Path) {
+			r = r.WithContext(views.WithLocale(r.Context(), s.uiLocale(r)))
+		}
 		// Baseline hardening headers. The admin UI relies on inline scripts and
 		// onclick handlers, so script/style stay 'unsafe-inline'; the CSP still
 		// locks down object/base-uri/frame-ancestors and confines everything

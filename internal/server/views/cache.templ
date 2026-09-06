@@ -37,15 +37,15 @@ type CacheData struct {
 
 templ CacheView(d CacheData) {
 	@Layout(d.Cache.Ref(), "caches", d.Nav, d.Flash) {
-		@Crumbs(Crumb{T("nav.caches"), "/admin"}, Crumb{d.Cache.Ref(), ""})
+		@Crumbs(Crumb{T(ctx, "nav.caches"), "/admin"}, Crumb{d.Cache.Ref(), ""})
 		@PageHeader(d.Cache.Ref(), d.BaseURL+"/c/"+d.Cache.Ref()) {
 			@VisBadge(d.Cache.Public)
 		}
 		<div class="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
-			@StatTile("package", Count(d.Stats.Paths), T("kpi.paths"), "", "")
-			@StatTile("database", d.Bytes(d.Stats.LogicalBytes), T("kpi.logical"), "", "")
-			@StatTile("hard-drive", d.Bytes(d.Stats.PhysicalBytes), T("kpi.physical")+capLabel(d.Cache.MaxBytes, d.Bytes), "", "")
-			@StatTile("layers", d.Dedup+"×", T("kpi.dedup"), "", "")
+			@StatTile("package", Count(d.Stats.Paths), T(ctx, "kpi.paths"), "", "")
+			@StatTile("database", d.Bytes(d.Stats.LogicalBytes), T(ctx, "kpi.logical"), "", "")
+			@StatTile("hard-drive", d.Bytes(d.Stats.PhysicalBytes), T(ctx, "kpi.physical")+capLabel(ctx, d.Cache.MaxBytes, d.Bytes), "", "")
+			@StatTile("layers", d.Dedup+"×", T(ctx, "kpi.dedup"), "", "")
 		</div>
 		if d.Cache.MaxBytes > 0 {
 			<div class="mb-8">
@@ -56,23 +56,23 @@ templ CacheView(d CacheData) {
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						{ T("cd.use") }
+						{ T(ctx, "cd.use") }
 					}
 					@card.Description() {
-						{ T("cd.usehint") }
+						{ T(ctx, "cd.usehint") }
 					}
 				}
 				@card.Content(card.ContentProps{Class: "space-y-4"}) {
 					@tabs.Tabs(tabs.Props{ID: "use"}) {
 						@tabs.List() {
 							@tabs.Trigger(tabs.TriggerProps{Value: "nixconf", IsActive: true}) {
-								{ T("cd.tab.nixconf") }
+								{ T(ctx, "cd.tab.nixconf") }
 							}
 							@tabs.Trigger(tabs.TriggerProps{Value: "flake"}) {
-								{ T("cd.tab.flake") }
+								{ T(ctx, "cd.tab.flake") }
 							}
 							@tabs.Trigger(tabs.TriggerProps{Value: "cli"}) {
-								{ T("cd.tab.cli") }
+								{ T(ctx, "cd.tab.cli") }
 							}
 						}
 						@tabs.Content(tabs.ContentProps{Value: "nixconf", IsActive: true}) {
@@ -87,36 +87,36 @@ templ CacheView(d CacheData) {
 					}
 					if !d.Cache.Public {
 						<div class="space-y-2">
-							<p class="text-xs text-muted-foreground">{ T("cd.private") }</p>
-							<p class="text-sm font-medium">{ T("cd.netrc") }</p>
+							<p class="text-xs text-muted-foreground">{ T(ctx, "cd.private") }</p>
+							<p class="text-sm font-medium">{ T(ctx, "cd.netrc") }</p>
 							@snippetBlock(snippetNetrc(d))
-							<p class="text-xs text-muted-foreground">{ T("cd.netrchint") }</p>
+							<p class="text-xs text-muted-foreground">{ T(ctx, "cd.netrchint") }</p>
 						</div>
 					}
 					if d.CanManage {
-						@cacheTokenDialog(d, "dlg-pulltok", T("cd.pulltoken"), false, true)
+						@cacheTokenDialog(d, "dlg-pulltok", T(ctx, "cd.pulltoken"), false, true)
 					}
 				}
 			}
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						{ T("cd.push") }
+						{ T(ctx, "cd.push") }
 					}
 					@card.Description() {
-						{ T("cd.pushhint") }
+						{ T(ctx, "cd.pushhint") }
 					}
 				}
 				@card.Content(card.ContentProps{Class: "space-y-4"}) {
 					@snippetBlock(snippetPush(d))
 					if d.CanManage {
-						@cacheTokenDialog(d, "dlg-pushtok", T("cd.pushtoken"), true, false)
+						@cacheTokenDialog(d, "dlg-pushtok", T(ctx, "cd.pushtoken"), true, false)
 					}
 				}
 			}
 		</div>
-		@SectionHeader(T("cd.paths")) {
-			@SearchInput("/admin/cache/"+d.Cache.Ref(), "q", d.PathQuery, T("cd.search"), "#path-results")
+		@SectionHeader(T(ctx, "cd.paths")) {
+			@SearchInput("/admin/cache/"+d.Cache.Ref(), "q", d.PathQuery, T(ctx, "cd.search"), "#path-results")
 		}
 		<div class="mb-8">
 			@pathResults(d)
@@ -125,7 +125,7 @@ templ CacheView(d CacheData) {
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						{ T("cd.settings") }
+						{ T(ctx, "cd.settings") }
 					}
 				}
 				@card.Content() {
@@ -134,16 +134,16 @@ templ CacheView(d CacheData) {
 							@VisibilitySwitch(!d.Cache.Public)
 						</div>
 						@PriorityField(d.Cache.Priority)
-						@Field("", T("cd.retention")) {
+						@Field("", T(ctx, "cd.retention")) {
 							@DurationInput("retention", d.Cache.Retention)
 						}
-						@Field("", T("cd.maxsize")) {
+						@Field("", T(ctx, "cd.maxsize")) {
 							@SizeInput("max", d.Cache.MaxBytes)
 						}
 						<div class="sm:col-span-3">
 							@button.Button(button.Props{Type: button.TypeSubmit}) {
 								@Icon("check")
-								<span>{ T("cd.save") }</span>
+								<span>{ T(ctx, "cd.save") }</span>
 							}
 						</div>
 					</form>
@@ -152,33 +152,33 @@ templ CacheView(d CacheData) {
 			@card.Card() {
 				@card.Header() {
 					@card.Title() {
-						{ T("cd.maint") }
+						{ T(ctx, "cd.maint") }
 					}
 				}
 				@card.Content(card.ContentProps{Class: "space-y-4"}) {
-					@ActionRow(T("cd.rotatehint")) {
+					@ActionRow(T(ctx, "cd.rotatehint")) {
 						@ConfirmForm(Confirm{
 							ID:           "rotate",
 							Action:       "/admin/cache/" + d.Cache.Ref() + "/rotate",
-							Title:        T("cd.rotatetitle"),
-							Message:      T("confirm.rotate"),
-							ConfirmLabel: T("cd.rotate"),
+							Title:        T(ctx, "cd.rotatetitle"),
+							Message:      T(ctx, "confirm.rotate"),
+							ConfirmLabel: T(ctx, "cd.rotate"),
 							ConfirmIcon:  "key-round",
-							TriggerLabel: T("cd.rotate"),
+							TriggerLabel: T(ctx, "cd.rotate"),
 							TriggerIcon:  "key-round",
 						})
 					}
 					@separator.Separator()
-					@ActionRow(T("cd.deletehint")) {
+					@ActionRow(T(ctx, "cd.deletehint")) {
 						@ConfirmForm(Confirm{
 							ID:           "delete-cache",
 							Action:       "/admin/cache/" + d.Cache.Ref() + "/delete",
-							Title:        T("cd.deletetitle"),
-							Message:      "“" + d.Cache.Ref() + "” " + T("cd.deletemsg"),
-							ConfirmLabel: T("cd.delete"),
+							Title:        T(ctx, "cd.deletetitle"),
+							Message:      Tf(ctx, "cd.deletemsg", d.Cache.Ref()),
+							ConfirmLabel: T(ctx, "cd.delete"),
 							ConfirmIcon:  "trash-2",
 							Danger:       true,
-							TriggerLabel: T("action.delete"),
+							TriggerLabel: T(ctx, "action.delete"),
 							TriggerIcon:  "trash-2",
 						})
 					}
@@ -196,23 +196,23 @@ templ cacheTokenDialog(d CacheData, id, label string, push, pull bool) {
 		@dialog.Trigger(dialog.TriggerProps{For: id}) {
 			@PlusButton(label)
 		}
-		@DialogBox(label, T("cd.tokenhint"), true) {
+		@DialogBox(label, T(ctx, "cd.tokenhint"), true) {
 			<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/tokens") } class="mt-2 space-y-4">
-				@Field(id+"-name", T("tokens.name")) {
-					@input.Input(input.Props{ID: id + "-name", Name: "name", Value: d.Cache.Name, Placeholder: T("ph.tokenname"), Required: true})
+				@Field(id+"-name", T(ctx, "tokens.name")) {
+					@input.Input(input.Props{ID: id + "-name", Name: "name", Value: d.Cache.Name, Placeholder: T(ctx, "ph.tokenname"), Required: true})
 				}
-				@Field("", T("tokens.scope")) {
+				@Field("", T(ctx, "tokens.scope")) {
 					@input.Input(input.Props{ID: id + "-scope", Value: d.Cache.Ref(), Disabled: true})
 				}
-				@Field("", T("tokens.perms")) {
+				@Field("", T(ctx, "tokens.perms")) {
 					<div class="space-y-2">
-						@PermSwitchID(id+"-push", "push", "on", T("tokens.push"), push)
-						@PermSwitchID(id+"-pull", "pull", "on", T("tokens.pull"), pull)
-						@PermSwitchID(id+"-manage", "manage", "on", T("tokens.manage"), false)
+						@PermSwitchID(id+"-push", "push", "on", T(ctx, "tokens.push"), push)
+						@PermSwitchID(id+"-pull", "pull", "on", T(ctx, "tokens.pull"), pull)
+						@PermSwitchID(id+"-manage", "manage", "on", T(ctx, "tokens.manage"), false)
 					</div>
 				}
 				@ExpiryField(id, nil)
-				@DialogFooter(id, "plus", T("tokens.create"))
+				@DialogFooter(id, "plus", T(ctx, "tokens.create"))
 			</form>
 		}
 	}
@@ -236,18 +236,18 @@ templ pathResults(d CacheData) {
 	<div id="path-results" hx-target="#path-results" hx-select="#path-results" hx-swap="outerHTML show:none">
 		if len(d.Paths) == 0 {
 			if d.PathQuery != "" {
-				@EmptyState("package-search", T("cd.nomatch"))
+				@EmptyState("package-search", T(ctx, "cd.nomatch"))
 			} else {
-				@EmptyState("package-search", T("cd.pathsempty"))
+				@EmptyState("package-search", T(ctx, "cd.pathsempty"))
 			}
 		} else {
 			@TableCard() {
 				@table.Table(table.Props{Class: "table-fixed"}) {
 					@table.Header() {
 						@table.Row() {
-							@SortHead(d.PathSort, "path", T("paths.path"), "")
-							@SortHead(d.PathSort, "size", T("paths.size"), "w-32")
-							@SortHead(d.PathSort, "pulled", T("paths.pulled"), "w-40")
+							@SortHead(d.PathSort, "path", T(ctx, "paths.path"), "")
+							@SortHead(d.PathSort, "size", T(ctx, "paths.size"), "w-32")
+							@SortHead(d.PathSort, "pulled", T(ctx, "paths.pulled"), "w-40")
 						}
 					}
 					@table.Body() {
@@ -256,7 +256,7 @@ templ pathResults(d CacheData) {
 							@table.Row() {
 								@table.Cell() {
 									<div class="flex min-w-0 items-center gap-2">
-										<a href={ templ.SafeURL(pathURL(d.Cache, p.StorePath)) } class="truncate font-medium hover:underline" aria-label={ T("paths.open") }>{ name }</a>
+										<a href={ templ.SafeURL(pathURL(d.Cache, p.StorePath)) } class="truncate font-medium hover:underline" aria-label={ T(ctx, "paths.open") }>{ name }</a>
 										if hash != "" {
 											@WithTooltip(p.StorePath) {
 												<code class="font-mono text-xs text-muted-foreground">{ hash }</code>
@@ -268,7 +268,7 @@ templ pathResults(d CacheData) {
 									{ d.Bytes(p.NarSize) }
 								}
 								@table.Cell(table.CellProps{Class: "text-muted-foreground"}) {
-									{ Ago(p.Accessed) }
+									{ Ago(ctx, p.Accessed) }
 								}
 							}
 						}

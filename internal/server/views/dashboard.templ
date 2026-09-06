@@ -15,35 +15,35 @@ import (
 )
 
 templ Dashboard(d DashboardData) {
-	@Layout(T("dash.title"), "caches", d.Nav, d.Flash) {
+	@Layout(T(ctx, "dash.title"), "caches", d.Nav, d.Flash) {
 		if d.Nav.Active != "" {
-			@PageHeader(T("dash.title"), T("dash.scopedto")+" "+d.Nav.Active+".")
+			@PageHeader(T(ctx, "dash.title"), Tf(ctx, "dash.scopedto", d.Nav.Active))
 		} else {
-			@PageHeader(T("dash.title"), T("dash.subtitle"))
+			@PageHeader(T(ctx, "dash.title"), T(ctx, "dash.subtitle"))
 		}
 		<div class="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
-			@StatTile("database", Count(d.Global.Caches), T("kpi.caches"), "", "")
-			@StatTile("package", Count(d.Global.Paths), T("kpi.paths"), "", "")
-			@StatTile("hard-drive", d.Bytes(d.Global.StoredBytes), T("kpi.disk")+capSuffix(d.ServerCap, d.Bytes), "", "")
-			@StatTile("layers", dedupRatio(d.Global.LogicalBytes, d.Global.StoredBytes)+"×", T("kpi.dedup"), "", "")
+			@StatTile("database", Count(d.Global.Caches), T(ctx, "kpi.caches"), "", "")
+			@StatTile("package", Count(d.Global.Paths), T(ctx, "kpi.paths"), "", "")
+			@StatTile("hard-drive", d.Bytes(d.Global.StoredBytes), T(ctx, "kpi.disk")+capSuffix(d.ServerCap, d.Bytes), "", "")
+			@StatTile("layers", dedupRatio(d.Global.LogicalBytes, d.Global.StoredBytes)+"×", T(ctx, "kpi.dedup"), "", "")
 		</div>
 		if d.ServerCap > 0 {
 			<div class="mb-8">
 				@progress.Progress(progress.Props{Value: fillPct(d.Global.StoredBytes, d.ServerCap), Size: progress.SizeSm, Variant: capVariant(d.Global.StoredBytes, d.ServerCap)})
 			</div>
 		}
-		@SectionHeader(T("caches.title")) {
-			@SearchInput("/admin", "caches[q]", d.CacheQuery, T("caches.search"), "#cache-list")
+		@SectionHeader(T(ctx, "caches.title")) {
+			@SearchInput("/admin", "caches[q]", d.CacheQuery, T(ctx, "caches.search"), "#cache-list")
 			if len(d.Accounts) > 0 {
 				@newCacheDialog(d)
 			} else {
-				@disabledCreate(T("caches.new"), T("caches.needaccount"))
+				@disabledCreate(T(ctx, "caches.new"), T(ctx, "caches.needaccount"))
 			}
 		}
 		<div id="cache-list" class="mb-8">
 			if len(d.Caches) == 0 {
 				if d.CacheQuery != "" {
-					@EmptyState("database", T("caches.nomatch"))
+					@EmptyState("database", T(ctx, "caches.nomatch"))
 				} else {
 					@onboarding(d)
 				}
@@ -56,26 +56,26 @@ templ Dashboard(d DashboardData) {
 				@PagerNav(d.CachePager)
 			}
 		</div>
-		@SectionHeader(T("tokens.title")) {
-			@SearchInput("/admin", "tokens[q]", d.TokenQuery, T("tokens.search"), "#token-list")
+		@SectionHeader(T(ctx, "tokens.title")) {
+			@SearchInput("/admin", "tokens[q]", d.TokenQuery, T(ctx, "tokens.search"), "#token-list")
 			if canMintToken(d) {
 				@newTokenDialog(d)
 			} else {
-				@disabledCreate(T("tokens.new"), T("tokens.needcache"))
+				@disabledCreate(T(ctx, "tokens.new"), T(ctx, "tokens.needcache"))
 			}
 		}
 		<div id="token-list">
 			if len(d.Tokens) == 0 {
 				if d.TokenQuery != "" {
-					@EmptyState("key-round", T("tokens.nomatch"))
+					@EmptyState("key-round", T(ctx, "tokens.nomatch"))
 				} else {
-					@EmptyState("key-round", T("tokens.empty")) {
+					@EmptyState("key-round", T(ctx, "tokens.empty")) {
 						if canMintToken(d) {
 							@dialog.Trigger(dialog.TriggerProps{For: "dlg-token"}) {
-								@PlusButton(T("tokens.new"))
+								@PlusButton(T(ctx, "tokens.new"))
 							}
 						} else {
-							@disabledCreate(T("tokens.new"), T("tokens.needcache"))
+							@disabledCreate(T(ctx, "tokens.new"), T(ctx, "tokens.needcache"))
 						}
 					}
 				}
@@ -84,13 +84,13 @@ templ Dashboard(d DashboardData) {
 					@table.Table(table.Props{Class: "table-fixed"}) {
 						@table.Header() {
 							@table.Row() {
-								@SortHead(d.TokenSort, "name", T("tokens.name"), "")
-								@SortHead(d.TokenSort, "perms", T("tokens.perms"), "w-36")
-								@SortHead(d.TokenSort, "scope", T("tokens.scope"), "w-36")
-								@SortHead(d.TokenSort, "expires", T("tokens.expires"), "w-28")
-								@SortHead(d.TokenSort, "status", T("tokens.status"), "w-20")
+								@SortHead(d.TokenSort, "name", T(ctx, "tokens.name"), "")
+								@SortHead(d.TokenSort, "perms", T(ctx, "tokens.perms"), "w-36")
+								@SortHead(d.TokenSort, "scope", T(ctx, "tokens.scope"), "w-36")
+								@SortHead(d.TokenSort, "expires", T(ctx, "tokens.expires"), "w-28")
+								@SortHead(d.TokenSort, "status", T(ctx, "tokens.status"), "w-20")
 								@table.Head(table.HeadProps{Class: "w-24 text-right"}) {
-									{ T("tokens.actions") }
+									{ T(ctx, "tokens.actions") }
 								}
 							}
 						}
@@ -114,25 +114,25 @@ templ onboarding(d DashboardData) {
 	@card.Card(card.Props{Class: "border-dashed bg-transparent shadow-none"}) {
 		@card.Header() {
 			@card.Title() {
-				{ T("onb.title") }
+				{ T(ctx, "onb.title") }
 			}
 			@card.Description() {
-				{ T("onb.subtitle") }
+				{ T(ctx, "onb.subtitle") }
 			}
 		}
 		@card.Content(card.ContentProps{Class: "space-y-4"}) {
-			@onboardStep("1", T("onb.step1"), T("onb.step1hint")) {
+			@onboardStep("1", T(ctx, "onb.step1"), T(ctx, "onb.step1hint")) {
 				if len(d.Accounts) > 0 {
 					@dialog.Trigger(dialog.TriggerProps{For: "dlg-cache"}) {
-						@PlusButton(T("caches.new"))
+						@PlusButton(T(ctx, "caches.new"))
 					}
 				} else {
-					@disabledCreate(T("caches.new"), T("caches.needaccount"))
+					@disabledCreate(T(ctx, "caches.new"), T(ctx, "caches.needaccount"))
 				}
 			}
-			@onboardStep("2", T("onb.step2"), T("onb.step2hint")) {
+			@onboardStep("2", T(ctx, "onb.step2"), T(ctx, "onb.step2hint")) {
 			}
-			@onboardStep("3", T("onb.step3"), T("onb.step3hint")) {
+			@onboardStep("3", T(ctx, "onb.step3"), T(ctx, "onb.step3hint")) {
 			}
 		}
 	}
@@ -174,7 +174,7 @@ templ cacheRow(u CacheUsage, bytes func(int64) string) {
 				if u.Cache.MaxBytes > 0 {
 					{ " / " + bytes(u.Cache.MaxBytes) }
 				}
-				· { Count(u.Paths) } { T("cache.paths") }
+				· { Count(u.Paths) } { T(ctx, "cache.paths") }
 			</span>
 		</div>
 	</div>
@@ -196,10 +196,10 @@ templ tokenRow(d DashboardData, t store.Token) {
 			if scopeAll(t.Caches) {
 				// Not "all caches": this scope grants no cache access at all,
 				// it grants instance-wide management. Say the dangerous thing.
-				@WithTooltip(T("tokens.roothint")) {
+				@WithTooltip(T(ctx, "tokens.roothint")) {
 					<span class="inline-flex items-center gap-1 text-destructive">
 						@Icon("shield-alert")
-						<span>{ T("tokens.root") }</span>
+						<span>{ T(ctx, "tokens.root") }</span>
 					</span>
 				}
 			} else {
@@ -207,7 +207,7 @@ templ tokenRow(d DashboardData, t store.Token) {
 			}
 		}
 		@table.Cell(table.CellProps{Class: "text-muted-foreground"}) {
-			{ TokenExpiry(t) }
+			{ TokenExpiry(ctx, t) }
 		}
 		@table.Cell() {
 			@StatusIcon(TokenStatus(t))
@@ -221,14 +221,14 @@ templ tokenRow(d DashboardData, t store.Token) {
 					@ConfirmForm(Confirm{
 						ID:             "revoke-" + strconv.FormatInt(t.ID, 10),
 						Action:         "/admin/tokens/" + strconv.FormatInt(t.ID, 10) + "/revoke",
-						Title:          T("tok.revoketitle"),
-						Message:        "“" + t.Name + "” " + T("tok.revokemsg"),
-						ConfirmLabel:   T("tokens.revoke"),
+						Title:          T(ctx, "tok.revoketitle"),
+						Message:        Tf(ctx, "tok.revokemsg", t.Name),
+						ConfirmLabel:   T(ctx, "tokens.revoke"),
 						ConfirmIcon:    "ban",
 						Danger:         true,
 						TriggerIcon:    "ban",
 						IconOnly:       true,
-						TriggerTooltip: T("tokens.revoke"),
+						TriggerTooltip: T(ctx, "tokens.revoke"),
 						TriggerVariant: button.VariantGhost,
 					})
 				}
@@ -252,24 +252,24 @@ templ disabledCreate(label, why string) {
 templ newCacheDialog(d DashboardData) {
 	@dialog.Dialog(dialog.Props{ID: "dlg-cache"}) {
 		@dialog.Trigger(dialog.TriggerProps{For: "dlg-cache"}) {
-			@PlusButton(T("caches.new"))
+			@PlusButton(T(ctx, "caches.new"))
 		}
-		@DialogBox(T("caches.new"), T("caches.newhint"), true) {
+		@DialogBox(T(ctx, "caches.new"), T(ctx, "caches.newhint"), true) {
 			<form method="post" action="/admin/caches" class="mt-2 space-y-4">
-				@Field("", T("caches.account")) {
-					@AccountSelect("namespace", defaultAccount(d), T("caches.pickaccount"), d.Accounts)
+				@Field("", T(ctx, "caches.account")) {
+					@AccountSelect("namespace", defaultAccount(d), T(ctx, "caches.pickaccount"), d.Accounts)
 				}
-				@Field("cache-name", T("caches.name")) {
-					@input.Input(input.Props{ID: "cache-name", Name: "name", Placeholder: T("ph.cachename"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-zA-Z0-9_]+"}})
+				@Field("cache-name", T(ctx, "caches.name")) {
+					@input.Input(input.Props{ID: "cache-name", Name: "name", Placeholder: T(ctx, "ph.cachename"), Required: true, Attributes: templ.Attributes{"pattern": "[-a-zA-Z0-9_]+"}})
 				}
 				if d.IsAdmin && len(d.Storages) > 1 {
-					@Field("", T("caches.storage")) {
+					@Field("", T(ctx, "caches.storage")) {
 						@StorageSelect("storage", firstStr(d.Storages), d.Storages)
 					}
 				}
 				@VisibilitySwitch(false)
 				@PriorityField(40)
-				@DialogFooter("dlg-cache", "plus", T("caches.create"))
+				@DialogFooter("dlg-cache", "plus", T(ctx, "caches.create"))
 			</form>
 		}
 	}
@@ -279,10 +279,10 @@ templ newCacheDialog(d DashboardData) {
 templ newTokenDialog(d DashboardData) {
 	@dialog.Dialog(dialog.Props{ID: "dlg-token"}) {
 		@dialog.Trigger(dialog.TriggerProps{For: "dlg-token"}) {
-			@PlusButton(T("tokens.new"))
+			@PlusButton(T(ctx, "tokens.new"))
 		}
-		@DialogBox(T("tokens.newtitle"), T("tokens.newhint"), true) {
-			@tokenFormBody("/admin/tokens", nil, d, "plus", T("tokens.create"), "dlg-token")
+		@DialogBox(T(ctx, "tokens.newtitle"), T(ctx, "tokens.newhint"), true) {
+			@tokenFormBody("/admin/tokens", nil, d, "plus", T(ctx, "tokens.create"), "dlg-token")
 		}
 	}
 }
@@ -292,10 +292,10 @@ templ editTokenDialog(d DashboardData, t store.Token) {
 	{{ id := "dlg-token-edit-" + strconv.FormatInt(t.ID, 10) }}
 	@dialog.Dialog(dialog.Props{ID: id}) {
 		@dialog.Trigger(dialog.TriggerProps{For: id}) {
-			@RowAction("square-pen", T("action.edit"), false)
+			@RowAction("square-pen", T(ctx, "action.edit"), false)
 		}
-		@DialogBox(T("tokens.edittitle"), T("tokens.edithint"), true) {
-			@tokenFormBody("/admin/tokens/"+strconv.FormatInt(t.ID, 10)+"/edit", &t, d, "check", T("action.savechanges"), id)
+		@DialogBox(T(ctx, "tokens.edittitle"), T(ctx, "tokens.edithint"), true) {
+			@tokenFormBody("/admin/tokens/"+strconv.FormatInt(t.ID, 10)+"/edit", &t, d, "check", T(ctx, "action.savechanges"), id)
 		}
 	}
 }
@@ -303,17 +303,17 @@ templ editTokenDialog(d DashboardData, t store.Token) {
 // tokenFormBody is the shared create/edit token form; t is nil on create.
 templ tokenFormBody(action string, t *store.Token, d DashboardData, submitIcon, submitLabel, dlgID string) {
 	<form method="post" action={ templ.SafeURL(action) } class="mt-2 space-y-4">
-		@Field(dlgID+"-name", T("tokens.name")) {
-			@input.Input(input.Props{ID: dlgID + "-name", Name: "name", Value: tokenName(t), Placeholder: T("ph.tokenname"), Required: true})
+		@Field(dlgID+"-name", T(ctx, "tokens.name")) {
+			@input.Input(input.Props{ID: dlgID + "-name", Name: "name", Value: tokenName(t), Placeholder: T(ctx, "ph.tokenname"), Required: true})
 		}
-		@FieldInfo("", T("tokens.scope"), T("tokens.scopehint")) {
+		@FieldInfo("", T(ctx, "tokens.scope"), T(ctx, "tokens.scopehint")) {
 			@ScopeSelect("cache", tokenScopeValue(t, d), tokenScopeCaches(t, d))
 		}
-		@Field("", T("tokens.perms")) {
+		@Field("", T(ctx, "tokens.perms")) {
 			<div class="space-y-2">
-				@PermSwitchID(dlgID+"-push", "push", "on", T("tokens.push"), tokenPerm(t, "push"))
-				@PermSwitchID(dlgID+"-pull", "pull", "on", T("tokens.pull"), tokenPerm(t, "pull"))
-				@PermSwitchID(dlgID+"-manage", "manage", "on", T("tokens.manage"), tokenPerm(t, "manage"))
+				@PermSwitchID(dlgID+"-push", "push", "on", T(ctx, "tokens.push"), tokenPerm(t, "push"))
+				@PermSwitchID(dlgID+"-pull", "pull", "on", T(ctx, "tokens.pull"), tokenPerm(t, "pull"))
+				@PermSwitchID(dlgID+"-manage", "manage", "on", T(ctx, "tokens.manage"), tokenPerm(t, "manage"))
 			</div>
 		}
 		@ExpiryField(dlgID, t)

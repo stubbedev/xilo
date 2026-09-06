@@ -223,7 +223,7 @@ var (
 
 // statusData builds the page view model (initial server render; the poller
 // keeps it fresh through the JSON endpoint afterwards).
-func (s *Server) statusData(q statusRangeQ) views.StatusData {
+func (s *Server) statusData(ctx context.Context, q statusRangeQ) views.StatusData {
 	_, healthErr := s.db.ListCaches()
 	m := &s.metrics
 	set := s.statusSeries(q)
@@ -253,10 +253,10 @@ func (s *Server) statusData(q statusRangeQ) views.StatusData {
 		To:      set.toStr,
 	}
 	d.Charts = []views.ChartData{
-		statusChartData("req", views.T("status.req"), set.req, set.times, fmtReq),
-		statusChartData("lat", views.T("status.lat"), set.lat, set.times, fmtLat),
-		statusChartData("thru", views.T("status.thru"), set.bps, set.times, fmtBps),
-		statusChartData("stored", views.T("status.storedchart"), set.stored, set.times, fmtB),
+		statusChartData("req", views.T(ctx, "status.req"), set.req, set.times, fmtReq),
+		statusChartData("lat", views.T(ctx, "status.lat"), set.lat, set.times, fmtLat),
+		statusChartData("thru", views.T(ctx, "status.thru"), set.bps, set.times, fmtBps),
+		statusChartData("stored", views.T(ctx, "status.storedchart"), set.stored, set.times, fmtB),
 	}
 	return d
 }
@@ -519,7 +519,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return
 	}
-	d := s.statusData(statusRange(r))
+	d := s.statusData(r.Context(), statusRange(r))
 	d.Rate = statusRate(r)
 	d.Nav = s.nav(r, s.currentUser(r))
 	views.StatusPage(d).Render(r.Context(), w)

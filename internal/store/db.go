@@ -379,6 +379,7 @@ func migrate(w *sql.DB, pg bool) error {
 		{"users", "email", "TEXT"},
 		{"users", "status", "TEXT NOT NULL DEFAULT 'active'"},
 		{"users", "theme", "TEXT NOT NULL DEFAULT ''"},
+		{"users", "locale", "TEXT NOT NULL DEFAULT ''"},
 		{"accounts", "kind", "TEXT NOT NULL DEFAULT 'org'"},
 		{"accounts", "plan_id", "INTEGER NOT NULL DEFAULT 0"},
 		{"accounts", "status", "TEXT NOT NULL DEFAULT 'active'"},

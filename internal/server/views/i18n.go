@@ -1,9 +1,86 @@
 package views
 
-// T returns the UI string for a message id. All user-facing labels,
-// placeholders, and helper text flow through here so they are DRY and
-// translatable. add a locale map and select by request language later.
-func T(id string) string {
+import (
+	"context"
+	"fmt"
+	"strings"
+)
+
+// Locale is one shipped catalog. Name is written in the language itself —
+// a picker that says "German" to someone who only reads German is no help.
+type Locale struct {
+	ID, Name string
+}
+
+// Locales is the language picker, English first. Adding a language means a
+// catalog map, an entry here, and nothing else: T falls back per key, so a
+// half-finished catalog renders the rest in English instead of breaking.
+var Locales = []Locale{
+	{"en", "English"},
+	{"de", "Deutsch"},
+	{"fr", "Français"},
+	{"es", "Español"},
+	{"zh", "中文"},
+	{"ja", "日本語"},
+}
+
+var catalogs = map[string]map[string]string{
+	"en": en, "de": de, "fr": fr, "es": es, "zh": zh, "ja": ja,
+}
+
+// ValidLocale reports whether id names a shipped catalog.
+func ValidLocale(id string) bool {
+	_, ok := catalogs[id]
+	return ok
+}
+
+// MatchLocale maps an Accept-Language header (or any "de-AT,de;q=0.9" list)
+// to a shipped catalog id, "en" when nothing matches. Quality values are not
+// weighed: the header is already in preference order and a tie between two
+// languages we both ship is not worth the parser.
+func MatchLocale(header string) string {
+	for tag := range strings.SplitSeq(header, ",") {
+		tag, _, _ = strings.Cut(tag, ";")
+		tag = strings.TrimSpace(strings.ToLower(tag))
+		if base, _, _ := strings.Cut(tag, "-"); ValidLocale(base) {
+			return base
+		}
+	}
+	return "en"
+}
+
+type langKey struct{}
+
+// WithLocale puts the viewer's language on the context. Every T reads it from
+// there, so a handler sets it once per request and nothing else threads it.
+func WithLocale(ctx context.Context, id string) context.Context {
+	if !ValidLocale(id) {
+		return ctx
+	}
+	return context.WithValue(ctx, langKey{}, id)
+}
+
+// LocaleFrom reports the context's language, "en" when none was set.
+func LocaleFrom(ctx context.Context) string {
+	if id, ok := ctx.Value(langKey{}).(string); ok {
+		return id
+	}
+	return "en"
+}
+
+// T returns the UI string for a message id in the context's language. All
+// user-facing labels, placeholders, helper text and flashes flow through here
+// so they are DRY and translatable.
+//
+// Lookup falls back twice: a key the active catalog is missing comes from
+// English, and a key nothing defines returns the id itself (visible in the
+// page, and caught by TestCatalogCoversEveryLookup before it ships).
+func T(ctx context.Context, id string) string {
+	if c, ok := catalogs[LocaleFrom(ctx)]; ok {
+		if s, ok := c[id]; ok {
+			return s
+		}
+	}
 	if s, ok := en[id]; ok {
 		return s
 	}
@@ -13,67 +90,75 @@ func T(id string) string {
 // en is the default (English) catalog. Keep values concise.
 var en = map[string]string{
 	// one-shot flash messages (server handlers)
-	"flash.gcdone":        "GC done: removed %d chunks, freed %s",
-	"flash.rotated":       "Signing key rotated. Update trusted-public-keys everywhere, the old key no longer verifies:",
-	"flash.badname":       "Names cannot contain '/'.",
-	"flash.notadmin":      "You do not administer this account.",
-	"flash.cachefailed":   "Could not create cache: %v",
-	"flash.cachecreated":  "Cache %s created.",
-	"flash.cachedeleted":  "Cache %s deleted.",
-	"flash.tokencreated":  "Token %q created. Copy it now, it is not shown again:",
-	"flash.tokenupdated":  "Token updated.",
-	"flash.pickaccount":   "Pick the account the cache belongs to.",
-	"flash.tokenrevoked":  "Token revoked.",
-	"flash.emailfailed":   "Could not save email:",
-	"flash.themesaved":    "Palette saved.",
-	"flash.emailreq":      "A valid email address is required on this instance.",
-	"flash.pwwrong":       "Current password is incorrect.",
-	"flash.pwshort":       "Password must be at least 8 characters.",
-	"flash.pwlong":        "Password must be at most 72 characters.",
-	"flash.pwmismatch":    "Passwords do not match.",
-	"flash.pwchanged":     "Password changed.",
-	"flash.pwreset":       "Password reset for %s.",
-	"flash.totpon":        "Two-factor authentication enabled.",
-	"flash.totpoff":       "Two-factor authentication disabled.",
-	"flash.pkremoved":     "Passkey removed.",
-	"flash.nouser":        "No such user.",
-	"flash.memberrole":    "%s is now a %s of %s.",
-	"flash.memberremoved": "Member removed.",
-	"flash.userreq":       "Username is required.",
-	"flash.userfailed":    "Could not create user:",
-	"flash.usercreated":   "User %q created.",
-	"flash.userapproved":  "%s approved.",
-	"flash.userdeleted":   "User %s deleted.",
-	"flash.delowner":      "The instance owner cannot be deleted.",
-	"flash.ownsorgs":      "They own organizations. Delete those first.",
-	"flash.delself":       "You cannot delete your own account.",
-	"flash.badorgname":    "Invalid organization name.",
-	"flash.nametaken":     "That name is taken.",
-	"flash.orgready":      "Account %q ready.",
-	"flash.orgcreated":    "Organization %q created.",
-	"flash.orgdeleted":    "Organization %s deleted.",
-	"flash.ownerdelete":   "Only the owner can delete an organization.",
-	"flash.deletefailed":  "Could not delete:",
-	"flash.settingssaved": "Instance settings saved.",
-	"flash.plannamereq":   "Plan name is required.",
-	"flash.planfailed":    "Could not create plan:",
-	"flash.plancreated":   "Plan %q created.",
-	"flash.planupdated":   "Plan %q updated.",
-	"flash.plandeleted":   "Plan deleted.",
-	"flash.regpending":    "Registered. An administrator has to approve your account before you can sign in.",
-	"flash.ratelimited":   "Too many attempts. Wait a moment and try again.",
-	"flash.badlogin":      "Invalid username or password.",
-	"flash.awaiting":      "Your account is awaiting approval.",
-	"flash.loginexpired":  "That sign-in attempt expired. Enter your password again.",
-	"flash.bad2fa":        "Invalid two-factor code. Enter your password again.",
-	"flash.badcode":       "That code did not match. Try again.",
-	"flash.emailsaved":    "Email saved.",
-	"flash.emailcleared":  "Email cleared.",
-	"reg.err.username":    "Invalid username: lowercase letters, digits, - and _.",
-	"reg.err.plan":        "Pick one of the offered plans.",
-	"reg.err.noorgs":      "The selected plan does not include organizations.",
-	"reg.err.orgname":     "Invalid organization name: lowercase letters, digits, - and _.",
-	"reg.err.failed":      "Could not complete registration.",
+	"flash.gcdone":          "Removed %d chunks, freed %s.",
+	"flash.rotated":         "Signing key rotated. Update trusted-public-keys everywhere:",
+	"flash.badname":         "Names cannot contain '/'.",
+	"flash.notadmin":        "You do not administer this account.",
+	"flash.cachecreated":    "Cache %s created.",
+	"flash.cachedeleted":    "Cache %s deleted.",
+	"flash.tokencreated":    "Token %q created. Copy it now — it is not shown again:",
+	"flash.tokenupdated":    "Token updated.",
+	"flash.pickaccount":     "Pick an account for the cache.",
+	"flash.tokenrevoked":    "Token revoked.",
+	"flash.emailfailed":     "Could not save your email address.",
+	"flash.appearancesaved": "Appearance saved.",
+	"flash.emailreq":        "This instance requires a valid email address.",
+	"flash.pwwrong":         "Current password is incorrect.",
+	"flash.pwshort":         "Password must be at least 8 characters.",
+	"flash.pwlong":          "Password must be at most 72 characters.",
+	"flash.pwmismatch":      "Passwords do not match.",
+	"flash.pwchanged":       "Password changed.",
+	"flash.pwreset":         "Password reset for %s.",
+	"flash.totpon":          "Two-factor enabled.",
+	"flash.totpoff":         "Two-factor disabled.",
+	"flash.pkremoved":       "Passkey removed.",
+	"flash.nouser":          "No such user.",
+	"flash.memberrole":      "%s is now a %s of %s.",
+	"flash.memberremoved":   "Member removed.",
+	"flash.userreq":         "Username is required.",
+	"flash.userfailed":      "Could not create the user.",
+	"flash.usercreated":     "User %q created.",
+	"flash.userapproved":    "%s approved.",
+	"flash.userdeleted":     "User %s deleted.",
+	"flash.delowner":        "The instance owner cannot be deleted.",
+	"flash.ownsorgs":        "They own organizations. Delete those first.",
+	"flash.delself":         "You cannot delete your own account.",
+	"flash.badorgname":      "Invalid organization name.",
+	"flash.nametaken":       "That name is taken.",
+	"flash.orgready":        "Account %q ready.",
+	"flash.orgcreated":      "Organization %q created.",
+	"flash.orgdeleted":      "Organization %s deleted.",
+	"flash.ownerdelete":     "Only the owner can delete an organization.",
+	"flash.deletefailed":    "Could not delete that.",
+	"flash.settingssaved":   "Instance settings saved.",
+	"flash.plannamereq":     "Plan name is required.",
+	"flash.planfailed":      "Could not create the plan.",
+	"flash.savefailed":      "Could not save that.",
+	// store refusals, mapped from the sentinels in internal/store (storeMsg)
+	"flash.notorg":       "Only organizations can be deleted.",
+	"flash.badrole":      "The roles you can grant are admin and user.",
+	"flash.ownerrole":    "The owner's role cannot be changed.",
+	"flash.personalorg":  "Personal accounts cannot have extra members.",
+	"flash.hasowner":     "That account already has an owner.",
+	"flash.ownerlocked":  "The owner cannot be removed.",
+	"flash.planinuse":    "That plan is in use by accounts.",
+	"flash.slugreserved": "That name is reserved.",
+	"flash.plancreated":  "Plan %q created.",
+	"flash.planupdated":  "Plan %q updated.",
+	"flash.plandeleted":  "Plan deleted.",
+	"flash.regpending":   "Registered. An administrator must approve your account before you can sign in.",
+	"flash.badlogin":     "Invalid username or password.",
+	"flash.awaiting":     "Your account is awaiting approval.",
+	"flash.loginexpired": "That sign-in expired. Enter your password again.",
+	"flash.bad2fa":       "Invalid two-factor code. Enter your password again.",
+	"flash.badcode":      "That code did not match. Try again.",
+	"flash.emailsaved":   "Email saved.",
+	"flash.emailcleared": "Email cleared.",
+	"reg.err.username":   "Invalid username: lowercase letters, digits, - and _.",
+	"reg.err.plan":       "Pick one of the offered plans.",
+	"reg.err.noorgs":     "The selected plan does not include organizations.",
+	"reg.err.orgname":    "Invalid organization name: lowercase letters, digits, - and _.",
+	"reg.err.failed":     "Could not complete registration.",
 	// roles: superadmin is the instance-wide one, owner/admin/user are account roles
 	"role.superadmin": "superadmin",
 	"role.owner":      "owner",
@@ -91,7 +176,7 @@ var en = map[string]string{
 	"nav.allaccounts": "All accounts",
 	"nav.logout":      "Log out",
 	"nav.theme":       "Theme",
-	"footer.tagline":  "· self-hosted Nix cache",
+	"footer.tagline":  "self-hosted Nix cache",
 
 	// status dashboard
 	"status.title":       "Status",
@@ -126,7 +211,7 @@ var en = map[string]string{
 
 	// activities
 	"audit.title":    "Activities",
-	"audit.subtitle": "Every admin and API mutation, newest first.",
+	"audit.subtitle": "Every admin and API change, newest first.",
 	"audit.search":   "Search actor, path or IP",
 	"audit.empty":    "No actions recorded yet.",
 	"audit.nomatch":  "No actions match your search.",
@@ -146,7 +231,7 @@ var en = map[string]string{
 
 	// login
 	"login.title":      "Sign in",
-	"login.subtitle":   "Access the Xilo admin.",
+	"login.subtitle":   "Sign in to the Xilo admin.",
 	"login.username":   "Username",
 	"login.userph":     "alice",
 	"login.password":   "Password",
@@ -184,7 +269,7 @@ var en = map[string]string{
 	"inst.maint":           "Maintenance",
 	"inst.gcdesc":          "Remove unreferenced chunks and reclaim disk.",
 	"inst.gctitle":         "Run garbage collection?",
-	"inst.gcmsg":           "Unreferenced chunks are deleted permanently. Store paths still in use are unaffected.",
+	"inst.gcmsg":           "Unreferenced chunks are deleted permanently. Paths still in use are untouched.",
 	"inst.gcrun":           "Run GC",
 	"set.plans":            "Plans",
 	"plan.new":             "New plan",
@@ -201,8 +286,7 @@ var en = map[string]string{
 	"plan.public":          "Offered at self-registration",
 	"plan.delete":          "Delete plan",
 	"plan.deletetitle":     "Delete plan?",
-	"plan.delmsg.pre":      "Accounts on",
-	"plan.delmsg.post":     "keep their data but lose this plan's limits.",
+	"plan.deletemsg":       "Accounts on “%s” keep their data but lose this plan's limits.",
 	"plan.hint":            "Limits for accounts on this plan.",
 	"plan.unlimited":       "no limits",
 	"plan.caches":          "caches",
@@ -211,17 +295,19 @@ var en = map[string]string{
 	"plan.retention":       "retention",
 	"acct.orgs":            "Organizations",
 	"acct.orghint":         "Create an organization to share caches with a team.",
-	"acct.subtitle":        "Signed in as",
+	"acct.subtitle":        "Signed in as %s.",
 	"acct.email":           "Email",
 	"acct.emailaddr":       "Email address",
 	"acct.emailhint":       "For notifications and sign-in.",
 	"acct.appearance":      "Appearance",
 	"acct.appearancehint":  "Light or dark follows the top-bar toggle.",
 	"acct.palette":         "Palette",
-	"acct.stored":          "stored",
-	"acct.of":              "of",
-	"acct.egress":          "served this month",
-	"acct.plan":            "plan",
+	"acct.language":        "Language",
+	"acct.langauto":        "Follow my browser",
+	"acct.usestored":       "%s stored",
+	"acct.useof":           "%s stored of %s",
+	"acct.useegress":       "%s served this month",
+	"acct.useplan":         "plan %s",
 	"users.approve":        "Approve",
 
 	// organizations
@@ -233,10 +319,10 @@ var en = map[string]string{
 	"org.create":       "Create organization",
 	"org.delete":       "Delete organization",
 	"org.deletetitle":  "Delete organization?",
-	"org.deletemsg":    "and its caches will be removed.",
+	"org.deletemsg":    "“%s” and its caches will be removed.",
 	"org.members":      "Members",
-	"org.membersword":  "members",
-	"org.memberword":   "member",
+	"org.membercount":  "%d member",
+	"org.memberscount": "%d members",
 	"org.membersempty": "No members yet.",
 	"org.caches":       "Caches",
 	"org.cachesempty":  "No caches in this organization yet.",
@@ -244,12 +330,12 @@ var en = map[string]string{
 	"org.nocandidates": "Every active user is already a member.",
 	"org.pickuser":     "Pick a user",
 	"org.removetitle":  "Remove member?",
-	"org.removemsg":    "will lose access to",
+	"org.removemsg":    "%s will lose access to %s.",
 
 	// dashboard. overview
 	"dash.title":    "Overview",
 	"dash.subtitle": "Storage and access across your caches.",
-	"dash.scopedto": "Scoped to",
+	"dash.scopedto": "Scoped to %s.",
 	"kpi.caches":    "Caches",
 	"kpi.paths":     "Store paths",
 	"kpi.disk":      "Disk used",
@@ -276,7 +362,7 @@ var en = map[string]string{
 	"caches.newhint":      "In an account you administer.",
 	"caches.name":         "Name",
 	"caches.priority":     "Priority",
-	"caches.priorityhint": "Lower is preferred by Nix (1–100).",
+	"caches.priorityhint": "Nix prefers lower numbers (1–100).",
 	"caches.privatehint":  "Require a token to pull from this cache.",
 	"caches.create":       "Create cache",
 
@@ -298,7 +384,7 @@ var en = map[string]string{
 	"tokens.expiry":    "Expiry",
 	"tokens.status":    "Status",
 	"tokens.root":      "instance root",
-	"tokens.roothint":  "Not scoped to a cache: manages every cache, token and account.",
+	"tokens.roothint":  "Unscoped: manages every cache, token and account.",
 	"tokens.scopehint": "One cache per token.",
 	"tokens.push":      "Push",
 	"tokens.pull":      "Pull",
@@ -312,7 +398,7 @@ var en = map[string]string{
 	"tokens.create":    "Create token",
 	"tokens.revoke":    "Revoke",
 	"tok.revoketitle":  "Revoke token?",
-	"tok.revokemsg":    "will stop working immediately. This cannot be undone.",
+	"tok.revokemsg":    "“%s” will stop working immediately. This cannot be undone.",
 	"tok.active":       "active",
 	"tok.expired":      "expired",
 	"tok.revoked":      "revoked",
@@ -332,7 +418,7 @@ var en = map[string]string{
 	"cd.pushhint":    "With a token that has push access.",
 	"cd.private":     "Private cache: pulls need a token with pull access.",
 	"cd.netrc":       "Add to ~/.netrc",
-	"cd.netrchint":   "Nix sends the token as basic auth. `xilo use` writes this line for you.",
+	"cd.netrchint":   "Nix sends the token as basic auth. `xilo use` writes this for you.",
 	"cd.pushtoken":   "Create push token",
 	"cd.pulltoken":   "Create pull token",
 	"cd.tokenhint":   "Scoped to this cache. The secret is shown once.",
@@ -346,7 +432,7 @@ var en = map[string]string{
 	"cd.maint":       "Maintenance",
 	"cd.delete":      "Delete cache",
 	"cd.deletetitle": "Delete cache?",
-	"cd.deletemsg":   "and every path in it will be removed. This cannot be undone.",
+	"cd.deletemsg":   "“%s” and every path in it will be removed. This cannot be undone.",
 	"cd.deletehint":  "Removes every path in it.",
 	"cd.paths":       "Store paths",
 	"cd.search":      "Search paths",
@@ -374,7 +460,7 @@ var en = map[string]string{
 	"path.chunk":       "Chunk",
 	"path.compressed":  "Compressed",
 	"path.broken":      "chunks missing",
-	"path.brokenhint":  "Chunks are missing from storage, pulls fail. Run xilo fsck.",
+	"path.brokenhint":  "Chunks are missing from storage, so pulls fail. Run xilo fsck.",
 
 	// visibility
 	"vis.public":  "public",
@@ -385,10 +471,9 @@ var en = map[string]string{
 	"set.current":       "Current password",
 	"set.new":           "New password",
 	"set.new2":          "Confirm new password",
-	"set.pw.short":      "Too short, at least 8 characters.",
-	"set.pw.weak":       "Weak, add length or variety.",
+	"set.pw.short":      "At least 8 characters.",
+	"set.pw.weak":       "Weak — add length or variety.",
 	"set.pw.strong":     "Strong password.",
-	"set.pw.mismatch":   "Passwords do not match.",
 	"set.update":        "Update password",
 	"set.2fa":           "Two-factor authentication",
 	"set.2fa.on":        "enabled",
@@ -406,6 +491,46 @@ var en = map[string]string{
 	// client-side toasts (toastKinds, helpers.go)
 	"copy.done":   "Copied to clipboard.",
 	"toast.error": "Something went wrong.",
+
+	// hard errors written straight to the response (uiFail/uiError, admin.go).
+	// The underlying Go error is logged, never shown: it names internal paths,
+	// SQL and library internals a user can neither read nor act on.
+	"err.internal":     "Something went wrong. Try again.",
+	"err.crossorigin":  "Cross-origin request rejected.",
+	"err.superadmin":   "Only the instance superadmin can do that.",
+	"err.session":      "Could not start your session.",
+	"err.unauthorized": "Sign in to continue.",
+	"err.throttled":    "Too many attempts. Wait a moment and try again.",
+	"err.noorgs":       "Your plan does not include organizations.",
+	"err.storage":      "Unknown storage backend.",
+	"err.tokenscope":   "The scope must be a cache in %s.",
+	"err.tokenfailed":  "Could not create the token.",
+	"err.pkexpired":    "Registration expired. Try again.",
+	"err.pkverify":     "Your passkey must verify you with a PIN or biometric.",
+	"err.pknone":       "No passkeys registered.",
+	"err.pkloginexp":   "Sign-in expired. Try again.",
+	"err.pkunknown":    "Unknown passkey.",
+	"err.pkowner":      "That passkey has no owner.",
+	"err.pkregister":   "Could not register that passkey.",
+	"err.pksignin":     "Could not sign in with that passkey.",
+
+	// plan quotas. These are returned as Go errors, so they surface both in
+	// the admin UI and in the CLI's push output.
+	"quota.caches":  "Plan %q allows at most %d caches.",
+	"quota.members": "Plan %q allows at most %d members.",
+	"quota.storage": "Storage quota reached: %s of %s on plan %q. Pushes are paused.",
+
+	// transactional email (subject, then body)
+	"mail.pendingsub":   "Registration received",
+	"mail.pendingbody":  "Your account %s on %s is waiting for an administrator to approve it. You will get another email when it is.",
+	"mail.adminsub":     "New registration awaiting approval",
+	"mail.adminbody":    "%s registered on %s and is waiting for approval in Settings.",
+	"mail.welcomesub":   "Welcome to %s",
+	"mail.welcomebody":  "Your account %s is active. Sign in at %s/admin.",
+	"mail.approvedsub":  "Your account was approved",
+	"mail.approvedbody": "Your account %s on %s is approved — sign in at %s/admin.",
+	"mail.orgsub":       "You were added to %s",
+	"mail.orgbody":      "You are now a %s of the organization %s on %s.",
 
 	// units & field hints
 	"unit.hours":      "Hours",
@@ -432,9 +557,9 @@ var en = map[string]string{
 
 	// relative time
 	"time.justnow": "just now",
-	"time.mago":    "m ago",
-	"time.hago":    "h ago",
-	"time.dago":    "d ago",
+	"time.mago":    "%dm ago",
+	"time.hago":    "%dh ago",
+	"time.dago":    "%dd ago",
 
 	// search
 	"caches.search": "Search caches",
@@ -451,7 +576,7 @@ var en = map[string]string{
 	"set.passkeys.empty":  "No passkeys yet.",
 	"set.passkeys.remove": "Remove",
 	"pk.removetitle":      "Remove passkey?",
-	"pk.removemsg":        "will no longer be able to sign in.",
+	"pk.removemsg":        "“%s” will no longer be able to sign in.",
 
 	// confirmations
 	"confirm.rotate": "The old key stops verifying immediately. Update trusted-public-keys everywhere.",
@@ -474,13 +599,13 @@ var en = map[string]string{
 	"users.email":       "Email",
 	"users.role":        "Role",
 	"users.reset":       "Reset password",
-	"users.resetfor":    "Reset password for",
+	"users.resetfor":    "Reset password for %s",
 	"users.resethint":   "Takes effect immediately. No email is sent.",
 	"users.promote":     "Promote",
 	"users.demote":      "Demote",
 	"users.delete":      "Delete user",
 	"users.deletetitle": "Delete user?",
-	"users.deletemsg":   "and their sessions will be removed.",
+	"users.deletemsg":   "“%s” and their sessions will be removed.",
 	"users.hint":        "A sign-in on this instance.",
 
 	// generic actions
@@ -496,4 +621,13 @@ var en = map[string]string{
 	"nf.title": "Page not found",
 	"nf.sub":   "That page does not exist, or you cannot access it.",
 	"nf.back":  "Back to caches",
+}
+
+// Tf is T with the arguments filled in — for the catalog entries carrying %s
+// or %d. Gluing a translated fragment onto a name ("“" + name + "” " + T(…))
+// only reads correctly in English: the moment a language puts its words in
+// another order the sentence falls apart. Every message with a value in it is
+// therefore one format string, and the translator moves the verb.
+func Tf(ctx context.Context, id string, args ...any) string {
+	return fmt.Sprintf(T(ctx, id), args...)
 }
