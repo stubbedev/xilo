@@ -281,8 +281,15 @@ func TestContextSwitcher(t *testing.T) {
 		return resp
 	}
 
-	// instance admin can pick any account; redirect returns to the referring page
+	// Administering the instance is not the same as being in an account: an
+	// instance admin who is not a member cannot take one as their context.
 	ac := adminClient(t, ts)
+	resp = post(ac, "acme", ts.URL+"/admin/settings")
+	if v, ok := ctxCookieOf(resp); !ok || v != "" {
+		t.Errorf("non-member admin ctx cookie = %q ok=%v (want cleared)", v, ok)
+	}
+	// As a member they can; the redirect returns to the referring page.
+	db.SetMember(acme.ID, adminID(t, db), "admin")
 	resp = post(ac, "acme", ts.URL+"/admin/settings")
 	if v, ok := ctxCookieOf(resp); !ok || v != "acme" {
 		t.Errorf("admin ctx cookie = %q ok=%v", v, ok)

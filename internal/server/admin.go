@@ -150,10 +150,8 @@ func (s *Server) activeContext(r *http.Request, u *store.User) string {
 		return ""
 	}
 	if c, err := r.Cookie(ctxCookie); err == nil && c.Value != "" {
-		if acc, err := s.db.GetAccount(c.Value); err == nil {
-			if u.Role == "owner" || s.db.MemberRole(acc.ID, u.ID) != "" {
-				return acc.Slug
-			}
+		if acc, err := s.db.GetAccount(c.Value); err == nil && s.db.MemberRole(acc.ID, u.ID) != "" {
+			return acc.Slug
 		}
 	}
 	return s.defaultContext(u)
@@ -167,26 +165,38 @@ func (s *Server) activeContext(r *http.Request, u *store.User) string {
 // Only reached while the context cookie is absent or stale, so the extra
 // lookup costs nothing once someone has switched accounts once.
 func (s *Server) defaultContext(u *store.User) string {
-	personal := ""
-	if acc, err := s.db.GetAccount(u.Name); err == nil {
-		if u.Role == "owner" || s.db.MemberRole(acc.ID, u.ID) != "" {
-			personal = acc.Slug
-		}
-	}
-	if caches, err := s.visibleCaches(u); err == nil && len(caches) > 0 {
-		for _, c := range caches {
-			if c.Account == personal {
-				return personal // something of their own to look at
-			}
-		}
-		return caches[0].Account
-	}
-	if personal != "" {
-		return personal
-	}
 	accs, err := s.db.UserAccounts(u.ID)
 	if err != nil || len(accs) == 0 {
 		return ""
+	}
+	personal := ""
+	for _, a := range accs {
+		if a.Slug == u.Name {
+			personal = a.Slug
+		}
+	}
+	// Start somewhere with something in it, but only among the accounts they
+	// are actually in: an instance admin is not a member of every account just
+	// because they can administer it. Their own account wins when it has
+	// caches; otherwise the first that does.
+	first := ""
+	for _, a := range accs {
+		cs, err := s.db.ListAccountCaches(a.ID)
+		if err != nil || len(cs) == 0 {
+			continue
+		}
+		if a.Slug == personal {
+			return personal
+		}
+		if first == "" {
+			first = a.Slug
+		}
+	}
+	if first != "" {
+		return first
+	}
+	if personal != "" {
+		return personal
 	}
 	return accs[0].Slug
 }
@@ -197,14 +207,9 @@ func (s *Server) nav(r *http.Request, u *store.User) views.Nav {
 		return views.Nav{}
 	}
 	n := views.Nav{LoggedIn: true, UserName: u.Name, IsAdmin: u.Role == "owner", Active: s.activeContext(r, u), Theme: u.Theme}
-	var err error
-	if u.Role == "owner" {
-		n.Contexts, err = s.db.ListAccounts()
-	} else {
-		n.Contexts, err = s.db.UserAccounts(u.ID)
-	}
-	if err != nil {
-		n.Contexts = nil
+	accs, err := s.db.UserAccounts(u.ID)
+	if err == nil {
+		n.Contexts = accs
 	}
 	n.Orgs = s.cfg.SelfService && (s.userCanCreateOrg(u) || slices.ContainsFunc(n.Contexts, func(a store.Account) bool {
 		return a.Kind == "org"
@@ -262,7 +267,7 @@ func (s *Server) handleContext(w http.ResponseWriter, r *http.Request) {
 	val := strings.TrimSpace(r.FormValue("ctx"))
 	if val != "" {
 		acc, err := s.db.GetAccount(val)
-		if err != nil || (u.Role != "owner" && s.db.MemberRole(acc.ID, u.ID) == "") {
+		if err != nil || s.db.MemberRole(acc.ID, u.ID) == "" {
 			val = ""
 		}
 	}
