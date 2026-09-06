@@ -95,7 +95,7 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 			@chart.Script()
 			@sidebar.Script()
 			@webauthnScript()
-			@copyToastScript()
+			@toastLayer()
 			if DevMode {
 				@devReloadScript()
 			}
@@ -246,19 +246,49 @@ templ footer() {
 	</footer>
 }
 
-// copyToastScript makes every copy button confirm itself with a toast: the
-// templui toast script watches the DOM for new toasts, so cloning the
-// template into the body is all it takes. The check-icon swap alone was easy
-// to miss.
-templ copyToastScript() {
-	<template id="copied-toast">
-		@toast.Toast(toast.Props{Description: T("copy.done"), Duration: 2000, Icon: true, Dismissible: true})
-	</template>
+// toastLayer is the one client-side toast surface: a <template> per registered
+// toastKind plus a single delegated listener. The templui toast script watches
+// the DOM for new toasts, so cloning a template into the body is all it takes.
+//
+// To raise a toast:
+//   - declaratively: data-toast="<kind>" on any clickable element;
+//   - from script:   xiloToast('<kind>') — pass a second argument to replace
+//     the kind's default message (server error text, say).
+//
+// To add a kind: one row in toastKinds (helpers.go) and its i18n key. Never a
+// second template + listener; that is what this layer exists to avoid.
+templ toastLayer() {
+	for _, k := range toastKinds {
+		<template data-toast-kind={ k.Key }>
+			@toast.Toast(toast.Props{
+				Description: T(k.MsgKey),
+				Variant:     k.Variant,
+				Position:    toast.PositionBottomRight,
+				Duration:    k.Duration,
+				Icon:        true,
+				Dismissible: true,
+			})
+		</template>
+	}
 	<script>
+		window.xiloToast = function (kind, msg) {
+			var t = document.querySelector('template[data-toast-kind="' + kind + '"]');
+			if (!t) return;
+			var frag = t.content.cloneNode(true);
+			if (msg) {
+				var p = frag.querySelector('[data-tui-toast] p');
+				if (p) p.textContent = msg;
+			}
+			document.body.appendChild(frag);
+		};
 		document.addEventListener('click', function (e) {
-			if (!e.target.closest('[data-copy-button]')) return;
-			var t = document.getElementById('copied-toast');
-			if (t) document.body.appendChild(t.content.cloneNode(true));
+			var el = e.target.closest('[data-toast]');
+			if (el) {
+				xiloToast(el.dataset.toast);
+				return;
+			}
+			// Copy buttons are templui's; they carry no data-toast of their own.
+			if (e.target.closest('[data-copy-button]')) xiloToast('copied');
 		});
 	</script>
 }

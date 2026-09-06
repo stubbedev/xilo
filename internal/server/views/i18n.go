@@ -403,8 +403,9 @@ var en = map[string]string{
 	"set.confirmenable": "Confirm & enable",
 	"set.qralt":         "TOTP QR",
 
-	// copy
-	"copy.done": "Copied to clipboard.",
+	// client-side toasts (toastKinds, helpers.go)
+	"copy.done":   "Copied to clipboard.",
+	"toast.error": "Something went wrong.",
 
 	// units & field hints
 	"unit.hours":      "Hours",

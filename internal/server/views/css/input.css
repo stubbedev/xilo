@@ -270,6 +270,28 @@ html.dark[data-palette="gruvbox"] {
   input[type="number"] { appearance: textfield; }
   input[type="number"]::-webkit-inner-spin-button,
   input[type="number"]::-webkit-outer-spin-button { appearance: none; margin: 0; }
+  /* Tailwind v4's preflight sets buttons to cursor:default, so every trigger
+     (tabs, dropdown, dialog, row actions) stopped reading as clickable. Put v3
+     behaviour back once here instead of Class:"cursor-pointer" per call site. */
+  button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
+  /* templui's toast pads pt-5/pb-4 to clear the progress bar and adds mt-1 to
+     the description even when there is no title, so the text sits below the
+     centre line the icon and the dismiss button share. Even both out. */
+  [data-tui-toast] > div { padding-top: calc(var(--spacing) * 4); }
+  [data-tui-toast] p:only-child { margin-top: 0; }
+  /* Its variant accents ship as fixed palette classes (green-500, red-500, …).
+     Repaint them from the theme tokens so a toast matches the active palette;
+     the icon is the inner box's only direct svg child, the dismiss X is nested
+     inside its button. */
+  [data-tui-toast][data-variant="success"] > div > svg { color: var(--success); }
+  [data-tui-toast][data-variant="error"] > div > svg { color: var(--destructive); }
+  [data-tui-toast][data-variant="warning"] > div > svg { color: var(--warning); }
+  [data-tui-toast][data-variant="info"] > div > svg { color: var(--primary); }
+  .toast-progress[data-variant="default"] { background-color: var(--muted-foreground); }
+  .toast-progress[data-variant="success"] { background-color: var(--success); }
+  .toast-progress[data-variant="error"] { background-color: var(--destructive); }
+  .toast-progress[data-variant="warning"] { background-color: var(--warning); }
+  .toast-progress[data-variant="info"] { background-color: var(--primary); }
   /* Every select here is a required choice (unit, account, scope, palette);
      the clear-selection x would only ever produce an invalid form. */
   [data-tui-selectbox-clear-trigger] { display: none !important; }

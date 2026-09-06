@@ -218,12 +218,16 @@ templ cacheTokenDialog(d CacheData, id, label string, push, pull bool) {
 	}
 }
 
-// snippetBlock is a multi-line code snippet with a copy button. Flex, not an
-// absolutely placed button: the button never sits on top of long lines.
+// snippetBlock is a multi-line code snippet with a copy button. The button is
+// overlaid so it costs the snippet no width; pr-9 keeps the resting text clear
+// of it, and its own bg-card surface (one step off the box's muted/40) hides
+// long lines that scroll underneath and leaves the ghost hover still visible.
 templ snippetBlock(text string) {
-	<div class="flex items-start gap-2 rounded-lg border bg-muted/40 p-2">
-		<pre id={ copyID(text) } class="min-w-0 flex-1 overflow-x-auto p-1 font-mono text-xs leading-relaxed scrollbar-none">{ text }</pre>
-		@copybutton.CopyButton(copybutton.Props{TargetID: copyID(text), Class: "shrink-0"})
+	<div class="relative rounded-lg border bg-muted/40 p-2">
+		<pre id={ copyID(text) } class="overflow-x-auto p-1 pr-9 font-mono text-xs leading-relaxed scrollbar-none">{ text }</pre>
+		<div class="absolute right-2 top-2 rounded-md border bg-card shadow-sm">
+			@copybutton.CopyButton(copybutton.Props{TargetID: copyID(text)})
+		</div>
 	</div>
 }
 

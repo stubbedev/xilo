@@ -15,6 +15,7 @@ import (
 	"github.com/templui/templui/components/badge"
 	"github.com/templui/templui/components/button"
 	"github.com/templui/templui/components/progress"
+	"github.com/templui/templui/components/toast"
 )
 
 // capVariant grades a usage bar: success (fine), warning (≥75%), danger (≥95%).
@@ -439,4 +440,21 @@ func humanBytesV(b int64) string {
 		return strconv.FormatInt(b>>20, 10) + " MiB"
 	}
 	return strconv.FormatInt(b, 10) + " B"
+}
+
+// toastKind is one entry in the client-side toast catalogue. The toast layer
+// (toastLayer, layout.templ) renders a <template> per kind; fire one with
+// data-toast="<Key>" on any element, or xiloToast('<Key>', 'optional text')
+// from script. Adding a toast means adding a row here plus its i18n key —
+// never a second <template> and listener pair.
+type toastKind struct {
+	Key      string        // data-toast value / xiloToast() argument
+	MsgKey   string        // i18n key for the default message
+	Variant  toast.Variant // decides the icon and the accent colour
+	Duration int           // ms on screen
+}
+
+var toastKinds = []toastKind{
+	{Key: "copied", MsgKey: "copy.done", Variant: toast.VariantSuccess, Duration: 2000},
+	{Key: "error", MsgKey: "toast.error", Variant: toast.VariantError, Duration: 6000},
 }

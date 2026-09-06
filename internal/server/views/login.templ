@@ -12,6 +12,7 @@ import (
 	"github.com/templui/templui/components/inputotp"
 	"github.com/templui/templui/components/label"
 	"github.com/templui/templui/components/radio"
+	"github.com/templui/templui/components/toast"
 )
 
 // webauthnScript carries the passkey ceremony plumbing shared by the login and
@@ -40,7 +41,7 @@ templ webauthnScript() {
 				method: 'POST',
 			});
 			if (!res.ok) {
-				alert(await res.text());
+				xiloToast('error', await res.text());
 				return;
 			}
 			var opts = (await res.json()).publicKey;
@@ -72,13 +73,13 @@ templ webauthnScript() {
 			if (fin.ok) {
 				location.reload();
 			} else {
-				alert(await fin.text());
+				xiloToast('error', await fin.text());
 			}
 		}
 		async function xiloPasskeyLogin() {
 			var res = await fetch('/admin/login/passkey/begin', { method: 'POST' });
 			if (!res.ok) {
-				alert(await res.text());
+				xiloToast('error', await res.text());
 				return;
 			}
 			var opts = (await res.json()).publicKey;
@@ -113,7 +114,7 @@ templ webauthnScript() {
 			if (fin.ok) {
 				location.href = '/admin';
 			} else {
-				alert(await fin.text());
+				xiloToast('error', await fin.text());
 			}
 		}
 	</script>
@@ -148,7 +149,9 @@ templ AuthShell(title string, flash Flash) {
 			@input.Script()
 			@label.Script()
 			@inputotp.Script()
+			@toast.Script()
 			@webauthnScript()
+			@toastLayer()
 		</head>
 		<body class="flex min-h-full items-center justify-center bg-background px-4 py-12 text-foreground antialiased">
 			<div class="w-full max-w-sm">
