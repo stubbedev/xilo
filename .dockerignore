@@ -8,3 +8,4 @@ xilo.yaml
 *.db-shm
 .git/
 .direnv/
+*.test
