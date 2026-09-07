@@ -1625,6 +1625,25 @@ func (s *Server) handleConfigureCache(w http.ResponseWriter, r *http.Request) {
 		uiError(w, r, err)
 		return
 	}
+	// The settings list saves itself as the reader works, so this runs many
+	// times from one page view and htmx swaps the answer in place. It gets the
+	// fresh page directly instead of a 303, because the GET a redirect sends
+	// the browser back for can be served out of its own five-second admin
+	// cache — with the copy taken *before* this write. What makes that
+	// impossible everywhere else is the flash cookie an action sets, and a
+	// save nobody asked to be told about sets none. Without htmx it is still a
+	// redirect, so a refresh can never repeat the action.
+	if r.Header.Get("HX-Request") == "true" {
+		if u := s.currentUser(r); u != nil {
+			if fresh, err := s.db.GetCache(r.PathValue("account"), r.PathValue("name")); err == nil {
+				// This page is already the one in the address bar; htmx must
+				// not push the URL it posted to onto it.
+				w.Header().Set("HX-Push-Url", "false")
+				s.renderCache(w, r, u, fresh, views.Flash{}, "")
+				return
+			}
+		}
+	}
 	http.Redirect(w, r, "/admin/cache/"+c.Ref(), http.StatusSeeOther)
 }
 

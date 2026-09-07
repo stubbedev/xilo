@@ -130,6 +130,7 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 			@searchClearLayer()
 			@comboboxKeysLayer()
 			@autosaveLayer()
+			@chartReinitLayer()
 			if DevMode {
 				@devReloadScript()
 			}
@@ -516,19 +517,134 @@ templ autosaveLayer() {
 				var f = formOf(e.target);
 				if (f) armed.add(f);
 			}
+			// The save answers with the whole page (the readouts around the
+			// form are derived from what it sets), and htmx swaps that in
+			// about a second later. Two things have to survive that swap or
+			// the form fights the reader:
+			//
+			// The caret. The control being edited is a different element
+			// afterwards, so where the reader was is remembered by field name
+			// and put back once the new body has settled.
+			//
+			// And anything edited while the save was in flight. "Type in one
+			// field, move to the next, keep typing" is the ordinary way to
+			// work through a form, and the first field's save lands in the
+			// middle of it — the incoming page carries the server's value for
+			// the field now being edited, from *before* those keystrokes.
+			//
+			// So every edit since the last submit is kept, and re-applied to
+			// the form the swap brings in, which then saves itself once more.
+			// The follow-up submits what it carried, leaving nothing to carry,
+			// so it stops there. The edits cannot be read off the outgoing
+			// form at swap time instead: the swap is wrapped in a View
+			// Transition, so the DOM is replaced the better part of a second
+			// after htmx says it is about to be — and everything typed inside
+			// that window would be read as already saved.
+			// Null-prototype: the keys are field names, and a field called
+			// __proto__ would otherwise write the prototype instead of an entry.
+			var edits = Object.create(null);
+			var caret = null;
+			var sentTo = null;
+			function field(f, name) {
+				var el = f.elements[name];
+				// elements[] answers form properties too ("length"), not just
+				// controls: anything without a tag name is not a field.
+				return el && el.tagName ? el : null;
+			}
+			function remember(f) {
+				// Submitting exactly what the form holds: nothing outstanding.
+				edits = Object.create(null);
+				caret = null;
+				sentTo = f.getAttribute('action');
+				var el = document.activeElement;
+				if (!el || !el.name || !f.contains(el)) return;
+				caret = { name: el.name, at: null };
+				// selectionStart throws on a number input in Chrome.
+				try {
+					caret.at = el.selectionStart;
+				} catch (e) {}
+			}
+			// The live form posting to `action` — the page a swap brought in
+			// carries a different element than the one edited. Matched by
+			// where it posts, so a page with two of these cannot cross-apply.
+			function liveForm(action) {
+				var found = null;
+				document.querySelectorAll('form[data-autosave]').forEach(function (cand) {
+					if (!found && cand.getAttribute('action') === action) found = cand;
+				});
+				return found;
+			}
+			function applyEdits(f, pending) {
+				var newer = false;
+				for (var name in pending) {
+					var el = field(f, name);
+					if (!el) continue;
+					var e = pending[name];
+					if (el.type === 'checkbox' || el.type === 'radio') {
+						if (el.checked === e.checked) continue;
+						el.checked = e.checked;
+					} else {
+						if (el.value === e.value) continue;
+						el.value = e.value;
+					}
+					newer = true;
+				}
+				return newer;
+			}
+			document.addEventListener('htmx:afterSettle', function () {
+				var c = caret;
+				var pending = edits;
+				var action = sentTo;
+				caret = null;
+				edits = Object.create(null);
+				sentTo = null;
+				var f = liveForm(action);
+				if (!f) return;
+				var newer = applyEdits(f, pending);
+				if (c) {
+					var focusEl = field(f, c.name);
+					if (focusEl) {
+						focusEl.focus();
+						try {
+							if (c.at !== null) focusEl.setSelectionRange(c.at, c.at);
+						} catch (e2) {}
+					}
+				}
+				if (newer) {
+					armed.add(f);
+					save(f, 150);
+				}
+			});
 			// requestSubmit, never submit(): a bare submit() fires no submit
 			// event, so htmx never sees it and the boosted shell is lost to a
 			// full page load.
 			function save(f, delay) {
 				clearTimeout(f.dataset.autosaveTimer);
 				f.dataset.autosaveTimer = setTimeout(function () {
-					f.requestSubmit();
+					var target = f;
+					// A swap can land between the last keystroke and this
+					// timer, leaving the edited form detached — submitting it
+					// does nothing (the browser says so in the console) and the
+					// edit would be lost. Carry it to the form now on the page.
+					if (!f.isConnected) {
+						target = liveForm(f.getAttribute('action'));
+						if (!target) return;
+						applyEdits(target, edits);
+						armed.add(target);
+					}
+					remember(target);
+					target.requestSubmit();
 				}, delay);
 			}
 			function onEdit(delay) {
 				return function (e) {
 					var f = formOf(e.target);
-					if (f && armed.has(f)) save(f, delay);
+					if (!f || !armed.has(f)) return;
+					var el = e.target;
+					if (el.name) {
+						edits[el.name] = { value: el.value, checked: el.checked };
+					}
+					save(f, delay);
 				};
 			}
 			document.addEventListener('pointerdown', arm, true);
@@ -537,6 +653,37 @@ templ autosaveLayer() {
 			document.addEventListener('change', onEdit(150), true);
 			document.addEventListener('input', onEdit(800), true);
 		})();
+	</script>
+}
+
+// chartReinitLayer redraws the status charts when a boosted navigation brings
+// them back.
+//
+// templui keeps its Chart.js instances in a map keyed by canvas id and its
+// "new chart" observer only initialises a canvas whose id it has never seen.
+// The status page's canvas ids are fixed, so the first visit registers them
+// and every visit after it is skipped: the chart panels come back empty, and
+// only a full reload (a fresh JS context) fixes them. The instance it holds
+// belongs to a canvas that was swapped out from under it.
+//
+// It does re-initialise everything it knows about when the root element's
+// class or style changes — that is its dark-mode hook, and it cleans up the
+// dead instance on the way through. So when a swap leaves a canvas without an
+// instance, touch the root element with a class that styles nothing and let
+// templui recover its own map.
+templ chartReinitLayer() {
+	<script>
+		document.addEventListener('htmx:afterSettle', function () {
+			if (!window.Chart) return;
+			var orphan = false;
+			document.querySelectorAll('canvas[data-tui-chart-id]').forEach(function (cv) {
+				if (!Chart.getChart(cv.id)) orphan = true;
+			});
+			if (!orphan) return;
+			var root = document.documentElement;
+			root.classList.add('chart-reinit');
+			root.classList.remove('chart-reinit');
+		});
 	</script>
 }
 

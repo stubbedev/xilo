@@ -215,6 +215,41 @@ func TestAdminCacheCRUD(t *testing.T) {
 	if !cc.Public || cc.Priority != 7 || cc.Retention != 86400 || cc.MaxBytes != 1<<20 {
 		t.Fatalf("configured cache: %+v", cc)
 	}
+	// The settings list posts every field on every change, so a box left empty
+	// is a decision — keep forever, no cap — not a field to leave alone.
+	resp, _ = c.PostForm(ts.URL+"/admin/cache/default/web/configure", url.Values{
+		"priority":        {"7"},
+		"retention_value": {""}, "retention_unit": {"d"},
+		"max_value": {""}, "max_unit": {"MiB"},
+	})
+	resp.Body.Close()
+	cc, _ = db.GetCache("default", "web")
+	if cc.Retention != 0 || cc.MaxBytes != 0 {
+		t.Errorf("emptied retention/cap → %d/%d want 0/0", cc.Retention, cc.MaxBytes)
+	}
+	// A field the request never carried still keeps what is stored.
+	resp, _ = c.PostForm(ts.URL+"/admin/cache/default/web/configure", url.Values{"priority": {"9"}})
+	resp.Body.Close()
+	// ...and htmx gets the fresh page in place of the redirect, since the GET a
+	// redirect asks for can come out of the browser's own admin cache.
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/admin/cache/default/web/configure",
+		strings.NewReader("priority=11&retention_value=2&retention_unit=d"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	resp, err = c.Do(req)
+	if err != nil {
+		t.Fatalf("hx configure: %v", err)
+	}
+	if b := body(t, resp); resp.StatusCode != http.StatusOK || !contains(b, "Settings") {
+		t.Errorf("hx configure → %d, body %d bytes", resp.StatusCode, len(b))
+	}
+	if got := resp.Header.Get("HX-Push-Url"); got != "false" {
+		t.Errorf("hx configure HX-Push-Url = %q want false", got)
+	}
+	cc, _ = db.GetCache("default", "web")
+	if cc.Priority != 11 || cc.Retention != 2*86400 {
+		t.Errorf("hx configure saved %+v", cc)
+	}
 	resp, _ = c.PostForm(ts.URL+"/admin/cache/default/ghost/configure", nil)
 	if resp.StatusCode != http.StatusNotFound {
 		t.Errorf("configure unknown cache → %d want 404", resp.StatusCode)
