@@ -888,27 +888,6 @@ func (s *Server) renderOrg(w http.ResponseWriter, r *http.Request, u *store.User
 		}
 		d.Caches = append(d.Caches, views.CacheUsage{Cache: c, Bytes: st.PhysicalBytes, Paths: st.Paths})
 	}
-	// Picker candidates: users not yet members.
-	if d.CanManage {
-		users, err := s.db.ListUsers()
-		if err != nil {
-			uiError(w, r, err)
-			return
-		}
-		member := map[int64]bool{}
-		for _, m := range info.Members {
-			member[m.UserID] = true
-		}
-		for _, cand := range users {
-			if !member[cand.ID] && cand.Status == "active" {
-				// Picker needs only id + username; don't hand an org admin every
-				// other user's email/hash across the whole instance.
-				cand.Email = ""
-				cand.PassHash = ""
-				d.AllUsers = append(d.AllUsers, cand)
-			}
-		}
-	}
 	views.Org(d).Render(r.Context(), w)
 }
 
@@ -2206,15 +2185,33 @@ func (s *Server) handleDeleteOrg(w http.ResponseWriter, r *http.Request) {
 	s.orgsFlash(w, r, views.Tf(r.Context(), "flash.orgdeleted", ns.Slug))
 }
 
-// handleSetMember adds a user (picked by id) to an org or changes their role.
-// Org admins and instance admins may do this.
+// memberTarget resolves who a membership post is about: the typed username or
+// email from the add dialog, or the user id a member row's own form carries.
+func (s *Server) memberTarget(r *http.Request) (*store.User, error) {
+	if login := strings.TrimSpace(r.FormValue("user")); login != "" {
+		return s.db.GetUserByLogin(login)
+	}
+	uid, err := strconv.ParseInt(r.FormValue("user_id"), 10, 64)
+	if err != nil {
+		return nil, store.ErrNotFound
+	}
+	return s.db.GetUser(uid)
+}
+
+// handleSetMember adds a user (named in the dialog, or identified by id from a
+// member row) to an org, or changes their role. Org admins and instance admins
+// may do this.
 func (s *Server) handleSetMember(w http.ResponseWriter, r *http.Request) {
 	ns, _, ok := s.orgByPath(w, r)
 	if !ok {
 		return
 	}
-	uid, _ := strconv.ParseInt(r.FormValue("user_id"), 10, 64)
-	target, err := s.db.GetUser(uid)
+	// A name to add someone new, an id to change a member's role (the row's own
+	// form knows who it is about). Naming a person who does not exist says so:
+	// an org admin who has to type the name already knows who they are adding,
+	// and a silent success would leave them wondering. What they no longer get
+	// is the list — see addMemberDialog.
+	target, err := s.memberTarget(r)
 	if errors.Is(err, store.ErrNotFound) {
 		s.flashRedirect(w, r, "/admin/org/"+ns.Slug, views.T(r.Context(), "flash.nouser"))
 		return

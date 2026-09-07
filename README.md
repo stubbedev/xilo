@@ -250,6 +250,18 @@ them hard.
 - **Activities** — every successful admin/API mutation is recorded (actor, method, path, source IP, user-agent, latency, status) and browsable under `/admin/audit`: searchable, sortable, paginated. A low-priority background job trims entries past `gc.audit_retention` (default 1 year).
 - Request logging + graceful shutdown (drains in-flight transfers on SIGTERM) are built in. Set `logging: quiet` to log only errors and slow requests on busy instances.
 
+## Upgrading
+
+Schema migrations run at boot and are additive: a newer binary opens an older
+database, and nothing has to be exported or replayed.
+
+**v1.1 → v1.2** rewrites two vocabularies in place: the instance role `owner`
+becomes `superadmin`, and an account frozen as `past_due` becomes `readonly`
+(the old name described a subscription this project does not have). Both are
+read-only renames of existing rows, so the upgrade is safe to repeat — but a
+*downgrade* to v1.1 leaves a role it does not recognise, which would cost the
+instance its admin. Back the database up first (below) if you want the option.
+
 ## Backups
 
 All state is one SQLite file plus the chunk directory under `data_dir`

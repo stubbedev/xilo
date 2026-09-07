@@ -149,19 +149,11 @@ export function setContext(account) {
   http.post(`${BASE}/admin/context`, { ctx: account });
 }
 
-// joinAccount makes the signed-in admin a member of `account` (no-op if they
-// already are). The member picker on the org page carries each candidate's
-// user id, which is the only place the admin's own id is exposed to a client.
+// joinAccount makes the signed-in admin a member of `account` — idempotent,
+// and a no-op when the account does not exist yet (creating a cache is what
+// creates it, and the caller sets the context again afterwards).
 export function joinAccount(account) {
-  const page = String(http.get(`${BASE}/admin/org/${account}`).body);
-  // Each candidate is one selectbox item: the id on the option, the username
-  // in its label span. Pair them, and take the one that is us — never the
-  // first option, which would hand a stranger admin of the account.
-  const mine = [...page.matchAll(/data-tui-selectbox-value="(\d+)"[\s\S]{0,400}?select-item-text">([^<]*)</g)]
-    .find((m) => m[2].trim() === ADMIN_USER);
-  // Not a candidate: already a member, which is all this needs.
-  if (!mine) return;
-  http.post(`${BASE}/admin/org/${account}/members`, { user_id: mine[1], role: "admin" });
+  http.post(`${BASE}/admin/org/${account}/members`, { user: ADMIN_USER, role: "admin" });
 }
 
 // ensureCache creates `target`'s account+cache through the admin dashboard —
