@@ -600,3 +600,26 @@ const searchThreshold = 4
 
 // noSearch answers selectbox.ContentProps.NoSearch for a list of n options.
 func noSearch(n int) bool { return n <= searchThreshold }
+
+// vtStyle names an element for the View Transitions API, so the same object
+// keeps its identity across a navigation: the cache line on the dashboard and
+// the title of the cache page share a name and the browser flies one into the
+// other instead of cross-fading both. The name is derived from the text, which
+// is what makes the two sides agree without threading an id through the page —
+// so it must be something unique on the page (a cache ref, a page title). Two
+// elements sharing a name abort the whole transition.
+func vtStyle(s string) string {
+	var b strings.Builder
+	b.WriteString("view-transition-name:vt-")
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r + 32)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
+}

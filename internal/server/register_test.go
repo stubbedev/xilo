@@ -172,9 +172,10 @@ func TestOrgManagementAuthz(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// Personal accounts refuse members at the store layer.
-	if err := db.SetMember(mustAccount(t, db, "alice").ID, carol.ID, "user"); err == nil {
-		t.Fatal("personal account accepted an extra member")
+	// A user's own workspace takes members like any other organization: it is
+	// one, with a single member to start with.
+	if err := db.SetMember(mustAccount(t, db, "alice").ID, carol.ID, "user"); err != nil {
+		t.Fatalf("workspace refused a member: %v", err)
 	}
 }
 

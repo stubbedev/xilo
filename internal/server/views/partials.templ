@@ -108,7 +108,10 @@ templ PageHeaderCode(title, code string) {
 templ pageHeaderBody(title, subtitle, subClass string) {
 	<div class="mb-6 flex flex-wrap items-center justify-between gap-4">
 		<div class="min-w-0 space-y-1.5">
-			<h1 class="text-2xl font-semibold tracking-tight">{ title }</h1>
+			// Named for the View Transitions API: a title that also appears as a
+			// row on the page you came from (a cache ref) flies out of that row
+			// instead of fading in from nowhere. See vtStyle.
+			<h1 class="text-2xl font-semibold tracking-tight" style={ vtStyle(title) }>{ title }</h1>
 			if subtitle != "" {
 				<p class={ subClass }>{ subtitle }</p>
 			}

@@ -101,7 +101,7 @@ func (db *DB) createUser(name, email, passHash, role, status string) (*User, err
 		}
 		var accID int64
 		if err := tx.QueryRow(`INSERT INTO accounts (slug, kind, created) VALUES (?,?,?) RETURNING id`,
-			u.Name, "user", u.Created).Scan(&accID); err != nil {
+			u.Name, "org", u.Created).Scan(&accID); err != nil {
 			return err
 		}
 		_, err := tx.Exec(`INSERT INTO account_members (account_id, user_id, role) VALUES (?,?,'owner')`, accID, u.ID)
@@ -237,10 +237,10 @@ func (db *DB) DeleteUser(id int64) error {
 		// Credentials die with the user: every token of their personal account
 		// is revoked (org tokens belong to the org, not to its members).
 		if _, err := tx.Exec(`UPDATE tokens SET revoked=1 WHERE account_id IN
-			(SELECT id FROM accounts WHERE slug=? AND kind='user')`, name); err != nil {
+			(SELECT id FROM accounts WHERE slug=?)`, name); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`UPDATE accounts SET status='deleted' WHERE slug=? AND kind='user'`, name); err != nil {
+		if _, err := tx.Exec(`UPDATE accounts SET status='deleted' WHERE slug=?`, name); err != nil {
 			return err
 		}
 		_, err := tx.Exec(`UPDATE users SET status='deleted', email=NULL WHERE id=?`, id)

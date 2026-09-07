@@ -112,11 +112,12 @@ func TestNamespacesToAccountsMigration(t *testing.T) {
 	if c, err := db.GetCache("teams", "web"); err != nil || c.AccountID != teams.ID {
 		t.Fatalf("cache rehomed: %+v %v", c, err)
 	}
-	// Personal accounts for both users, each their own admin.
+	// A workspace for each user, each their own owner — and an organization
+	// like any other, since that distinction is gone.
 	for _, name := range []string{"admin", "alice"} {
 		a, err := db.GetAccount(name)
-		if err != nil || a.Kind != "user" {
-			t.Fatalf("personal account %s: %+v %v", name, a, err)
+		if err != nil || a.Kind != "org" {
+			t.Fatalf("workspace %s: %+v %v", name, a, err)
 		}
 	}
 	toks, err := db.ListAccountTokens(teams.ID)

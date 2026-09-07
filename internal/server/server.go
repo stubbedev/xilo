@@ -205,6 +205,14 @@ func (s *Server) uiLocale(r *http.Request) string {
 	return views.MatchLocale(r.Header.Get("Accept-Language"))
 }
 
+// isAdminPage reports whether this is a plain GET of an admin page — the only
+// responses short-lived caching is meant for. The status poller's JSON is
+// excluded by asking for it with `cache: 'no-store'` at the call site.
+func isAdminPage(r *http.Request) bool {
+	return (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+		strings.HasPrefix(r.URL.Path, "/admin")
+}
+
 // middleware wraps the mux with panic recovery + request logging.
 func (s *Server) middleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -229,6 +237,16 @@ func (s *Server) middleware(h http.Handler) http.Handler {
 				"object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 		if s.secureCookies() {
 			hdr.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+		}
+		// A few seconds of private caching is what the hover-preload spends: the
+		// page fetched when the pointer lands on a link has to still be in the
+		// browser's cache when the click arrives. Vary: Cookie keeps it honest —
+		// every admin POST answers with a flash cookie, so the redirect that
+		// follows an action carries a different Cookie header than the preload
+		// did and cannot be served the copy taken before the change.
+		if isAdminPage(r) {
+			hdr.Set("Cache-Control", "private, max-age=5")
+			hdr.Set("Vary", "Cookie")
 		}
 		lw := &logWriter{ResponseWriter: w, status: http.StatusOK}
 		defer func() {

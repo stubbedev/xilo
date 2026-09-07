@@ -94,7 +94,7 @@ func TestUserAccountsAndMembers(t *testing.T) {
 	}
 
 	accs, err := db.UserAccounts(u.ID)
-	if err != nil || len(accs) != 1 || accs[0].Slug != "alice" || accs[0].Kind != "user" {
+	if err != nil || len(accs) != 1 || accs[0].Slug != "alice" || accs[0].Kind != "org" {
 		t.Fatalf("UserAccounts personal: %v %v", accs, err)
 	}
 

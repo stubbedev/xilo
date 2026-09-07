@@ -8,14 +8,20 @@ import (
 	"time"
 )
 
-// Account is the tenancy unit and the first URL segment under /c/: a personal
-// account (kind "user", slug == the username) or an organization (kind
-// "org"). Caches belong to an account; tokens can be scoped to one; users
-// join orgs as admin or user.
+// Account is the tenancy unit and the first URL segment under /c/. Every
+// account is an organization: caches belong to one, tokens scope to one, a
+// plan and its usage attach to one, and the only way to reach any of it is a
+// membership. A single person's workspace is an organization with one member —
+// created for them at signup and named after them — so there is one answer to
+// "who owns this cache" and one thing to bill.
+//
+// Kind is provenance now, not permission: nothing branches on it. The
+// distinguishing question is whether an account is a live user's own
+// workspace, which is Slug == that user's username.
 type Account struct {
 	ID      int64
 	Slug    string
-	Kind    string // "user" | "org"
+	Kind    string // "org"; historic "user" rows are migrated on open
 	PlanID  int64  // 0 = no plan (unlimited)
 	Created int64
 }
@@ -46,8 +52,8 @@ func ValidSlug(s string) bool {
 	return true
 }
 
-// ErrSlugReserved means the slug is held by a soft-deleted account of a
-// different kind and must not be adopted (see EnsureAccount).
+// ErrSlugReserved means the slug once belonged to a user and must not be
+// adopted by a new account (see EnsureAccount).
 var ErrSlugReserved = errors.New("account name is reserved")
 
 // Membership refusals the admin UI turns into flashes. They are sentinels,
@@ -55,24 +61,27 @@ var ErrSlugReserved = errors.New("account name is reserved")
 // the wording a user reads lives in one catalog instead of down here. The
 // text stays as the CLI and log rendering.
 var (
-	ErrNotOrg      = errors.New("only organizations can be deleted")
-	ErrBadRole     = errors.New("grantable roles are admin and user")
-	ErrOwnerRole   = errors.New("the owner's role cannot be changed")
-	ErrPersonalOrg = errors.New("personal accounts cannot have additional members")
-	ErrHasOwner    = errors.New("account already has an owner")
-	ErrOwnerLocked = errors.New("the owner cannot be removed")
+	ErrOwnWorkspace = errors.New("a user's own workspace goes with the user")
+	ErrBadRole      = errors.New("grantable roles are admin and user")
+	ErrOwnerRole    = errors.New("the owner's role cannot be changed")
+	ErrHasOwner     = errors.New("account already has an owner")
+	ErrOwnerLocked  = errors.New("the owner cannot be removed")
 )
 
 // EnsureAccount returns the account with the given slug, creating it (with
 // the given kind) if missing.
 //
-// A soft-deleted row keeps its slug and id (for audit refs). Reactivating it
-// in place is only safe when the kind matches: DeleteOrg purges an org's
-// caches and tokens, so a deleted org can be recreated cleanly, but DeleteUser
-// deliberately LEAVES a personal account's caches orphaned. Flipping such a
-// deleted user-account into an org would silently re-parent those private
-// caches to the new org's owner — a cross-tenant takeover. Refuse that with
-// ErrSlugReserved.
+// A soft-deleted row keeps its slug and id (for audit refs). Reactivating one
+// in place is only safe when nothing was left behind in it: DeleteOrg purges
+// an organization's caches and tokens, so a deleted org can be recreated
+// cleanly, but DeleteUser deliberately LEAVES the caches of that user's own
+// workspace in place. Adopting such a slug would silently re-parent those
+// private caches to whoever took the name — a cross-tenant takeover — so the
+// username of any user that ever existed is reserved for good.
+//
+// This used to be a comparison of account kinds, which stopped meaning
+// anything once every account became an organization; the question was never
+// really about kind, it was about whether a user's remains are under the slug.
 func (db *DB) EnsureAccount(slug, kind string) (*Account, error) {
 	if a, err := db.GetAccount(slug); err == nil {
 		return a, nil
@@ -88,16 +97,19 @@ func (db *DB) EnsureAccount(slug, kind string) (*Account, error) {
 			// No row — fall through to a fresh insert.
 		case err != nil:
 			return err
-		case curStatus == "deleted" && curKind != kind:
-			return ErrSlugReserved
+		case curStatus == "deleted":
+			var one int
+			if tx.QueryRow(`SELECT 1 FROM users WHERE username=?`, slug).Scan(&one) == nil {
+				return ErrSlugReserved
+			}
 		}
 		// Concurrent creators race benignly: ON CONFLICT keeps the winner. The
-		// WHERE reactivates only a same-kind soft-deleted row and is a no-op for
-		// a live account; plan_id resets so a reactivated row does not inherit
-		// the deleted account's plan.
+		// WHERE reactivates only a soft-deleted row and is a no-op for a live
+		// account; plan_id resets so a reactivated row does not inherit the
+		// deleted account's plan.
 		if _, err := tx.Exec(`INSERT INTO accounts (slug, kind, created) VALUES (?,?,?)
 			ON CONFLICT (slug) DO UPDATE SET status='active', created=excluded.created, plan_id=0
-			WHERE accounts.status='deleted' AND accounts.kind=excluded.kind`,
+			WHERE accounts.status='deleted'`,
 			a.Slug, a.Kind, a.Created); err != nil {
 			return err
 		}
@@ -173,22 +185,26 @@ func (db *DB) listAccounts(q string, args ...any) ([]Account, error) {
 // DeleteOrg soft-deletes an organization. Everything it held is really gone —
 // memberships, tokens, caches and their paths (FK cascade), egress ledger — so
 // the caches stop serving; only the accounts row survives, flagged
-// status='deleted', so audit-log references to it still resolve. Personal
-// accounts are refused — they die with their user. Chunk blobs are NOT touched
-// here: dedup means a chunk may back other accounts' paths, so only the GC
-// mark-sweep decides what actually leaves disk.
+// status='deleted', so audit-log references to it still resolve. Chunk blobs
+// are NOT touched here: dedup means a chunk may back other accounts' paths, so
+// only the GC mark-sweep decides what actually leaves disk.
+//
+// A live user's own workspace is refused: it is created with them and goes
+// with them, which is what keeps "every user has somewhere to put a cache"
+// true without a second rule enforcing it.
 func (db *DB) DeleteOrg(id int64) error {
 	return db.write(func(tx *sql.Tx) error {
-		var kind string
-		err := tx.QueryRow(`SELECT kind FROM accounts WHERE id=?`, id).Scan(&kind)
+		var slug string
+		err := tx.QueryRow(`SELECT slug FROM accounts WHERE id=?`, id).Scan(&slug)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
 		if err != nil {
 			return err
 		}
-		if kind != "org" {
-			return ErrNotOrg
+		var one int
+		if tx.QueryRow(`SELECT 1 FROM users WHERE username=? AND status<>'deleted'`, slug).Scan(&one) == nil {
+			return ErrOwnWorkspace
 		}
 		for _, q := range []string{
 			`DELETE FROM account_members WHERE account_id=?`,
@@ -216,17 +232,10 @@ func (db *DB) SetMember(accountID, userID int64, role string) error {
 		return ErrBadRole
 	}
 	return db.write(func(tx *sql.Tx) error {
-		var kind string
-		if err := tx.QueryRow(`SELECT kind FROM accounts WHERE id=?`, accountID).Scan(&kind); err != nil {
-			return err
-		}
 		var cur string
 		isMember := tx.QueryRow(`SELECT role FROM account_members WHERE account_id=? AND user_id=?`, accountID, userID).Scan(&cur) == nil
 		if isMember && cur == "owner" {
 			return ErrOwnerRole
-		}
-		if kind != "org" && !isMember {
-			return ErrPersonalOrg
 		}
 		_, err := tx.Exec(`INSERT INTO account_members (account_id, user_id, role) VALUES (?,?,?)
 			 ON CONFLICT (account_id, user_id) DO UPDATE SET role=excluded.role`, accountID, userID, role)
@@ -261,12 +270,17 @@ func (db *DB) RemoveMember(accountID, userID int64) error {
 	})
 }
 
-// OwnsOrgs reports whether the user is the owner of any organization —
-// such a user cannot be deleted until their orgs are gone.
+// OwnsOrgs reports whether the user owns an organization other than their own
+// workspace — deleting them would orphan something other people are in, so it
+// is refused until those are gone. Their own workspace is excluded: it is
+// named after them and goes with them, so counting it would make every user
+// undeletable.
 func (db *DB) OwnsOrgs(userID int64) bool {
 	var one int
-	return db.r.QueryRow(`SELECT 1 FROM account_members m JOIN accounts a ON a.id = m.account_id
-		WHERE m.user_id=? AND m.role='owner' AND a.kind='org'`, userID).Scan(&one) == nil
+	return db.r.QueryRow(`SELECT 1 FROM account_members m
+		JOIN accounts a ON a.id = m.account_id
+		JOIN users u ON u.id = m.user_id
+		WHERE m.user_id=? AND m.role='owner' AND a.status<>'deleted' AND a.slug <> u.username`, userID).Scan(&one) == nil
 }
 
 // ListMembers returns an account's members with usernames.

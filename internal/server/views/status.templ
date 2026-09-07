@@ -390,7 +390,12 @@ templ statusPollScript() {
 					themeWatch.disconnect();
 					return;
 				}
-				fetch(cfg.url, { headers: { Accept: 'application/json' } })
+				fetch(cfg.url, {
+						headers: { Accept: 'application/json' },
+						// The admin's short private cache would hand the poller its own
+						// last answer back at this rate; it wants the live one.
+						cache: 'no-store',
+					})
 					.then(function (r) {
 						if (!r.ok) throw 0;
 						return r.json();

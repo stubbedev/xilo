@@ -67,6 +67,11 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 			<link rel="icon" type="image/svg+xml" href={ Asset("favicon.svg") }/>
 			<link rel="stylesheet" href={ Asset("xilo-tw.css") }/>
 			<script src={ Asset("htmx.min.js") }></script>
+			// htmx's own preload extension (htmx-ext-preload 2.1.1, vendored like
+			// htmx itself): a link hovered for 100ms is fetched in the background,
+			// so the click that follows is served from the browser cache. It is
+			// what makes the cache headers in server.go's middleware worth having.
+			<script src={ Asset("htmx-preload.js") }></script>
 			<script>
 				(function () {
 					var t = localStorage.getItem('theme');
@@ -82,8 +87,25 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 					}
 				})();
 				function xiloTheme() {
-					var d = document.documentElement.classList.toggle('dark');
-					localStorage.setItem('theme', d ? 'dark' : 'light');
+					var flip = function () {
+						var d = document.documentElement.classList.toggle('dark');
+						localStorage.setItem('theme', d ? 'dark' : 'light');
+					};
+					// Dark and light are two paints of the same page, so the swap is
+					// a cross-fade, not a redraw. Same root transition a navigation
+					// uses; without the API, or with motion turned down, it just flips.
+					if (
+						!document.startViewTransition ||
+						window.matchMedia('(prefers-reduced-motion: reduce)').matches
+					) {
+						flip();
+						return;
+					}
+					var vt = document.startViewTransition(flip);
+					// Toggling again mid-fade skips the running transition, which
+					// rejects `ready`. Nothing is waiting on it; without this the
+					// console fills with unhandled rejections.
+					if (vt && vt.ready) vt.ready.catch(function () {});
 				}
 			</script>
 			@input.Script()
@@ -129,6 +151,7 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 			hx-swap="innerHTML transition:true"
 			hx-indicator="#nav-progress"
 			hx-history="false"
+			hx-ext="preload"
 		>
 			@navProgress()
 			if nav.LoggedIn {
@@ -142,7 +165,7 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 									@themeToggle()
 								</div>
 							</header>
-							<main id="page" class="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
+							<main id="page" class="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6" preload="mouseover">
 								@FlashToast(flash)
 								{ children... }
 							</main>
@@ -151,7 +174,7 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 					}
 				}
 			} else {
-				<main id="page" class="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6">
+				<main id="page" class="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6" preload="mouseover">
 					@FlashToast(flash)
 					{ children... }
 				</main>
@@ -171,7 +194,12 @@ templ appSidebar(section string, nav Nav) {
 				<span class="group-data-[tui-sidebar-state=collapsed]:hidden">Xilo</span>
 			</a>
 		}
-		@sidebar.Content() {
+		// preload sits on the containers that hold links, not on <body>: the
+		// extension initialises the [preload] elements it finds under whatever
+		// node htmx has just processed, and a boosted swap replaces the body's
+		// children, never <body> itself — an attribute up there would be read
+		// once, on the first load, and never again.
+		@sidebar.Content(sidebar.ContentProps{Attributes: templ.Attributes{"preload": "mouseover"}}) {
 			// The nav says which job you are here to do. Running the instance and
 			// using a workspace are different ones, so they are different groups —
 			// and the workspace items only exist for someone who is in an
@@ -191,11 +219,6 @@ templ appSidebar(section string, nav Nav) {
 				}
 			}
 			@sidebar.Group() {
-				if nav.IsAdmin && len(nav.Contexts) > 0 {
-					@sidebar.GroupLabel() {
-						{ T(ctx, "nav.workspace") }
-					}
-				}
 				@sidebar.Menu() {
 					if len(nav.Contexts) > 0 {
 						@navItem("/admin", T(ctx, "nav.caches"), "database", section == "caches")

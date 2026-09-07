@@ -23,7 +23,7 @@ var staticFS embed.FS
 func (s *Server) registerStatic(mux *http.ServeMux) {
 	types := map[string]string{".css": "text/css; charset=utf-8", ".js": "application/javascript; charset=utf-8", ".svg": "image/svg+xml"}
 	versions := map[string]string{}
-	for _, name := range []string{"xilo-tw.css", "htmx.min.js", "idiomorph.min.js", "favicon.svg"} {
+	for _, name := range []string{"xilo-tw.css", "htmx.min.js", "htmx-preload.js", "idiomorph.min.js", "favicon.svg"} {
 		data, err := staticFS.ReadFile("static/" + name)
 		if err != nil {
 			panic(err)

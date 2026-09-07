@@ -846,7 +846,7 @@ func (s *Server) handleOrgPage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) renderOrg(w http.ResponseWriter, r *http.Request, u *store.User, slug string, flash views.Flash) {
 	acct, err := s.db.GetAccount(slug)
-	if errors.Is(err, store.ErrNotFound) || (err == nil && acct.Kind != "org") {
+	if errors.Is(err, store.ErrNotFound) {
 		s.notFound(w, r)
 		return
 	}
@@ -1872,10 +1872,9 @@ var storeMsg = []struct {
 	err error
 	key string
 }{
-	{store.ErrNotOrg, "flash.notorg"},
+	{store.ErrOwnWorkspace, "flash.ownworkspace"},
 	{store.ErrBadRole, "flash.badrole"},
 	{store.ErrOwnerRole, "flash.ownerrole"},
-	{store.ErrPersonalOrg, "flash.personalorg"},
 	{store.ErrHasOwner, "flash.hasowner"},
 	{store.ErrOwnerLocked, "flash.ownerlocked"},
 	{store.ErrPlanInUse, "flash.planinuse"},
@@ -2120,7 +2119,7 @@ func (s *Server) orgByPath(w http.ResponseWriter, r *http.Request) (*store.Accou
 		return nil, nil, false
 	}
 	ns, err := s.db.GetAccount(r.PathValue("slug"))
-	if errors.Is(err, store.ErrNotFound) || (err == nil && ns.Kind != "org") {
+	if errors.Is(err, store.ErrNotFound) {
 		s.notFound(w, r)
 		return nil, nil, false
 	}

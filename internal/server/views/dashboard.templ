@@ -172,7 +172,11 @@ templ onboardStep(n, title, hint string) {
 templ cacheRow(u CacheUsage, bytes func(int64) string) {
 	<div class="flex flex-col gap-1.5 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
 		<div class="flex min-w-0 shrink-0 items-center gap-2">
-			<a href={ templ.SafeURL("/admin/cache/" + u.Cache.Ref()) } class="truncate text-sm font-medium hover:underline">
+			// Shares its view-transition name with the cache page's title, so the
+			// row is what travels when you open it (vtStyle). `block` is load-bearing:
+			// a named inline element that breaks across lines makes several boxes, and
+			// the browser skips the whole transition rather than animate one of them.
+			<a href={ templ.SafeURL("/admin/cache/" + u.Cache.Ref()) } class="block truncate text-sm font-medium hover:underline" style={ vtStyle(u.Cache.Ref()) }>
 				<span class="text-muted-foreground">{ u.Cache.Account }/</span>{ u.Cache.Name }
 			</a>
 			@VisBadge(u.Cache.Public)

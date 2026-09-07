@@ -445,6 +445,14 @@ func migrate(w *sql.DB, pg bool) error {
 	if _, err := w.Exec(`UPDATE users SET role='superadmin' WHERE role='owner'`); err != nil {
 		return fmt.Errorf("migrate superadmin role: %w", err)
 	}
+	// Every account is an organization. A personal account was already one in
+	// everything but name — a namespace with a single owner — and the separate
+	// kind bought only a set of rules saying what it could not do: gain a
+	// member, be billed as a team, be listed with the others. Slugs do not
+	// change, so no cache URL moves.
+	if _, err := w.Exec(`UPDATE accounts SET kind='org' WHERE kind<>'org'`); err != nil {
+		return fmt.Errorf("migrate accounts to orgs: %w", err)
+	}
 	return nil
 }
 
@@ -833,8 +841,9 @@ func migrateChunkStorage(w *sql.DB, pg bool) error {
 // untangles that manually. Idempotent.
 func migratePersonalAccounts(w *sql.DB) error {
 	rows, err := w.Query(`SELECT u.id, u.username, u.created FROM users u
-		WHERE NOT EXISTS (SELECT 1 FROM accounts a JOIN account_members m ON m.account_id=a.id
-			WHERE a.slug = u.username AND a.kind='user' AND m.user_id = u.id)`)
+		WHERE u.role <> 'superadmin' AND NOT EXISTS (
+			SELECT 1 FROM accounts a JOIN account_members m ON m.account_id=a.id
+			WHERE a.slug = u.username AND m.user_id = u.id)`)
 	if err != nil {
 		return err
 	}
@@ -867,7 +876,7 @@ func migratePersonalAccounts(w *sql.DB) error {
 		}
 		var accID int64
 		if err := w.QueryRow(`INSERT INTO accounts (slug, kind, created) VALUES (?,?,?) RETURNING id`,
-			r.name, "user", r.created).Scan(&accID); err != nil {
+			r.name, "org", r.created).Scan(&accID); err != nil {
 			return err
 		}
 		if _, err := w.Exec(`INSERT INTO account_members (account_id, user_id, role) VALUES (?,?,'owner')

@@ -200,10 +200,19 @@ func TestOwnerHierarchy(t *testing.T) {
 		t.Fatal(err)
 	}
 	if db.MemberRole(personal.ID, creator.ID) != "owner" {
-		t.Fatal("personal account should be owner-held")
+		t.Fatal("own workspace should be owner-held")
 	}
-	if err := db.SetMember(personal.ID, other.ID, "user"); err == nil {
-		t.Fatal("personal accounts must not take members")
+	// A workspace is an organization with one member, so it can gain more —
+	// that is how one person's cache becomes a team's.
+	if err := db.SetMember(personal.ID, other.ID, "user"); err != nil {
+		t.Fatalf("workspace refused a member: %v", err)
+	}
+	if db.MemberRole(personal.ID, other.ID) != "user" {
+		t.Fatal("member not recorded")
+	}
+	// Its owner still cannot be demoted, the same as any organization's.
+	if err := db.SetMember(personal.ID, creator.ID, "admin"); !errors.Is(err, ErrOwnerRole) {
+		t.Fatalf("owner demoted in own workspace: %v", err)
 	}
 }
 
