@@ -99,6 +99,23 @@ templ rulesSection(d InstanceData) {
 	}
 }
 
+// intervalSelect is the billing period a priced plan renews on.
+templ intervalSelect(selected string) {
+	@selectbox.SelectBox() {
+		@selectbox.Trigger(selectbox.TriggerProps{Name: "interval", Attributes: templ.Attributes{"aria-label": T(ctx, "plan.interval")}}) {
+			@selectbox.Value(selectbox.ValueProps{})
+		}
+		@selectbox.Content(selectbox.ContentProps{NoSearch: true}) {
+			@selectbox.Item(selectbox.ItemProps{Value: "month", Selected: selected != "year"}) {
+				{ T(ctx, "plan.monthly") }
+			}
+			@selectbox.Item(selectbox.ItemProps{Value: "year", Selected: selected == "year"}) {
+				{ T(ctx, "plan.yearly") }
+			}
+		}
+	}
+}
+
 // planSelect picks the signup default; "none" leaves signups choosing.
 templ planSelect(plans []store.Plan, selected int64) {
 	@selectbox.SelectBox() {
@@ -146,6 +163,7 @@ templ plansCard(plans []store.Plan) {
 													{ T(ctx, "plan.orgs") }
 												}
 											}
+											<span class="font-mono text-xs tabular-nums">{ PlanPriceLabel(ctx, p) }</span>
 											<span class="text-xs text-muted-foreground tabular-nums">{ planLimits(ctx, p) }</span>
 										</div>
 									}
@@ -214,6 +232,24 @@ templ planFormBody(action string, p *store.Plan, submitIcon, submitLabel, dlgID 
 				@input.Input(input.Props{ID: dlgID + "-members", Name: "max_members", Type: input.TypeNumber, Value: planLimit(p, "members"), Placeholder: T(ctx, "ph.zerounlimited"), Attributes: templ.Attributes{"min": "0", "autocomplete": "off"}})
 			}
 		</div>
+		<div class="grid gap-4 sm:grid-cols-2">
+			@FieldInfo(dlgID+"-price", T(ctx, "plan.price"), T(ctx, "plan.pricehint")) {
+				@input.Input(input.Props{
+					ID: dlgID + "-price", Name: "price", Value: planPrice(p),
+					Placeholder: T(ctx, "plan.free"),
+					Attributes:  templ.Attributes{"inputmode": "decimal", "autocomplete": "off"},
+				})
+			}
+			@Field("", T(ctx, "plan.interval")) {
+				@intervalSelect(planInterval(p))
+			}
+		</div>
+		@FieldInfo(dlgID+"-external", T(ctx, "plan.external"), T(ctx, "plan.externalhint")) {
+			@input.Input(input.Props{
+				ID: dlgID + "-external", Name: "external_id", Value: planExternal(p),
+				Placeholder: T(ctx, "plan.externalph"), Attributes: templ.Attributes{"autocomplete": "off"},
+			})
+		}
 		@Field("", T(ctx, "plan.maxstorage")) {
 			@SizeInput("plan_storage", planBytes(p))
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"math"
 	"net/http"
 	netmail "net/mail"
 	"strconv"
@@ -221,6 +222,22 @@ func planFromForm(r *http.Request) store.Plan {
 	}
 	storageBytes, _ := formBytes(r, "plan_storage")
 	retention, _ := formSeconds(r, "plan_retention")
+	// Price is typed in whole currency units and stored in cents, because that
+	// is what every provider bills in and rounding a price twice is how an
+	// invoice stops matching the page that sold it.
+	var cents int64
+	if v := strings.TrimSpace(r.FormValue("price")); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
+			cents = int64(math.Round(f * 100))
+		}
+	}
+	interval := r.FormValue("interval")
+	if interval != "year" {
+		interval = "month"
+	}
+	if cents == 0 {
+		interval = "" // free plans have no billing period
+	}
 	return store.Plan{
 		Name:         strings.TrimSpace(r.FormValue("name")),
 		MaxCaches:    geti("max_caches"),
@@ -229,6 +246,9 @@ func planFromForm(r *http.Request) store.Plan {
 		MaxRetention: retention,
 		OrgsAllowed:  r.FormValue("orgs_allowed") != "",
 		Public:       r.FormValue("public") != "",
+		PriceCents:   cents,
+		Interval:     interval,
+		ExternalID:   strings.TrimSpace(r.FormValue("external_id")),
 	}
 }
 

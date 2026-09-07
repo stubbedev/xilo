@@ -18,15 +18,24 @@ type Plan struct {
 	MaxRetention int64 // seconds; caps per-cache retention; 0 = unlimited
 	OrgsAllowed  bool  // may this account's user create organizations?
 	Public       bool  // selectable at self-registration
-	Created      int64
+	// What it costs, for an instance that charges. PriceCents is in the
+	// provider's smallest unit and 0 means free, which is every plan on a
+	// self-hosted instance; Interval is "month" or "year"; ExternalID is the
+	// provider's own price handle, so the catalogue here and the prices there
+	// are joined by something neither side invents.
+	PriceCents int64
+	Interval   string
+	ExternalID string
+	Created    int64
 }
 
-const planCols = `id,name,max_caches,max_members,max_storage,max_retention,orgs_allowed,public,created`
+const planCols = `id,name,max_caches,max_members,max_storage,max_retention,orgs_allowed,public,price_cents,interval,external_id,created`
 
 func scanPlan(row interface{ Scan(...any) error }) (*Plan, error) {
 	var p Plan
 	var orgs, pub int
-	if err := row.Scan(&p.ID, &p.Name, &p.MaxCaches, &p.MaxMembers, &p.MaxStorage, &p.MaxRetention, &orgs, &pub, &p.Created); err != nil {
+	if err := row.Scan(&p.ID, &p.Name, &p.MaxCaches, &p.MaxMembers, &p.MaxStorage, &p.MaxRetention, &orgs, &pub,
+		&p.PriceCents, &p.Interval, &p.ExternalID, &p.Created); err != nil {
 		return nil, err
 	}
 	p.OrgsAllowed = orgs != 0
@@ -38,9 +47,10 @@ func (db *DB) CreatePlan(p *Plan) (*Plan, error) {
 	p.Created = time.Now().Unix()
 	err := db.write(func(tx *sql.Tx) error {
 		return tx.QueryRow(
-			`INSERT INTO plans (name,max_caches,max_members,max_storage,max_retention,orgs_allowed,public,created)
-			 VALUES (?,?,?,?,?,?,?,?) RETURNING id`,
-			p.Name, p.MaxCaches, p.MaxMembers, p.MaxStorage, p.MaxRetention, b2i(p.OrgsAllowed), b2i(p.Public), p.Created).Scan(&p.ID)
+			`INSERT INTO plans (name,max_caches,max_members,max_storage,max_retention,orgs_allowed,public,price_cents,interval,external_id,created)
+			 VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+			p.Name, p.MaxCaches, p.MaxMembers, p.MaxStorage, p.MaxRetention, b2i(p.OrgsAllowed), b2i(p.Public),
+			p.PriceCents, p.Interval, p.ExternalID, p.Created).Scan(&p.ID)
 	})
 	if err != nil {
 		return nil, err
@@ -51,8 +61,10 @@ func (db *DB) CreatePlan(p *Plan) (*Plan, error) {
 func (db *DB) UpdatePlan(p *Plan) error {
 	return db.write(func(tx *sql.Tx) error {
 		_, err := tx.Exec(
-			`UPDATE plans SET name=?, max_caches=?, max_members=?, max_storage=?, max_retention=?, orgs_allowed=?, public=? WHERE id=?`,
-			p.Name, p.MaxCaches, p.MaxMembers, p.MaxStorage, p.MaxRetention, b2i(p.OrgsAllowed), b2i(p.Public), p.ID)
+			`UPDATE plans SET name=?, max_caches=?, max_members=?, max_storage=?, max_retention=?, orgs_allowed=?, public=?,
+			 price_cents=?, interval=?, external_id=? WHERE id=?`,
+			p.Name, p.MaxCaches, p.MaxMembers, p.MaxStorage, p.MaxRetention, b2i(p.OrgsAllowed), b2i(p.Public),
+			p.PriceCents, p.Interval, p.ExternalID, p.ID)
 		return err
 	})
 }
