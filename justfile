@@ -339,6 +339,16 @@ _release LEVEL: _release-checks
     if [ -n "$(git rev-list HEAD..FETCH_HEAD)" ]; then
         git rebase FETCH_HEAD
     fi
+    # GitHub skips *every* workflow for a push whose head commit message says
+    # [skip ci] — including the tag push that is the entire release mechanism
+    # here. CI's own artifact bump says exactly that, so a release with no
+    # drift of its own tags one of those commits and publishes nothing: no
+    # binaries, no image, no release notes, and no failure either. Give the
+    # tag a commit that runs.
+    if git log -1 --format=%B HEAD | grep -qiE '\[skip ci\]|\[ci skip\]'; then
+        echo "HEAD says [skip ci]; adding a release commit so the tag builds."
+        git commit --allow-empty -m "chore: release $new"
+    fi
     git push origin HEAD
     # Tag only once the branch is up. A tag made before a rejected push is a
     # version number spent for nothing: the next run counts from it and
