@@ -14,7 +14,14 @@
 import http from "k6/http";
 import crypto from "k6/crypto";
 import { check, fail } from "k6";
+import { Counter } from "k6/metrics";
 import { BASE, ACCOUNT, ADMIN_PASSWORD, chunkBytes, storePathFor, waitHealthy, adminLogin, setContext } from "./lib.js";
+
+// A thrown assertion aborts the iteration without failing the run: every
+// check that had already passed still counts, the ones after it never run,
+// and k6 exits 0 on a suite that stopped a third of the way through. This
+// marker is bumped on the last line, so an abort is a threshold failure.
+const completed = new Counter("suite_completed");
 
 export const options = {
   scenarios: {
@@ -22,6 +29,7 @@ export const options = {
   },
   thresholds: {
     checks: ["rate==1"],
+    suite_completed: ["count>0"],
   },
 };
 
@@ -171,6 +179,12 @@ export default function () {
   const scopedTok = createToken("k6-scoped", ["push", "pull"], "pub");
   const privTok = createToken("k6-priv", ["push", "pull"], "priv");
   const deadTok = createToken("k6-dead", ["push", "pull"], "pub");
+
+  // The dashboard lists one account: this one. The first setContext ran before
+  // the account existed (creating a cache is what creates it), so the pick was
+  // refused and the context fell back to the admin's own empty workspace —
+  // where none of these tokens are. Now that it exists, take it for real.
+  setContext(NS);
 
   // Revoke via admin. k6-dead is the newest token, so its id is the highest
   // revoke-form id on the dashboard (row layout independent).
@@ -513,7 +527,9 @@ export default function () {
   // login now demands the second factor
   http.post(`${BASE}/admin/logout`);
   res = http.post(`${BASE}/admin/login`, { username: "admin", password: ADMIN });
-  must(res, "login with 2fa asks for code", (r) => r.status === 200 && r.body.includes("pending"));
+  // The marker is the hidden field that carries the pending login, not the
+  // word: the admin pages ship inline scripts, and any of them may contain it.
+  must(res, "login with 2fa asks for code", (r) => r.status === 200 && /name="pending"/.test(String(r.body)));
   const pending = String(res.body).match(/name="pending"[^>]*value="([^"]+)"/)[1];
   res = http.post(`${BASE}/admin/login/code`, { pending: pending, code: "111111" });
   must(res, "2fa wrong code rejected", (r) => !String(r.body).includes("Signed in") &&
@@ -529,11 +545,13 @@ export default function () {
   must(res, "totp disable", (r) => r.status === 200 && r.body.includes("disabled"));
   http.post(`${BASE}/admin/logout`);
   res = http.post(`${BASE}/admin/login`, { username: "admin", password: ADMIN });
-  must(res, "plain login after totp disable", (r) => r.status === 200 && !r.body.includes("pending"));
+  must(res, "plain login after totp disable", (r) => r.status === 200 && !/name="pending"/.test(String(r.body)));
 
   // ---------- session security ----------
   res = http.post(`${BASE}/admin/logout`);
   must(res, "logout", (r) => r.status === 200 || r.status === 302);
   res = http.post(`${BASE}/admin/caches`, { name: "nope", namespace: NS, priority: "40" });
   must(res, "admin mutation after logout rejected", (r) => r.status !== 200 || String(r.body).includes("password"));
+
+  completed.add(1);
 }

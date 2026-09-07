@@ -137,8 +137,31 @@ export function adminLogin() {
 // setContext switches the dashboard's active account context so that
 // subsequent cache creation (namespace preset) and token scoping resolve
 // against `account` rather than the owner's personal namespace.
+//
+// The context only takes an account the signed-in user is *in*: administering
+// the instance is not the same as being a member (see TestContextSwitcher),
+// and a context that is refused falls back to the admin's own workspace —
+// where none of this suite's caches or tokens are, so any page that lists
+// them comes back empty. So join first, which is what an operator reaching
+// into an organization does too.
 export function setContext(account) {
+  joinAccount(account);
   http.post(`${BASE}/admin/context`, { ctx: account });
+}
+
+// joinAccount makes the signed-in admin a member of `account` (no-op if they
+// already are). The member picker on the org page carries each candidate's
+// user id, which is the only place the admin's own id is exposed to a client.
+export function joinAccount(account) {
+  const page = String(http.get(`${BASE}/admin/org/${account}`).body);
+  // Each candidate is one selectbox item: the id on the option, the username
+  // in its label span. Pair them, and take the one that is us — never the
+  // first option, which would hand a stranger admin of the account.
+  const mine = [...page.matchAll(/data-tui-selectbox-value="(\d+)"[\s\S]{0,400}?select-item-text">([^<]*)</g)]
+    .find((m) => m[2].trim() === ADMIN_USER);
+  // Not a candidate: already a member, which is all this needs.
+  if (!mine) return;
+  http.post(`${BASE}/admin/org/${account}/members`, { user_id: mine[1], role: "admin" });
 }
 
 // ensureCache creates `target`'s account+cache through the admin dashboard —

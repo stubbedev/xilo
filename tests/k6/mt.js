@@ -16,13 +16,18 @@
 import http from "k6/http";
 import crypto from "k6/crypto";
 import { check, fail } from "k6";
+import { Counter } from "k6/metrics";
 import { BASE, ADMIN_PASSWORD, chunkBytes, storePathFor, waitHealthy, adminLogin } from "./lib.js";
+
+// See ops.js: a thrown assertion stops the iteration and still exits 0, so
+// the last line bumps a marker the threshold requires.
+const completed = new Counter("suite_completed");
 
 export const options = {
   scenarios: {
     mt: { executor: "shared-iterations", vus: 1, iterations: 1, maxDuration: "5m" },
   },
-  thresholds: { checks: ["rate==1"] },
+  thresholds: { checks: ["rate==1"], suite_completed: ["count>0"] },
 };
 
 // Provoked 4xxs are asserted via checks, not counted as transport errors.
@@ -221,4 +226,6 @@ export default function () {
     if (rr.status === 429) { got429 = true; break; }
   }
   must({ status: got429 ? 429 : 0 }, "registration rate-limited after burst", () => got429);
+
+  completed.add(1);
 }

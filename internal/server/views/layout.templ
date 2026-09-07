@@ -574,12 +574,12 @@ templ autosaveLayer() {
 				});
 				return found;
 			}
-			function applyEdits(f, pending) {
+			function applyEdits(f, carried) {
 				var newer = false;
-				for (var name in pending) {
+				for (var name in carried) {
 					var el = field(f, name);
 					if (!el) continue;
-					var e = pending[name];
+					var e = carried[name];
 					if (el.type === 'checkbox' || el.type === 'radio') {
 						if (el.checked === e.checked) continue;
 						el.checked = e.checked;
@@ -593,14 +593,14 @@ templ autosaveLayer() {
 			}
 			document.addEventListener('htmx:afterSettle', function () {
 				var c = caret;
-				var pending = edits;
+				var carried = edits;
 				var action = sentTo;
 				caret = null;
 				edits = Object.create(null);
 				sentTo = null;
 				var f = liveForm(action);
 				if (!f) return;
-				var newer = applyEdits(f, pending);
+				var newer = applyEdits(f, carried);
 				if (c) {
 					var focusEl = field(f, c.name);
 					if (focusEl) {
