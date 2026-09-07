@@ -98,6 +98,13 @@ var zh = map[string]string{
 
 	// status
 	"status.title":       "状态",
+	"status.past_due":    "只读",
+	"status.suspended":   "已暂停",
+	"status.readonly":    "设为只读",
+	"status.suspend":     "暂停",
+	"status.restore":     "恢复",
+	"flash.statusset":    "已更新 %s。",
+	"flash.badstatus":    "此实例不认识该状态。",
 	"status.subtitle":    "实时的健康状况、流量与存储。",
 	"status.settings":    "设置",
 	"status.from":        "开始日期",

@@ -589,5 +589,12 @@ func (s *Server) cache(w http.ResponseWriter, r *http.Request) (*store.Cache, bo
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return nil, false
 	}
+	// A suspended account serves nothing. Checked here because every
+	// binary-cache handler comes through this resolver, so the rule cannot be
+	// missed by a handler added later.
+	if s.db.AccountStatus(c.AccountID) == store.StatusSuspended {
+		http.Error(w, "account suspended", http.StatusForbidden)
+		return nil, false
+	}
 	return c, true
 }

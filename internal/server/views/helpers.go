@@ -205,6 +205,22 @@ func userRole(u store.User) string {
 	}
 }
 
+// accountStatusIcon / accountStatusTone map an account's lifecycle state to
+// its glyph and color: paused is a warning, closed is a refusal.
+func accountStatusIcon(status string) string {
+	if status == "suspended" {
+		return "circle-slash"
+	}
+	return "circle-pause"
+}
+
+func accountStatusTone(status string) string {
+	if status == "suspended" {
+		return "text-destructive"
+	}
+	return "text-warning"
+}
+
 // roleIcon / roleTone map a role to its glyph and color.
 func roleIcon(role string) string {
 	switch role {

@@ -98,6 +98,13 @@ var de = map[string]string{
 
 	// status
 	"status.title":       "Status",
+	"status.past_due":    "nur lesen",
+	"status.suspended":   "gesperrt",
+	"status.readonly":    "Nur lesen",
+	"status.suspend":     "Sperren",
+	"status.restore":     "Wiederherstellen",
+	"flash.statusset":    "%s aktualisiert.",
+	"flash.badstatus":    "Diesen Status kennt die Instanz nicht.",
 	"status.subtitle":    "Zustand, Datenverkehr und Speicher in Echtzeit.",
 	"status.settings":    "Einstellungen",
 	"status.from":        "Startdatum",

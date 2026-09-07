@@ -185,6 +185,13 @@ var en = map[string]string{
 
 	// status dashboard
 	"status.title":       "Status",
+	"status.past_due":    "read-only",
+	"status.suspended":   "suspended",
+	"status.readonly":    "Make read-only",
+	"status.suspend":     "Suspend",
+	"status.restore":     "Restore",
+	"flash.statusset":    "%s updated.",
+	"flash.badstatus":    "That is not a status this instance knows.",
 	"status.subtitle":    "Live health, traffic and storage.",
 	"status.settings":    "Settings",
 	"status.window":      "Window",

@@ -19,6 +19,17 @@ type ConsoleData struct {
 	Flash  Flash
 }
 
+// statusForm is one lifecycle lever, shown only when it would change
+// something — a suspended workspace has nothing to suspend.
+templ statusForm(info OrgInfo, status, icon, label string) {
+	if info.StatusOr() != status {
+		<form method="post" action={ templ.SafeURL("/admin/org/" + info.Account.Slug + "/status") }>
+			<input type="hidden" name="status" value={ status }/>
+			@RowAction(icon, label, true)
+		</form>
+	}
+}
+
 // Console is what a superadmin opens onto: the instance, not an account. The
 // figures are every organization's added together, because the person reading
 // them runs the service rather than uses it — a tenant's own numbers are on
@@ -48,10 +59,18 @@ templ Console(d ConsoleData) {
 											<div class="flex min-w-0 items-center gap-2">
 												@Icon("building-2")
 												<a href={ templ.SafeURL("/admin/org/" + info.Account.Slug) } class="font-medium hover:underline">{ info.Account.Slug }</a>
+												@StatusGlyph(info.Status)
 												@Meta() {
 													{ UsagePhrase(ctx, info) }
 												}
 											</div>
+										}
+										@table.Cell(table.CellProps{Class: "w-40 text-right"}) {
+											@RowActions() {
+												@statusForm(info, "past_due", "circle-pause", T(ctx, "status.readonly"))
+												@statusForm(info, "suspended", "circle-slash", T(ctx, "status.suspend"))
+												@statusForm(info, "active", "circle-play", T(ctx, "status.restore"))
+											}
 										}
 									}
 								}

@@ -8,6 +8,25 @@ import (
 	"github.com/stubbedev/xilo/internal/server/views"
 )
 
+// handleAccountStatus moves one workspace through the lifecycle — read-only,
+// closed, or back to normal. A sysadmin's lever, so it is gated on that and
+// not on membership: the point is to act on a tenancy you are not part of.
+func (s *Server) handleAccountStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	acct, err := s.db.GetAccount(r.PathValue("slug"))
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	if err := s.db.SetAccountStatus(acct.ID, r.FormValue("status")); err != nil {
+		s.flashStore(w, r, "/admin/console", err)
+		return
+	}
+	s.flashRedirect(w, r, "/admin/console", views.Tf(r.Context(), "flash.statusset", acct.Slug))
+}
+
 // handleConsole renders the instance overview: what the whole service holds,
 // and every organization holding it. This is the superadmin's home — the
 // tenant Overview is about one account, and a superadmin is in none.
@@ -48,6 +67,7 @@ func (s *Server) handleConsole(w http.ResponseWriter, r *http.Request) {
 			uiError(w, r, err)
 			return
 		}
+		info.Status = s.db.AccountStatus(acct.ID)
 		d.Orgs = append(d.Orgs, info)
 	}
 	caches, err := s.db.ListCaches()

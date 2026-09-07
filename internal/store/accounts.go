@@ -338,3 +338,49 @@ func (db *DB) ResolveAccount() (string, error) {
 	return "", fmt.Errorf("this instance has several accounts (%s) — write the cache as <account>/<name>",
 		strings.Join(names, ", "))
 }
+
+// Account lifecycle states. A tenancy that stops paying is not deleted — its
+// bytes are still on disk and its owner may well come back — so it degrades in
+// two steps instead: read-only first, then closed. "deleted" is the end of the
+// line and is already what the soft-delete writes.
+const (
+	StatusActive    = "active"    // normal
+	StatusPastDue   = "past_due"  // pull still works; nothing new may be pushed
+	StatusSuspended = "suspended" // nothing serves at all
+)
+
+// ErrBadStatus rejects a status the lifecycle does not define, so a typo in a
+// form cannot quietly park an account in a state nothing checks for.
+var ErrBadStatus = errors.New("unknown account status")
+
+// AccountStatus is an account's lifecycle state, "" when there is no such
+// account. Read on the binary-cache path, so it stays a single indexed lookup
+// by primary key.
+func (db *DB) AccountStatus(accountID int64) string {
+	var status string
+	if err := db.r.QueryRow(`SELECT status FROM accounts WHERE id=?`, accountID).Scan(&status); err != nil {
+		return ""
+	}
+	return status
+}
+
+// SetAccountStatus moves an account through the lifecycle. Deletion is not
+// reachable from here — that is DeleteOrg's job, which also purges what the
+// account held; this only ever changes how much of it still answers.
+func (db *DB) SetAccountStatus(accountID int64, status string) error {
+	switch status {
+	case StatusActive, StatusPastDue, StatusSuspended:
+	default:
+		return ErrBadStatus
+	}
+	return db.write(func(tx *sql.Tx) error {
+		res, err := tx.Exec(`UPDATE accounts SET status=? WHERE id=? AND status<>'deleted'`, status, accountID)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
+}

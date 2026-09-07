@@ -98,6 +98,13 @@ var fr = map[string]string{
 
 	// status
 	"status.title":       "État",
+	"status.past_due":    "lecture seule",
+	"status.suspended":   "suspendu",
+	"status.readonly":    "Passer en lecture seule",
+	"status.suspend":     "Suspendre",
+	"status.restore":     "Rétablir",
+	"flash.statusset":    "%s mis à jour.",
+	"flash.badstatus":    "Ce statut est inconnu de cette instance.",
 	"status.subtitle":    "Santé, trafic et stockage en direct.",
 	"status.settings":    "Paramètres",
 	"status.from":        "Date de début",

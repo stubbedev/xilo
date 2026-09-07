@@ -375,6 +375,7 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	// instance has ceilings and defaults too.
 	mux.HandleFunc("POST /admin/settings/rules", s.handleInstanceRules)
 	mux.HandleFunc("GET /admin/console", s.handleConsole)
+	mux.HandleFunc("POST /admin/org/{slug}/status", s.handleAccountStatus)
 	mux.HandleFunc("GET /admin/orgs", s.handleOrgsPage)
 	mux.HandleFunc("GET /admin/org/{slug}", s.handleOrgPage)
 	mux.HandleFunc("GET /admin/status", s.handleStatus)
@@ -1889,6 +1890,7 @@ var storeMsg = []struct {
 	key string
 }{
 	{store.ErrOwnWorkspace, "flash.ownworkspace"},
+	{store.ErrBadStatus, "flash.badstatus"},
 	{store.ErrBadRole, "flash.badrole"},
 	{store.ErrOwnerRole, "flash.ownerrole"},
 	{store.ErrHasOwner, "flash.hasowner"},

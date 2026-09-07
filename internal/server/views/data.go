@@ -229,6 +229,16 @@ type OrgInfo struct {
 	Plan    *store.Plan // nil = no plan (unlimited)
 	Used    int64       // logical bytes stored
 	Egress  int64       // NAR bytes served this month
+	Status  string      // lifecycle state; "" reads as active
+}
+
+// StatusOr is an account's lifecycle state with the default filled in: an
+// account written before the states existed has none, and it is active.
+func (o OrgInfo) StatusOr() string {
+	if o.Status == "" {
+		return "active"
+	}
+	return o.Status
 }
 
 // MetaSep separates the clauses of a meta line. An em space, not a middle

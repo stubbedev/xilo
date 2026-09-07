@@ -98,6 +98,13 @@ var ja = map[string]string{
 
 	// status
 	"status.title":       "ステータス",
+	"status.past_due":    "読み取り専用",
+	"status.suspended":   "停止中",
+	"status.readonly":    "読み取り専用にする",
+	"status.suspend":     "停止",
+	"status.restore":     "復帰",
+	"flash.statusset":    "%s を更新しました。",
+	"flash.badstatus":    "このインスタンスが知らない状態です。",
 	"status.subtitle":    "稼働状況、トラフィック、ストレージをリアルタイムに表示します。",
 	"status.settings":    "設定",
 	"status.from":        "開始日",
