@@ -275,6 +275,18 @@ _release-checks:
         echo "Error: not on default branch '$DEFAULT_BRANCH' (currently on '$BRANCH')." >&2
         exit 1
     fi
+    # Catch up with the remote first. CI answers every push to the default
+    # branch with a generated-artifact commit of its own, so a tree that was
+    # in sync when you last pushed is behind by the time you release — and the
+    # release's own push is then rejected non-fast-forward, after ten minutes
+    # of checks. Tags come along so the version below counts from what is
+    # actually released, not from what this machine happens to know.
+    echo "Syncing with origin/$DEFAULT_BRANCH..."
+    git fetch --tags --prune origin
+    if [ -n "$(git rev-list HEAD..origin/$DEFAULT_BRANCH)" ]; then
+        echo "origin/$DEFAULT_BRANCH has commits this tree does not; rebasing onto it."
+        git pull --rebase --autostash origin "$DEFAULT_BRANCH"
+    fi
     # check only *verifies* the schema, so regenerate it first: drift becomes a
     # commit instead of a failed release.
     just sync-schema
@@ -314,9 +326,24 @@ _release LEVEL: _release-checks
         patch) new="v${major}.${minor}.$((patch + 1))" ;;
         *) echo "unknown release level: {{ LEVEL }}" >&2; exit 1 ;;
     esac
+    if git rev-parse -q --verify "refs/tags/$new" >/dev/null; then
+        echo "Error: tag $new already exists here. Delete it (git tag -d $new) if it was never pushed." >&2
+        exit 1
+    fi
     echo "Bumping from $cur to $new"
-    git tag -a "$new" -m "Release $new"
+    # The checks just committed the resynced artifacts, and they took long
+    # enough that CI may have pushed again in the meantime. Land on whatever
+    # is there and push the branch *first*.
+    BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    git fetch origin "$BRANCH"
+    if [ -n "$(git rev-list HEAD..FETCH_HEAD)" ]; then
+        git rebase FETCH_HEAD
+    fi
     git push origin HEAD
+    # Tag only once the branch is up. A tag made before a rejected push is a
+    # version number spent for nothing: the next run counts from it and
+    # silently skips a release number (v1.2.0 gone, v1.2.1 out instead).
+    git tag -a "$new" -m "Release $new"
     git push origin "$new"
     echo "Pushed $new — watch it with: gh run list --workflow Release"
 

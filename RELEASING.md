@@ -4,9 +4,17 @@
 just release-patch   # or release-minor / release-major
 ```
 
-It refuses to run off the default branch, runs `just check`, resyncs the schema,
-`flake.lock` and `vendorHash` (committing any drift), then tags and pushes.
+It refuses to run off the default branch, catches up with `origin` first, runs
+`just check`, resyncs the schema, `flake.lock` and `vendorHash` (committing any
+drift), pushes the branch, and only then tags and pushes the tag.
 `just release-preview` shows the next version numbers without doing anything.
+
+The two syncs are not decoration. CI answers every push to the default branch
+with a generated-artifact commit of its own, so a tree that was in sync when
+you last pushed is behind by the time you release — that rejected the push
+after the checks had already run. And the tag comes *after* the branch push,
+because a tag left behind by a failed push is a version number spent for
+nothing: the next run counts from it and skips a number.
 
 By hand it is just the tag:
 
