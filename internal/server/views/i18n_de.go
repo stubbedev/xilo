@@ -90,7 +90,7 @@ var de = map[string]string{
 	"console.users":     "Benutzer",
 	"console.allcaches": "Alle Caches",
 	"nav.audit":         "Aktivitäten",
-	"nav.context":       "Konto",
+	"nav.context":       "Arbeitsbereich",
 	"nav.logout":        "Abmelden",
 	"nav.addaccount":    "Konto hinzufügen",
 	"nav.theme":         "Erscheinungsbild",

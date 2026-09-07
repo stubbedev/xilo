@@ -709,6 +709,17 @@ input[type="radio"]:not(:disabled) { cursor: pointer; }
 .toast-progress[data-variant="warning"] { background-color: var(--warning); }
 .toast-progress[data-variant="info"] { background-color: var(--primary); }
 
+/* The sidebar sits 8px from the viewport edge (templui's p-2), and Floating UI
+   keeps every popover at least 10px inside it (shift({padding: 10})). Two
+   pixels of difference, so a popover anchored in the sidebar landed 2px right
+   of the control that opened it — visible in the footer, where the combobox and
+   the account menu sit one above the other. Widen the sidebar's own gutter past
+   the safety margin and the geometry agrees on its own, with no fighting a
+   JS-positioned element over its inline `left`. */
+[data-tui-sidebar][class*="p-2"] {
+  padding-inline: 0.75rem;
+}
+
 /* Every select here is a required choice (unit, account, scope, palette); the
    clear-selection x would only ever produce an invalid form. */
 [data-tui-selectbox-clear-trigger] { display: none; }

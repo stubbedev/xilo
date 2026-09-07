@@ -267,10 +267,9 @@ templ themeToggle() {
 	}
 }
 
-// contextSwitcher scopes the dashboard to one account (or all): a searchable
-// selectbox that posts on selection. The guard keeps the search field's own
-// change events (blur after typing) from re-submitting; only the hidden ctx
-// input submits. Hidden on the collapsed icon rail — no room for a select.
+// contextSwitcher picks the one workspace the admin is looking at. It sits in
+// the footer beside the identity it acts as, because the workspace you are in
+// and who you are in it as are the same kind of fact.
 templ contextSwitcher(nav Nav) {
 	<form
 		method="post"
@@ -279,8 +278,15 @@ templ contextSwitcher(nav Nav) {
 		onchange="if (event.target.name === 'ctx') this.requestSubmit()"
 	>
 		@selectbox.SelectBox() {
-			@selectbox.Trigger(selectbox.TriggerProps{Name: "ctx", Attributes: templ.Attributes{"aria-label": T(ctx, "nav.context")}}) {
-				@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "nav.context")})
+			@selectbox.Trigger(selectbox.TriggerProps{
+				Name:       "ctx",
+				Class:      "h-8",
+				Attributes: templ.Attributes{"aria-label": T(ctx, "nav.context") + ": " + nav.Active},
+			}) {
+				<span class="flex min-w-0 items-center gap-2">
+					@Icon("building-2")
+					@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "nav.context")})
+				</span>
 			}
 			@selectbox.Content(selectbox.ContentProps{NoSearch: noSearch(len(nav.Contexts))}) {
 				for _, c := range nav.Contexts {
@@ -293,6 +299,25 @@ templ contextSwitcher(nav Nav) {
 	</form>
 }
 
+// footerTrigger is the sidebar footer's control shape: an icon saying which
+// kind of thing this switches, the current value, and the up/down chevrons
+// that mark a menu. Sized to match the workspace combobox above it.
+templ footerTrigger(icon, value, label string) {
+	@button.Button(button.Props{
+		Variant: button.VariantOutline, Type: button.TypeButton, FullWidth: true, Size: button.SizeSm,
+		Class:      "justify-between gap-2 group-data-[tui-sidebar-state=collapsed]:px-0",
+		Attributes: templ.Attributes{"aria-label": label + ": " + value},
+	}) {
+		<span class="flex min-w-0 items-center gap-2">
+			@Icon(icon)
+			<span class="truncate group-data-[tui-sidebar-state=collapsed]:hidden">{ value }</span>
+		</span>
+		<span class="group-data-[tui-sidebar-state=collapsed]:hidden">
+			@IconClass("chevrons-up-down", 14, "")
+		</span>
+	}
+}
+
 // userMenu is the sidebar footer: who you are signed in as, and a menu of the
 // other accounts this browser is signed in as. A person can hold several at
 // once (see the wallet in wallet.go), so the way to a second account is Add
@@ -300,21 +325,12 @@ templ contextSwitcher(nav Nav) {
 templ userMenu(nav Nav) {
 	@dropdown.Dropdown() {
 		@dropdown.Trigger() {
-			@button.Button(button.Props{
-				Variant: button.VariantOutline, Type: button.TypeButton, FullWidth: true, Size: button.SizeSm,
-				Class:      "justify-between gap-2 group-data-[tui-sidebar-state=collapsed]:px-0",
-				Attributes: templ.Attributes{"aria-label": nav.UserName},
-			}) {
-				<span class="flex min-w-0 items-center gap-2">
-					@Icon("circle-user")
-					<span class="truncate group-data-[tui-sidebar-state=collapsed]:hidden">{ nav.UserName }</span>
-				</span>
-				<span class="group-data-[tui-sidebar-state=collapsed]:hidden">
-					@IconClass("chevrons-up-down", 14, "")
-				</span>
-			}
+			@footerTrigger("circle-user", nav.UserName, T(ctx, "nav.account"))
 		}
 		@dropdown.Content(dropdown.ContentProps{Class: "w-56"}) {
+			@dropdown.Label() {
+				{ T(ctx, "nav.account") }
+			}
 			// One form, one button per account: the menu posts a user id, never
 			// a session id — those are the secret the wallet holds.
 			<form method="post" action="/admin/session/switch">

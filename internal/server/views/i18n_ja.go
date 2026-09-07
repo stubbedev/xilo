@@ -90,7 +90,7 @@ var ja = map[string]string{
 	"console.users":     "ユーザー",
 	"console.allcaches": "すべてのキャッシュ",
 	"nav.audit":         "アクティビティ",
-	"nav.context":       "アカウント",
+	"nav.context":       "ワークスペース",
 	"nav.logout":        "サインアウト",
 	"nav.addaccount":    "アカウントを追加",
 	"nav.theme":         "テーマ",

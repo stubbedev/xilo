@@ -90,7 +90,7 @@ var zh = map[string]string{
 	"console.users":     "用户",
 	"console.allcaches": "全部缓存",
 	"nav.audit":         "活动记录",
-	"nav.context":       "账户",
+	"nav.context":       "工作区",
 	"nav.logout":        "退出登录",
 	"nav.addaccount":    "添加账户",
 	"nav.theme":         "主题",

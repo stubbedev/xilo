@@ -177,7 +177,7 @@ var en = map[string]string{
 	"console.users":     "Users",
 	"console.allcaches": "All caches",
 	"nav.audit":         "Activities",
-	"nav.context":       "Account",
+	"nav.context":       "Workspace",
 	"nav.logout":        "Log out",
 	"nav.addaccount":    "Add account",
 	"nav.theme":         "Theme",
