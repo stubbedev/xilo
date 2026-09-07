@@ -132,28 +132,58 @@ templ TTLSelect(t *store.Token) {
 	}
 }
 
-// DurationInput is a number + unit (hours/days/months/years) pair backed by
-// "<name>_value" and "<name>_unit" fields.
-templ DurationInput(name string, secs int64) {
-	<div class="flex gap-2">
-		@input.Input(input.Props{
-			Name: name + "_value", Type: input.TypeNumber, Value: durValue(secs),
-			Class: "min-w-0 flex-1", Attributes: templ.Attributes{"min": "0", "step": "1", "autocomplete": "off", "aria-label": T(ctx, "unit.duration")},
-		})
-		<div class="w-28 shrink-0">
+// UnitInput is a quantity and its unit as one control: the number field and
+// the unit picker sit inside a single border and share one focus ring, so the
+// pair reads as one input rather than two controls that happen to be adjacent.
+// The number posts as "<name>_value", the picker as "<name>_unit"; children
+// are the unit items.
+//
+// Both halves have to be wrapped in a box of our own: templui gives the input
+// a `relative w-full` wrapper and the selectbox a `w-full relative` root, and
+// a w-full flex item is sized by its container — put both in the same flex and
+// they split it in half instead of one growing and one holding its width.
+templ UnitInput(name, value, placeholder, valueLabel, unitLabel string) {
+	<div class="flex h-9 w-full items-center rounded-md border border-input bg-transparent shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 dark:bg-input/30">
+		<div class="min-w-0 flex-1">
+			@input.Input(input.Props{
+				Name: name + "_value", Type: input.TypeNumber, Value: value, Placeholder: placeholder,
+				Class:      "h-9 rounded-none border-0 bg-transparent shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent",
+				Attributes: templ.Attributes{"min": "0", "step": "1", "autocomplete": "off", "aria-label": valueLabel},
+			})
+		</div>
+		// The seam, not a second border: one hairline the full height of the
+		// box, so the two halves read as one control divided rather than two
+		// controls side by side.
+		<div class="w-px shrink-0 self-stretch bg-border"></div>
+		<div class="w-24 shrink-0">
 			@selectbox.SelectBox() {
-				@selectbox.Trigger(selectbox.TriggerProps{Name: name + "_unit"}) {
+				@selectbox.Trigger(selectbox.TriggerProps{
+					Name:       name + "_unit",
+					Class:      "h-9 rounded-none border-0 bg-transparent px-2.5 shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent",
+					Attributes: templ.Attributes{"aria-label": unitLabel},
+				}) {
 					@selectbox.Value(selectbox.ValueProps{})
 				}
 				@selectbox.Content(selectbox.ContentProps{NoSearch: true}) {
-					@unitItem(name, "h", T(ctx, "unit.hours"), secs)
-					@unitItem(name, "d", T(ctx, "unit.days"), secs)
-					@unitItem(name, "mo", T(ctx, "unit.months"), secs)
-					@unitItem(name, "y", T(ctx, "unit.years"), secs)
+					{ children... }
 				}
 			}
 		</div>
 	</div>
+}
+
+// DurationInput is a number + unit (hours/days/months/years) pair backed by
+// "<name>_value" and "<name>_unit" fields.
+//
+// Empty is not "unset" but a decision — keep it forever — the way an empty
+// size box means no cap, so the placeholder says so where the value goes.
+templ DurationInput(name string, secs int64) {
+	@UnitInput(name, durValue(secs), T(ctx, "unit.forever"), T(ctx, "unit.duration"), T(ctx, "unit.duration")) {
+		@unitItem(name, "h", T(ctx, "unit.hours"), secs)
+		@unitItem(name, "d", T(ctx, "unit.days"), secs)
+		@unitItem(name, "mo", T(ctx, "unit.months"), secs)
+		@unitItem(name, "y", T(ctx, "unit.years"), secs)
+	}
 }
 
 templ unitItem(name, unit, label string, secs int64) {
@@ -165,24 +195,11 @@ templ unitItem(name, unit, label string, secs int64) {
 // SizeInput is a number + binary unit (MiB/GiB/TiB) pair backed by
 // "<name>_value" and "<name>_unit".
 templ SizeInput(name string, bytes int64) {
-	<div class="flex gap-2">
-		@input.Input(input.Props{
-			Name: name + "_value", Type: input.TypeNumber, Value: sizeValue(bytes),
-			Class: "min-w-0 flex-1", Placeholder: T(ctx, "unit.unlimited"), Attributes: templ.Attributes{"min": "0", "step": "1", "autocomplete": "off", "aria-label": T(ctx, "paths.size")},
-		})
-		<div class="w-28 shrink-0">
-			@selectbox.SelectBox() {
-				@selectbox.Trigger(selectbox.TriggerProps{Name: name + "_unit"}) {
-					@selectbox.Value(selectbox.ValueProps{})
-				}
-				@selectbox.Content(selectbox.ContentProps{NoSearch: true}) {
-					@sizeUnitItem(name, "MiB", T(ctx, "unit.mib"), bytes)
-					@sizeUnitItem(name, "GiB", T(ctx, "unit.gib"), bytes)
-					@sizeUnitItem(name, "TiB", T(ctx, "unit.tib"), bytes)
-				}
-			}
-		</div>
-	</div>
+	@UnitInput(name, sizeValue(bytes), T(ctx, "unit.unlimited"), T(ctx, "paths.size"), T(ctx, "paths.size")) {
+		@sizeUnitItem(name, "MiB", T(ctx, "unit.mib"), bytes)
+		@sizeUnitItem(name, "GiB", T(ctx, "unit.gib"), bytes)
+		@sizeUnitItem(name, "TiB", T(ctx, "unit.tib"), bytes)
+	}
 }
 
 templ sizeUnitItem(name, unit, label string, bytes int64) {
@@ -191,14 +208,21 @@ templ sizeUnitItem(name, unit, label string, bytes int64) {
 	}
 }
 
-// PriorityField is the 1–100 substituter-priority number input.
+// PriorityField is the 1–100 substituter-priority number input as a labelled
+// field, for a grid of them.
 templ PriorityField(value int) {
 	@FieldInfo("priority", T(ctx, "caches.priority"), T(ctx, "caches.priorityhint")) {
-		@input.Input(input.Props{
-			ID: "priority", Name: "priority", Type: input.TypeNumber, Value: strconv.Itoa(value),
-			Attributes: templ.Attributes{"min": "1", "max": "100", "autocomplete": "off"},
-		})
+		@PriorityInput(value)
 	}
+}
+
+// PriorityInput is that control alone, for a settings row that carries its own
+// label beside it.
+templ PriorityInput(value int) {
+	@input.Input(input.Props{
+		ID: "priority", Name: "priority", Type: input.TypeNumber, Value: strconv.Itoa(value),
+		Attributes: templ.Attributes{"min": "1", "max": "100", "autocomplete": "off"},
+	})
 }
 
 // VisibilitySwitch toggles a cache's privacy; checked = private.
@@ -206,7 +230,36 @@ templ VisibilitySwitch(private bool) {
 	@SwitchGroup() {
 		@form.ItemFlex(form.ItemProps{Class: "justify-between border-b py-3 last:border-0"}) {
 			@fieldLabel("cache-private", T(ctx, "caches.private"), T(ctx, "caches.privatehint"))
-			@switchcomp.Switch(switchcomp.Props{ID: "cache-private", Name: "private", Value: "on", Checked: private})
+			@VisibilityToggle(private)
+		}
+	}
+}
+
+// VisibilityToggle is that switch alone, for a settings row that carries its
+// own label beside it.
+templ VisibilityToggle(private bool) {
+	@switchcomp.Switch(switchcomp.Props{ID: "cache-private", Name: "private", Value: "on", Checked: private})
+}
+
+// VisibilitySelect is the same setting as a named choice rather than a switch:
+// a toggle has to be read together with its label to know which way is which,
+// and "Private: on" is one inference too many for the thing that decides
+// whether the world can pull from this cache. The two options say it outright.
+//
+// The empty value is what the handler reads as public ("private" absent), so
+// the field name stays the one every other visibility control posts.
+templ VisibilitySelect(public bool) {
+	@selectbox.SelectBox() {
+		@selectbox.Trigger(selectbox.TriggerProps{ID: "cache-private", Name: "private", Attributes: templ.Attributes{"aria-label": T(ctx, "caches.visibility")}}) {
+			@selectbox.Value(selectbox.ValueProps{})
+		}
+		@selectbox.Content(selectbox.ContentProps{NoSearch: true}) {
+			@selectbox.Item(selectbox.ItemProps{Value: "", Selected: public}) {
+				{ T(ctx, "vis.public") }
+			}
+			@selectbox.Item(selectbox.ItemProps{Value: "on", Selected: !public}) {
+				{ T(ctx, "vis.private") }
+			}
 		}
 	}
 }
@@ -218,20 +271,6 @@ templ SwitchGroup() {
 	<div class="rounded-lg border px-3">
 		{ children... }
 	</div>
-}
-
-// VisibilityField is the privacy toggle as a field, for a row of fields: the
-// label above with its info glyph, the switch on the control line. Its cell is
-// then exactly as tall as an input's, so the labels sit on one line and the
-// controls on another — the switch-row form (VisibilitySwitch) is taller than
-// an input, and bottom-aligning it in a grid left its label out of step with
-// the ones beside it.
-templ VisibilityField(private bool) {
-	@FieldInfo("cache-private", T(ctx, "caches.private"), T(ctx, "caches.privatehint")) {
-		<div class="flex h-9 items-center">
-			@switchcomp.Switch(switchcomp.Props{ID: "cache-private", Name: "private", Value: "on", Checked: private})
-		</div>
-	}
 }
 
 // PermSwitchID is a labelled switch row with an explicit DOM id — required

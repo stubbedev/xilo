@@ -609,3 +609,20 @@ templ SettingRow(label, value string) {
 		</div>
 	</div>
 }
+
+// ControlRow is a SettingRow whose right-hand side is the control itself
+// rather than a button that opens one: the label (with its explanation as an
+// info glyph) on the left, the field that sets it on the right. A handful of
+// settings read faster as a list of lines than as a grid of labelled fields,
+// which spreads four short controls across the whole page width.
+//
+// The control box is full width on a phone, where the row wraps, and a fixed
+// column on anything wider so every control in the list starts at the same x.
+templ ControlRow(id, label, hint string) {
+	<div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-3">
+		@fieldLabel(id, label, hint)
+		<div class="flex w-full shrink-0 items-center justify-end gap-3 sm:w-72">
+			{ children... }
+		</div>
+	</div>
+}

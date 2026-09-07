@@ -306,25 +306,27 @@ var es = map[string]string{
 	"perm.admin":       "admin",
 
 	// cache detail
-	"cd.use":         "Usar esta caché",
-	"cd.usehint":     "Añádela como substituter.",
-	"cd.push":        "Subir a esta caché",
-	"cd.pushhint":    "Con un token que tenga permiso de subida.",
-	"cd.netrc":       "Añadir a ~/.netrc",
-	"cd.settings":    "Ajustes",
-	"cd.maxsize":     "Tamaño máximo",
-	"cd.retention":   "Retención",
-	"cd.rotatetitle": "¿Rotar la clave de firma?",
-	"cd.rotatehint":  "Los clientes deberán actualizar su clave pública de confianza.",
-	"cd.maint":       "Mantenimiento",
-	"cd.deletetitle": "¿Eliminar la caché?",
-	"cd.deletemsg":   "«%s» y todas sus rutas se eliminarán. Esto no se puede deshacer.",
-	"cd.deletehint":  "Elimina todas las rutas que contiene.",
-	"cd.paths":       "Rutas del store",
-	"paths.path":     "Ruta",
-	"paths.size":     "Tamaño",
-	"paths.pulled":   "Última descarga",
-	"paths.open":     "Inspeccionar la ruta",
+	"cd.use":           "Usar esta caché",
+	"cd.usehint":       "Añádela como substituter.",
+	"cd.push":          "Subir a esta caché",
+	"cd.pushhint":      "Con un token que tenga permiso de subida.",
+	"cd.netrc":         "Añadir a ~/.netrc",
+	"cd.settings":      "Ajustes",
+	"cd.maxsize":       "Tamaño máximo",
+	"cd.retention":     "Retención",
+	"cd.retentionhint": "Cuánto se guarda una ruta tras su último uso. Vacío la guarda siempre.",
+	"cd.maxsizehint":   "Lo máximo que este caché guarda en disco. Vacío significa sin límite.",
+	"cd.rotatetitle":   "¿Rotar la clave de firma?",
+	"cd.rotatehint":    "Los clientes deberán actualizar su clave pública de confianza.",
+	"cd.maint":         "Mantenimiento",
+	"cd.deletetitle":   "¿Eliminar la caché?",
+	"cd.deletemsg":     "«%s» y todas sus rutas se eliminarán. Esto no se puede deshacer.",
+	"cd.deletehint":    "Elimina todas las rutas que contiene.",
+	"cd.paths":         "Rutas del store",
+	"paths.path":       "Ruta",
+	"paths.size":       "Tamaño",
+	"paths.pulled":     "Última descarga",
+	"paths.open":       "Inspeccionar la ruta",
 
 	// store path detail
 	"path.narsize":    "Tamaño NAR",
@@ -341,8 +343,8 @@ var es = map[string]string{
 	"path.broken":     "chunks ausentes",
 
 	// visibility
-	"vis.public":  "pública",
-	"vis.private": "privada",
+	"vis.public":  "Pública",
+	"vis.private": "Privada",
 
 	// security settings
 	"set.current":     "Contraseña actual",
@@ -414,6 +416,7 @@ var es = map[string]string{
 	"unit.years":      "Años",
 	"unit.duration":   "Duración",
 	"unit.unlimited":  "sin límite",
+	"unit.forever":    "siempre",
 	"storage.default": "Predeterminado",
 
 	// relative time
@@ -501,6 +504,7 @@ var es = map[string]string{
 	"path.chunkshint":     "Orden NAR. Los chunks compartidos se guardan una vez.",
 	"caches.privatehint":  "Exigir un token para descargar.",
 	"caches.private":      "Privada",
+	"caches.visibility":   "Visibilidad",
 	"caches.priorityhint": "Gana el número más bajo (1–100).",
 	"tokens.roothint":     "Gestiona todas las cachés, tokens y cuentas.",
 	"set.2fa.offmsg":      "Después, solo la contraseña.",

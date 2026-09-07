@@ -306,25 +306,27 @@ var fr = map[string]string{
 	"perm.admin":       "admin",
 
 	// cache detail
-	"cd.use":         "Utiliser ce cache",
-	"cd.usehint":     "Ajoutez-le comme substituter.",
-	"cd.push":        "Envoyer vers ce cache",
-	"cd.pushhint":    "Avec un jeton qui a le droit d'envoi.",
-	"cd.netrc":       "Ajouter à ~/.netrc",
-	"cd.settings":    "Paramètres",
-	"cd.maxsize":     "Taille max.",
-	"cd.retention":   "Rétention",
-	"cd.rotatetitle": "Renouveler la clé de signature ?",
-	"cd.rotatehint":  "Les clients devront mettre à jour leur clé publique de confiance.",
-	"cd.maint":       "Maintenance",
-	"cd.deletetitle": "Supprimer le cache ?",
-	"cd.deletemsg":   "« %s » et tous ses chemins seront supprimés. C'est irréversible.",
-	"cd.deletehint":  "Supprime tous les chemins qu'il contient.",
-	"cd.paths":       "Chemins du store",
-	"paths.path":     "Chemin",
-	"paths.size":     "Taille",
-	"paths.pulled":   "Dernier téléchargement",
-	"paths.open":     "Inspecter le chemin",
+	"cd.use":           "Utiliser ce cache",
+	"cd.usehint":       "Ajoutez-le comme substituter.",
+	"cd.push":          "Envoyer vers ce cache",
+	"cd.pushhint":      "Avec un jeton qui a le droit d'envoi.",
+	"cd.netrc":         "Ajouter à ~/.netrc",
+	"cd.settings":      "Paramètres",
+	"cd.maxsize":       "Taille max.",
+	"cd.retention":     "Rétention",
+	"cd.retentionhint": "Combien de temps un chemin est gardé après sa dernière utilisation. Vide le garde toujours.",
+	"cd.maxsizehint":   "Ce que ce cache garde au plus sur le disque. Vide signifie aucune limite.",
+	"cd.rotatetitle":   "Renouveler la clé de signature ?",
+	"cd.rotatehint":    "Les clients devront mettre à jour leur clé publique de confiance.",
+	"cd.maint":         "Maintenance",
+	"cd.deletetitle":   "Supprimer le cache ?",
+	"cd.deletemsg":     "« %s » et tous ses chemins seront supprimés. C'est irréversible.",
+	"cd.deletehint":    "Supprime tous les chemins qu'il contient.",
+	"cd.paths":         "Chemins du store",
+	"paths.path":       "Chemin",
+	"paths.size":       "Taille",
+	"paths.pulled":     "Dernier téléchargement",
+	"paths.open":       "Inspecter le chemin",
 
 	// store path detail
 	"path.narsize":    "Taille NAR",
@@ -341,8 +343,8 @@ var fr = map[string]string{
 	"path.broken":     "chunks manquants",
 
 	// visibility
-	"vis.public":  "public",
-	"vis.private": "privé",
+	"vis.public":  "Public",
+	"vis.private": "Privé",
 
 	// security settings
 	"set.current":     "Mot de passe actuel",
@@ -414,6 +416,7 @@ var fr = map[string]string{
 	"unit.years":      "Années",
 	"unit.duration":   "Durée",
 	"unit.unlimited":  "illimité",
+	"unit.forever":    "toujours",
 	"storage.default": "Par défaut",
 
 	// relative time
@@ -501,6 +504,7 @@ var fr = map[string]string{
 	"path.chunkshint":     "Ordre du NAR. Chunks partagés stockés une fois.",
 	"caches.privatehint":  "Exiger un jeton pour télécharger.",
 	"caches.private":      "Privé",
+	"caches.visibility":   "Visibilité",
 	"caches.priorityhint": "Le plus petit gagne (1–100).",
 	"tokens.roothint":     "Gère tous les caches, jetons et comptes.",
 	"set.2fa.offmsg":      "Le mot de passe seul ensuite.",

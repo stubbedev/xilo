@@ -1222,6 +1222,14 @@ func makePager(path string, params url.Values, group string, page, pages int) vi
 
 // formSeconds reads a "<name>_value" + "<name>_unit" (h|d) pair. ok is false
 // when the value is empty or unparsable — callers keep their current setting.
+// blank reports whether a form carried `name` and left it empty — an explicit
+// "no value" from a form that always posts the field, as opposed to a request
+// that never mentioned it (which keeps whatever is stored).
+func blank(r *http.Request, name string) bool {
+	vs, ok := r.Form[name]
+	return ok && strings.TrimSpace(vs[0]) == ""
+}
+
 func formSeconds(r *http.Request, name string) (secs int64, ok bool) {
 	v := strings.TrimSpace(r.FormValue(name + "_value"))
 	if v == "" {
@@ -1598,14 +1606,20 @@ func (s *Server) handleConfigureCache(w http.ResponseWriter, r *http.Request) {
 	}
 	priority := clampPriority(r.FormValue("priority"), c.Priority)
 	public := r.FormValue("private") == ""
-	// Empty keeps the current value; an explicit 0 clears the setting.
+	// The settings list posts every field whenever one of them changes (it
+	// saves as you go), so an emptied box is a decision — keep forever, no cap
+	// — and not an omission. Anything unparseable still keeps what is stored.
 	retention := c.Retention
 	if secs, ok := formSeconds(r, "retention"); ok {
 		retention = secs
+	} else if blank(r, "retention_value") {
+		retention = 0
 	}
 	maxBytes := c.MaxBytes
 	if b, ok := formBytes(r, "max"); ok {
 		maxBytes = b
+	} else if blank(r, "max_value") {
+		maxBytes = 0
 	}
 	if err := s.db.UpdateCache(c.ID, public, priority, retention, maxBytes); err != nil {
 		uiError(w, r, err)

@@ -735,6 +735,15 @@ input[type="radio"]:not(:disabled) { cursor: pointer; }
   background: color-mix(in oklab, var(--primary) 18%, transparent);
   color: var(--foreground);
 }
+/* Hover has to outrank that tint, or the row under the pointer is the only one
+   that does not answer to the pointer — and on a palette whose --accent is the
+   brand colour (catppuccin, nord) templui's hover text colour landed on the
+   tint instead of on accent, which is dark ink on a dark row. Accent and its
+   own foreground are a designed pair; use both together or neither. */
+.select-content .select-item:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
 /* The option the arrow keys point at (comboboxKeysLayer). It reads like hover
    because it is the same idea — where the pointer is — and it has to outrank
    the selected tint above, since the row you are moving onto matters more

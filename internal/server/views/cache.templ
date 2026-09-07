@@ -3,7 +3,6 @@ package views
 import (
 	"github.com/stubbedev/xilo/internal/store"
 
-	"github.com/templui/templui/components/button"
 	"github.com/templui/templui/components/copybutton"
 	"github.com/templui/templui/components/dialog"
 	"github.com/templui/templui/components/input"
@@ -96,26 +95,34 @@ templ CacheView(d CacheData) {
 			@pathResults(d)
 		</div>
 		<div class="grid gap-8">
-			@SettingsCard(T(ctx, "cd.settings"), "") {
-				<form method="post" action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/configure") } class="space-y-4">
-					// Four fields of one shape — label line, control line — so both
-					// lines run straight across the row.
-					<div class="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-4">
-						@VisibilityField(!d.Cache.Public)
-						@PriorityField(d.Cache.Priority)
-						@Field("", T(ctx, "cd.retention")) {
-							@DurationInput("retention", d.Cache.Retention)
-						}
-						@Field("", T(ctx, "cd.maxsize")) {
-							@SizeInput("max", d.Cache.MaxBytes)
-						}
-					</div>
-					<div class="flex justify-end">
-						@button.Button(button.Props{Type: button.TypeSubmit}) {
-							@Icon("check")
-							<span>{ T(ctx, "action.save") }</span>
-						}
-					</div>
+			// Four settings, four lines: what it is on the left, the control
+			// that sets it on the right. A card around them was a second frame
+			// drawn around a list, and the labelled-field grid inside it spread
+			// four short controls across the full page width.
+			@ListSection(T(ctx, "cd.settings"), nil) {
+				// Every control here saves itself: a picked unit or a flipped
+				// choice submits at once, a typed number a beat after the last
+				// keystroke. Nothing is filled in and submitted as a whole, so
+				// there is no Save — the way the account page's appearance
+				// controls and the instance policy switches work.
+				<form
+					method="post"
+					action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/configure") }
+					class="divide-y border-y"
+					data-autosave
+				>
+					@ControlRow("cache-private", T(ctx, "caches.visibility"), T(ctx, "caches.privatehint")) {
+						@VisibilitySelect(d.Cache.Public)
+					}
+					@ControlRow("priority", T(ctx, "caches.priority"), T(ctx, "caches.priorityhint")) {
+						@PriorityInput(d.Cache.Priority)
+					}
+					@ControlRow("", T(ctx, "cd.retention"), T(ctx, "cd.retentionhint")) {
+						@DurationInput("retention", d.Cache.Retention)
+					}
+					@ControlRow("", T(ctx, "cd.maxsize"), T(ctx, "cd.maxsizehint")) {
+						@SizeInput("max", d.Cache.MaxBytes)
+					}
 				</form>
 			}
 			// Maintenance is two sentences and two buttons — a section with

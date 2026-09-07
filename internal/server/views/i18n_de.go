@@ -306,25 +306,27 @@ var de = map[string]string{
 	"perm.admin":       "Administrator",
 
 	// cache detail
-	"cd.use":         "Diesen Cache verwenden",
-	"cd.usehint":     "Als Substituter hinzufügen.",
-	"cd.push":        "In diesen Cache hochladen",
-	"cd.pushhint":    "Mit einem Token, das Upload-Rechte hat.",
-	"cd.netrc":       "Zu ~/.netrc hinzufügen",
-	"cd.settings":    "Einstellungen",
-	"cd.maxsize":     "Maximalgröße",
-	"cd.retention":   "Aufbewahrung",
-	"cd.rotatetitle": "Signaturschlüssel rotieren?",
-	"cd.rotatehint":  "Clients müssen ihren vertrauten öffentlichen Schlüssel aktualisieren.",
-	"cd.maint":       "Wartung",
-	"cd.deletetitle": "Cache löschen?",
-	"cd.deletemsg":   "„%s“ und jeder Pfad darin werden entfernt. Das kann nicht rückgängig gemacht werden.",
-	"cd.deletehint":  "Entfernt jeden Pfad darin.",
-	"cd.paths":       "Store-Pfade",
-	"paths.path":     "Pfad",
-	"paths.size":     "Größe",
-	"paths.pulled":   "Zuletzt geladen",
-	"paths.open":     "Pfad ansehen",
+	"cd.use":           "Diesen Cache verwenden",
+	"cd.usehint":       "Als Substituter hinzufügen.",
+	"cd.push":          "In diesen Cache hochladen",
+	"cd.pushhint":      "Mit einem Token, das Upload-Rechte hat.",
+	"cd.netrc":         "Zu ~/.netrc hinzufügen",
+	"cd.settings":      "Einstellungen",
+	"cd.maxsize":       "Maximalgröße",
+	"cd.retention":     "Aufbewahrung",
+	"cd.retentionhint": "Wie lange ein Pfad nach der letzten Nutzung bleibt. Leer heißt unbegrenzt.",
+	"cd.maxsizehint":   "Was dieser Cache höchstens auf der Platte hält. Leer heißt keine Grenze.",
+	"cd.rotatetitle":   "Signaturschlüssel rotieren?",
+	"cd.rotatehint":    "Clients müssen ihren vertrauten öffentlichen Schlüssel aktualisieren.",
+	"cd.maint":         "Wartung",
+	"cd.deletetitle":   "Cache löschen?",
+	"cd.deletemsg":     "„%s“ und jeder Pfad darin werden entfernt. Das kann nicht rückgängig gemacht werden.",
+	"cd.deletehint":    "Entfernt jeden Pfad darin.",
+	"cd.paths":         "Store-Pfade",
+	"paths.path":       "Pfad",
+	"paths.size":       "Größe",
+	"paths.pulled":     "Zuletzt geladen",
+	"paths.open":       "Pfad ansehen",
 
 	// store path detail
 	"path.narsize":    "NAR-Größe",
@@ -341,8 +343,8 @@ var de = map[string]string{
 	"path.broken":     "Chunks fehlen",
 
 	// visibility
-	"vis.public":  "öffentlich",
-	"vis.private": "privat",
+	"vis.public":  "Öffentlich",
+	"vis.private": "Privat",
 
 	// security settings
 	"set.current":     "Aktuelles Passwort",
@@ -414,6 +416,7 @@ var de = map[string]string{
 	"unit.years":      "Jahre",
 	"unit.duration":   "Dauer",
 	"unit.unlimited":  "unbegrenzt",
+	"unit.forever":    "unbegrenzt",
 	"storage.default": "Standard",
 
 	// relative time
@@ -501,6 +504,7 @@ var de = map[string]string{
 	"path.chunkshint":     "NAR-Reihenfolge. Geteilte Chunks nur einmal gespeichert.",
 	"caches.privatehint":  "Token zum Herunterladen verlangen.",
 	"caches.private":      "Privat",
+	"caches.visibility":   "Sichtbarkeit",
 	"caches.priorityhint": "Kleiner gewinnt (1–100).",
 	"tokens.roothint":     "Verwaltet jeden Cache, jedes Token und jedes Konto.",
 	"set.2fa.offmsg":      "Danach nur noch das Passwort.",

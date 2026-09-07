@@ -129,6 +129,7 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 			@toastLayer()
 			@searchClearLayer()
 			@comboboxKeysLayer()
+			@autosaveLayer()
 			if DevMode {
 				@devReloadScript()
 			}
@@ -489,6 +490,52 @@ templ searchClearLayer() {
 				inp.dispatchEvent(new Event('search', { bubbles: true }));
 				inp.focus();
 			});
+		})();
+	</script>
+}
+
+// autosaveLayer submits a `data-autosave` form as it is used: a picked option
+// a beat after the pick, a typed value a beat after the last keystroke. It is
+// for a settings list — controls with a current value and no Save button —
+// where the alternative is a Save the reader has to notice.
+//
+// It arms per form on the first pointer or key event inside it, and that is
+// not a nicety: templui patches the value setter of a selectbox's hidden input
+// to dispatch `input`, and initialising a select sets that value, so a swapped
+// -in form fires an input event with nobody touching it. Submitting on that
+// swaps the page, which initialises the select again — a refresh loop. Only a
+// form a human has actually reached into is allowed to save itself.
+templ autosaveLayer() {
+	<script>
+		(function () {
+			var armed = new WeakSet();
+			function formOf(t) {
+				return t && t.closest ? t.closest('form[data-autosave]') : null;
+			}
+			function arm(e) {
+				var f = formOf(e.target);
+				if (f) armed.add(f);
+			}
+			// requestSubmit, never submit(): a bare submit() fires no submit
+			// event, so htmx never sees it and the boosted shell is lost to a
+			// full page load.
+			function save(f, delay) {
+				clearTimeout(f.dataset.autosaveTimer);
+				f.dataset.autosaveTimer = setTimeout(function () {
+					f.requestSubmit();
+				}, delay);
+			}
+			function onEdit(delay) {
+				return function (e) {
+					var f = formOf(e.target);
+					if (f && armed.has(f)) save(f, delay);
+				};
+			}
+			document.addEventListener('pointerdown', arm, true);
+			document.addEventListener('keydown', arm, true);
+			// A pick is a finished decision; a keystroke may not be.
+			document.addEventListener('change', onEdit(150), true);
+			document.addEventListener('input', onEdit(800), true);
 		})();
 	</script>
 }
