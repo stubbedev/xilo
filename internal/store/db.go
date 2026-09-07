@@ -383,13 +383,6 @@ func migrate(w *sql.DB, pg bool) error {
 		{"accounts", "kind", "TEXT NOT NULL DEFAULT 'org'"},
 		{"accounts", "plan_id", "INTEGER NOT NULL DEFAULT 0"},
 		{"accounts", "status", "TEXT NOT NULL DEFAULT 'active'"},
-		// The billing seam: what a plan costs, and which subscription at the
-		// provider a workspace is paying through. Both default to empty, which
-		// is a self-hosted instance with no billing at all.
-		{"plans", "price_cents", "INTEGER NOT NULL DEFAULT 0"},
-		{"plans", "interval", "TEXT NOT NULL DEFAULT ''"},
-		{"plans", "external_id", "TEXT NOT NULL DEFAULT ''"},
-		{"accounts", "subscription_id", "TEXT NOT NULL DEFAULT ''"},
 		{"audit_log", "ip", "TEXT NOT NULL DEFAULT ''"},
 		{"audit_log", "user_agent", "TEXT NOT NULL DEFAULT ''"},
 		{"audit_log", "duration_ms", "INTEGER NOT NULL DEFAULT 0"},
@@ -451,6 +444,11 @@ func migrate(w *sql.DB, pg bool) error {
 	// theirs — this migration takes nothing away.
 	if _, err := w.Exec(`UPDATE users SET role='superadmin' WHERE role='owner'`); err != nil {
 		return fmt.Errorf("migrate superadmin role: %w", err)
+	}
+	// The read-only state was called past_due, which described a subscription
+	// this project does not have. Same state, honest name.
+	if _, err := w.Exec(`UPDATE accounts SET status='readonly' WHERE status='past_due'`); err != nil {
+		return fmt.Errorf("migrate account status: %w", err)
 	}
 	// Every account is an organization. A personal account was already one in
 	// everything but name — a namespace with a single owner — and the separate

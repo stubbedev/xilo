@@ -35,8 +35,8 @@ func extractToken(r *http.Request) string {
 // requirePush enforces a push-scoped token for the cache. With
 // security.allow_open_bootstrap, push is open until the first token exists.
 func (s *Server) requirePush(w http.ResponseWriter, r *http.Request, c *store.Cache) bool {
-	if st := s.db.AccountStatus(c.AccountID); st == store.StatusPastDue || st == store.StatusSuspended {
-		http.Error(w, "account is read-only", http.StatusPaymentRequired)
+	if st := s.db.AccountStatus(c.AccountID); st == store.StatusReadOnly || st == store.StatusSuspended {
+		http.Error(w, "cache is read-only", http.StatusForbidden)
 		return false
 	}
 	if s.openMode() {

@@ -339,13 +339,16 @@ func (db *DB) ResolveAccount() (string, error) {
 		strings.Join(names, ", "))
 }
 
-// Account lifecycle states. A tenancy that stops paying is not deleted — its
-// bytes are still on disk and its owner may well come back — so it degrades in
-// two steps instead: read-only first, then closed. "deleted" is the end of the
-// line and is already what the soft-delete writes.
+// Account lifecycle states. A workspace an admin wants to stop is not a
+// workspace to delete — its bytes are still on disk and its owner may well
+// come back — so it degrades in two steps instead: read-only first, then
+// closed. Archiving a finished project, freezing one that is filling the disk,
+// parking one whose owner has left: the state says what still answers, and
+// nothing more. "deleted" is the end of the line and is what the soft-delete
+// already writes.
 const (
 	StatusActive    = "active"    // normal
-	StatusPastDue   = "past_due"  // pull still works; nothing new may be pushed
+	StatusReadOnly  = "readonly"  // pull still works; nothing new may be pushed
 	StatusSuspended = "suspended" // nothing serves at all
 )
 
@@ -369,7 +372,7 @@ func (db *DB) AccountStatus(accountID int64) string {
 // account held; this only ever changes how much of it still answers.
 func (db *DB) SetAccountStatus(accountID int64, status string) error {
 	switch status {
-	case StatusActive, StatusPastDue, StatusSuspended:
+	case StatusActive, StatusReadOnly, StatusSuspended:
 	default:
 		return ErrBadStatus
 	}

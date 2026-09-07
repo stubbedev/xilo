@@ -545,7 +545,7 @@ templ RoleIcon(role string) {
 // StatusGlyph marks an account that is no longer serving normally. Active
 // accounts show nothing: a mark on every row would say only "this is a row".
 templ StatusGlyph(status string) {
-	if status == "past_due" || status == "suspended" {
+	if status == "readonly" || status == "suspended" {
 		@WithTooltip(T(ctx, "status." + status)) {
 			<span class={ "inline-flex", accountStatusTone(status) } role="img" aria-label={ T(ctx, "status." + status) }>
 				@Icon(accountStatusIcon(status))

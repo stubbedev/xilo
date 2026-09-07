@@ -205,43 +205,6 @@ func userRole(u store.User) string {
 	}
 }
 
-// planPrice / planInterval / planExternal fill the plan dialog; p is nil on
-// create, where a plan starts free.
-func planPrice(p *store.Plan) string {
-	if p == nil || p.PriceCents == 0 {
-		return ""
-	}
-	return strconv.FormatFloat(float64(p.PriceCents)/100, 'f', -1, 64)
-}
-
-func planInterval(p *store.Plan) string {
-	if p == nil {
-		return "month"
-	}
-	return p.Interval
-}
-
-func planExternal(p *store.Plan) string {
-	if p == nil {
-		return ""
-	}
-	return p.ExternalID
-}
-
-// PlanPriceLabel is what a plan costs, in the catalogue and wherever a tenant
-// is shown their plan. A plan with no price is free — which is every plan on a
-// self-hosted instance, so it says so plainly rather than showing "0.00".
-func PlanPriceLabel(ctx context.Context, p store.Plan) string {
-	if p.PriceCents == 0 {
-		return T(ctx, "plan.free")
-	}
-	amount := strconv.FormatFloat(float64(p.PriceCents)/100, 'f', 2, 64)
-	if p.Interval == "year" {
-		return Tf(ctx, "plan.peryear", amount)
-	}
-	return Tf(ctx, "plan.permonth", amount)
-}
-
 // accountStatusIcon / accountStatusTone map an account's lifecycle state to
 // its glyph and color: paused is a warning, closed is a refusal.
 func accountStatusIcon(status string) string {

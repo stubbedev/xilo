@@ -20,7 +20,6 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/stubbedev/xilo/internal/billing"
 	"github.com/stubbedev/xilo/internal/config"
 	"github.com/stubbedev/xilo/internal/server/views"
 	"github.com/stubbedev/xilo/internal/storage"
@@ -28,17 +27,12 @@ import (
 )
 
 type Server struct {
-	cfg  *config.Config
-	db   *store.DB
-	sts  map[string]storage.Storage // named blob backends
-	enc  *zstd.Encoder              // EncodeAll — safe for concurrent use
-	dec  *zstd.Decoder              // DecodeAll — safe for concurrent use
-	sess *sessions
-	// billing is the payment provider, billing.Disabled unless an instance
-	// supplies one. Everything money-shaped goes through it, so "does this
-	// instance charge" is one wiring decision and not a condition in the
-	// handlers. See internal/billing.
-	billing  billing.Provider
+	cfg      *config.Config
+	db       *store.DB
+	sts      map[string]storage.Storage // named blob backends
+	enc      *zstd.Encoder              // EncodeAll — safe for concurrent use
+	dec      *zstd.Decoder              // DecodeAll — safe for concurrent use
+	sess     *sessions
 	ceremony ceremonies // in-flight WebAuthn challenges
 	// webAuthn builds the relying party on first use (memoized).
 	webAuthn  func() (*webauthn.WebAuthn, error)
@@ -87,10 +81,7 @@ func New(cfg *config.Config, db *store.DB, sts map[string]storage.Storage) (*Ser
 	}
 	s := &Server{
 		cfg: cfg, db: db, sts: sts, enc: enc, dec: dec,
-		sess: newSessions(db),
-		// No payments unless an instance wires a provider in. Disabled refuses
-		// every call rather than quietly doing nothing.
-		billing:   billing.Disabled{},
+		sess:      newSessions(db),
 		started:   time.Now(),
 		uploadSem: make(chan struct{}, max(4, 2*runtime.NumCPU())),
 		logins:    newLoginLimiter(),

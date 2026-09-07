@@ -10,8 +10,8 @@ import (
 
 // TestAccountLifecycle pins what each state does on the wire: read-only takes
 // nothing new but keeps serving, suspended serves nothing at all, and restore
-// undoes both. The binary-cache path is the one that matters — a lapsed
-// subscription has to stop the bytes, not just grey out a button.
+// undoes both. The binary-cache path is the one that matters — stopping a
+// workspace has to stop the bytes, not just grey out a button.
 func TestAccountLifecycle(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, nil)
 	bootstrapAdmin(t, db)
@@ -44,10 +44,10 @@ func TestAccountLifecycle(t *testing.T) {
 		t.Fatalf("active cache-info → %d", code)
 	}
 
-	// Read-only: still serving. That is the whole point of the state — a
-	// missed payment should not break somebody's build mid-afternoon.
-	setStatus(store.StatusPastDue)
-	if got := db.AccountStatus(acct.ID); got != store.StatusPastDue {
+	// Read-only: still serving. That is the whole point of the state —
+	// freezing a workspace should not break somebody's build mid-afternoon.
+	setStatus(store.StatusReadOnly)
+	if got := db.AccountStatus(acct.ID); got != store.StatusReadOnly {
 		t.Fatalf("status = %q", got)
 	}
 	if code := get("/c/admin/pub/nix-cache-info"); code != http.StatusOK {
@@ -60,8 +60,8 @@ func TestAccountLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusPaymentRequired {
-		t.Errorf("push to read-only account → %d want 402", resp.StatusCode)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("push to read-only account → %d want 403", resp.StatusCode)
 	}
 
 	// Suspended: nothing answers, public or not.
@@ -77,7 +77,7 @@ func TestAccountLifecycle(t *testing.T) {
 	}
 
 	// A state this instance does not define is refused rather than stored.
-	setStatus("bankrupt")
+	setStatus("frozen")
 	if got := db.AccountStatus(acct.ID); got != store.StatusActive {
 		t.Errorf("unknown status stuck: %q", got)
 	}
