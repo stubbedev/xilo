@@ -52,7 +52,7 @@ func (s *Server) runGC(ctx context.Context) (deleted int, freed int64, err error
 	}
 
 	// Global storage cap: evict LRU across all caches until under.
-	if _, err := s.db.EnforceGlobalCap(s.cfg.Limits.TotalBytes()); err != nil {
+	if _, err := s.db.EnforceGlobalCap(s.instanceCap()); err != nil {
 		return 0, 0, err
 	}
 

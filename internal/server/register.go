@@ -108,7 +108,11 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var plan *store.Plan
-	if pid, _ := strconv.ParseInt(r.FormValue("plan"), 10, 64); pid != 0 {
+	pid, _ := strconv.ParseInt(r.FormValue("plan"), 10, 64)
+	if pid == 0 {
+		pid = s.defaultPlan() // the instance's rule for "no plan named"
+	}
+	if pid != 0 {
 		p, err := s.db.GetPlan(pid)
 		if err != nil || !p.Public {
 			fail(views.T(r.Context(), "reg.err.plan"))

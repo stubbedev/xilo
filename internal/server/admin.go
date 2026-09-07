@@ -371,6 +371,9 @@ func (s *Server) registerAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/account/email", s.handleAccountEmail)
 	mux.HandleFunc("POST /admin/account/appearance", s.handleAppearance)
 	mux.HandleFunc("POST /admin/context", s.handleContext)
+	// Instance rules are not part of the self-service surface: a hobbyist
+	// instance has ceilings and defaults too.
+	mux.HandleFunc("POST /admin/settings/rules", s.handleInstanceRules)
 	mux.HandleFunc("GET /admin/console", s.handleConsole)
 	mux.HandleFunc("GET /admin/orgs", s.handleOrgsPage)
 	mux.HandleFunc("GET /admin/org/{slug}", s.handleOrgPage)
@@ -579,7 +582,7 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, flash v
 		Storages:   s.storageNames(),
 		IsAdmin:    u.Superadmin(),
 		Flash:      flash,
-		ServerCap:  s.cfg.Limits.TotalBytes(),
+		ServerCap:  s.instanceCap(),
 		Bytes:      humanBytes,
 		CacheQuery: cq,
 		TokenQuery: tq,
@@ -816,7 +819,11 @@ func (s *Server) renderInstance(w http.ResponseWriter, r *http.Request, flash vi
 	}
 	d := views.InstanceData{
 		Nav: s.nav(r, u), Flash: flash,
-		SelfService: s.cfg.SelfService,
+		SelfService:   s.cfg.SelfService,
+		InstanceCap:   s.settingInt(settingInstanceCap),
+		DefaultRetain: s.defaultRetention(),
+		MaxTokenTTL:   s.settingInt(settingMaxTokenTTL),
+		DefaultPlan:   s.defaultPlan(),
 	}
 	var err error
 	if d.Users, err = s.db.ListUsers(); err != nil {
@@ -1315,6 +1322,13 @@ func (s *Server) handleCreateCache(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c, err := s.db.CreateCache(ns, name, public, priority)
+	if err == nil {
+		if retain := s.defaultRetention(); retain > 0 {
+			if err := s.db.UpdateCache(c.ID, c.Public, c.Priority, retain, c.MaxBytes); err == nil {
+				c.Retention = retain
+			}
+		}
+	}
 	if err != nil {
 		s.flashStore(w, r, "/admin", err)
 		return
@@ -1683,6 +1697,7 @@ func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 			expires = time.Now().Unix() + secs
 		}
 	}
+	expires = s.capTokenExpiry(expires)
 	secret, t, err := s.db.CreateToken(nsID, name, caches, perms, expires)
 	if err != nil {
 		uiFail(w, r, http.StatusBadRequest, views.T(r.Context(), "err.tokenfailed"), err)
@@ -1805,6 +1820,7 @@ func (s *Server) handleEditToken(w http.ResponseWriter, r *http.Request) {
 	} else if secs, _ := strconv.ParseInt(r.FormValue("ttl"), 10, 64); secs > 0 {
 		expires = time.Now().Unix() + secs
 	}
+	expires = s.capTokenExpiry(expires)
 	if err := s.db.UpdateToken(t.ID, name, caches, perms, expires); err != nil {
 		uiError(w, r, err)
 		return

@@ -9,6 +9,7 @@ import (
 	"github.com/templui/templui/components/button"
 	"github.com/templui/templui/components/dialog"
 	"github.com/templui/templui/components/input"
+	"github.com/templui/templui/components/selectbox"
 	"github.com/templui/templui/components/table"
 )
 
@@ -20,7 +21,13 @@ type InstanceData struct {
 	RequireOK   bool
 	Plans       []store.Plan
 	Users       []store.User
-	Flash       Flash
+	// Instance rules — the ceilings and defaults the sysadmin sets for
+	// everyone. Zero means the instance imposes nothing.
+	InstanceCap    int64 // bytes across every cache
+	DefaultRetain  int64 // seconds a new cache keeps a path
+	MaxTokenTTL    int64 // seconds, the longest a token may live
+	DefaultPlan    int64 // the plan a signup with no choice lands on
+	Flash          Flash
 }
 
 // Instance is the general settings page (instance admins).
@@ -34,6 +41,9 @@ templ Instance(d InstanceData) {
 		<div class="grid gap-8">
 			if d.SelfService {
 				@policySection(d)
+			}
+			@rulesSection(d)
+			if d.SelfService {
 				@plansCard(d.Plans)
 			}
 			@usersCard(d.Nav.UserName, d.SelfService, d.Users)
@@ -52,6 +62,59 @@ templ policySection(d InstanceData) {
 			@PermSwitchID("allow_registrations", "allow_registrations", "on", T(ctx, "inst.regs"), d.AllowRegs)
 			@PermSwitchID("require_approval", "require_approval", "on", T(ctx, "inst.approve"), d.RequireOK)
 		</form>
+	}
+}
+
+// rulesSection is what a sysadmin sets for everyone: ceilings and defaults
+// that apply wherever they are relevant rather than at boot, so changing one
+// needs no restart. Every field here has one enforcement site — see rules.go —
+// and every field empty means the instance imposes nothing, which is what a
+// hobbyist's instance looks like.
+templ rulesSection(d InstanceData) {
+	@ListSection(T(ctx, "rules.title"), nil) {
+		<form method="post" action="/admin/settings/rules" class="space-y-4 border-y py-4">
+			<div class="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-4">
+				@FieldInfo("", T(ctx, "rules.cap"), T(ctx, "rules.caphint")) {
+					@SizeInput("instance_cap", d.InstanceCap)
+				}
+				@FieldInfo("", T(ctx, "rules.retention"), T(ctx, "rules.retentionhint")) {
+					@DurationInput("default_retention", d.DefaultRetain)
+				}
+				@FieldInfo("", T(ctx, "rules.tokenttl"), T(ctx, "rules.tokenttlhint")) {
+					@DurationInput("max_token_ttl", d.MaxTokenTTL)
+				}
+				if d.SelfService {
+					@FieldInfo("", T(ctx, "rules.defaultplan"), T(ctx, "rules.defaultplanhint")) {
+						@planSelect(d.Plans, d.DefaultPlan)
+					}
+				}
+			</div>
+			<div class="flex justify-end">
+				@button.Button(button.Props{Type: button.TypeSubmit}) {
+					@Icon("check")
+					<span>{ T(ctx, "action.save") }</span>
+				}
+			</div>
+		</form>
+	}
+}
+
+// planSelect picks the signup default; "none" leaves signups choosing.
+templ planSelect(plans []store.Plan, selected int64) {
+	@selectbox.SelectBox() {
+		@selectbox.Trigger(selectbox.TriggerProps{Name: "default_plan", Attributes: templ.Attributes{"aria-label": T(ctx, "rules.defaultplan")}}) {
+			@selectbox.Value(selectbox.ValueProps{Placeholder: T(ctx, "rules.noplan")})
+		}
+		@selectbox.Content(selectbox.ContentProps{NoSearch: noSearch(len(plans) + 1)}) {
+			@selectbox.Item(selectbox.ItemProps{Value: "0", Selected: selected == 0}) {
+				{ T(ctx, "rules.noplan") }
+			}
+			for _, p := range plans {
+				@selectbox.Item(selectbox.ItemProps{Value: itoa(p.ID), Selected: p.ID == selected}) {
+					{ p.Name }
+				}
+			}
+		}
 	}
 }
 
