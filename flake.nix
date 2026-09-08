@@ -38,7 +38,7 @@
           pname = if client then "xilo-cli" else "xilo";
           version = "0-unstable-${self.shortRev or "dirty"}";
           src = self;
-          vendorHash = "sha256-CAXNjr0Ockk4gXltCV3RwxC5vqR90xJCjX8RgJrQHKg=";
+          vendorHash = "sha256-Iu63fXdO8ndmvDG+Rdo8MwVcnd25seU42UQ5JFKuRQo=";
           # Hash the module cache (go mod download), not a vendor tree: `go mod
           # vendor` walks the import graph, so its output would depend on the
           # generated _templ.go (templui is imported only from codegen) and on
