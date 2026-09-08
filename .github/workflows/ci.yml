@@ -63,6 +63,17 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # govulncheck type-checks the whole graph, so it needs the generated
+      # artifacts like any build does: no xilo-tw.css means a failed go:embed
+      # and no *_templ.go means 40 undefined views, which is a compile error
+      # reported as if the scan had found something.
+      - name: build admin CSS
+        run: |
+          curl -sSL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.2/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
+          chmod +x /usr/local/bin/tailwindcss
+          ./scripts/build-css.sh
+      - name: generate templ views
+        run: go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
       # Reachability-filtered: govulncheck traces call paths, so an advisory
       # in a function nothing calls does not fail the build. Anything it does
       # report is code this binary can actually run.
@@ -126,25 +137,34 @@ jobs:
   minio:
     name: S3 backend against MinIO
     runs-on: ubuntu-latest
-    services:
-      minio:
-        image: bitnami/minio:latest
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
-          MINIO_DEFAULT_BUCKETS: xilo-test
-        ports: ["9000:9000"]
-        options: >-
-          --health-cmd "mc ready local"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
+      # Started by hand rather than as a `services:` container, because the
+      # upstream image takes `server /data` as its command and a service
+      # container cannot pass one. bitnami/minio could (MINIO_DEFAULT_BUCKETS
+      # made the bucket too) but Bitnami stopped publishing those tags, and
+      # `latest` failing to resolve is what broke this job. Pinned for the
+      # same reason. The bucket is a directory in the data volume, which is
+      # how single-drive MinIO stores one, so no second image to run `mc mb`
+      # -- and the tests below create no bucket of their own.
+      - name: start MinIO
+        run: |
+          mkdir -p /tmp/minio/xilo-test
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            -v /tmp/minio:/data \
+            minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+          for _ in $(seq 1 30); do
+            if curl -sf http://localhost:9000/minio/health/live; then exit 0; fi
+            sleep 2
+          done
+          echo "MinIO never reported healthy" >&2
+          docker logs minio
+          exit 1
       # Chunk bytes never touch the DB, so the blob backend is the only thing
       # between a cache and its content -- and the S3 path was only ever
       # exercised against a fake written to our own idea of the protocol.
@@ -156,6 +176,9 @@ jobs:
           XILO_S3_TEST_BUCKET: xilo-test
           XILO_REQUIRE_S3: 1
         run: go test ./internal/storage/ -run RealS3 -count=1 -v
+      - name: stop MinIO
+        if: always()
+        run: docker rm -f minio
 
   e2e:
     name: CLI end-to-end (real nix + containerized server)
