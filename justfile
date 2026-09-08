@@ -462,7 +462,13 @@ _release-checks:
     # of checks. Tags come along so the version below counts from what is
     # actually released, not from what this machine happens to know.
     echo "Syncing with origin/$DEFAULT_BRANCH..."
-    git fetch --tags --prune origin
+    # --force because of the floating major tag: release.yml moves v1 to each
+    # new release, and a plain `fetch --tags` refuses to move a tag this
+    # machine already has ("would clobber existing tag"). That is a non-zero
+    # exit under `set -e`, so the release died here on any clone that had ever
+    # fetched v1 — before a single check ran, and with nothing about the tag
+    # in the error to say why.
+    git fetch --tags --force --prune origin
     if [ -n "$(git rev-list HEAD..origin/$DEFAULT_BRANCH)" ]; then
         echo "origin/$DEFAULT_BRANCH has commits this tree does not; rebasing onto it."
         git pull --rebase --autostash origin "$DEFAULT_BRANCH"
