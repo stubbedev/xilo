@@ -134,8 +134,8 @@ jobs:
           XILO_PG_TEST_DSN: postgres://postgres:x@localhost:5432/postgres
         run: go test ./internal/store/ -count=1
 
-  minio:
-    name: S3 backend against MinIO
+  garage:
+    name: S3 backend against Garage
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -143,42 +143,79 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      # Started by hand rather than as a `services:` container, because the
-      # upstream image takes `server /data` as its command and a service
-      # container cannot pass one. bitnami/minio could (MINIO_DEFAULT_BUCKETS
-      # made the bucket too) but Bitnami stopped publishing those tags, and
-      # `latest` failing to resolve is what broke this job. Pinned for the
-      # same reason. The bucket is a directory in the data volume, which is
-      # how single-drive MinIO stores one, so no second image to run `mc mb`
-      # -- and the tests below create no bucket of their own.
-      - name: start MinIO
+      # Garage rather than MinIO, and not as a `services:` container. Garage
+      # checks the SigV4 region scope where MinIO ignores it, which is what
+      # a client should be tested against: signing for the wrong region is a
+      # 400 the fake can never produce, and it went unnoticed here until the
+      # stricter server saw it. It cannot be a service container either -- the
+      # image takes `/garage server` as its command, and it needs a config
+      # file, a cluster layout and a generated key before it answers one S3
+      # call. Pinned, because `latest` disappearing is what broke the job this
+      # replaces.
+      - name: start Garage
         run: |
-          mkdir -p /tmp/minio/xilo-test
-          docker run -d --name minio -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
-            -v /tmp/minio:/data \
-            minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+          mkdir -p /tmp/garage/meta /tmp/garage/data
+          cat > /tmp/garage/garage.toml <<'EOF'
+          metadata_dir = "/var/lib/garage/meta"
+          data_dir = "/var/lib/garage/data"
+          db_engine = "sqlite"
+          replication_factor = 1
+          rpc_bind_addr = "[::]:3901"
+          rpc_public_addr = "127.0.0.1:3901"
+          rpc_secret = "0000000000000000000000000000000000000000000000000000000000000001"
+
+          [s3_api]
+          s3_region = "garage"
+          api_bind_addr = "[::]:3900"
+          EOF
+          docker run -d --name garage -p 3900:3900 \
+            -v /tmp/garage/garage.toml:/etc/garage.toml:ro \
+            -v /tmp/garage/meta:/var/lib/garage/meta \
+            -v /tmp/garage/data:/var/lib/garage/data \
+            dxflrs/garage:v2.4.1 /garage server
+          # A node holds no share of the ring until a layout is applied, and
+          # every S3 call before that fails with "no available nodes".
+          node=""
           for _ in $(seq 1 30); do
-            if curl -sf http://localhost:9000/minio/health/live; then exit 0; fi
+            node=$(docker exec garage /garage node id -q 2>/dev/null | cut -d@ -f1 || true)
+            if [ -n "$node" ]; then break; fi
             sleep 2
           done
-          echo "MinIO never reported healthy" >&2
-          docker logs minio
-          exit 1
+          if [ -z "$node" ]; then
+            echo "Garage never reported a node id" >&2
+            docker logs garage
+            exit 1
+          fi
+          docker exec garage /garage layout assign -z ci -c 1G "$node"
+          docker exec garage /garage layout apply --version 1
+          docker exec garage /garage bucket create xilo-test
+          # Keys are generated, so read them back rather than assuming them.
+          out=$(docker exec garage /garage key create xilo-ci)
+          ak=$(printf '%s\n' "$out" | sed -n 's/^Key ID: *//p')
+          sk=$(printf '%s\n' "$out" | sed -n 's/^Secret key: *//p')
+          if [ -z "$ak" ] || [ -z "$sk" ]; then
+            echo "Garage created no access key" >&2
+            exit 1
+          fi
+          echo "::add-mask::$sk"
+          echo "XILO_S3_TEST_ACCESS_KEY=$ak" >> "$GITHUB_ENV"
+          echo "XILO_S3_TEST_SECRET_KEY=$sk" >> "$GITHUB_ENV"
+          docker exec garage /garage bucket allow --read --write xilo-test --key xilo-ci
       # Chunk bytes never touch the DB, so the blob backend is the only thing
       # between a cache and its content -- and the S3 path was only ever
       # exercised against a fake written to our own idea of the protocol.
-      # XILO_REQUIRE_S3 turns a missing MinIO into a failure here, so this
+      # XILO_REQUIRE_S3 turns a missing server into a failure here, so this
       # job cannot go green by skipping.
-      - name: run the S3 backend tests against MinIO
+      - name: run the S3 backend tests against Garage
         env:
-          XILO_S3_TEST_ENDPOINT: localhost:9000
+          XILO_S3_TEST_ENDPOINT: localhost:3900
           XILO_S3_TEST_BUCKET: xilo-test
+          XILO_S3_TEST_REGION: garage
           XILO_REQUIRE_S3: 1
         run: go test ./internal/storage/ -run RealS3 -count=1 -v
-      - name: stop MinIO
+      - name: stop Garage
         if: always()
-        run: docker rm -f minio
+        run: docker rm -f garage
 
   e2e:
     name: CLI end-to-end (real nix + containerized server)
