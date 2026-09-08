@@ -11,6 +11,11 @@ FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 ARG TARGETOS
 ARG TARGETARCH
 WORKDIR /src
+# The image tag above is generated from go.mod by `just sync-toolchain`, and
+# this is the belt to that braces: the official golang images pin
+# GOTOOLCHAIN=local, so a pin left behind by a Go upgrade would refuse to
+# build rather than fetch the toolchain go.mod asks for.
+ENV GOTOOLCHAIN=auto
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .

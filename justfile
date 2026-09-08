@@ -87,6 +87,23 @@ sync-schema:
         echo "sync-schema: schema already in sync"; \
     fi
 
+# Rewrite every hand-written Go version pin from go.mod: the release image,
+# the k6 race-profile image, and the nix package's compiler. Same contract as
+# sync-schema and sync-vendor-hash -- anything that can be regenerated is, and
+# nobody edits these by hand.
+#
+# go.mod is the source of truth because Docker's FROM cannot read a file, so
+# an image tag has to be a literal somewhere; making it a derived literal is
+# the closest thing to one place. `just check` and CI both verify it, and
+# GOTOOLCHAIN=auto is set wherever those images build, so even a stale pin
+# fetches the right compiler instead of refusing to build.
+sync-toolchain:
+    ./scripts/toolchain.sh sync
+
+# Strict read-only pin check (what CI and `just check` run).
+toolchain-check:
+    ./scripts/toolchain.sh check
+
 # Strict read-only schema check (what CI runs on PRs).
 schema-check:
     #!/usr/bin/env bash
@@ -157,7 +174,7 @@ coverage:
     }
 
 # Everything CI checks.
-check: lint test schema-check nix-check coverage
+check: lint test schema-check toolchain-check nix-check coverage
 
 # ─────────────────────────── Run & Dev ───────────────────────────
 
@@ -430,9 +447,12 @@ _release-checks:
         echo "origin/$DEFAULT_BRANCH has commits this tree does not; rebasing onto it."
         git pull --rebase --autostash origin "$DEFAULT_BRANCH"
     fi
-    # check only *verifies* the schema, so regenerate it first: drift becomes a
-    # commit instead of a failed release.
+    # check only *verifies* these, so regenerate them first: drift becomes a
+    # commit instead of a failed release. A Go upgrade moves go.mod and leaves
+    # three image/compiler pins behind it, which is how the k6 race profile
+    # shipped broken for a whole minor version.
     just sync-schema
+    just sync-toolchain
     just check
     if [ -n "$(git status --porcelain)" ]; then
         echo "Changes detected (formatting / generated artifacts / schema). Committing..."

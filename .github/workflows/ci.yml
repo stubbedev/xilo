@@ -37,6 +37,12 @@ jobs:
         run: |
           out=$(gofmt -l .)
           if [ -n "$out" ]; then echo "unformatted:"; echo "$out"; exit 1; fi
+      # Every hand-written Go version pin (release image, k6 race-profile
+      # image, nix compiler) must equal go.mod's `go` directive. The race
+      # profile stayed on 1.26 through the 1.27 bump and nothing noticed,
+      # because nothing in CI built it.
+      - name: Go version pins match go.mod
+        run: ./scripts/toolchain.sh check
       - run: go vet ./...
       # Stdlib-first gate (.golangci.yml) — the same set `just lint` runs.
       - uses: golangci/golangci-lint-action@v9
@@ -227,7 +233,7 @@ jobs:
         run: docker compose -f tests/k6/compose.yaml down -v
 
   schema:
-    name: schema + coverage badge in sync
+    name: generated artifacts in sync
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -286,6 +292,14 @@ jobs:
           rm cover.out cover-filtered.out
           cat .github/badges/coverage.json
 
+      # The README's performance graphics are drawn from committed numbers
+      # (tests/k6/baselines/*.json, tests/bench/results.json), so they are
+      # generated on every push rather than by whoever last remembered to run
+      # `just perf-charts`. The measured numbers themselves come from the Bench
+      # workflow, which commits them; this step only redraws.
+      - name: redraw performance charts
+        run: go run ./tools/perfchart
+
       # On PRs: fail if the schema is stale so the author regenerates + commits.
       - name: assert in sync (PR)
         if: github.event_name == 'pull_request'
@@ -295,16 +309,24 @@ jobs:
             git --no-pager diff schemas/xilo.schema.json
             exit 1
           fi
+          if [ -n "$(git status --porcelain docs/perf)" ]; then
+            echo "::error::docs/perf is stale. Run 'just perf-charts' and commit."
+            git --no-pager diff --stat docs/perf
+            exit 1
+          fi
 
-      # On master/main pushes: auto-commit any drift (schema + badge).
+      # On master/main pushes: auto-commit any drift (schema, badge, charts).
       - name: auto-commit (push)
         if: github.event_name == 'push'
         run: |
-          if [ -z "$(git status --porcelain schemas/xilo.schema.json .github/badges/coverage.json)" ]; then
-            echo "schema + badge already in sync"; exit 0
+          if [ -z "$(git status --porcelain schemas/xilo.schema.json .github/badges/coverage.json docs/perf)" ]; then
+            echo "schema + badge + charts already in sync"; exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add schemas/xilo.schema.json .github/badges/coverage.json
-          git commit -m 'chore: auto-bump schema + coverage badge [skip ci]'
-          git push
+          git add schemas/xilo.schema.json .github/badges/coverage.json docs/perf
+          git commit -m 'chore: auto-bump schema + coverage badge + perf charts [skip ci]'
+          # The Bench workflow commits charts too, so the two can collide on a
+          # week where both run; a rebase costs a second, a failed run costs
+          # the whole job.
+          git push || { git pull --rebase --autostash && git push; }
