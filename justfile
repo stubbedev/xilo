@@ -410,12 +410,21 @@ perf-charts-check:
     #!/usr/bin/env bash
     set -euo pipefail
     go run ./tools/perfchart > /dev/null
-    if [ -n "$(git status --porcelain docs/perf)" ]; then
+    drift=$(git status --porcelain docs/perf)
+    if [ -z "$drift" ]; then
+        echo "performance charts in sync"
+        exit 0
+    fi
+    # Untracked and changed are different problems with the same symptom, and
+    # "stale" sends you looking for a diff that is not there.
+    if [ -z "$(echo "$drift" | grep -v '^??')" ]; then
+        echo "::error::docs/perf is not committed yet:"
+        echo "$drift"
+    else
         echo "::error::docs/perf is stale. Run 'just perf-charts' and commit."
         git --no-pager diff --stat docs/perf
-        exit 1
     fi
-    echo "performance charts in sync"
+    exit 1
 
 clean:
     rm -rf bin/
