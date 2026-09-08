@@ -112,8 +112,12 @@ export const options = {
     // and a scrape that fails means the watch is blind again.
     "http_req_failed{scenario:abort_storm}": ["rate==0"],
     "http_req_failed{scenario:leakwatch}": ["rate==0"],
-    "http_req_duration{scenario:storm}": ["p(99)<1000"],
-    "http_req_duration{scenario:flood}": ["p(99)<1000"],
+    // Sized off measurement, not guesswork: across 12 CI run-legs the worst
+    // single storm request was 245ms and the worst flood request 75ms, with
+    // p(95) at 58.7ms and 0.77ms. A p(99) of 1000ms was ~17x above anything
+    // ever seen, so latency could grow tenfold under load and still pass.
+    "http_req_duration{scenario:storm}": ["p(99)<400"],
+    "http_req_duration{scenario:flood}": ["p(99)<150"],
     // The arrival-rate executor drops iterations when the server can't keep
     // up. At the default 5000 rps a healthy server drops none — any drop is a
     // capacity regression. When you deliberately push FLOOD_RPS above the

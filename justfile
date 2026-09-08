@@ -273,33 +273,68 @@ k6-pressure-mt:
     docker compose -f tests/k6/compose.yaml down -v
 
 # CI compares every Perf run against tests/k6/baselines/*.json
-# (tests/k6/compare.sh) and fails on a regression, so moving these numbers is a
-# deliberate act: re-baseline, read the diff, and say in the commit message why
-# they moved.
+# (tests/k6/compare.sh) and fails on a regression.
 #
-# DIR must hold a Perf run's k6-*-summary.json, which is what the workflow
-# uploads: gh run download <perf-run-id> -D /tmp/perf. A dev box is NOT a valid
-# source — this laptop runs the suites 2-4x faster than the 2-core runner, so
-# baselining here would hand CI numbers it can never meet and fail every
-# subsequent push.
+# The baseline is a RATCHET. A new anchor that is better than the committed one
+# is written; one that is worse is refused, because the answer to a slower run
+# is a faster server, not a wider band. Override with ALLOW_REGRESSION=1 only
+# when the slowdown is understood and accepted, and say so in the commit
+# message.
 #
-# Re-baseline the perf gate from an unzipped CI Perf artifact.
+# DIR is searched recursively for k6-*-summary.json, so point it at one or
+# several unzipped Perf artifacts: the more runs, the better the anchor, since
+# the runner's own spread is ~1.7x (see tests/k6/baseline.sh). A dev box is NOT
+# a valid source -- this laptop runs the suites 2-4x faster than the 2-core
+# runner, so baselining here would hand CI numbers it can never meet.
+#
+#   gh run download <perf-run-id> -D /tmp/perf
+#   just re-baseline /tmp/perf
+#
+# Re-baseline the perf gate from unzipped CI Perf artifacts.
 re-baseline DIR:
     #!/usr/bin/env bash
     set -euo pipefail
+    allow=${ALLOW_REGRESSION:-}
+    worse=0
     for suite in perf churn pressure; do
-        src="{{ DIR }}/k6-$suite-summary.json"
-        if [ ! -f "$src" ]; then
-            echo "missing $src (expected an unzipped Perf artifact)" >&2
+        mapfile -t files < <(find "{{ DIR }}" -name "k6-$suite-summary.json" | sort)
+        if [ "${#files[@]}" = 0 ]; then
+            echo "no k6-$suite-summary.json under {{ DIR }}" >&2
             exit 1
         fi
-        ./tests/k6/baseline.sh "$src" "$suite" > "tests/k6/baselines/$suite.json"
-        echo "re-baselined $suite"
+        out="tests/k6/baselines/$suite.json"
+        new=$(mktemp)
+        ./tests/k6/baseline.sh "$suite" "${files[@]}" > "$new"
+        if [ -f "$out" ]; then
+            # Compare anchor by anchor, in each metric's own bad direction.
+            while IFS=$'\t' read -r metric stat dir old cur; do
+                bad=$(awk -v o="$old" -v c="$cur" -v d="$dir" \
+                    'BEGIN{print (d=="lower") ? (c > o) : (c < o)}')
+                if [ "$bad" = 1 ]; then
+                    printf 'WORSE  %-10s %-42s %-7s %s -> %s\n' "$suite" "$metric" "$stat" "$old" "$cur"
+                    worse=$((worse + 1))
+                fi
+            done < <(jq -r --slurpfile new "$new" '
+                .metrics as $old
+                | $new[0].metrics | to_entries[]
+                | .key as $m | .value.direction as $d
+                | .value | to_entries[]
+                | select(.key | test("^(p\\(|count$|max$|avg$|med$)"))
+                | select($old[$m][.key] != null)
+                | [$m, .key, $d, ($old[$m][.key]|tostring), (.value|tostring)] | @tsv' "$out")
+        fi
+        mv "$new" "$out.pending"
     done
-    # The README draws these numbers, so a moved baseline redraws them in the
-    # same commit; a chart that disagrees with the gate is worse than no chart.
-    just perf-charts
-    git --no-pager diff --stat tests/k6/baselines/ docs/perf/
+    if [ "$worse" -gt 0 ] && [ -z "$allow" ]; then
+        rm -f tests/k6/baselines/*.pending
+        echo >&2
+        echo "$worse anchor(s) would get worse. Nothing written." >&2
+        echo "Make the server faster, or rerun with ALLOW_REGRESSION=1 and explain it in the commit." >&2
+        exit 1
+    fi
+    for f in tests/k6/baselines/*.pending; do mv "$f" "${f%.pending}"; done
+    [ "$worse" -gt 0 ] && echo "wrote $worse regressed anchor(s) because ALLOW_REGRESSION is set"
+    git --no-pager diff --stat tests/k6/baselines/
 
 # SUITE is perf|churn|pressure; FILE is a k6 --summary-export json.
 #

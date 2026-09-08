@@ -1,61 +1,88 @@
 #!/usr/bin/env bash
-# Distil a k6 summary into a baseline file for compare.sh.
+# Distil several k6 summaries into one baseline file for compare.sh.
 #
-#   tests/k6/baseline.sh <summary.json> <suite> > tests/k6/baselines/<suite>.json
+#   tests/k6/baseline.sh <suite> <summary.json>...
 #
 # Only a handful of numbers per suite are worth gating: the ones a user feels
-# (narinfo latency during eval, NAR streaming, push round trip) and the ones
-# that say the server stayed healthy (failures, drops, heap). Gating every
-# metric k6 emits would fail on noise nobody can act on.
+# (narinfo latency during eval, NAR streaming, push round trip) plus
+# throughput. Gating every metric k6 emits would fail on noise nobody can act
+# on.
 #
-# Tolerances are per metric because the numbers differ in how steady they are:
-# a p(95) on a shared runner swings much more than a failure count.
+# MANY summaries, not one, because the runner's variance is large and is not
+# something the server can optimize away. Measured over 12 run-legs of the
+# same code (runs 126-131, both tenancies), p(95) spreads were:
 #
-# Baselines are seeded from the SINGLE-tenant run, the series perf.yml calls
-# "the classic numbers, tracked release over release", and both matrix legs
-# compare against it: spreading the same load over four accounts moves the
-# numbers by well under the band, so one baseline per suite beats two that
-# drift apart. Goroutine and heap ceilings are deliberately not here; they are
-# load-shape numbers, not latency a user feels, and they live as absolute
-# bounds in pressure.js.
+#   narinfo_hit    4.80 ..  8.41 ms   1.75x
+#   narinfo_miss   4.73 ..  8.34 ms   1.76x
+#   pull_identity  4.72 ..  7.27 ms   1.54x
+#   pull_zstd      3.90 ..  6.57 ms   1.68x
+#   pull_big      64.81 .. 97.02 ms   1.50x
+#   mixed_narinfo 30.27 .. 37.68 ms   1.24x
+#   push_dedup     1085 ..  1521 ms   1.40x
+#   push_fresh     1091 ..  1550 ms   1.42x
+#   http_reqs       357k ..   579k    1.62x
+#
+# A baseline taken from one run can therefore sit anywhere in a 1.7x band, and
+# seeding from a fast one leaves a gate that fails on an ordinary slow day
+# with nothing wrong. Each metric is anchored at its WORST observed value
+# across every summary given (min, where higher is better) and the tolerance
+# sits on top of that. The gate's floor sensitivity is set by the instrument;
+# a gate tighter than its own noise is a false alarm generator, and those get
+# deleted rather than investigated.
+#
+# What this must never become is a way to accept a regression. The anchor may
+# only move in the improving direction: `just re-baseline` refuses to write a
+# worse number without ALLOW_REGRESSION=1, so the answer to a slower run is to
+# make the server faster, not to widen the band.
+#
+# Baselines come from CI artifacts, never a dev box: this laptop runs the
+# suites 2-4x faster than the 2-core runner. See `just re-baseline`.
 set -euo pipefail
 
-SUMMARY=${1:?usage: baseline.sh <summary.json> <suite>}
-SUITE=${2:?usage: baseline.sh <summary.json> <suite>}
+SUITE=${1:?usage: baseline.sh <suite> <summary.json>...}
+shift
+[ "$#" -gt 0 ] || {
+  echo "baseline: give me at least one summary" >&2
+  exit 1
+}
 
-# metric<TAB>stat<TAB>tolerance, per suite. A metric absent from the summary is
-# dropped with a warning rather than baselined as null.
+# metric<TAB>stat<TAB>tolerance<TAB>direction, per suite.
+#
+# lower: latency, anchored at the worst run, +60%. Catches a 1.6x regression
+#        from the slowest day on record, which is ~3x the fastest.
+# upper: throughput, anchored at the slowest run, -30%. Catches the ~2x drop a
+#        real capacity regression produces.
 case "$SUITE" in
 perf)
   want=$(
     cat <<'EOF'
-http_req_duration{scenario:narinfo_hit}	p(95)	1.0
-http_req_duration{scenario:narinfo_miss}	p(95)	1.0
-http_req_duration{scenario:pull_identity}	p(95)	1.0
-http_req_duration{scenario:pull_zstd}	p(95)	1.0
-http_req_duration{scenario:pull_big}	p(95)	1.0
-http_req_duration{scenario:mixed_narinfo}	p(95)	1.0
-iteration_duration{scenario:push_dedup}	p(95)	1.0
-iteration_duration{scenario:push_fresh}	p(95)	1.0
-http_reqs	count	0.35
+http_req_duration{scenario:narinfo_hit}	p(95)	0.6	lower
+http_req_duration{scenario:narinfo_miss}	p(95)	0.6	lower
+http_req_duration{scenario:pull_identity}	p(95)	0.6	lower
+http_req_duration{scenario:pull_zstd}	p(95)	0.6	lower
+http_req_duration{scenario:pull_big}	p(95)	0.6	lower
+http_req_duration{scenario:mixed_narinfo}	p(95)	0.6	lower
+iteration_duration{scenario:push_dedup}	p(95)	0.6	lower
+iteration_duration{scenario:push_fresh}	p(95)	0.6	lower
+http_reqs	count	0.3	upper
 EOF
   )
   ;;
 pressure)
   want=$(
     cat <<'EOF'
-http_req_duration{scenario:storm}	p(95)	1.0
-http_req_duration{scenario:flood}	p(95)	1.0
-http_reqs	count	0.35
+http_req_duration{scenario:storm}	p(95)	0.6	lower
+http_req_duration{scenario:flood}	p(95)	0.6	lower
+http_reqs	count	0.3	upper
 EOF
   )
   ;;
 churn)
   want=$(
     cat <<'EOF'
-http_req_duration	p(95)	1.0
-iteration_duration	p(95)	1.0
-http_reqs	count	0.35
+http_req_duration	p(95)	0.6	lower
+iteration_duration	p(95)	0.6	lower
+http_reqs	count	0.3	upper
 EOF
   )
   ;;
@@ -66,27 +93,39 @@ EOF
 esac
 
 entries=()
-while IFS=$'\t' read -r metric stat tol; do
-  val=$(jq -r --arg m "$metric" --arg s "$stat" \
-    '.metrics[$m] | (.[$s] // .value) | select(. != null) | tostring' "$SUMMARY")
-  if [ -z "$val" ]; then
-    echo "baseline: $SUITE has no $metric $stat, skipping" >&2
+sampled=0
+while IFS=$'\t' read -r metric stat tol dir; do
+  vals=()
+  for f in "$@"; do
+    v=$(jq -r --arg m "$metric" --arg s "$stat" \
+      '.metrics[$m] | (.[$s] // .value) | select(. != null) | tostring' "$f" 2>/dev/null || true)
+    [ -n "$v" ] && vals+=("$v")
+  done
+  if [ "${#vals[@]}" = 0 ]; then
+    echo "baseline: no summary carries $metric $stat, skipping" >&2
     continue
   fi
+  [ "${#vals[@]}" -gt "$sampled" ] && sampled=${#vals[@]}
+  # The worst of the observed values, in whichever direction is the bad one.
+  if [ "$dir" = lower ]; then
+    anchor=$(printf '%s\n' "${vals[@]}" | sort -g | tail -1)
+  else
+    anchor=$(printf '%s\n' "${vals[@]}" | sort -g | head -1)
+  fi
   entries+=("$(jq -cn --arg m "$metric" --arg s "$stat" \
-    --argjson v "$val" --argjson t "$tol" \
-    '{key: $m, value: {($s): $v, tolerance: $t}}')")
+    --argjson v "$anchor" --argjson t "$tol" --arg d "$dir" --argjson n "${#vals[@]}" \
+    '{key: $m, value: {($s): $v, tolerance: $t, direction: $d, samples: $n}}')")
 done <<<"$want"
 
 if [ "${#entries[@]}" = 0 ]; then
-  echo "baseline: nothing extracted from $SUMMARY" >&2
+  echo "baseline: nothing extracted" >&2
   exit 1
 fi
 
-# Merge per-metric objects so two stats on one metric land in one entry.
-printf '%s\n' "${entries[@]}" | jq -s --arg suite "$SUITE" '
+printf '%s\n' "${entries[@]}" | jq -s --arg suite "$SUITE" --argjson sampled "$sampled" '
   {
-    _comment: "Generated by tests/k6/baseline.sh. Regenerate with `just re-baseline` and say in the commit message why the numbers moved.",
+    _comment: "Generated by tests/k6/baseline.sh from CI artifacts. Each value is the WORST across the runs sampled, tolerance on top. `just re-baseline` will not write a worse number without ALLOW_REGRESSION=1: the answer to a slower run is a faster server.",
     suite: $suite,
+    sampled_runs: $sampled,
     metrics: (reduce .[] as $e ({}; .[$e.key] = ((.[$e.key] // {}) + $e.value)))
   }'

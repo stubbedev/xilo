@@ -84,9 +84,15 @@ export const options = {
       exec: "pullZstd",
     },
   },
-  // Floors are sized for a 2-core CI runner (a 12-core dev box runs 2-4x
-  // faster) — they catch catastrophic regressions; trend-tracking of the
-  // uploaded summary is the real release-over-release signal.
+  // Two instruments, deliberately: these absolute floors catch a catastrophe
+  // on any runner, and tests/k6/baselines/perf.json (compared by
+  // tests/k6/compare.sh in the Perf workflow) catches the gradual kind. The
+  // floors used to sit 25-700x above the measured numbers, which meant
+  // latency could grow fortyfold and CI stayed green; each is now ~5x the
+  // worst value seen across 12 CI run-legs of the same code, whose own
+  // spread is 1.2-1.8x (measurements in tests/k6/baseline.sh). Nothing
+  // healthy comes near them, so a breach is a real regression, not a slow
+  // runner.
   thresholds: {
     // Not a floor: every request this suite makes is meant to succeed (the
     // negative lookups declare 404 expected), nothing here races the GC, and
@@ -94,15 +100,15 @@ export const options = {
     // there is no legitimate failure for a budget to absorb. rate<0.01 let a
     // single failed request hide in 500k for as long as the suite has run.
     http_req_failed: ["rate==0"],
-    "http_req_duration{scenario:narinfo_hit}": ["p(95)<200"],
-    "http_req_duration{scenario:narinfo_miss}": ["p(95)<200"],
-    "http_req_duration{scenario:pull_identity}": ["p(95)<5000"],
-    "http_req_duration{scenario:pull_zstd}": ["p(95)<5000"],
-    "http_req_duration{scenario:pull_big}": ["p(95)<20000"],
-    "iteration_duration{scenario:push_dedup}": ["p(95)<4000"],
-    "iteration_duration{scenario:push_fresh}": ["p(95)<10000"],
+    "http_req_duration{scenario:narinfo_hit}": ["p(95)<40"], // worst seen 8.41ms
+    "http_req_duration{scenario:narinfo_miss}": ["p(95)<40"], // worst seen 8.34ms
+    "http_req_duration{scenario:pull_identity}": ["p(95)<40"], // worst seen 7.27ms
+    "http_req_duration{scenario:pull_zstd}": ["p(95)<40"], // worst seen 6.57ms
+    "http_req_duration{scenario:pull_big}": ["p(95)<500"], // worst seen 97ms
+    "iteration_duration{scenario:push_dedup}": ["p(95)<4000"], // worst seen 1521ms
+    "iteration_duration{scenario:push_fresh}": ["p(95)<5000"], // worst seen 1550ms
     // The substituter SLO: reads stay fast while pushers hammer the server.
-    "http_req_duration{scenario:mixed_narinfo}": ["p(95)<800"],
+    "http_req_duration{scenario:mixed_narinfo}": ["p(95)<200"], // worst seen 37.7ms
   },
 };
 

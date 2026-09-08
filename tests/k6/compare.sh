@@ -9,9 +9,15 @@
 # difference. Every metric the baseline names is compared against the run, and
 # one that moved the wrong way by more than its own tolerance fails the job.
 #
-# Tolerances are per metric and wide on purpose: a shared CI runner varies a
-# lot between runs, and a gate that cries wolf gets deleted. Even at 100% they
-# are an order of magnitude tighter than "p(95) < 5000".
+# Each baseline value is the WORST the metric was observed to be across many
+# CI runs of the same code, with a per-metric tolerance on top; the runner's
+# own spread is ~1.7x and no amount of optimizing makes a shared 2-core VM
+# deterministic (see tests/k6/baseline.sh for the measurements). The band is
+# still an order of magnitude tighter than the absolute floors in perf.js.
+#
+# The anchor is a ratchet: `just re-baseline` will not write a worse number
+# without ALLOW_REGRESSION=1, so a slow run has to be answered with a faster
+# server rather than a wider band.
 #
 # Re-baseline deliberately with `just re-baseline` after a change meant to move
 # the numbers, and say in the commit message why they moved.
@@ -27,17 +33,13 @@ LABEL=${3:-perf}
   exit 1
 }
 
-# Metrics where a rising number is the bad direction. Anything else the
-# baseline names (throughput, counts of work done) is higher-is-better.
-LOWER_IS_BETTER='^(http_req_duration|iteration_duration|http_req_waiting|http_req_blocked|http_req_receiving|srv_heap_mib|srv_goroutines|dropped_iterations|http_req_failed)'
-
 fails=0
 checked=0
 
 # The walk is over the baseline, not the run: a metric that vanishes from the
 # summary is a regression too (a scenario stopped reporting), while a metric a
 # new run adds is not something an old baseline can judge.
-while IFS=$'\t' read -r metric stat want tol; do
+while IFS=$'\t' read -r metric stat want tol dir; do
   checked=$((checked + 1))
   got=$(jq -r --arg m "$metric" --arg s "$stat" \
     '.metrics[$m] | (.[$s] // .value) | select(. != null) | tostring' "$SUMMARY")
@@ -47,33 +49,33 @@ while IFS=$'\t' read -r metric stat want tol; do
     continue
   fi
 
-  if [[ $metric =~ $LOWER_IS_BETTER ]]; then
-    dir=worse
+  if [ "$dir" = lower ]; then
     read -r limit bad <<<"$(awk -v w="$want" -v t="$tol" -v g="$got" \
       'BEGIN{l = w * (1 + t); printf "%.6g %d", l, (g > l) ? 1 : 0}')"
+    word="above"
   else
-    dir=lower
     read -r limit bad <<<"$(awk -v w="$want" -v t="$tol" -v g="$got" \
       'BEGIN{l = w * (1 - t); printf "%.6g %d", l, (g < l) ? 1 : 0}')"
+    word="below"
   fi
   pct=$(awk -v g="$got" -v w="$want" \
     'BEGIN{if (w == 0) print "was 0"; else printf "%+.1f%%", (g - w) / w * 100}')
 
   if [ "$bad" = 1 ]; then
-    echo "REGRESSION [$LABEL] $metric $stat: $got vs baseline $want ($pct, $dir than the limit $limit)"
+    echo "REGRESSION [$LABEL] $metric $stat: $got vs baseline $want ($pct, $word the limit $limit)"
     fails=$((fails + 1))
   else
     printf 'ok          [%s] %s %s: %s vs baseline %s (%s)\n' \
       "$LABEL" "$metric" "$stat" "$got" "$want" "$pct"
   fi
 done < <(jq -r '
-  (.tolerance // 0.5) as $default
-  | .metrics | to_entries[]
+  .metrics | to_entries[]
   | .key as $m
-  | (.value.tolerance // $default) as $tol
+  | (.value.tolerance // 0.6) as $tol
+  | (.value.direction // "lower") as $dir
   | .value | to_entries[]
-  | select(.key != "tolerance")
-  | [$m, .key, (.value | tostring), ($tol | tostring)] | @tsv' "$BASELINE")
+  | select(.key | test("^p\\(|^count$|^max$|^avg$|^med$|^value$"))
+  | [$m, .key, (.value | tostring), ($tol | tostring), $dir] | @tsv' "$BASELINE")
 
 if [ "$checked" = 0 ]; then
   echo "compare: baseline $BASELINE named no metrics" >&2
