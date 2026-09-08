@@ -62,6 +62,21 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@v22
 
+      # The bench builds xilo from this tree, and that build embeds two
+      # generated artifacts: the Tailwind sheet (//go:embed static) and the
+      # templ views. Without them the build fails on a broken embed and 40
+      # undefined views, which the harness reports as "skipping xilo: go build
+      # failed" -- a comparison of everything except its subject. Tailwind is
+      # pinned for the same reason as everywhere else (v4.3+ latest went
+      # dynamically linked).
+      - name: build admin CSS
+        run: |
+          curl -sSL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.2/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
+          chmod +x /usr/local/bin/tailwindcss
+          ./scripts/build-css.sh
+      - name: generate templ views
+        run: go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
+
       - name: run the comparison
         env:
           # Named so the chart's caption says what measured it. Runner specs

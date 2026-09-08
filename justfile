@@ -397,8 +397,11 @@ chaos:
 # it measured, so the committed numbers describe a 2-core runner rather than
 # whichever laptop last ran this.
 #
-# Head-to-head vs attic, nix-serve-ng and MinIO. ~15 min; docker + nix, idle machine.
-bench TARGETS="xilo,attic,nixserve,s3":
+# Head-to-head vs attic, harmonia, nix-serve-ng, MinIO and Garage. ~20 min;
+# docker + nix, idle machine. Writes the numbers the README's charts are drawn
+# from, so the default is every target: a subset here silently drops the bars
+# for whatever it left out.
+bench TARGETS="xilo,attic,harmonia,nixserve,s3,garage":
     ./tests/bench/bench.sh --targets {{ TARGETS }} --json tests/bench/results.json
     just perf-charts
 
