@@ -262,7 +262,7 @@ k6-churn-mt: k6-image
     docker compose -f tests/k6/compose.yaml down -v
 
 # Churn against a race-detector server build. The first start compiles the
-# whole tree under -race, so the suite waits BOOT_WAIT_S (default 900) for
+# whole tree under -race, so the suite waits BOOT_WAIT_S (default 1800) for
 # /healthz before it begins.
 k6-race:
     docker compose -f tests/k6/compose.yaml --profile race run --rm \

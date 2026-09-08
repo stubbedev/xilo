@@ -19,7 +19,9 @@ jobs:
   race-soak:
     name: churn soak against a -race server
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Most of this is the -race build itself: an empty module cache, templ
+    # generate, then compiling the tree with the detector on, on two cores.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7
       # compose's `race` profile runs the server under `go run -race` on a
