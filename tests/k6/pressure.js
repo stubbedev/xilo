@@ -40,6 +40,20 @@ const pullBroken = new Counter("pull_broken");
 const abortsSeen = new Counter("aborts_seen");
 const scrapesSeen = new Counter("scrapes_seen");
 
+// Client connections this run can hold open at once. Go's http.Server keeps
+// roughly one goroutine per live connection (plus a read goroutine while a
+// body is in flight), so this is what the server's goroutine count tracks,
+// and a ceiling has to be derived from it rather than hardcoded: raise
+// STORM_VUS and a constant bound either flakes or stops meaning anything.
+const CLIENTS = STORM_VUS + PULL_VUS + Math.min(1000, FLOOD_RPS) + 4 + 32 + 1;
+
+// Twice the connection count plus the server's own base. Measured at the CI
+// scale (STORM_VUS=128, FLOOD_RPS=1200, PULL_VUS=32, so CLIENTS=1197) the
+// peak was 1246 goroutines across two runs, a shade over one per connection.
+// A real leak (a per-request spawn, a prefetcher that never returns) runs to
+// the thousands and trips this; normal load does not come close.
+const GOROUTINE_CEILING = 2 * CLIENTS + 200;
+
 const RAMP = 30; // storm ramp-up seconds
 const STORM_END = RAMP + D + 10;
 const FLOOD_START = STORM_END + 5;
@@ -125,6 +139,18 @@ export const options = {
     // capacity; the graceful-degradation signal is zero FAILURES + bounded
     // latency, which stay enforced.
     dropped_iterations: [`count<${__ENV.DROP_BUDGET || 10}`],
+    // The leak watch is only worth having if its numbers are asserted. Both
+    // of these were dead until the scrape was fixed: srv_goroutines read a
+    // flat idle 12 under a 128-VU storm because every scrape after the first
+    // answered 401, so there was nothing to threshold.
+    //
+    // Peak heap across two runs at CI scale was 389 MiB with p(95) at 297,
+    // driven by 64MiB NARs in flight. p(95) is the stable statistic here (max
+    // moves with GC timing), so it carries the tight bound and max the loose
+    // one. Growth past these means bytes are being buffered that used to be
+    // streamed.
+    srv_goroutines: [`max<${GOROUTINE_CEILING}`],
+    srv_heap_mib: ["p(95)<800", "max<1536"],
     // No corrupted pulls, ever.
     pull_broken: ["count==0"],
     checks: ["rate>0.995"],
@@ -291,7 +317,9 @@ export function teardown(data) {
   // Idle keepalive connections from k6's still-open VU pools hold ~2 server
   // goroutines each until IdleTimeout — scale the bound with client count.
   // A real leak (chunk prefetchers, per-request spawns) shows up in the
-  // thousands and still trips this.
+  // thousands and still trips this. Far tighter than GOROUTINE_CEILING on
+  // purpose: this runs 15s after load stopped, so the connections should be
+  // going away rather than merely bounded (CI measures 45 here).
   const bound = 200 + Math.ceil(STORM_VUS / 4);
   if (n > bound) fail(`goroutine leak: ${n} still alive 15s after load stopped (bound ${bound})`);
 
