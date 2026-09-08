@@ -62,7 +62,20 @@ func Base32Decode(s string) ([]byte, error) {
 
 // ParseHash accepts a sha256 hash in any form Nix emits — "sha256:<base32>",
 // "sha256:<hex>", or SRI "sha256-<base64>" — and returns the 32 raw bytes.
+//
+// On error the byte slice is always nil. The hex and base64 decoders return
+// what they managed to decode alongside their error, so without this a caller
+// writing `b, _ := ParseHash(s)` gets a short digest that looks like a hash
+// (found by FuzzParseHash).
 func ParseHash(s string) ([]byte, error) {
+	b, err := parseHash(s)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func parseHash(s string) ([]byte, error) {
 	rest := s
 	if i := strings.IndexAny(s, ":-"); i >= 0 {
 		rest = s[i+1:]

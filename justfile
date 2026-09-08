@@ -273,7 +273,10 @@ re-baseline DIR:
         ./tests/k6/baseline.sh "$src" "$suite" > "tests/k6/baselines/$suite.json"
         echo "re-baselined $suite"
     done
-    git --no-pager diff --stat tests/k6/baselines/
+    # The README draws these numbers, so a moved baseline redraws them in the
+    # same commit; a chart that disagrees with the gate is worse than no chart.
+    just perf-charts
+    git --no-pager diff --stat tests/k6/baselines/ docs/perf/
 
 # SUITE is perf|churn|pressure; FILE is a k6 --summary-export json.
 #
@@ -281,13 +284,60 @@ re-baseline DIR:
 k6-compare SUITE FILE:
     ./tests/k6/compare.sh tests/k6/baselines/{{ SUITE }}.json {{ FILE }} {{ SUITE }}
 
+# TARGET is a Fuzz* function name, DURATION a Go duration (default 60s). CI
+# runs every target for 30s; this is for hunting new inputs, which land in
+# testdata/fuzz and should be committed when they find something.
+#
+#   just fuzz FuzzParseHash 5m
+#
+# Fuzz one target for longer than CI does.
+fuzz TARGET DURATION="60s":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    pkg=$(grep -rl "func {{ TARGET }}(" --include='*_test.go' internal | head -1 | xargs dirname)
+    if [ -z "$pkg" ]; then echo "no package defines {{ TARGET }}" >&2; exit 1; fi
+    echo "fuzzing {{ TARGET }} in ./$pkg for {{ DURATION }}"
+    go test "./$pkg" -run '^{{ TARGET }}$' -fuzz '^{{ TARGET }}$' -fuzztime={{ DURATION }} -count=1
+
 # Chaos: SIGKILL mid-push, restart, prove nothing corrupted. Needs nix + docker.
 chaos:
     ./tests/e2e/chaos.sh
 
-# Head-to-head vs attic on this machine (push, pull, RSS/CPU). ~5 min.
-bench-attic:
-    ./tests/bench/bench.sh
+# Runs every target sequentially, measures push, pull, RSS, CPU and bytes on
+# disk, then redraws the README's charts from the result. TARGETS picks a
+# subset: `just bench xilo,attic`.
+#
+# CI runs the same script weekly (.github/workflows/bench.yml) and commits what
+# it measured, so the committed numbers describe a 2-core runner rather than
+# whichever laptop last ran this.
+#
+# Head-to-head vs attic, nix-serve-ng and MinIO. ~15 min; docker + nix, idle machine.
+bench TARGETS="xilo,attic,nixserve,s3":
+    ./tests/bench/bench.sh --targets {{ TARGETS }} --json tests/bench/results.json
+    just perf-charts
+
+# Reads tests/k6/baselines/*.json and tests/bench/results.json. The SVGs are
+# generated artifacts that still have to be committed, since a README image
+# cannot be built on demand by whoever is reading it.
+#
+# Redraw docs/perf/*.svg, the README's performance graphics.
+perf-charts:
+    go run ./tools/perfchart
+
+# Fails when the committed charts no longer match the committed numbers, which
+# is what moving a baseline without a redraw leaves behind.
+#
+# Strict read-only check that docs/perf is in sync.
+perf-charts-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    go run ./tools/perfchart > /dev/null
+    if [ -n "$(git status --porcelain docs/perf)" ]; then
+        echo "::error::docs/perf is stale. Run 'just perf-charts' and commit."
+        git --no-pager diff --stat docs/perf
+        exit 1
+    fi
+    echo "performance charts in sync"
 
 clean:
     rm -rf bin/
