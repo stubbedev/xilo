@@ -307,7 +307,10 @@ templ contextSwitcher(nav Nav) {
 templ footerTrigger(icon, value, label string) {
 	@button.Button(button.Props{
 		Variant: button.VariantOutline, Type: button.TypeButton, FullWidth: true, Size: button.SizeSm,
-		Class:      "justify-between gap-2 group-data-[tui-sidebar-state=collapsed]:px-0",
+		// Collapsed, the value and the chevrons are gone and the icon is all
+		// that is left: centre it, or justify-between parks it against the
+		// left edge of a button the width of the rail.
+		Class:      "justify-between gap-2 group-data-[tui-sidebar-state=collapsed]:justify-center group-data-[tui-sidebar-state=collapsed]:px-0",
 		Attributes: templ.Attributes{"aria-label": label + ": " + value},
 	}) {
 		<span class="flex min-w-0 items-center gap-2">

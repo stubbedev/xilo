@@ -7,6 +7,7 @@ package config
 import (
 	"fmt"
 	"maps"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -173,12 +174,25 @@ func ParseBytes(s string) (int64, error) {
 			if err != nil {
 				return 0, fmt.Errorf("bad size %q: %w", s, err)
 			}
-			return int64(f * float64(u.mult)), nil
+			// A size is a finite, non-negative number of bytes. Without this
+			// "-1K" parsed to -1024, and "NaNMB" or "1e309T" converted to an
+			// implementation-defined int64: a limits.total typo then became
+			// either "unlimited" or "refuse every push" depending on which
+			// side of a comparison it landed, with nothing said either way.
+			// (Found by FuzzParseBytes.)
+			total := f * float64(u.mult)
+			if math.IsNaN(total) || math.IsInf(total, 0) || total < 0 || total > math.MaxInt64 {
+				return 0, fmt.Errorf("bad size %q: not a byte count", s)
+			}
+			return int64(total), nil
 		}
 	}
 	n, err := strconv.ParseInt(up, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("bad size %q", s)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("bad size %q: not a byte count", s)
 	}
 	return n, nil
 }

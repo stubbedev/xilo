@@ -25,8 +25,13 @@ const TENANTS = parseInt(__ENV.TENANTS || "0", 10);
 
 const narBroken = new Counter("nar_broken");
 
+// How long to wait for the server to answer /healthz. A normal container is
+// up in under a second; the compose `race` profile copies the tree, runs
+// templ generate and compiles under -race first, which is minutes.
+const BOOT = parseInt(__ENV.BOOT_WAIT_S || "60", 10);
+
 export const options = {
-  setupTimeout: "60s",
+  setupTimeout: `${BOOT + 120}s`,
   scenarios: {
     dedup_churn: {
       executor: "constant-vus",
@@ -46,11 +51,17 @@ export const options = {
   thresholds: {
     nar_broken: ["count==0"],
     checks: ["rate>0.99"],
+    // A push that loses the race against the sweeper is answered 409 and
+    // re-pushed, which is the point of the suite, so this is a budget rather
+    // than zero, sized to match the checks rate above. It had no threshold at
+    // all before, which is how one failed request per multi-tenant run went
+    // unremarked for as long as the suite has run.
+    http_req_failed: ["rate<0.01"],
   },
 };
 
 export function setup() {
-  waitHealthy(60);
+  waitHealthy(BOOT);
   return { targets: provisionTenants(TENANTS) };
 }
 

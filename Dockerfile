@@ -1,7 +1,21 @@
 # Pure-Go build (modernc sqlite + all deps are cgo-free) → static binary on a
 # distroless base. No external services: xilo is the whole cache.
-FROM golang:1.27-alpine AS build
+#
+# The build stage stays on the *build* platform and cross-compiles to the
+# target: with CGO off that is a GOARCH away, while emulating the toolchain
+# under QEMU to build arm64 natively fails outright (`go mod download` dies
+# with exit 255) and would be minutes slower if it worked. It also keeps the
+# x86 Tailwind CLI below valid — that one runs at build time, and the CSS it
+# writes is the same bytes whatever machine ends up serving it.
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
+ARG TARGETOS
+ARG TARGETARCH
 WORKDIR /src
+# The image tag above is generated from go.mod by `just sync-toolchain`, and
+# this is the belt to that braces: the official golang images pin
+# GOTOOLCHAIN=local, so a pin left behind by a Go upgrade would refuse to
+# build rather than fetch the toolchain go.mod asks for.
+ENV GOTOOLCHAIN=auto
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
@@ -18,7 +32,7 @@ RUN apk add --no-cache bash libstdc++ libgcc \
 # Views are generated at build time (*_templ.go is not committed); templ's
 # version comes from go.mod so it can't drift.
 RUN go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /xilo ./cmd/xilo
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /xilo ./cmd/xilo
 
 FROM gcr.io/distroless/static-debian12
 COPY --from=build /xilo /xilo

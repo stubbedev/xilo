@@ -1,0 +1,124 @@
+name: Bench
+
+# Head-to-head against the other self-hostable Nix caches, measured by CI so
+# the README's comparison is a number a machine produced and not a claim.
+#
+# Weekly rather than per push: the run takes twenty minutes, pulls four other
+# implementations, and its numbers move with the runner's mood rather than with
+# a commit. Two other things do trigger it, because both change what the
+# published numbers mean: a change to the harness or the chart renderer (the
+# measurement itself moved, so the measurement is retaken), and a published
+# release (so the figures on the README describe the release).
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  push:
+    branches: [master, main]
+    paths:
+      - "tests/bench/**"
+      - "tools/perfchart/**"
+      - ".github/workflows/bench.yml"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: Comma-separated targets (xilo,attic,harmonia,nixserve,s3)
+        default: xilo,attic,harmonia,nixserve,s3
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    name: xilo vs attic, harmonia, nix-serve-ng, MinIO
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: DeterminateSystems/nix-installer-action@v22
+
+      # The workload closure, four container images and three data directories
+      # do not fit beside the runner's preinstalled toolchains.
+      - name: free disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h /
+
+      - name: run the comparison
+        env:
+          # Named so the chart's caption says what measured it. Runner specs
+          # are public: 2 vCPU, 16 GB, and shared, which is why the absolute
+          # numbers are only ever read against each other.
+          BENCH_RUNNER: GitHub ubuntu-latest runner, 2 cores
+        run: |
+          ./tests/bench/bench.sh \
+            --targets "${{ github.event.inputs.targets || 'xilo,attic,harmonia,nixserve,s3' }}" \
+            --json bench-results.json | tee bench.log
+
+      - name: job summary
+        if: always()
+        run: |
+          {
+            echo '### Cross-implementation comparison'
+            echo
+            echo '```'
+            sed -n '/^=====/,$p' bench.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # A comparator that dropped out is the one thing a green run could hide,
+      # and the chart shows its absence as a missing bar rather than a reason.
+      - name: warn about targets that did not run
+        if: always()
+        run: |
+          [ -f bench-results.json ] || exit 0
+          python3 - <<'PY'
+          import json
+          d = json.load(open("bench-results.json"))
+          missing = {t: v for t, v in d["targets"].items() if v.get("status") != "ok"}
+          for t, v in missing.items():
+              print(f"::warning title=bench target skipped::{t}: {v.get('error', 'no status')}")
+          print(f"{len(d['targets']) - len(missing)} of {len(d['targets'])} targets measured")
+          PY
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: bench-${{ github.ref_name }}-${{ github.run_number }}
+          path: |
+            bench-results.json
+            bench.log
+
+      # Only the default branch owns the committed numbers: a tag run measures
+      # and reports, but rewriting history's charts from a tag would put a
+      # commit on a branch nobody asked to move.
+      - name: commit results + charts
+        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+        run: |
+          cp bench-results.json tests/bench/results.json
+          go run ./tools/perfchart
+          if [ -z "$(git status --porcelain tests/bench/results.json docs/perf)" ]; then
+            echo "numbers and charts already in sync"; exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tests/bench/results.json docs/perf
+          git commit -m 'chore: refresh cross-implementation benchmark [skip ci]'
+          # CI's own artifact commit can land between the checkout and this
+          # push; rebasing beats failing a run that measured everything
+          # correctly.
+          git push || { git pull --rebase --autostash && git push; }

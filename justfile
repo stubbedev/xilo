@@ -87,6 +87,23 @@ sync-schema:
         echo "sync-schema: schema already in sync"; \
     fi
 
+# Rewrite every hand-written Go version pin from go.mod: the release image,
+# the k6 race-profile image, and the nix package's compiler. Same contract as
+# sync-schema and sync-vendor-hash -- anything that can be regenerated is, and
+# nobody edits these by hand.
+#
+# go.mod is the source of truth because Docker's FROM cannot read a file, so
+# an image tag has to be a literal somewhere; making it a derived literal is
+# the closest thing to one place. `just check` and CI both verify it, and
+# GOTOOLCHAIN=auto is set wherever those images build, so even a stale pin
+# fetches the right compiler instead of refusing to build.
+sync-toolchain:
+    ./scripts/toolchain.sh sync
+
+# Strict read-only pin check (what CI and `just check` run).
+toolchain-check:
+    ./scripts/toolchain.sh check
+
 # Strict read-only schema check (what CI runs on PRs).
 schema-check:
     #!/usr/bin/env bash
@@ -133,8 +150,31 @@ nix-check:
     nix build .#default --no-link
     @echo "nix package in sync"
 
+# Known vulnerabilities in the dependency graph, filtered to the ones actually
+# reachable from this code (govulncheck traces call paths, so an advisory in a
+# function nothing calls does not fail the build).
+vuln:
+    go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+# Statement coverage over the code humans maintain, with the generated views
+# excluded, against the floor CI enforces. Raising the floor is welcome;
+# lowering it needs a reason in the commit message.
+coverage:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    floor=82.0
+    go test -count=1 -coverprofile=cover.out ./internal/... > /dev/null
+    grep -v "_templ.go:" cover.out > cover-filtered.out
+    pct=$(go tool cover -func=cover-filtered.out | tail -1 | grep -oE '[0-9.]+%' | tr -d '%')
+    rm -f cover.out cover-filtered.out
+    echo "coverage ${pct}% (floor ${floor}%)"
+    awk -v p="$pct" -v f="$floor" 'BEGIN{exit !(p+0 >= f+0)}' || {
+        echo "coverage ${pct}% is below the ${floor}% floor" >&2
+        exit 1
+    }
+
 # Everything CI checks.
-check: lint test schema-check nix-check
+check: lint test schema-check toolchain-check nix-check coverage
 
 # ─────────────────────────── Run & Dev ───────────────────────────
 
@@ -221,9 +261,12 @@ k6-churn-mt: k6-image
         run --rm -e TENANTS=4 k6 run --summary-export=/out/summary.json /scripts/churn.js
     docker compose -f tests/k6/compose.yaml down -v
 
-# Churn against a race-detector server build (slow start, catches data races).
+# Churn against a race-detector server build. The first start compiles the
+# whole tree under -race, so the suite waits BOOT_WAIT_S (default 1800) for
+# /healthz before it begins.
 k6-race:
-    docker compose -f tests/k6/compose.yaml --profile race run --rm k6-race
+    docker compose -f tests/k6/compose.yaml --profile race run --rm \
+        -e DURATION -e BOOT_WAIT_S k6-race
     docker compose -f tests/k6/compose.yaml --profile race down -v
 
 # Edge-dimension stress: 1000-chunk NAR, 1MiB chunks, 10k-path narinfo storm.
@@ -249,13 +292,147 @@ k6-pressure-mt:
         k6 run /scripts/pressure.js
     docker compose -f tests/k6/compose.yaml down -v
 
+# CI compares every Perf run against tests/k6/baselines/*.json
+# (tests/k6/compare.sh) and fails on a regression.
+#
+# The baseline is a RATCHET. A new anchor that is better than the committed one
+# is written; one that is worse is refused, because the answer to a slower run
+# is a faster server, not a wider band. Override with ALLOW_REGRESSION=1 only
+# when the slowdown is understood and accepted, and say so in the commit
+# message.
+#
+# DIR is searched recursively for k6-*-summary.json, so point it at one or
+# several unzipped Perf artifacts: the more runs, the better the anchor, since
+# the runner's own spread is ~1.7x (see tests/k6/baseline.sh). A dev box is NOT
+# a valid source -- this laptop runs the suites 2-4x faster than the 2-core
+# runner, so baselining here would hand CI numbers it can never meet.
+#
+#   gh run download <perf-run-id> -D /tmp/perf
+#   just re-baseline /tmp/perf
+#
+# Re-baseline the perf gate from unzipped CI Perf artifacts.
+re-baseline DIR:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    allow=${ALLOW_REGRESSION:-}
+    worse=0
+    for suite in perf churn pressure; do
+        mapfile -t files < <(find "{{ DIR }}" -name "k6-$suite-summary.json" | sort)
+        if [ "${#files[@]}" = 0 ]; then
+            echo "no k6-$suite-summary.json under {{ DIR }}" >&2
+            exit 1
+        fi
+        out="tests/k6/baselines/$suite.json"
+        new=$(mktemp)
+        ./tests/k6/baseline.sh "$suite" "${files[@]}" > "$new"
+        if [ -f "$out" ]; then
+            # Compare anchor by anchor, in each metric's own bad direction.
+            while IFS=$'\t' read -r metric stat dir old cur; do
+                bad=$(awk -v o="$old" -v c="$cur" -v d="$dir" \
+                    'BEGIN{print (d=="lower") ? (c > o) : (c < o)}')
+                if [ "$bad" = 1 ]; then
+                    printf 'WORSE  %-10s %-42s %-7s %s -> %s\n' "$suite" "$metric" "$stat" "$old" "$cur"
+                    worse=$((worse + 1))
+                fi
+            done < <(jq -r --slurpfile new "$new" '
+                .metrics as $old
+                | $new[0].metrics | to_entries[]
+                | .key as $m | .value.direction as $d
+                | .value | to_entries[]
+                | select(.key | test("^(p\\(|count$|max$|avg$|med$)"))
+                | select($old[$m][.key] != null)
+                | [$m, .key, $d, ($old[$m][.key]|tostring), (.value|tostring)] | @tsv' "$out")
+        fi
+        mv "$new" "$out.pending"
+    done
+    if [ "$worse" -gt 0 ] && [ -z "$allow" ]; then
+        rm -f tests/k6/baselines/*.pending
+        echo >&2
+        echo "$worse anchor(s) would get worse. Nothing written." >&2
+        echo "Make the server faster, or rerun with ALLOW_REGRESSION=1 and explain it in the commit." >&2
+        exit 1
+    fi
+    for f in tests/k6/baselines/*.pending; do mv "$f" "${f%.pending}"; done
+    [ "$worse" -gt 0 ] && echo "wrote $worse regressed anchor(s) because ALLOW_REGRESSION is set"
+    git --no-pager diff --stat tests/k6/baselines/
+
+# SUITE is perf|churn|pressure; FILE is a k6 --summary-export json.
+#
+# Apply the CI perf gate to a local summary.
+k6-compare SUITE FILE:
+    ./tests/k6/compare.sh tests/k6/baselines/{{ SUITE }}.json {{ FILE }} {{ SUITE }}
+
+# TARGET is a Fuzz* function name, DURATION a Go duration (default 60s). CI
+# runs every target for 30s; this is for hunting new inputs, which land in
+# testdata/fuzz and should be committed when they find something.
+#
+#   just fuzz FuzzParseHash 5m
+#
+# DURATION defaults to the 30s per target CI runs on every push. Targets are
+# discovered from the source, so a new Fuzz* function is covered the moment it
+# exists -- there is no list to update.
+#
+# Fuzz every target, as CI and the nightly do.
+fuzz-all DURATION="30s":
+    ./scripts/fuzz.sh {{ DURATION }}
+
+# Fuzz one target for longer than CI does.
+fuzz TARGET DURATION="60s":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    pkg=$(grep -rl "func {{ TARGET }}(" --include='*_test.go' internal | head -1 | xargs dirname)
+    if [ -z "$pkg" ]; then echo "no package defines {{ TARGET }}" >&2; exit 1; fi
+    echo "fuzzing {{ TARGET }} in ./$pkg for {{ DURATION }}"
+    go test "./$pkg" -run '^{{ TARGET }}$' -fuzz '^{{ TARGET }}$' -fuzztime={{ DURATION }} -count=1
+
 # Chaos: SIGKILL mid-push, restart, prove nothing corrupted. Needs nix + docker.
 chaos:
     ./tests/e2e/chaos.sh
 
-# Head-to-head vs attic on this machine (push, pull, RSS/CPU). ~5 min.
-bench-attic:
-    ./tests/bench/bench.sh
+# Runs every target sequentially, measures push, pull, RSS, CPU and bytes on
+# disk, then redraws the README's charts from the result. TARGETS picks a
+# subset: `just bench xilo,attic`.
+#
+# CI runs the same script weekly (.github/workflows/bench.yml) and commits what
+# it measured, so the committed numbers describe a 2-core runner rather than
+# whichever laptop last ran this.
+#
+# Head-to-head vs attic, nix-serve-ng and MinIO. ~15 min; docker + nix, idle machine.
+bench TARGETS="xilo,attic,nixserve,s3":
+    ./tests/bench/bench.sh --targets {{ TARGETS }} --json tests/bench/results.json
+    just perf-charts
+
+# Reads tests/k6/baselines/*.json and tests/bench/results.json. The SVGs are
+# generated artifacts that still have to be committed, since a README image
+# cannot be built on demand by whoever is reading it.
+#
+# Redraw docs/perf/*.svg, the README's performance graphics.
+perf-charts:
+    go run ./tools/perfchart
+
+# Fails when the committed charts no longer match the committed numbers, which
+# is what moving a baseline without a redraw leaves behind.
+#
+# Strict read-only check that docs/perf is in sync.
+perf-charts-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    go run ./tools/perfchart > /dev/null
+    drift=$(git status --porcelain docs/perf)
+    if [ -z "$drift" ]; then
+        echo "performance charts in sync"
+        exit 0
+    fi
+    # Untracked and changed are different problems with the same symptom, and
+    # "stale" sends you looking for a diff that is not there.
+    if [ -z "$(echo "$drift" | grep -v '^??')" ]; then
+        echo "::error::docs/perf is not committed yet:"
+        echo "$drift"
+    else
+        echo "::error::docs/perf is stale. Run 'just perf-charts' and commit."
+        git --no-pager diff --stat docs/perf
+    fi
+    exit 1
 
 clean:
     rm -rf bin/
@@ -275,9 +452,24 @@ _release-checks:
         echo "Error: not on default branch '$DEFAULT_BRANCH' (currently on '$BRANCH')." >&2
         exit 1
     fi
-    # check only *verifies* the schema, so regenerate it first: drift becomes a
-    # commit instead of a failed release.
+    # Catch up with the remote first. CI answers every push to the default
+    # branch with a generated-artifact commit of its own, so a tree that was
+    # in sync when you last pushed is behind by the time you release — and the
+    # release's own push is then rejected non-fast-forward, after ten minutes
+    # of checks. Tags come along so the version below counts from what is
+    # actually released, not from what this machine happens to know.
+    echo "Syncing with origin/$DEFAULT_BRANCH..."
+    git fetch --tags --prune origin
+    if [ -n "$(git rev-list HEAD..origin/$DEFAULT_BRANCH)" ]; then
+        echo "origin/$DEFAULT_BRANCH has commits this tree does not; rebasing onto it."
+        git pull --rebase --autostash origin "$DEFAULT_BRANCH"
+    fi
+    # check only *verifies* these, so regenerate them first: drift becomes a
+    # commit instead of a failed release. A Go upgrade moves go.mod and leaves
+    # three image/compiler pins behind it, which is how the k6 race profile
+    # shipped broken for a whole minor version.
     just sync-schema
+    just sync-toolchain
     just check
     if [ -n "$(git status --porcelain)" ]; then
         echo "Changes detected (formatting / generated artifacts / schema). Committing..."
@@ -314,9 +506,34 @@ _release LEVEL: _release-checks
         patch) new="v${major}.${minor}.$((patch + 1))" ;;
         *) echo "unknown release level: {{ LEVEL }}" >&2; exit 1 ;;
     esac
+    if git rev-parse -q --verify "refs/tags/$new" >/dev/null; then
+        echo "Error: tag $new already exists here. Delete it (git tag -d $new) if it was never pushed." >&2
+        exit 1
+    fi
     echo "Bumping from $cur to $new"
-    git tag -a "$new" -m "Release $new"
+    # The checks just committed the resynced artifacts, and they took long
+    # enough that CI may have pushed again in the meantime. Land on whatever
+    # is there and push the branch *first*.
+    BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    git fetch origin "$BRANCH"
+    if [ -n "$(git rev-list HEAD..FETCH_HEAD)" ]; then
+        git rebase FETCH_HEAD
+    fi
+    # GitHub skips *every* workflow for a push whose head commit message says
+    # [skip ci] — including the tag push that is the entire release mechanism
+    # here. CI's own artifact bump says exactly that, so a release with no
+    # drift of its own tags one of those commits and publishes nothing: no
+    # binaries, no image, no release notes, and no failure either. Give the
+    # tag a commit that runs.
+    if git log -1 --format=%B HEAD | grep -qiE '\[skip ci\]|\[ci skip\]'; then
+        echo "HEAD says [skip ci]; adding a release commit so the tag builds."
+        git commit --allow-empty -m "chore: release $new"
+    fi
     git push origin HEAD
+    # Tag only once the branch is up. A tag made before a rejected push is a
+    # version number spent for nothing: the next run counts from it and
+    # silently skips a release number (v1.2.0 gone, v1.2.1 out instead).
+    git tag -a "$new" -m "Release $new"
     git push origin "$new"
     echo "Pushed $new — watch it with: gh run list --workflow Release"
 

@@ -340,8 +340,6 @@ var en = map[string]string{
 	"org.addmember":     "Add member",
 	"org.member":        "User",
 	"org.addmemberhint": "Gives someone access to this organization's caches.",
-	"org.nocandidates":  "Everyone is already a member.",
-	"org.pickuser":      "Select",
 	"org.removetitle":   "Remove member?",
 	"org.removemsg":     "%s will lose access to %s.",
 
@@ -554,6 +552,7 @@ var en = map[string]string{
 
 	// placeholders (example values)
 	"ph.cachename":     "nixpkgs",
+	"ph.memberuser":    "username or email",
 	"ph.tokenname":     "ci-push",
 	"ph.email":         "you@example.com",
 	"ph.newuser":       "username",

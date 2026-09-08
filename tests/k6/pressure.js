@@ -37,6 +37,22 @@ const TENANTS = parseInt(__ENV.TENANTS || "0", 10);
 const goroutines = new Trend("srv_goroutines");
 const heapMiB = new Trend("srv_heap_mib");
 const pullBroken = new Counter("pull_broken");
+const abortsSeen = new Counter("aborts_seen");
+const scrapesSeen = new Counter("scrapes_seen");
+
+// Client connections this run can hold open at once. Go's http.Server keeps
+// roughly one goroutine per live connection (plus a read goroutine while a
+// body is in flight), so this is what the server's goroutine count tracks,
+// and a ceiling has to be derived from it rather than hardcoded: raise
+// STORM_VUS and a constant bound either flakes or stops meaning anything.
+const CLIENTS = STORM_VUS + PULL_VUS + Math.min(1000, FLOOD_RPS) + 4 + 32 + 1;
+
+// Twice the connection count plus the server's own base. Measured at the CI
+// scale (STORM_VUS=128, FLOOD_RPS=1200, PULL_VUS=32, so CLIENTS=1197) the
+// peak was 1246 goroutines across two runs, a shade over one per connection.
+// A real leak (a per-request spawn, a prefetcher that never returns) runs to
+// the thousands and trips this; normal load does not come close.
+const GOROUTINE_CEILING = 2 * CLIENTS + 200;
 
 const RAMP = 30; // storm ramp-up seconds
 const STORM_END = RAMP + D + 10;
@@ -91,12 +107,31 @@ export const options = {
   },
   thresholds: {
     // Graceful under pressure: essentially nothing fails, latency bounded.
+    // The aggregate covers every scenario, including one added later that
+    // nobody remembers to name here. abort_storm's deliberate aborts are
+    // declared expected at the call site rather than excluded here, so this
+    // number is the whole run's and means what it says.
+    http_req_failed: ["rate<0.005"],
+    // The half-closed-connection storm has to keep half-closing connections,
+    // and the leak watch has to keep scraping: both scenarios used to be able
+    // to stop doing their job without failing anything.
+    aborts_seen: ["count>0"],
+    scrapes_seen: ["count>10"],
     "http_req_failed{scenario:storm}": ["rate<0.005"],
     "http_req_failed{scenario:push_storm}": ["rate<0.005"],
     "http_req_failed{scenario:flood}": ["rate<0.005"],
     "http_req_failed{scenario:pull_wall}": ["rate<0.005"],
-    "http_req_duration{scenario:storm}": ["p(99)<1000"],
-    "http_req_duration{scenario:flood}": ["p(99)<1000"],
+    // Zero, not a budget: an abort is declared expected at the call site, so
+    // anything left here is the server mishandling a half-closed connection,
+    // and a scrape that fails means the watch is blind again.
+    "http_req_failed{scenario:abort_storm}": ["rate==0"],
+    "http_req_failed{scenario:leakwatch}": ["rate==0"],
+    // Sized off measurement, not guesswork: across 12 CI run-legs the worst
+    // single storm request was 245ms and the worst flood request 75ms, with
+    // p(95) at 58.7ms and 0.77ms. A p(99) of 1000ms was ~17x above anything
+    // ever seen, so latency could grow tenfold under load and still pass.
+    "http_req_duration{scenario:storm}": ["p(99)<400"],
+    "http_req_duration{scenario:flood}": ["p(99)<150"],
     // The arrival-rate executor drops iterations when the server can't keep
     // up. At the default 5000 rps a healthy server drops none — any drop is a
     // capacity regression. When you deliberately push FLOOD_RPS above the
@@ -104,6 +139,18 @@ export const options = {
     // capacity; the graceful-degradation signal is zero FAILURES + bounded
     // latency, which stay enforced.
     dropped_iterations: [`count<${__ENV.DROP_BUDGET || 10}`],
+    // The leak watch is only worth having if its numbers are asserted. Both
+    // of these were dead until the scrape was fixed: srv_goroutines read a
+    // flat idle 12 under a 128-VU storm because every scrape after the first
+    // answered 401, so there was nothing to threshold.
+    //
+    // Peak heap across two runs at CI scale was 389 MiB with p(95) at 297,
+    // driven by 64MiB NARs in flight. p(95) is the stable statistic here (max
+    // moves with GC timing), so it carries the tight bound and max the loose
+    // one. Growth past these means bytes are being buffered that used to be
+    // streamed.
+    srv_goroutines: [`max<${GOROUTINE_CEILING}`],
+    srv_heap_mib: ["p(95)<800", "max<1536"],
     // No corrupted pulls, ever.
     pull_broken: ["count==0"],
     checks: ["rate>0.995"],
@@ -202,30 +249,54 @@ export function pullWall(data) {
   }
 }
 
+// A client that hangs up mid-body is answered with status 0 (k6's code for a
+// request that never completed), and here that is the correct answer, not a
+// failure: declaring it expected keeps ~6k deliberate aborts out of
+// http_req_failed, which is what used to make every pressure summary report a
+// ~1.5% failure rate over a run where no scenario failed a single request.
+// Anything else the server might answer, a 5xx or a truncated 200, still
+// counts, so the aggregate threshold covers this scenario too.
+const abortExpected = http.expectedStatuses(0, { min: 200, max: 399 });
+
 export function abortStorm(data) {
-  // 64MiB NAR with a 150ms budget: aborts mid-body by design. Failures here
-  // are the point — no thresholds reference this scenario.
+  // 64MiB NAR with a 150ms budget: aborts mid-body by design.
   const i = tn(data);
-  http.get(`${cachePrefix(data.targets[i])}/nar/${data.corpora[i].bigHash}.nar`, {
+  const res = http.get(`${cachePrefix(data.targets[i])}/nar/${data.corpora[i].bigHash}.nar`, {
     headers: { "Accept-Encoding": "identity" },
     responseType: "none",
     timeout: "150ms",
     tags: { name: "abort" },
+    responseCallback: abortExpected,
   });
+  // Count the aborts that actually aborted: if the NAR ever starts fitting
+  // inside the budget this scenario stops exercising half-closed connections
+  // at all, and the run would go green having tested nothing.
+  if (res.status === 0) abortsSeen.add(1);
 }
 
-// /metrics is admin-only; this single-VU scenario logs in once, then reuses
-// the owner session in its per-VU cookie jar for every scrape.
+// /metrics is admin-only, and the session has to survive ~48 scrapes spread
+// over the whole run. k6 resets the per-VU cookie jar between iterations, so
+// signing in once and relying on that jar left this scenario authenticated
+// for its first iteration only: it recorded a single pre-load sample (which
+// is why srv_goroutines read a flat idle 12 under a 128-VU storm) and
+// answered 401 for the ~47 scrapes after it, so the leak watch watched
+// nothing while load was on. An explicit jar outlives the iteration; logging
+// in per iteration is not the fix, since the login limiter refills at 1 per
+// 10s against a scrape every 5s.
+const leakJar = new http.CookieJar();
 let leakAuthed = false;
 export function leakwatch() {
   if (!leakAuthed) {
-    adminLogin();
+    adminLogin(leakJar);
     leakAuthed = true;
   }
-  const res = http.get(`${BASE}/metrics`, { tags: { name: "metrics" } });
+  const res = http.get(`${BASE}/metrics`, { jar: leakJar, tags: { name: "metrics" } });
   if (res.status === 200) {
     const g = String(res.body).match(/^go_goroutines (\d+)/m);
-    if (g) goroutines.add(parseInt(g[1]));
+    if (g) {
+      goroutines.add(parseInt(g[1]));
+      scrapesSeen.add(1);
+    }
     const h = String(res.body).match(/^go_heap_inuse_bytes (\d+)/m);
     if (h) heapMiB.add(parseInt(h[1]) / 1048576);
   }
@@ -246,7 +317,9 @@ export function teardown(data) {
   // Idle keepalive connections from k6's still-open VU pools hold ~2 server
   // goroutines each until IdleTimeout — scale the bound with client count.
   // A real leak (chunk prefetchers, per-request spawns) shows up in the
-  // thousands and still trips this.
+  // thousands and still trips this. Far tighter than GOROUTINE_CEILING on
+  // purpose: this runs 15s after load stopped, so the connections should be
+  // going away rather than merely bounded (CI measures 45 here).
   const bound = 200 + Math.ceil(STORM_VUS / 4);
   if (n > bound) fail(`goroutine leak: ${n} still alive 15s after load stopped (bound ${bound})`);
 

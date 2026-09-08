@@ -34,6 +34,9 @@ jobs:
             run --rm -e TENANTS=${{ matrix.tenants }} k6
           docker compose -f tests/k6/compose.yaml run --rm --entrypoint cat k6 /out/summary.json > k6-perf-summary.json
 
+      - name: perf vs baseline
+        run: ./tests/k6/compare.sh tests/k6/baselines/perf.json k6-perf-summary.json perf-${{ matrix.tenancy }}
+
       - name: integrity churn (hostile GC)
         run: |
           docker compose -f tests/k6/compose.yaml down -v
@@ -41,6 +44,9 @@ jobs:
             run --rm -e TENANTS=${{ matrix.tenants }} \
             k6 run --summary-export=/out/summary.json /scripts/churn.js
           docker compose -f tests/k6/compose.yaml run --rm --entrypoint cat k6 /out/summary.json > k6-churn-summary.json
+
+      - name: churn vs baseline
+        run: ./tests/k6/compare.sh tests/k6/baselines/churn.json k6-churn-summary.json churn-${{ matrix.tenancy }}
 
       - name: pressure (scaled for 2-core runner)
         run: |
@@ -51,6 +57,9 @@ jobs:
             -e TENANTS=${{ matrix.tenants }} \
             k6 run --summary-export=/out/summary.json /scripts/pressure.js
           docker compose -f tests/k6/compose.yaml run --rm --entrypoint cat k6 /out/summary.json > k6-pressure-summary.json
+
+      - name: pressure vs baseline
+        run: ./tests/k6/compare.sh tests/k6/baselines/pressure.json k6-pressure-summary.json pressure-${{ matrix.tenancy }}
 
       - name: job summary
         if: always()
@@ -67,6 +76,17 @@ jobs:
             jq -r '"| http_reqs (count) | \(.metrics.http_reqs.count) | | |",
                    "| http_req_failed (rate) | \(.metrics.http_req_failed.value // 0) | | |"' \
               "$2" >> "$GITHUB_STEP_SUMMARY" || true
+            echo >> "$GITHUB_STEP_SUMMARY"
+            # Per-scenario failure rates, because the aggregate answers "did
+            # anything fail" and not "what failed": a rate on this page with
+            # no scenario beside it sends you to the raw log to find out.
+            jq -e '.metrics | any(keys[]; startswith("http_req_failed{"))' "$2" >/dev/null 2>&1 || return 0
+            echo '| scenario | failed |' >> "$GITHUB_STEP_SUMMARY"
+            echo '|---|---|' >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.metrics | to_entries[]
+              | select(.key | startswith("http_req_failed{"))
+              | "| \(.key | ltrimstr("http_req_failed{") | rtrimstr("}")) | \(.value.value // 0) |"' \
+              "$2" >> "$GITHUB_STEP_SUMMARY"
             echo >> "$GITHUB_STEP_SUMMARY"
           }
           summarize "perf" k6-perf-summary.json

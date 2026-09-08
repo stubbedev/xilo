@@ -115,22 +115,40 @@ export function pushPath(seed, chunkCount, chunkSize, tags, target) {
   return { storeHash: storePath.slice(11, 43), narHex, narSize, ok };
 }
 
+// A poll against a server that has not opened its listener yet is the
+// expected case, not a failure: without this, waiting out a slow boot spends
+// the suite's whole http_req_failed budget before the first real request.
+// The race profile boots in minutes (it compiles the server under -race), so
+// that was hundreds of "failures" for a server behaving correctly.
+const bootExpected = http.expectedStatuses(0, { min: 200, max: 599 });
+
 // waitHealthy polls /healthz so scenarios don't need a compose healthcheck
 // (the distroless image has nothing to run one with).
 export function waitHealthy(timeoutSec) {
   for (let i = 0; i < (timeoutSec || 30); i++) {
-    const res = http.get(`${BASE}/healthz`);
+    const res = http.get(`${BASE}/healthz`, { responseCallback: bootExpected });
     if (res.status === 200) return;
     sleep(1);
   }
   throw new Error(`server at ${BASE} not healthy after ${timeoutSec}s`);
 }
 
-// adminJar logs into the dashboard and returns a cookie jar with the session.
-// Login is rate-limited (per-IP burst 10, refill 1/10s) so callers must reuse
-// one jar rather than logging in per operation.
-export function adminLogin() {
-  const res = http.post(`${BASE}/admin/login`, { username: ADMIN_USER, password: ADMIN_PASSWORD });
+// adminLogin signs the dashboard session into a cookie jar. Login is
+// rate-limited (per-IP burst 10, refill 1/10s) so callers must reuse one jar
+// rather than logging in per operation.
+//
+// Pass `jar` when the session has to outlive the iteration: k6 resets the
+// per-VU jar between iterations, so a scenario that logs in once and keeps
+// requesting across iterations is signed out from its second one onward (see
+// pressure.js leakwatch). Omit it inside a single setup/teardown/iteration
+// body, where the per-VU jar is the whole story.
+export function adminLogin(jar) {
+  const params = jar ? { jar } : {};
+  const res = http.post(
+    `${BASE}/admin/login`,
+    { username: ADMIN_USER, password: ADMIN_PASSWORD },
+    params,
+  );
   if (res.status !== 200) throw new Error(`admin login failed: ${res.status}`);
 }
 
@@ -149,19 +167,23 @@ export function setContext(account) {
   http.post(`${BASE}/admin/context`, { ctx: account });
 }
 
-// joinAccount makes the signed-in admin a member of `account` (no-op if they
-// already are). The member picker on the org page carries each candidate's
-// user id, which is the only place the admin's own id is exposed to a client.
+// An org that does not exist answers 404 (orgByPath), which for joinAccount
+// is the documented no-op rather than a failure, so it is declared expected
+// and stays out of http_req_failed. Without this every multi-tenant run
+// reported exactly one failed request (the trailing setContext(ACCOUNT)
+// below, since there is deliberately no account named "default"), a phantom
+// nobody can act on sitting in the headline rate of every summary.
+const joinExpected = http.expectedStatuses({ min: 200, max: 399 }, 404);
+
+// joinAccount makes the signed-in admin a member of `account` — idempotent,
+// and a no-op when the account does not exist yet (creating a cache is what
+// creates it, and the caller sets the context again afterwards).
 export function joinAccount(account) {
-  const page = String(http.get(`${BASE}/admin/org/${account}`).body);
-  // Each candidate is one selectbox item: the id on the option, the username
-  // in its label span. Pair them, and take the one that is us — never the
-  // first option, which would hand a stranger admin of the account.
-  const mine = [...page.matchAll(/data-tui-selectbox-value="(\d+)"[\s\S]{0,400}?select-item-text">([^<]*)</g)]
-    .find((m) => m[2].trim() === ADMIN_USER);
-  // Not a candidate: already a member, which is all this needs.
-  if (!mine) return;
-  http.post(`${BASE}/admin/org/${account}/members`, { user_id: mine[1], role: "admin" });
+  http.post(
+    `${BASE}/admin/org/${account}/members`,
+    { user: ADMIN_USER, role: "admin" },
+    { responseCallback: joinExpected },
+  );
 }
 
 // ensureCache creates `target`'s account+cache through the admin dashboard —

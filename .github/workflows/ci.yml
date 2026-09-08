@@ -9,12 +9,21 @@ jobs:
   test:
     name: build + test
     runs-on: ubuntu-latest
+    env:
+      # Declares that everything the suites need is installed here, so a
+      # missing prerequisite fails instead of skipping (internal/testenv).
+      # Without nix below, the NAR differential tests skipped silently and
+      # the byte layout that every NarHash depends on went unverified.
+      XILO_STRICT_TESTS: 1
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
+      # internal/nar and internal/push diff their own serialization against
+      # `nix-store --dump`; those tests are the contract, not a nicety.
+      - uses: DeterminateSystems/nix-installer-action@v22
       # Admin CSS is generated (not committed) and embedded via go:embed.
       - name: build admin CSS
         run: |
@@ -28,6 +37,12 @@ jobs:
         run: |
           out=$(gofmt -l .)
           if [ -n "$out" ]; then echo "unformatted:"; echo "$out"; exit 1; fi
+      # Every hand-written Go version pin (release image, k6 race-profile
+      # image, nix compiler) must equal go.mod's `go` directive. The race
+      # profile stayed on 1.26 through the 1.27 bump and nothing noticed,
+      # because nothing in CI built it.
+      - name: Go version pins match go.mod
+        run: ./scripts/toolchain.sh check
       - run: go vet ./...
       # Stdlib-first gate (.golangci.yml) — the same set `just lint` runs.
       - uses: golangci/golangci-lint-action@v9
@@ -38,6 +53,44 @@ jobs:
       # internal/cli/serve.go starts importing internal/server.
       - run: go build -tags noserver -o /dev/null ./cmd/xilo
       - run: go test -race ./...
+
+  vuln:
+    name: known vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      # Reachability-filtered: govulncheck traces call paths, so an advisory
+      # in a function nothing calls does not fail the build. Anything it does
+      # report is code this binary can actually run.
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  fuzz:
+    name: fuzz the parsers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      # A smoke run, not a campaign: 30s per target is enough to catch a
+      # regression a seed corpus already covers, and the committed corpus in
+      # testdata/fuzz replays every input a longer run ever found. Hunt for
+      # new ones locally with `just fuzz <target> <duration>`.
+      - name: fuzz
+        run: ./scripts/fuzz.sh 30s
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: fuzz-crashers
+          path: |
+            internal/*/testdata/fuzz/**
+            ~/.cache/go-build/fuzz/**
 
   postgres:
     name: store suite against PostgreSQL
@@ -59,10 +112,50 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: run store tests against postgres
+      # The whole suite, not one function: XILO_TEST_BACKEND points every
+      # openTest caller at Postgres (each test in its own schema), so the same
+      # ~83 bodies that cover SQLite in the test job cover Postgres here. It
+      # used to be a single hand-written walk that had to be extended by hand
+      # for every new store method, and usually wasn't.
+      - name: run the store suite against postgres
         env:
+          XILO_TEST_BACKEND: postgres
           XILO_PG_TEST_DSN: postgres://postgres:x@localhost:5432/postgres
-        run: go test ./internal/store/ -run TestPostgres -count=1 -v
+        run: go test ./internal/store/ -count=1
+
+  minio:
+    name: S3 backend against MinIO
+    runs-on: ubuntu-latest
+    services:
+      minio:
+        image: bitnami/minio:latest
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+          MINIO_DEFAULT_BUCKETS: xilo-test
+        ports: ["9000:9000"]
+        options: >-
+          --health-cmd "mc ready local"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      # Chunk bytes never touch the DB, so the blob backend is the only thing
+      # between a cache and its content -- and the S3 path was only ever
+      # exercised against a fake written to our own idea of the protocol.
+      # XILO_REQUIRE_S3 turns a missing MinIO into a failure here, so this
+      # job cannot go green by skipping.
+      - name: run the S3 backend tests against MinIO
+        env:
+          XILO_S3_TEST_ENDPOINT: localhost:9000
+          XILO_S3_TEST_BUCKET: xilo-test
+          XILO_REQUIRE_S3: 1
+        run: go test ./internal/storage/ -run RealS3 -count=1 -v
 
   e2e:
     name: CLI end-to-end (real nix + containerized server)
@@ -116,7 +209,7 @@ jobs:
         run: docker compose -f tests/k6/compose.yaml down -v
 
   schema:
-    name: schema + coverage badge in sync
+    name: generated artifacts in sync
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -157,6 +250,15 @@ jobs:
           fi
           grep -v "_templ.go:" cover.out > cover-filtered.out
           pct=$(go tool cover -func=cover-filtered.out | tail -1 | grep -oE '[0-9.]+%' | tr -d '%')
+          # A floor, not just a badge: the number was recorded and nothing
+          # failed when it dropped. Raising it is welcome; lowering it should
+          # be a deliberate commit that says why.
+          floor=82.0
+          if ! awk -v p="$pct" -v f="$floor" 'BEGIN{exit !(p+0 >= f+0)}'; then
+            echo "::error::coverage ${pct}% is below the ${floor}% floor"
+            exit 1
+          fi
+          echo "coverage ${pct}% (floor ${floor}%)"
           color=orange
           awk -v p="$pct" 'BEGIN{exit !(p>=70)}' && color=yellowgreen
           awk -v p="$pct" 'BEGIN{exit !(p>=80)}' && color=green
@@ -165,6 +267,14 @@ jobs:
           printf '{"schemaVersion":1,"label":"coverage","message":"%s%%","color":"%s"}\n' "$pct" "$color" > .github/badges/coverage.json
           rm cover.out cover-filtered.out
           cat .github/badges/coverage.json
+
+      # The README's performance graphics are drawn from committed numbers
+      # (tests/k6/baselines/*.json, tests/bench/results.json), so they are
+      # generated on every push rather than by whoever last remembered to run
+      # `just perf-charts`. The measured numbers themselves come from the Bench
+      # workflow, which commits them; this step only redraws.
+      - name: redraw performance charts
+        run: go run ./tools/perfchart
 
       # On PRs: fail if the schema is stale so the author regenerates + commits.
       - name: assert in sync (PR)
@@ -175,16 +285,24 @@ jobs:
             git --no-pager diff schemas/xilo.schema.json
             exit 1
           fi
+          if [ -n "$(git status --porcelain docs/perf)" ]; then
+            echo "::error::docs/perf is stale. Run 'just perf-charts' and commit."
+            git --no-pager diff --stat docs/perf
+            exit 1
+          fi
 
-      # On master/main pushes: auto-commit any drift (schema + badge).
+      # On master/main pushes: auto-commit any drift (schema, badge, charts).
       - name: auto-commit (push)
         if: github.event_name == 'push'
         run: |
-          if [ -z "$(git status --porcelain schemas/xilo.schema.json .github/badges/coverage.json)" ]; then
-            echo "schema + badge already in sync"; exit 0
+          if [ -z "$(git status --porcelain schemas/xilo.schema.json .github/badges/coverage.json docs/perf)" ]; then
+            echo "schema + badge + charts already in sync"; exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add schemas/xilo.schema.json .github/badges/coverage.json
-          git commit -m 'chore: auto-bump schema + coverage badge [skip ci]'
-          git push
+          git add schemas/xilo.schema.json .github/badges/coverage.json docs/perf
+          git commit -m 'chore: auto-bump schema + coverage badge + perf charts [skip ci]'
+          # The Bench workflow commits charts too, so the two can collide on a
+          # week where both run; a rebase costs a second, a failed run costs
+          # the whole job.
+          git push || { git pull --rebase --autostash && git push; }

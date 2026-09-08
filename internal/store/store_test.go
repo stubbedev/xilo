@@ -13,8 +13,16 @@ import (
 	"github.com/stubbedev/xilo/internal/storage"
 )
 
+// openTest opens the store every test in this package works against. Which
+// backend that is comes from the run, not the test: SQLite by default,
+// PostgreSQL under XILO_TEST_BACKEND=postgres (see backend_test.go). CI runs
+// the suite once each way over the same bodies, so a query only SQLite accepts
+// fails the Postgres leg the moment it is written.
 func openTest(t *testing.T) *DB {
 	t.Helper()
+	if dsn := pgTestDSN(t); dsn != "" {
+		return openTestPG(t, dsn)
+	}
 	db, err := Open(filepath.Join(t.TempDir(), "x.db"))
 	if err != nil {
 		t.Fatal(err)

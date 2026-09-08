@@ -639,3 +639,18 @@ func vtStyle(s string) string {
 	}
 	return b.String()
 }
+
+// hxLeaveRegion undoes the swap attributes a results region (#path-results,
+// #audit-results) hands down to everything inside it. Sort heads and pagers
+// want that inheritance — they re-render the region in place — but a link that
+// leaves for another page does not: hx-select goes looking for the region in a
+// response that has none and swaps in nothing, so the URL changes and the page
+// comes up empty. These are the boosted defaults spelled out: the body is the
+// target, and <body>'s own transition swap.
+func hxLeaveRegion() templ.Attributes {
+	return templ.Attributes{
+		"hx-target": "unset",
+		"hx-select": "unset",
+		"hx-swap":   "innerHTML transition:true",
+	}
+}
