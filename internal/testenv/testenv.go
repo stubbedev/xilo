@@ -26,6 +26,23 @@ const StrictVar = "XILO_STRICT_TESTS"
 // Strict reports whether this run promised to satisfy every prerequisite.
 func Strict() bool { return os.Getenv(StrictVar) != "" }
 
+// Service gates a test on a prerequisite only some jobs provide: a database, a
+// MinIO. It skips when the thing is absent, unless requireVar is set, which is
+// how the one job that does provide it says so and turns a missing service
+// into a failure rather than a silently green run.
+//
+// StrictVar deliberately does not cover these. The general test job has nix
+// but no service containers, so making its skips fatal would only mean nobody
+// sets StrictVar at all. (internal/store reads XILO_TEST_BACKEND as its own
+// require signal, for the same reason and to the same effect.)
+func Service(tb testing.TB, requireVar, what string) {
+	tb.Helper()
+	if os.Getenv(requireVar) != "" {
+		tb.Fatalf("%s is unavailable but %s is set, so this job was supposed to provide it", what, requireVar)
+	}
+	tb.Skipf("%s unavailable", what)
+}
+
 // Need skips the test when a prerequisite is absent, or fails it when this run
 // promised to have it. `what` names the missing thing the way an operator
 // would fix it ("nix-store on PATH"), and `why` carries the underlying error

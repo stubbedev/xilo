@@ -126,6 +126,40 @@ jobs:
           XILO_PG_TEST_DSN: postgres://postgres:x@localhost:5432/postgres
         run: go test ./internal/store/ -count=1
 
+  minio:
+    name: S3 backend against MinIO
+    runs-on: ubuntu-latest
+    services:
+      minio:
+        image: bitnami/minio:latest
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+          MINIO_DEFAULT_BUCKETS: xilo-test
+        ports: ["9000:9000"]
+        options: >-
+          --health-cmd "mc ready local"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      # Chunk bytes never touch the DB, so the blob backend is the only thing
+      # between a cache and its content -- and the S3 path was only ever
+      # exercised against a fake written to our own idea of the protocol.
+      # XILO_REQUIRE_S3 turns a missing MinIO into a failure here, so this
+      # job cannot go green by skipping.
+      - name: run the S3 backend tests against MinIO
+        env:
+          XILO_S3_TEST_ENDPOINT: localhost:9000
+          XILO_S3_TEST_BUCKET: xilo-test
+          XILO_REQUIRE_S3: 1
+        run: go test ./internal/storage/ -run RealS3 -count=1 -v
+
   e2e:
     name: CLI end-to-end (real nix + containerized server)
     runs-on: ubuntu-latest
