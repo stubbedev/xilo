@@ -5,12 +5,15 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stubbedev/xilo/internal/testenv"
 )
 
 // str is the expected wire form of one NAR string, used to hand-build the
@@ -145,7 +148,7 @@ func TestDumpRejectsUnsupportedFileType(t *testing.T) {
 	dir := t.TempDir()
 	fifo := filepath.Join(dir, "p")
 	if out, err := exec.Command("mkfifo", fifo).CombinedOutput(); err != nil {
-		t.Skipf("mkfifo unavailable: %v %s", err, out)
+		testenv.Need(t, "mkfifo", fmt.Sprintf("%v %s", err, out))
 	}
 	var buf bytes.Buffer
 	err := Dump(&buf, fifo)
@@ -235,12 +238,14 @@ func buildTree(t *testing.T) string {
 	return root
 }
 
-// The contract: byte-for-byte identical to `nix-store --dump`. Skipped where nix
-// isn't installed; CI's build+test job has it, and so does the dev shell.
+// The contract: byte-for-byte identical to `nix-store --dump`. Skipped where
+// nix isn't installed (a laptop, a container), but never in CI: the test job
+// installs nix and sets XILO_STRICT_TESTS, so a missing nix-store fails here
+// instead of quietly leaving the byte layout unchecked.
 func TestDumpMatchesNixStoreDump(t *testing.T) {
 	nixStore, err := exec.LookPath("nix-store")
 	if err != nil {
-		t.Skip("nix-store not on PATH")
+		testenv.Need(t, "nix-store on PATH", err.Error())
 	}
 	for _, tc := range []struct {
 		name string

@@ -83,6 +83,7 @@ Request path: `cmd/xilo` → `internal/server` (one `http.ServeMux`, routes regi
 
 ## Testing notes
 
+- **A test that cannot run must not go quiet.** Suites needing something the machine may not have (nix on PATH, a PostgreSQL server, mkfifo) call `testenv.Need` instead of `t.Skip`: on a laptop it still skips, but under `XILO_STRICT_TESTS` (set by CI's `test` job) a missing prerequisite is a failure. This exists because the differential test pinning the NAR byte layout against `nix-store --dump` skipped in CI for as long as it existed, since the job running `go test` never installed nix and a skip prints nothing without `-v`. Adding an environment-gated `t.Skip` puts a hole back in the suite.
 - `internal/server/views/smoke_test.go` renders every exported component and asserts English marker strings — catalog values in `i18n.go` must keep matching those markers.
 - Server tests assert the PRG contract (303 + flash on landing page), not bare error codes.
 - E2E/bench live in `tests/` (`tests/e2e/cli.sh`, `tests/bench/bench.sh`); not part of `go test`.

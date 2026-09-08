@@ -9,12 +9,21 @@ jobs:
   test:
     name: build + test
     runs-on: ubuntu-latest
+    env:
+      # Declares that everything the suites need is installed here, so a
+      # missing prerequisite fails instead of skipping (internal/testenv).
+      # Without nix below, the NAR differential tests skipped silently and
+      # the byte layout that every NarHash depends on went unverified.
+      XILO_STRICT_TESTS: 1
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
+      # internal/nar and internal/push diff their own serialization against
+      # `nix-store --dump`; those tests are the contract, not a nicety.
+      - uses: DeterminateSystems/nix-installer-action@v22
       # Admin CSS is generated (not committed) and embedded via go:embed.
       - name: build admin CSS
         run: |
