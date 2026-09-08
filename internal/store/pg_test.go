@@ -13,14 +13,21 @@ import (
 	"github.com/stubbedev/xilo/internal/storage"
 )
 
-// TestPostgres exercises the whole store API against a real PostgreSQL when
-// XILO_PG_TEST_DSN is set (CI provides a service container; locally:
+// TestPostgres walks the store API against a real PostgreSQL in the public
+// schema, which is also the migrate-idempotence check (it reopens). The rest
+// of the suite covers Postgres through openTest under XILO_TEST_BACKEND, each
+// test in a schema of its own; this one stays as the shared-schema pass.
+//
+// Runs when XILO_PG_TEST_DSN is set (CI provides a service container; locally:
 //
 //	docker run --rm -e POSTGRES_PASSWORD=x -p 5433:5432 postgres:16
 //	XILO_PG_TEST_DSN='postgres://postgres:x@localhost:5433/postgres' go test ./internal/store -run TestPostgres
 func TestPostgres(t *testing.T) {
 	dsn := os.Getenv("XILO_PG_TEST_DSN")
 	if dsn == "" {
+		if onPG() {
+			t.Fatal("XILO_TEST_BACKEND=postgres but XILO_PG_TEST_DSN is empty")
+		}
 		t.Skip("XILO_PG_TEST_DSN not set")
 	}
 

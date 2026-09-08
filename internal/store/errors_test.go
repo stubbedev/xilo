@@ -23,7 +23,14 @@ func exec(t *testing.T, db *DB, q string, args ...any) {
 
 // Rows whose INTEGER columns hold text make Scan fail — covers the per-row
 // error branches of every list/iterate reader.
+//
+// SQLite only: planting a poison row needs a database that will store one.
+// Postgres rejects 'notanint' in an integer column at INSERT time, which is
+// it being right, and leaves these branches unreachable rather than untested.
 func TestScanErrorBranches(t *testing.T) {
+	if onPG() {
+		t.Skip("postgres rejects the poison rows this test plants; the scan branches are SQLite-only")
+	}
 	db := openTest(t)
 	c, _ := db.CreateCache("default", "c", true, 40)
 

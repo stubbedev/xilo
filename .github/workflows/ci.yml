@@ -68,10 +68,16 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: run store tests against postgres
+      # The whole suite, not one function: XILO_TEST_BACKEND points every
+      # openTest caller at Postgres (each test in its own schema), so the same
+      # ~83 bodies that cover SQLite in the test job cover Postgres here. It
+      # used to be a single hand-written walk that had to be extended by hand
+      # for every new store method, and usually wasn't.
+      - name: run the store suite against postgres
         env:
+          XILO_TEST_BACKEND: postgres
           XILO_PG_TEST_DSN: postgres://postgres:x@localhost:5432/postgres
-        run: go test ./internal/store/ -run TestPostgres -count=1 -v
+        run: go test ./internal/store/ -count=1
 
   e2e:
     name: CLI end-to-end (real nix + containerized server)
