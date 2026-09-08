@@ -21,7 +21,7 @@ only as quota profiles.
 
 - [Features](#features)
 - [Benchmarks](#benchmarks)
-- [Feature comparison with attic](#feature-comparison-with-attic)
+- [Feature comparison](#feature-comparison)
 - [Install](#install)
 - [Using a cache](#using-a-cache)
 - [Tokens and private caches](#tokens-and-private-caches)
@@ -149,7 +149,7 @@ those is not a measurement.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/perf/compare-dark.svg">
-  <img alt="Bar charts comparing xilo, attic, harmonia, nix-serve-ng and a MinIO bucket on narinfo throughput, NAR throughput, memory, CPU per MB/s, push time, bytes stored and deployment size" src="docs/perf/compare-light.svg">
+  <img alt="Bar charts comparing xilo, attic, harmonia, nix-serve-ng and MinIO and Garage buckets on narinfo throughput, NAR throughput, memory, CPU per MB/s, push time, bytes stored and deployment size" src="docs/perf/compare-light.svg">
 </picture>
 
 [`tests/bench/bench.sh`](./tests/bench/bench.sh) starts each implementation in
@@ -167,6 +167,7 @@ the chart, which `just perf-charts` (or CI) redraws from it.
 | [harmonia](https://github.com/nix-community/harmonia) | serves the host `/nix/store` over HTTP | no, the store is the state | none, the store is the state |
 | [nix-serve-ng](https://github.com/aristanetworks/nix-serve-ng) | serves the host `/nix/store` over HTTP | no, the store is the state | none, the store is the state |
 | MinIO + `nix copy` | a plain S3 bucket used as a cache | `nix copy --to s3://…` | none, one compressed NAR per path |
+| [Garage](https://garagehq.deuxfleurs.fr/) + `nix copy` | the same, on the other self-hostable object store; read over its web endpoint | `nix copy --to s3://…` | none, one compressed NAR per path |
 
 What keeps the comparison honest:
 
@@ -181,10 +182,10 @@ What keeps the comparison honest:
 - xilo and attic get matching chunk sizes and both compress with zstd at rest.
 - CPU is charted per MB/s served rather than raw, because the server that
   serves the least spends the least, which is not the same as costing less.
-- `nix copy` writes each NAR compressed and the bucket serves those bytes
-  verbatim, so that target's byte rate is not the quantity a server
-  reassembling identity NARs reports. It is flagged in the JSON and left out
-  of the throughput panels.
+- `nix copy` writes each NAR compressed and a bucket serves those bytes
+  verbatim, so neither bucket's byte rate is the quantity a server
+  reassembling identity NARs reports. Both are flagged in the JSON and left
+  out of the throughput panels.
 - harmonia and nix-serve-ng serve paths that are already in the host store, so
   neither has a push phase. Both answer `Compression: none`, so their byte
   rates are the quantity the other servers report, and their bar in the
@@ -245,27 +246,33 @@ The suites, in [`tests/k6`](./tests/k6/README.md):
 - `ops.js`, `mt.js`, `deep.js`: wire-contract and correctness conformance for
   the cache protocol, the tenancy surface and the edge dimensions.
 
-## Feature comparison with attic
+## Feature comparison
 
-attic is the closest peer, so this is a feature-by-feature table rather than a
-measurement; the numbers are in [Benchmarks](#benchmarks).
+The same implementations the [benchmarks](#benchmarks) measure, on what they do
+rather than how fast they do it. The two object stores share a column because
+`nix copy` into a bucket is the same arrangement either way; where they differ
+is the last row, and it decides whether a bucket can be a public cache at all.
 
-|  | xilo | attic |
-|---|---|---|
-| chunked dedup (FastCDC) | yes | yes |
-| SQLite / PostgreSQL | yes / yes | yes / yes |
-| local / S3 storage | yes, several named backends, per cache | yes, one |
-| multi-tenancy | accounts, organizations, users, roles | per-cache only |
-| server-managed signing keys | yes, with rotation | yes |
-| token revocation | immediate (database-backed) | no (stateless JWT) |
-| token scope | exactly one `account/cache`, plus `manage`/`admin` perms | JWT cache patterns |
-| retention and GC | time and size caps (per cache, plus a global ceiling) | time only |
-| incomplete data | fails closed | can serve truncated `200`s |
-| web dashboard | yes (caches, users, accounts, tokens, status, activity) | no |
-| Prometheus metrics | yes | no |
-| store-watch auto-push | yes | yes |
-| integrity fsck and repair | yes | no |
-| tagged releases | yes | none yet |
+|  | xilo | attic | harmonia | nix-serve-ng | MinIO / Garage + `nix copy` |
+|---|---|---|---|---|---|
+| what it serves | its own chunk store | its own chunk store | the host `/nix/store` | the host `/nix/store` | objects a client uploaded |
+| accepts a push from another machine | over its own API | over its own API | no | no | `nix copy --to s3://…` |
+| chunked dedup (FastCDC) | yes | yes | no, the store is the state | no, the store is the state | no, one NAR per path |
+| compression at rest | zstd per chunk | zstd per chunk | none, serves the store | none, serves the store | xz, by `nix copy` |
+| metadata store | SQLite or PostgreSQL | SQLite or PostgreSQL | none | none | none |
+| storage backends | local or S3, several named, per cache | local or S3, one | n/a | n/a | itself |
+| multi-tenancy | accounts, organizations, users, roles | per-cache only | no | no | bucket policies, not caches |
+| private caches | yes, per-cache tokens | yes, JWT | no, all or nothing | no, all or nothing | bucket credentials |
+| token revocation | immediate (database-backed) | no (stateless JWT) | n/a | n/a | key deletion |
+| token scope | one `account/cache`, plus `manage`/`admin` perms | JWT cache patterns | n/a | n/a | whole bucket |
+| server-managed signing keys | yes, with rotation | yes | reads a key file | reads a key file | signed by the pushing client |
+| retention and GC | time and size caps per cache, plus a global ceiling | time only | the host's own GC | the host's own GC | bucket lifecycle rules |
+| incomplete data | fails closed | can serve truncated `200`s | n/a, the store is complete | n/a, the store is complete | serves whatever landed |
+| web dashboard | yes (caches, users, accounts, tokens, status, activity) | no | no | no | the store's own console |
+| Prometheus metrics | yes | no | yes | no | yes |
+| store-watch auto-push | yes | yes | n/a | n/a | no |
+| integrity fsck and repair | yes | no | n/a | n/a | no |
+| anonymous public reads | yes, per cache | yes, per cache | yes | yes | MinIO: a download policy. Garage: only from its web endpoint, which routes by `Host`; its S3 API answers unauthenticated reads with `Garage does not support anonymous access yet` |
 
 ## Install
 

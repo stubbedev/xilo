@@ -40,6 +40,7 @@ const benchFixture = `{
     "harmonia": {"status": "ok", "narinfo_qps": 2500, "pull_mbs": 300, "max_rss_mib": 70, "nar_comparable": "true"},
     "nixserve": {"status": "ok", "narinfo_qps": 3100, "pull_mbs": 800, "max_rss_mib": 60, "nar_comparable": "true"},
     "s3":       {"status": "ok", "narinfo_qps": 2400, "pull_mbs": 950, "max_rss_mib": 240, "stored_bytes": 300000000, "nar_comparable": "false"},
+    "garage":   {"status": "ok", "narinfo_qps": 2100, "pull_mbs": 880, "max_rss_mib": 90, "stored_bytes": 310000000, "nar_comparable": "false"},
     "broken":   {"status": "skipped", "error": "would not start"}
   }
 }`
@@ -159,7 +160,7 @@ func TestBenchChartOrdersTargetsAndKeepsBytesComparable(t *testing.T) {
 	for _, b := range qps.bars {
 		labels = append(labels, b.label)
 	}
-	want := []string{"xilo", "attic", "harmonia", "nix-serve-ng", "MinIO + nix copy"}
+	want := []string{"xilo", "attic", "harmonia", "nix-serve-ng", "MinIO + nix copy", "Garage + nix copy"}
 	if strings.Join(labels, ",") != strings.Join(want, ",") {
 		t.Errorf("bar order = %v, want %v", labels, want)
 	}
@@ -171,8 +172,8 @@ func TestBenchChartOrdersTargetsAndKeepsBytesComparable(t *testing.T) {
 	// left out of the throughput panel rather than winning it.
 	pull := panelByTitle(t, c, "NAR pull throughput")
 	for _, b := range pull.bars {
-		if b.label == "MinIO + nix copy" {
-			t.Error("incomparable target must not appear in the NAR throughput panel")
+		if b.label == "MinIO + nix copy" || b.label == "Garage + nix copy" {
+			t.Errorf("incomparable target %q must not appear in the NAR throughput panel", b.label)
 		}
 	}
 

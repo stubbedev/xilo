@@ -23,8 +23,8 @@ on:
   workflow_dispatch:
     inputs:
       targets:
-        description: Comma-separated targets (xilo,attic,harmonia,nixserve,s3)
-        default: xilo,attic,harmonia,nixserve,s3
+        description: Comma-separated targets (xilo,attic,harmonia,nixserve,s3,garage)
+        default: xilo,attic,harmonia,nixserve,s3,garage
 
 concurrency:
   group: bench-${{ github.ref }}
@@ -32,7 +32,7 @@ concurrency:
 
 jobs:
   compare:
-    name: xilo vs attic, harmonia, nix-serve-ng, MinIO
+    name: xilo vs attic, harmonia, nix-serve-ng, MinIO, Garage
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -70,7 +70,7 @@ jobs:
           BENCH_RUNNER: GitHub ubuntu-latest runner, 2 cores
         run: |
           ./tests/bench/bench.sh \
-            --targets "${{ github.event.inputs.targets || 'xilo,attic,harmonia,nixserve,s3' }}" \
+            --targets "${{ github.event.inputs.targets || 'xilo,attic,harmonia,nixserve,s3,garage' }}" \
             --json bench-results.json | tee bench.log
 
       - name: job summary

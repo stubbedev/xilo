@@ -295,6 +295,7 @@ var targetOrder = []struct{ id, name string }{
 	{"harmonia", "harmonia"},
 	{"nixserve", "nix-serve-ng"},
 	{"s3", "MinIO + nix copy"},
+	{"garage", "Garage + nix copy"},
 }
 
 // benchCharts builds the cross-implementation comparison: one panel per

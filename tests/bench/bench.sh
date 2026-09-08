@@ -15,6 +15,11 @@
 #   harmonia  harmonia-cache, serving the host /nix/store (pull only)
 #   nixserve  nix-serve-ng, serving the host /nix/store (pull only)
 #   s3        MinIO plus `nix copy --to s3://…`: a plain object-store cache
+#   garage    Garage plus `nix copy --to s3://…`: the same, on the other
+#             self-hostable object store. Read over its web endpoint, because
+#             Garage answers an unauthenticated S3 GET with "Garage does not
+#             support anonymous access yet" -- a bucket there cannot be a
+#             public cache the way MinIO's download policy makes one.
 #
 # harmonia 3.x ships two binaries and the obvious one is not the server:
 # `bin/harmonia` forwards its arguments to `nix` (it is a client wrapper, and
@@ -33,14 +38,14 @@
 #   - Targets run sequentially, never side by side, so nothing shares CPU.
 #   - Every server runs in a container and every resource number comes from
 #     `docker stats` on that container, so RSS is measured one way for all.
-#   - The pull load is tests/bench/pull.js against all four: it speaks the
+#   - The pull load is tests/bench/pull.js against every target: it speaks the
 #     plain binary-cache protocol, so no target gets a client of its own.
 #   - xilo and attic get the same chunk min/avg/max and NAR threshold
 #     (tests/bench/attic.toml versus xilo's defaults) and both store zstd.
-#   - The s3 target keeps `nix copy`'s default per-NAR compression, so its NAR
-#     throughput counts compressed bytes and is NOT comparable with the servers
-#     that reassemble and serve identity NARs. It is flagged as such in the
-#     JSON and left out of the throughput chart.
+#   - The s3 and garage targets keep `nix copy`'s default per-NAR compression,
+#     so their NAR throughput counts compressed bytes and is NOT comparable
+#     with the servers that reassemble and serve identity NARs. Both are
+#     flagged as such in the JSON and left out of the throughput chart.
 #   - harmonia and nix-serve-ng serve paths that are already in the host store,
 #     so they have no push phase. Both answer with `Compression: none`, so
 #     their byte rates are the same quantity as xilo's, and their stored bytes
@@ -50,7 +55,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
 
-TARGETS=xilo,attic,harmonia,nixserve,s3
+TARGETS=xilo,attic,harmonia,nixserve,s3,garage
 JSON=""
 BENCH_PKGS=${BENCH_PKGS:-"git curl jq python3 go"}
 while [ $# -gt 0 ]; do
@@ -64,7 +69,7 @@ while [ $# -gt 0 ]; do
     shift 2
     ;;
   -h | --help)
-    sed -n '2,44p' "$0"
+    sed -n '2,56p' "$0"
     exit 0
     ;;
   *)
@@ -95,13 +100,18 @@ NIXSERVE_PORT=$(pick_port 38080)
 MINIO_PORT=$(pick_port 39000)
 MINIO_KEY=benchbenchbench
 MINIO_SECRET=benchbenchbench
+GARAGE_PORT=$(pick_port 39100)
+# Garage serves a public bucket only from its web endpoint, which is a second
+# listener and routes by Host rather than by path (see run_garage).
+GARAGE_WEB_PORT=$(pick_port 39200)
+GARAGE_HOST=bench.web.garage.localhost
 
 cleanup() {
-  docker rm -f bench-xilo bench-attic bench-harmonia bench-nixserve bench-minio >/dev/null 2>&1
+  docker rm -f bench-xilo bench-attic bench-harmonia bench-nixserve bench-minio bench-garage >/dev/null 2>&1
   docker volume rm bench-xilo-data bench-attic-data >/dev/null 2>&1
-  # MinIO writes its data as root, so the work directory cannot be removed from
-  # here; a container deletes what a container created.
-  docker run --rm -v "$WORK":/w busybox:latest rm -rf /w/minio >/dev/null 2>&1
+  # MinIO and Garage write their data as root, so the work directory cannot be
+  # removed from here; a container deletes what a container created.
+  docker run --rm -v "$WORK":/w busybox:latest rm -rf /w/minio /w/garage >/dev/null 2>&1
   chmod -R +w "$WORK" 2>/dev/null
   rm -rf "$WORK"
 }
@@ -222,11 +232,18 @@ sample_stats() { # sample_stats <container> <outfile> — until killed
   done > "$2"
 }
 
-pull_bench() { # pull_bench <target> <container> <cache-url>
-  local name=$1 ctr=$2 url=$3
+pull_bench() { # pull_bench <target> <container> <cache-url> [host:ip]
+  local name=$1 ctr=$2 url=$3 addhost=${4:-}
+  # A cache URL can name a host rather than an address (Garage's web endpoint
+  # routes by Host), and --network host shares the host's stack but not its
+  # /etc/hosts. Mapping the name inside the load container is what keeps this
+  # out of /etc/hosts, and so out of sudo.
+  local hostarg=()
+  [ -n "$addhost" ] && hostarg=(--add-host "$addhost")
   sample_stats "$ctr" "$WORK/$name.stats" &
   local sampler=$!
-  docker run --rm --network host --user 0:0 -v "$PWD/$BENCH_DIR":/bench -v "$WORK":/work \
+  docker run --rm --network host --user 0:0 ${hostarg[@]+"${hostarg[@]}"} \
+    -v "$PWD/$BENCH_DIR":/bench -v "$WORK":/work \
     grafana/k6:0.57.0 run -q --summary-export="/work/$name-pull.json" \
     -e "BASE_URL=$url" -e HASHES=/work/hashes.txt /bench/pull.js > "$WORK/$name-k6.log" 2>&1
   local rc=$?
@@ -541,7 +558,126 @@ narinfo-cache-negative-ttl = 0"
   docker rm -f bench-minio >/dev/null 2>&1
 }
 
-for target in xilo attic harmonia nixserve s3; do
+# ── garage (Garage + nix copy) ──────────────────────────────────────────────
+# The same shape as the s3 target -- a plain object store filled by `nix copy`
+# -- against the other self-hostable implementation people put behind a cache.
+# It is measured separately rather than replacing MinIO because the two answer
+# the read differently, and that difference is the interesting part: Garage
+# refuses unauthenticated S3 GETs outright ("Garage does not support anonymous
+# access yet"), so a bucket cannot be a public binary cache the way MinIO's
+# download policy makes one. Its public surface is the web endpoint, a second
+# listener that resolves a bucket from the request's Host, which is why the
+# pull phase asks for $GARAGE_HOST and not for an address.
+run_garage() {
+  echo "== garage: start Garage =="
+  mkdir -p "$WORK/garage/meta" "$WORK/garage/data"
+  # replication_factor = 1 because this is one node; the rpc secret is
+  # required even then, and a benchmark's is not a secret.
+  cat > "$WORK/garage/garage.toml" <<EOF
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "sqlite"
+replication_factor = 1
+rpc_bind_addr = "[::]:3901"
+rpc_public_addr = "127.0.0.1:3901"
+rpc_secret = "$(printf '%064d' 1)"
+
+[s3_api]
+s3_region = "us-east-1"
+api_bind_addr = "[::]:3900"
+
+[s3_web]
+bind_addr = "[::]:3902"
+root_domain = ".web.garage.localhost"
+index = "index.html"
+EOF
+  docker pull -q dxflrs/garage:v2.4.1 >/dev/null 2>&1
+  docker run -d --name bench-garage \
+    -p "127.0.0.1:$GARAGE_PORT:3900" -p "127.0.0.1:$GARAGE_WEB_PORT:3902" \
+    -v "$WORK/garage/garage.toml":/etc/garage.toml:ro \
+    -v "$WORK/garage/meta":/var/lib/garage/meta \
+    -v "$WORK/garage/data":/var/lib/garage/data \
+    dxflrs/garage:v2.4.1 /garage server >/dev/null
+  local g=(docker exec bench-garage /garage)
+  # A fresh node holds no data until a layout assigns it a share of the ring,
+  # and every S3 call before that fails with "no available nodes".
+  local node=""
+  local _i
+  for _i in $(seq 1 30); do
+    node=$("${g[@]}" node id -q 2>/dev/null | cut -d@ -f1)
+    [ -n "$node" ] && break
+    sleep 1
+  done
+  if [ -z "$node" ]; then
+    skip garage "Garage never reported a node id"
+    return
+  fi
+  "${g[@]}" layout assign -z bench -c 10G "$node" >/dev/null 2>&1
+  "${g[@]}" layout apply --version 1 >/dev/null 2>&1 || {
+    skip garage "could not apply a cluster layout"
+    return
+  }
+  "${g[@]}" bucket create bench >/dev/null 2>&1
+  # Keys are generated, not chosen: read them back rather than assuming.
+  local keyout
+  keyout=$("${g[@]}" key create bench-key 2>/dev/null)
+  local ak sk
+  ak=$(printf '%s\n' "$keyout" | sed -n 's/^Key ID: *//p')
+  sk=$(printf '%s\n' "$keyout" | sed -n 's/^Secret key: *//p')
+  if [ -z "$ak" ] || [ -z "$sk" ]; then
+    skip garage "could not create an access key"
+    return
+  fi
+  "${g[@]}" bucket allow --read --write bench --key bench-key >/dev/null 2>&1
+  # The pull phase reads anonymously, which on Garage means the web endpoint.
+  "${g[@]}" bucket website --allow bench >/dev/null 2>&1 || {
+    skip garage "could not expose the bucket for anonymous reads"
+    return
+  }
+
+  nix key generate-secret --key-name bench-garage > "$WORK/garage.key" 2>/dev/null
+  local store="s3://bench?endpoint=127.0.0.1:$GARAGE_PORT&region=us-east-1&scheme=http&secret-key=$WORK/garage.key"
+  export AWS_ACCESS_KEY_ID=$ak AWS_SECRET_ACCESS_KEY=$sk
+  # Same reason as the s3 target: nix's per-store memory of what a cache holds
+  # outlives a bucket that is new on every run.
+  export NIX_CONFIG="narinfo-cache-positive-ttl = 0
+narinfo-cache-negative-ttl = 0"
+
+  echo "== garage: nix copy =="
+  # shellcheck disable=SC2086
+  local cold
+  cold=$(t nix copy --to "$store" $ROOTS)
+  local weburl=http://$GARAGE_HOST:$GARAGE_WEB_PORT
+  local sample
+  sample=$(head -1 "$WORK/hashes.txt")
+  # --resolve for the same reason the load container gets --add-host: the name
+  # is Garage's routing key, not something the resolver needs to know.
+  if ! curl -fs --resolve "$GARAGE_HOST:$GARAGE_WEB_PORT:127.0.0.1" \
+    -o /dev/null "$weburl/$sample.narinfo"; then
+    skip garage "nix copy did not land, or the web endpoint does not serve it"
+    unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY NIX_CONFIG
+    return
+  fi
+  put garage cold_push_s "$cold"
+  # shellcheck disable=SC2086
+  put garage repeat_push_s "$(t nix copy --to "$store" $ROOTS)"
+  unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY NIX_CONFIG
+
+  echo "== garage: pull load =="
+  pull_bench garage bench-garage "$weburl" "$GARAGE_HOST:127.0.0.1"
+  # The whole directory, meta and data both: every other target is sized as
+  # its entire data directory, so a store's own bookkeeping counts against it
+  # here too.
+  put garage stored_bytes "$(size_bytes "$WORK/garage")"
+  put garage storage_kind cache
+  put garage image_bytes "$(image_bytes dxflrs/garage:v2.4.1)"
+  # Same caveat as the s3 target: these are `nix copy`'s compressed NARs.
+  put garage nar_comparable false
+  put garage status ok
+  docker rm -f bench-garage >/dev/null 2>&1
+}
+
+for target in xilo attic harmonia nixserve s3 garage; do
   has_target "$target" && "run_$target"
 done
 
@@ -578,7 +714,8 @@ doc = {
 }
 
 names = {"xilo": "xilo", "attic": "attic", "harmonia": "harmonia",
-         "nixserve": "nix-serve-ng", "s3": "MinIO + nix copy"}
+         "nixserve": "nix-serve-ng", "s3": "MinIO + nix copy",
+         "garage": "Garage + nix copy"}
 def fmt(t, key, unit="", scale=1.0, nd=1):
     v = data.get(t, {}).get(key)
     if v is None:
@@ -600,7 +737,7 @@ rows = [
     ("storage is", "storage_kind", "", 1.0, 0),
     ("image / closure", "image_bytes", "MB", 1e6, 0),
 ]
-present = [t for t in ("xilo", "attic", "harmonia", "nixserve", "s3") if t in data]
+present = [t for t in ("xilo", "attic", "harmonia", "nixserve", "s3", "garage") if t in data]
 w = doc["workload"]
 print()
 print(f"===== {w.get('paths', '?')} paths, {w.get('megabytes', '?')}MB, {runner} =====")
