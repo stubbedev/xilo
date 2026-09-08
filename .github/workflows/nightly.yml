@@ -71,7 +71,9 @@ jobs:
   fuzz-campaign:
     name: fuzz campaign
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 11 targets x 4m is ~45 minutes of fuzzing, and the count grows as
+    # targets are added (scripts/fuzz.sh discovers them), so leave room.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -81,32 +83,7 @@ jobs:
       # CI's per-push fuzz job runs 30s a target, which only replays what the
       # corpus already covers. This is the part that finds something new.
       - name: fuzz each target for 4 minutes
-        run: |
-          set -uo pipefail
-          fail=0
-          while read -r pkg target; do
-            [ -n "$pkg" ] || continue
-            echo "::group::$pkg $target"
-            if ! go test "$pkg" -run "^$target$" -fuzz "^$target$" -fuzztime=4m -count=1; then
-              fail=1
-            fi
-            echo "::endgroup::"
-          done <<'TARGETS'
-          ./internal/narinfo FuzzParseHash
-          ./internal/narinfo FuzzNarHashIsCanonical
-          ./internal/narinfo FuzzBase32RoundTrip
-          ./internal/narinfo FuzzStorePathAccessors
-          ./internal/chunk FuzzSplitReassembles
-          ./internal/chunk FuzzSplitDeterministic
-          ./internal/chunk FuzzSplitHashesMatchesSplit
-          ./internal/config FuzzParseBytes
-          ./internal/config FuzzLoad
-          ./internal/nar FuzzDumpSingleFile
-          ./internal/nar FuzzDumpDirectoryOrdering
-          TARGETS
-          exit $fail
-      # A crasher found overnight is worth nothing if it is not reproducible:
-      # the corpus entry is the bug report, and belongs in a commit.
+        run: ./scripts/fuzz.sh 4m
       - uses: actions/upload-artifact@v7
         if: failure()
         with:

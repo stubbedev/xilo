@@ -368,6 +368,14 @@ k6-compare SUITE FILE:
 #
 #   just fuzz FuzzParseHash 5m
 #
+# DURATION defaults to the 30s per target CI runs on every push. Targets are
+# discovered from the source, so a new Fuzz* function is covered the moment it
+# exists -- there is no list to update.
+#
+# Fuzz every target, as CI and the nightly do.
+fuzz-all DURATION="30s":
+    ./scripts/fuzz.sh {{ DURATION }}
+
 # Fuzz one target for longer than CI does.
 fuzz TARGET DURATION="60s":
     #!/usr/bin/env bash
