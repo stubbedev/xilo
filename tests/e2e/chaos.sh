@@ -92,8 +92,13 @@ BASELINE=$(realpath "$(command -v bash)" 2>/dev/null | grep -oE '/nix/store/[^/]
 [ -n "$BASELINE" ] || { echo "no pushable store path found"; exit 1; }
 
 echo "== single-tenant round (default/chaos) =="
-$COMPOSE exec -T xilo /xilo cache create chaos >/dev/null 2>&1
-XILO_TOKEN=$(mint_token chaos chaos)
+# The namespace is explicit because there is no implicit one: a bare `cache
+# create chaos` lands in the superadmin's own workspace (admin/chaos), so
+# every push below asked for a cache that was never created. An explicit
+# namespace mints the account on the fly, which is what the mt round below
+# has always done and why only this round broke.
+$COMPOSE exec -T xilo /xilo cache create default/chaos >/dev/null 2>&1
+XILO_TOKEN=$(mint_token chaos default/chaos)
 [ -n "$XILO_TOKEN" ] || { echo "token create failed"; exit 1; }
 export XILO_TOKEN
 chaos_round default/chaos st
