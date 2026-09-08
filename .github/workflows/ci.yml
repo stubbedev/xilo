@@ -48,6 +48,21 @@ jobs:
       - run: go build -tags noserver -o /dev/null ./cmd/xilo
       - run: go test -race ./...
 
+  vuln:
+    name: known vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      # Reachability-filtered: govulncheck traces call paths, so an advisory
+      # in a function nothing calls does not fail the build. Anything it does
+      # report is code this binary can actually run.
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
   fuzz:
     name: fuzz the parsers
     runs-on: ubuntu-latest
@@ -253,6 +268,15 @@ jobs:
           fi
           grep -v "_templ.go:" cover.out > cover-filtered.out
           pct=$(go tool cover -func=cover-filtered.out | tail -1 | grep -oE '[0-9.]+%' | tr -d '%')
+          # A floor, not just a badge: the number was recorded and nothing
+          # failed when it dropped. Raising it is welcome; lowering it should
+          # be a deliberate commit that says why.
+          floor=82.0
+          if ! awk -v p="$pct" -v f="$floor" 'BEGIN{exit !(p+0 >= f+0)}'; then
+            echo "::error::coverage ${pct}% is below the ${floor}% floor"
+            exit 1
+          fi
+          echo "coverage ${pct}% (floor ${floor}%)"
           color=orange
           awk -v p="$pct" 'BEGIN{exit !(p>=70)}' && color=yellowgreen
           awk -v p="$pct" 'BEGIN{exit !(p>=80)}' && color=green

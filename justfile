@@ -133,8 +133,31 @@ nix-check:
     nix build .#default --no-link
     @echo "nix package in sync"
 
+# Known vulnerabilities in the dependency graph, filtered to the ones actually
+# reachable from this code (govulncheck traces call paths, so an advisory in a
+# function nothing calls does not fail the build).
+vuln:
+    go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+# Statement coverage over the code humans maintain, with the generated views
+# excluded, against the floor CI enforces. Raising the floor is welcome;
+# lowering it needs a reason in the commit message.
+coverage:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    floor=82.0
+    go test -count=1 -coverprofile=cover.out ./internal/... > /dev/null
+    grep -v "_templ.go:" cover.out > cover-filtered.out
+    pct=$(go tool cover -func=cover-filtered.out | tail -1 | grep -oE '[0-9.]+%' | tr -d '%')
+    rm -f cover.out cover-filtered.out
+    echo "coverage ${pct}% (floor ${floor}%)"
+    awk -v p="$pct" -v f="$floor" 'BEGIN{exit !(p+0 >= f+0)}' || {
+        echo "coverage ${pct}% is below the ${floor}% floor" >&2
+        exit 1
+    }
+
 # Everything CI checks.
-check: lint test schema-check nix-check
+check: lint test schema-check nix-check coverage
 
 # ─────────────────────────── Run & Dev ───────────────────────────
 
