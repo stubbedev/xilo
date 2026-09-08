@@ -115,11 +115,18 @@ export function pushPath(seed, chunkCount, chunkSize, tags, target) {
   return { storeHash: storePath.slice(11, 43), narHex, narSize, ok };
 }
 
+// A poll against a server that has not opened its listener yet is the
+// expected case, not a failure: without this, waiting out a slow boot spends
+// the suite's whole http_req_failed budget before the first real request.
+// The race profile boots in minutes (it compiles the server under -race), so
+// that was hundreds of "failures" for a server behaving correctly.
+const bootExpected = http.expectedStatuses(0, { min: 200, max: 599 });
+
 // waitHealthy polls /healthz so scenarios don't need a compose healthcheck
 // (the distroless image has nothing to run one with).
 export function waitHealthy(timeoutSec) {
   for (let i = 0; i < (timeoutSec || 30); i++) {
-    const res = http.get(`${BASE}/healthz`);
+    const res = http.get(`${BASE}/healthz`, { responseCallback: bootExpected });
     if (res.status === 200) return;
     sleep(1);
   }

@@ -25,8 +25,13 @@ const TENANTS = parseInt(__ENV.TENANTS || "0", 10);
 
 const narBroken = new Counter("nar_broken");
 
+// How long to wait for the server to answer /healthz. A normal container is
+// up in under a second; the compose `race` profile copies the tree, runs
+// templ generate and compiles under -race first, which is minutes.
+const BOOT = parseInt(__ENV.BOOT_WAIT_S || "60", 10);
+
 export const options = {
-  setupTimeout: "60s",
+  setupTimeout: `${BOOT + 120}s`,
   scenarios: {
     dedup_churn: {
       executor: "constant-vus",
@@ -56,7 +61,7 @@ export const options = {
 };
 
 export function setup() {
-  waitHealthy(60);
+  waitHealthy(BOOT);
   return { targets: provisionTenants(TENANTS) };
 }
 

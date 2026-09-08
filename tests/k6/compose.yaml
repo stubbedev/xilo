@@ -44,7 +44,12 @@ services:
   # caches them for reruns.
   xilo-race:
     profiles: [race]
-    image: golang:1.26
+    # Must satisfy go.mod's `go` directive (1.27.0). The official images pin
+    # GOTOOLCHAIN=local, so a stale tag here fails outright instead of
+    # fetching what it needs: this profile sat broken from the 1.27 bump until
+    # the nightly started running it. GOTOOLCHAIN=auto below is the belt to
+    # that braces, so the next bump downloads its toolchain rather than dying.
+    image: golang:1.27
     volumes:
       - ../..:/src:ro
       - gomod:/go
@@ -52,6 +57,7 @@ services:
     environment:
       XILO_ADMIN_PASSWORD: k6-admin
       GOFLAGS: -buildvcs=false
+      GOTOOLCHAIN: auto
     command:
       - sh
       - -c
@@ -73,6 +79,9 @@ services:
       CACHE: k6
       ADMIN_PASSWORD: k6-admin
       DURATION: ${DURATION:-3m}
+      # The race server builds from source on first start: modules, templ
+      # generate, then a -race compile of the whole tree.
+      BOOT_WAIT_S: ${BOOT_WAIT_S:-900}
     command: ["run", "--summary-export=/out/summary.json", "/scripts/churn.js"]
     depends_on:
       - xilo-race

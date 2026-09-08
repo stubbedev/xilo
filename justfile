@@ -244,9 +244,12 @@ k6-churn-mt: k6-image
         run --rm -e TENANTS=4 k6 run --summary-export=/out/summary.json /scripts/churn.js
     docker compose -f tests/k6/compose.yaml down -v
 
-# Churn against a race-detector server build (slow start, catches data races).
+# Churn against a race-detector server build. The first start compiles the
+# whole tree under -race, so the suite waits BOOT_WAIT_S (default 900) for
+# /healthz before it begins.
 k6-race:
-    docker compose -f tests/k6/compose.yaml --profile race run --rm k6-race
+    docker compose -f tests/k6/compose.yaml --profile race run --rm \
+        -e DURATION -e BOOT_WAIT_S k6-race
     docker compose -f tests/k6/compose.yaml --profile race down -v
 
 # Edge-dimension stress: 1000-chunk NAR, 1MiB chunks, 10k-path narinfo storm.
