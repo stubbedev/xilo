@@ -34,6 +34,9 @@ jobs:
             run --rm -e TENANTS=${{ matrix.tenants }} k6
           docker compose -f tests/k6/compose.yaml run --rm --entrypoint cat k6 /out/summary.json > k6-perf-summary.json
 
+      - name: perf vs baseline
+        run: ./tests/k6/compare.sh tests/k6/baselines/perf.json k6-perf-summary.json perf-${{ matrix.tenancy }}
+
       - name: integrity churn (hostile GC)
         run: |
           docker compose -f tests/k6/compose.yaml down -v
@@ -41,6 +44,9 @@ jobs:
             run --rm -e TENANTS=${{ matrix.tenants }} \
             k6 run --summary-export=/out/summary.json /scripts/churn.js
           docker compose -f tests/k6/compose.yaml run --rm --entrypoint cat k6 /out/summary.json > k6-churn-summary.json
+
+      - name: churn vs baseline
+        run: ./tests/k6/compare.sh tests/k6/baselines/churn.json k6-churn-summary.json churn-${{ matrix.tenancy }}
 
       - name: pressure (scaled for 2-core runner)
         run: |
@@ -51,6 +57,9 @@ jobs:
             -e TENANTS=${{ matrix.tenants }} \
             k6 run --summary-export=/out/summary.json /scripts/pressure.js
           docker compose -f tests/k6/compose.yaml run --rm --entrypoint cat k6 /out/summary.json > k6-pressure-summary.json
+
+      - name: pressure vs baseline
+        run: ./tests/k6/compare.sh tests/k6/baselines/pressure.json k6-pressure-summary.json pressure-${{ matrix.tenancy }}
 
       - name: job summary
         if: always()

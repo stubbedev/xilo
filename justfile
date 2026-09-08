@@ -249,6 +249,38 @@ k6-pressure-mt:
         k6 run /scripts/pressure.js
     docker compose -f tests/k6/compose.yaml down -v
 
+# CI compares every Perf run against tests/k6/baselines/*.json
+# (tests/k6/compare.sh) and fails on a regression, so moving these numbers is a
+# deliberate act: re-baseline, read the diff, and say in the commit message why
+# they moved.
+#
+# DIR must hold a Perf run's k6-*-summary.json, which is what the workflow
+# uploads: gh run download <perf-run-id> -D /tmp/perf. A dev box is NOT a valid
+# source — this laptop runs the suites 2-4x faster than the 2-core runner, so
+# baselining here would hand CI numbers it can never meet and fail every
+# subsequent push.
+#
+# Re-baseline the perf gate from an unzipped CI Perf artifact.
+re-baseline DIR:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for suite in perf churn pressure; do
+        src="{{ DIR }}/k6-$suite-summary.json"
+        if [ ! -f "$src" ]; then
+            echo "missing $src (expected an unzipped Perf artifact)" >&2
+            exit 1
+        fi
+        ./tests/k6/baseline.sh "$src" "$suite" > "tests/k6/baselines/$suite.json"
+        echo "re-baselined $suite"
+    done
+    git --no-pager diff --stat tests/k6/baselines/
+
+# SUITE is perf|churn|pressure; FILE is a k6 --summary-export json.
+#
+# Apply the CI perf gate to a local summary.
+k6-compare SUITE FILE:
+    ./tests/k6/compare.sh tests/k6/baselines/{{ SUITE }}.json {{ FILE }} {{ SUITE }}
+
 # Chaos: SIGKILL mid-push, restart, prove nothing corrupted. Needs nix + docker.
 chaos:
     ./tests/e2e/chaos.sh
