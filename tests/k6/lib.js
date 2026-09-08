@@ -126,11 +126,22 @@ export function waitHealthy(timeoutSec) {
   throw new Error(`server at ${BASE} not healthy after ${timeoutSec}s`);
 }
 
-// adminJar logs into the dashboard and returns a cookie jar with the session.
-// Login is rate-limited (per-IP burst 10, refill 1/10s) so callers must reuse
-// one jar rather than logging in per operation.
-export function adminLogin() {
-  const res = http.post(`${BASE}/admin/login`, { username: ADMIN_USER, password: ADMIN_PASSWORD });
+// adminLogin signs the dashboard session into a cookie jar. Login is
+// rate-limited (per-IP burst 10, refill 1/10s) so callers must reuse one jar
+// rather than logging in per operation.
+//
+// Pass `jar` when the session has to outlive the iteration: k6 resets the
+// per-VU jar between iterations, so a scenario that logs in once and keeps
+// requesting across iterations is signed out from its second one onward (see
+// pressure.js leakwatch). Omit it inside a single setup/teardown/iteration
+// body, where the per-VU jar is the whole story.
+export function adminLogin(jar) {
+  const params = jar ? { jar } : {};
+  const res = http.post(
+    `${BASE}/admin/login`,
+    { username: ADMIN_USER, password: ADMIN_PASSWORD },
+    params,
+  );
   if (res.status !== 200) throw new Error(`admin login failed: ${res.status}`);
 }
 
@@ -149,11 +160,23 @@ export function setContext(account) {
   http.post(`${BASE}/admin/context`, { ctx: account });
 }
 
+// An org that does not exist answers 404 (orgByPath), which for joinAccount
+// is the documented no-op rather than a failure, so it is declared expected
+// and stays out of http_req_failed. Without this every multi-tenant run
+// reported exactly one failed request (the trailing setContext(ACCOUNT)
+// below, since there is deliberately no account named "default"), a phantom
+// nobody can act on sitting in the headline rate of every summary.
+const joinExpected = http.expectedStatuses({ min: 200, max: 399 }, 404);
+
 // joinAccount makes the signed-in admin a member of `account` — idempotent,
 // and a no-op when the account does not exist yet (creating a cache is what
 // creates it, and the caller sets the context again afterwards).
 export function joinAccount(account) {
-  http.post(`${BASE}/admin/org/${account}/members`, { user: ADMIN_USER, role: "admin" });
+  http.post(
+    `${BASE}/admin/org/${account}/members`,
+    { user: ADMIN_USER, role: "admin" },
+    { responseCallback: joinExpected },
+  );
 }
 
 // ensureCache creates `target`'s account+cache through the admin dashboard —

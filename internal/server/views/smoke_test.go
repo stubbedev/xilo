@@ -187,6 +187,14 @@ func TestSmokeCacheView(t *testing.T) {
 			t.Errorf("CacheView missing %q", want)
 		}
 	}
+	// The path link leaves #path-results behind, so it must undo the swap
+	// attributes that region hands down: with them inherited, htmx selects a
+	// region the path page does not have and swaps in nothing.
+	if i := strings.Index(out, "/path/"); i < 0 {
+		t.Error("CacheView has no path link")
+	} else if row := out[max(0, i-400) : i+200]; !strings.Contains(row, `hx-select="unset"`) {
+		t.Error("path link inherits the #path-results swap attributes")
+	}
 	// Private cache, no paths, no query → empty state + private note, and the
 	// netrc line nix needs for a private pull.
 	priv := d

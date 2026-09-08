@@ -68,6 +68,17 @@ jobs:
                    "| http_req_failed (rate) | \(.metrics.http_req_failed.value // 0) | | |"' \
               "$2" >> "$GITHUB_STEP_SUMMARY" || true
             echo >> "$GITHUB_STEP_SUMMARY"
+            # Per-scenario failure rates, because the aggregate answers "did
+            # anything fail" and not "what failed": a rate on this page with
+            # no scenario beside it sends you to the raw log to find out.
+            jq -e '.metrics | any(keys[]; startswith("http_req_failed{"))' "$2" >/dev/null 2>&1 || return 0
+            echo '| scenario | failed |' >> "$GITHUB_STEP_SUMMARY"
+            echo '|---|---|' >> "$GITHUB_STEP_SUMMARY"
+            jq -r '.metrics | to_entries[]
+              | select(.key | startswith("http_req_failed{"))
+              | "| \(.key | ltrimstr("http_req_failed{") | rtrimstr("}")) | \(.value.value // 0) |"' \
+              "$2" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
           }
           summarize "perf" k6-perf-summary.json
           summarize "churn" k6-churn-summary.json

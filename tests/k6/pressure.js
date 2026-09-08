@@ -37,6 +37,8 @@ const TENANTS = parseInt(__ENV.TENANTS || "0", 10);
 const goroutines = new Trend("srv_goroutines");
 const heapMiB = new Trend("srv_heap_mib");
 const pullBroken = new Counter("pull_broken");
+const abortsSeen = new Counter("aborts_seen");
+const scrapesSeen = new Counter("scrapes_seen");
 
 const RAMP = 30; // storm ramp-up seconds
 const STORM_END = RAMP + D + 10;
@@ -91,10 +93,25 @@ export const options = {
   },
   thresholds: {
     // Graceful under pressure: essentially nothing fails, latency bounded.
+    // The aggregate covers every scenario, including one added later that
+    // nobody remembers to name here. abort_storm's deliberate aborts are
+    // declared expected at the call site rather than excluded here, so this
+    // number is the whole run's and means what it says.
+    http_req_failed: ["rate<0.005"],
+    // The half-closed-connection storm has to keep half-closing connections,
+    // and the leak watch has to keep scraping: both scenarios used to be able
+    // to stop doing their job without failing anything.
+    aborts_seen: ["count>0"],
+    scrapes_seen: ["count>10"],
     "http_req_failed{scenario:storm}": ["rate<0.005"],
     "http_req_failed{scenario:push_storm}": ["rate<0.005"],
     "http_req_failed{scenario:flood}": ["rate<0.005"],
     "http_req_failed{scenario:pull_wall}": ["rate<0.005"],
+    // Zero, not a budget: an abort is declared expected at the call site, so
+    // anything left here is the server mishandling a half-closed connection,
+    // and a scrape that fails means the watch is blind again.
+    "http_req_failed{scenario:abort_storm}": ["rate==0"],
+    "http_req_failed{scenario:leakwatch}": ["rate==0"],
     "http_req_duration{scenario:storm}": ["p(99)<1000"],
     "http_req_duration{scenario:flood}": ["p(99)<1000"],
     // The arrival-rate executor drops iterations when the server can't keep
@@ -202,30 +219,54 @@ export function pullWall(data) {
   }
 }
 
+// A client that hangs up mid-body is answered with status 0 (k6's code for a
+// request that never completed), and here that is the correct answer, not a
+// failure: declaring it expected keeps ~6k deliberate aborts out of
+// http_req_failed, which is what used to make every pressure summary report a
+// ~1.5% failure rate over a run where no scenario failed a single request.
+// Anything else the server might answer, a 5xx or a truncated 200, still
+// counts, so the aggregate threshold covers this scenario too.
+const abortExpected = http.expectedStatuses(0, { min: 200, max: 399 });
+
 export function abortStorm(data) {
-  // 64MiB NAR with a 150ms budget: aborts mid-body by design. Failures here
-  // are the point — no thresholds reference this scenario.
+  // 64MiB NAR with a 150ms budget: aborts mid-body by design.
   const i = tn(data);
-  http.get(`${cachePrefix(data.targets[i])}/nar/${data.corpora[i].bigHash}.nar`, {
+  const res = http.get(`${cachePrefix(data.targets[i])}/nar/${data.corpora[i].bigHash}.nar`, {
     headers: { "Accept-Encoding": "identity" },
     responseType: "none",
     timeout: "150ms",
     tags: { name: "abort" },
+    responseCallback: abortExpected,
   });
+  // Count the aborts that actually aborted: if the NAR ever starts fitting
+  // inside the budget this scenario stops exercising half-closed connections
+  // at all, and the run would go green having tested nothing.
+  if (res.status === 0) abortsSeen.add(1);
 }
 
-// /metrics is admin-only; this single-VU scenario logs in once, then reuses
-// the owner session in its per-VU cookie jar for every scrape.
+// /metrics is admin-only, and the session has to survive ~48 scrapes spread
+// over the whole run. k6 resets the per-VU cookie jar between iterations, so
+// signing in once and relying on that jar left this scenario authenticated
+// for its first iteration only: it recorded a single pre-load sample (which
+// is why srv_goroutines read a flat idle 12 under a 128-VU storm) and
+// answered 401 for the ~47 scrapes after it, so the leak watch watched
+// nothing while load was on. An explicit jar outlives the iteration; logging
+// in per iteration is not the fix, since the login limiter refills at 1 per
+// 10s against a scrape every 5s.
+const leakJar = new http.CookieJar();
 let leakAuthed = false;
 export function leakwatch() {
   if (!leakAuthed) {
-    adminLogin();
+    adminLogin(leakJar);
     leakAuthed = true;
   }
-  const res = http.get(`${BASE}/metrics`, { tags: { name: "metrics" } });
+  const res = http.get(`${BASE}/metrics`, { jar: leakJar, tags: { name: "metrics" } });
   if (res.status === 200) {
     const g = String(res.body).match(/^go_goroutines (\d+)/m);
-    if (g) goroutines.add(parseInt(g[1]));
+    if (g) {
+      goroutines.add(parseInt(g[1]));
+      scrapesSeen.add(1);
+    }
     const h = String(res.body).match(/^go_heap_inuse_bytes (\d+)/m);
     if (h) heapMiB.add(parseInt(h[1]) / 1048576);
   }

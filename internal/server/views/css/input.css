@@ -736,8 +736,27 @@ input[type="radio"]:not(:disabled) { cursor: pointer; }
    of the control that opened it — visible in the footer, where the combobox and
    the account menu sit one above the other. Widen the sidebar's own gutter past
    the safety margin and the geometry agrees on its own, with no fighting a
-   JS-positioned element over its inline `left`. */
-[data-tui-sidebar][class*="p-2"] {
+   JS-positioned element over its inline `left`.
+
+   Only the three boxes that make that gutter, and only while the rail is open.
+   Matching every `p-2` inside the sidebar (`[class*="p-2"]`, which the Content
+   div's `gap-2` answered too) stacked the same 12px at three nesting levels:
+   the nav icons ended up 16px right of the logo, and in the collapsed rail —
+   3rem wide, sized by templui for 8px gutters and a 2rem button — the buttons
+   overflowed it and were clipped. Collapsed keeps templui's 8px, which fits
+   exactly; a popover there hangs off a 2rem button and lands nowhere near its
+   own width anyway. The mobile sheet is listed separately because the script
+   moves the whole rail into it, out of reach of the state attribute. */
+[data-tui-sidebar-state="expanded"] :is(
+  [data-tui-sidebar="header"],
+  [data-tui-sidebar="footer"],
+  [data-tui-sidebar="group"]
+),
+.sidebar-mobile-portal :is(
+  [data-tui-sidebar="header"],
+  [data-tui-sidebar="footer"],
+  [data-tui-sidebar="group"]
+) {
   padding-inline: 0.75rem;
 }
 

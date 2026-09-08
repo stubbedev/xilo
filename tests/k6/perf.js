@@ -88,7 +88,12 @@ export const options = {
   // faster) — they catch catastrophic regressions; trend-tracking of the
   // uploaded summary is the real release-over-release signal.
   thresholds: {
-    http_req_failed: ["rate<0.01"],
+    // Not a floor: every request this suite makes is meant to succeed (the
+    // negative lookups declare 404 expected), nothing here races the GC, and
+    // IdleTimeout is 120s against traffic that never pauses that long, so
+    // there is no legitimate failure for a budget to absorb. rate<0.01 let a
+    // single failed request hide in 500k for as long as the suite has run.
+    http_req_failed: ["rate==0"],
     "http_req_duration{scenario:narinfo_hit}": ["p(95)<200"],
     "http_req_duration{scenario:narinfo_miss}": ["p(95)<200"],
     "http_req_duration{scenario:pull_identity}": ["p(95)<5000"],

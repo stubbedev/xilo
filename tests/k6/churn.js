@@ -46,6 +46,12 @@ export const options = {
   thresholds: {
     nar_broken: ["count==0"],
     checks: ["rate>0.99"],
+    // A push that loses the race against the sweeper is answered 409 and
+    // re-pushed, which is the point of the suite, so this is a budget rather
+    // than zero, sized to match the checks rate above. It had no threshold at
+    // all before, which is how one failed request per multi-tenant run went
+    // unremarked for as long as the suite has run.
+    http_req_failed: ["rate<0.01"],
   },
 };
 
