@@ -166,8 +166,15 @@ func TestRealS3ThroughNew(t *testing.T) {
 	ctx := context.Background()
 
 	st, err := New(config.Storage{Backend: "s3", S3: config.S3{
-		Endpoint:  os.Getenv("XILO_S3_TEST_ENDPOINT"),
-		Bucket:    cmpOr(os.Getenv("XILO_S3_TEST_BUCKET"), "xilo-test"),
+		Endpoint: os.Getenv("XILO_S3_TEST_ENDPOINT"),
+		Bucket:   cmpOr(os.Getenv("XILO_S3_TEST_BUCKET"), "xilo-test"),
+		// Not decoration: NewS3 falls back to us-east-1 for an empty region
+		// because the signer needs one, and a server that checks the SigV4
+		// scope (Garage does, MinIO does not) answers 400
+		// AuthorizationHeaderMalformed to every request signed for the wrong
+		// one. Dropping it here made this the only construction in the file
+		// signing for a region the server never agreed to.
+		Region:    os.Getenv("XILO_S3_TEST_REGION"),
 		AccessKey: cmpOr(os.Getenv("XILO_S3_TEST_ACCESS_KEY"), "minioadmin"),
 		SecretKey: cmpOr(os.Getenv("XILO_S3_TEST_SECRET_KEY"), "minioadmin"),
 		Insecure:  true,
