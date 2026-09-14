@@ -18,6 +18,8 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # Needed to dispatch the hash-maintenance workflow after a merge.
+  actions: write
 
 jobs:
   merge:
@@ -54,4 +56,11 @@ jobs:
 
             gh pr merge "$pr" --squash --delete-branch
             echo "::notice::Auto-merged dependabot PR #$pr ($buckets)."
+
+            # The squash push is made with GITHUB_TOKEN, so it does not trigger
+            # the `push` workflows — ci.yml never reran on the default branch and
+            # the flake hash stayed at its pre-bump value, breaking `nix build`
+            # for every consumer. workflow_dispatch is the documented exception:
+            # it fires even from GITHUB_TOKEN.
+            gh workflow run ci.yml --ref "$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)"
           done

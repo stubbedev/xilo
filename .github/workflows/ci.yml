@@ -4,6 +4,10 @@ on:
   push:
     branches: [master, main]
   pull_request:
+  # Dispatched by dependabot-auto-merge.yml after a squash merge: pushes made
+  # with GITHUB_TOKEN do not trigger `push`, so the vendorHash auto-commit
+  # in the `flake` job would never run for an auto-merged dep bump.
+  workflow_dispatch:
 
 jobs:
   test:
@@ -240,10 +244,68 @@ jobs:
   flake:
     name: nix flake builds (vendorHash in sync)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          # real ref + write token so the auto-bump step can push the
+          # refreshed vendorHash back to the default branch.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
       - uses: DeterminateSystems/nix-installer-action@v22
-      # Fails if flake.nix vendorHash is stale after a go.mod/go.sum bump.
+
+      # Inline `just sync-vendor-hash` (no just on the runner). Re-pins
+      # flake.nix's vendorHash against the current go.mod/go.sum: the sentinel
+      # makes the build fail and report the real hash, which is written back.
+      - name: sync flake.nix vendorHash
+        run: |
+          set -euo pipefail
+          SENTINEL="sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          sed -i 's|vendorHash = "[^"]*";|vendorHash = "'"$SENTINEL"'";|' flake.nix
+          set +e
+          OUT=$(nix build .#default --no-link 2>&1)
+          BUILD_STATUS=$?
+          set -e
+          NEW_HASH=$(printf '%s\n' "$OUT" | sed -n 's/.*got: *//p' | head -1)
+          if [ -z "$NEW_HASH" ]; then
+            if [ "$BUILD_STATUS" = "0" ]; then
+              echo "::error::sync-vendor-hash: nix build unexpectedly succeeded with the sentinel hash"
+            else
+              echo "$OUT"
+              echo "::error::sync-vendor-hash: nix build did not print 'got: sha256-…'"
+            fi
+            exit 1
+          fi
+          sed -i 's|vendorHash = "[^"]*";|vendorHash = "'"$NEW_HASH"'";|' flake.nix
+          echo "vendorHash -> $NEW_HASH"
+
+      # Drift is reported, not fatal. Dependabot PRs get a read-only token, so
+      # nothing can push the corrected hash onto the PR branch — failing here
+      # would park every dep bump until someone ran `just sync-vendor-hash` by
+      # hand. The build below still validates the corrected tree, and the run
+      # dispatched after merge commits the hash.
+      - name: report flake.nix drift (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ -n "$(git status --porcelain flake.nix)" ]; then
+            echo "::warning::flake.nix vendorHash was stale; this run built with the corrected hash, which is auto-committed by the CI run dispatched after merge."
+            git --no-pager diff flake.nix
+          fi
+
+      - name: auto-commit flake.nix bump (default branch)
+        if: github.event_name != 'pull_request'
+        run: |
+          if [ -z "$(git status --porcelain flake.nix)" ]; then
+            echo "flake.nix already in sync; nothing to commit."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add flake.nix
+          git commit -m 'chore: auto-bump flake.nix vendorHash [skip ci]'
+          git push origin HEAD:${GITHUB_REF_NAME}
+
       - run: nix build .#default -L
 
   ops:
