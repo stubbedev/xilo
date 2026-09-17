@@ -27,7 +27,7 @@ jobs:
           cache: true
       # internal/nar and internal/push diff their own serialization against
       # `nix-store --dump`; those tests are the contract, not a nicety.
-      - uses: DeterminateSystems/nix-installer-action@v22
+      - uses: DeterminateSystems/nix-installer-action@v23
       # Admin CSS is generated (not committed) and embedded via go:embed.
       - name: build admin CSS
         run: |
@@ -230,7 +230,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - uses: DeterminateSystems/nix-installer-action@v22
+      - uses: DeterminateSystems/nix-installer-action@v23
       - name: build admin CSS
         run: |
           curl -sSL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.2/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
@@ -253,7 +253,7 @@ jobs:
           # refreshed vendorHash back to the default branch.
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
-      - uses: DeterminateSystems/nix-installer-action@v22
+      - uses: DeterminateSystems/nix-installer-action@v23
 
       # Inline `just sync-vendor-hash` (no just on the runner). Re-pins
       # flake.nix's vendorHash against the current go.mod/go.sum: the sentinel
