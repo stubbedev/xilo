@@ -60,7 +60,7 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: DeterminateSystems/nix-installer-action@v22
+      - uses: DeterminateSystems/nix-installer-action@v23
 
       # The bench builds xilo from this tree, and that build embeds two
       # generated artifacts: the Tailwind sheet (//go:embed static) and the
