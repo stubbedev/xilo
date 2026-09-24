@@ -7,9 +7,9 @@ require (
 	github.com/a-h/templ v0.3.1020
 	github.com/aws/aws-sdk-go-v2 v1.47.0
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.5
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.1
-	github.com/aws/smithy-go v1.28.1
-	github.com/go-webauthn/webauthn v0.18.1
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.2
+	github.com/aws/smithy-go v1.28.2
+	github.com/go-webauthn/webauthn v0.18.2
 	github.com/invopop/jsonschema v0.14.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/jotfs/fastcdc-go v0.2.0
@@ -20,7 +20,7 @@ require (
 	golang.org/x/crypto v0.57.0
 	golang.org/x/term v0.46.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.58.0
+	modernc.org/sqlite v1.59.0
 )
 
 require (
@@ -35,7 +35,7 @@ require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.2.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
+	github.com/fxamacker/cbor/v2 v2.9.4 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/go-webauthn/x v0.3.1 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
@@ -58,7 +58,7 @@ require (
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
-	modernc.org/libc v1.75.6 // indirect
+	modernc.org/libc v1.75.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
