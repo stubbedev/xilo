@@ -403,6 +403,33 @@ func hxSwapAttrs(url, target string) templ.Attributes {
 	}
 }
 
+// swapFocusID mints the stable DOM id every control inside an htmx swap
+// region carries. htmx puts focus back after a swap by id - it re-finds the
+// element that had focus in the DOM the swap brought in - so a control
+// without one dumps focus to <body>, and with it a keyboard user's place in
+// the list, on every swap. target is the region selector ("#audit-results");
+// name tells the controls of one region apart.
+func swapFocusID(target, name string) string {
+	return strings.TrimPrefix(target, "#") + "-" + name
+}
+
+// idSlug is the id-safe spelling of a filter value: lowercase, and anything
+// that is not a letter or a digit becomes a dash.
+func idSlug(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r + 32)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	return b.String()
+}
+
 // Remaining is the seconds until a unix expiry (0 for never/past), rounded
 // up to whole days (or hours under two days) so the prefilled TTL reads as
 // "60 days", not "1437 hours".

@@ -1411,11 +1411,11 @@ func (s *Server) renderCache(w http.ResponseWriter, r *http.Request, u *store.Us
 		Paths:     paths,
 		PathQuery: q,
 		PathTotal: total,
-		PathPager: makePager("/admin/cache/"+c.Ref(), r.URL.Query(), "page", page, pages),
+		PathPager: withTarget(makePager("/admin/cache/"+c.Ref(), r.URL.Query(), "page", page, pages), "#path-results"),
 		PathSort: views.SortCtx{
 			Path: "/admin/cache/" + c.Ref(), Query: r.URL.Query(),
 			SortParam: "sort", DirParam: "dir", PageParam: "page[number]",
-			Key: skey, Dir: sdir,
+			Key: skey, Dir: sdir, Target: "#path-results",
 		},
 	}).Render(r.Context(), w)
 }
@@ -1474,11 +1474,11 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		Classes: auditStatuses,
 		Stats:   stats,
 		Total:   total,
-		Pager:   makePager("/admin/audit", r.URL.Query(), "page", page, pages),
+		Pager:   withTarget(makePager("/admin/audit", r.URL.Query(), "page", page, pages), "#audit-results"),
 		Sort: views.SortCtx{
 			Path: "/admin/audit", Query: r.URL.Query(),
 			SortParam: "sort", DirParam: "dir", PageParam: "page[number]",
-			Key: skey, Dir: sdir,
+			Key: skey, Dir: sdir, Target: "#audit-results",
 		},
 	}).Render(r.Context(), w)
 }

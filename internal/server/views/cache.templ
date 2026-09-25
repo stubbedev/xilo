@@ -105,11 +105,17 @@ templ CacheView(d CacheData) {
 				// keystroke. Nothing is filled in and submitted as a whole, so
 				// there is no Save — the way the account page's appearance
 				// controls and the instance policy switches work.
+				// show:none on the form is load-bearing: to htmx a boosted POST is
+				// a navigation, and it scrolls navigations to the top of the page.
+				// A save the reader never asked to watch must leave the viewport
+				// where it was (and needs no cross-fade while they are typing), so
+				// the form spells out its own swap instead of inheriting the body's.
 				<form
 					method="post"
 					action={ templ.SafeURL("/admin/cache/" + d.Cache.Ref() + "/configure") }
 					class="divide-y border-y"
 					data-autosave
+					hx-swap="innerHTML show:none"
 				>
 					@ControlRow("cache-private", T(ctx, "caches.visibility"), T(ctx, "caches.privatehint")) {
 						@VisibilitySelect(d.Cache.Public)

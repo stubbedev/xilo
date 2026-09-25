@@ -130,6 +130,7 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 			@searchClearLayer()
 			@comboboxKeysLayer()
 			@autosaveLayer()
+			@scrollAnchorLayer()
 			@chartReinitLayer()
 			if DevMode {
 				@devReloadScript()
@@ -522,12 +523,18 @@ templ autosaveLayer() {
 			}
 			// The save answers with the whole page (the readouts around the
 			// form are derived from what it sets), and htmx swaps that in
-			// about a second later. Two things have to survive that swap or
+			// about a second later. Three things have to survive that swap or
 			// the form fights the reader:
 			//
 			// The caret. The control being edited is a different element
 			// afterwards, so where the reader was is remembered by field name
 			// and put back once the new body has settled.
+			//
+			// The viewport. Replacing the page wholesale takes the browser's
+			// scroll anchoring with it (its anchor node goes out with the old
+			// DOM), so where the reader is scrolled to is remembered beside
+			// the caret and put back too — the form's own swap spec already
+			// keeps htmx from scrolling a boosted POST to the top.
 			//
 			// And anything edited while the save was in flight. "Type in one
 			// field, move to the next, keep typing" is the ordinary way to
@@ -539,14 +546,14 @@ templ autosaveLayer() {
 			// the form the swap brings in, which then saves itself once more.
 			// The follow-up submits what it carried, leaving nothing to carry,
 			// so it stops there. The edits cannot be read off the outgoing
-			// form at swap time instead: the swap is wrapped in a View
-			// Transition, so the DOM is replaced the better part of a second
-			// after htmx says it is about to be — and everything typed inside
-			// that window would be read as already saved.
+			// form at swap time instead: the DOM is replaced a full
+			// round-trip after the edit that caused the save, and everything
+			// typed inside that window would be read as already saved.
 			// Null-prototype: the keys are field names, and a field called
 			// __proto__ would otherwise write the prototype instead of an entry.
 			var edits = Object.create(null);
 			var caret = null;
+			var viewY = null;
 			var sentTo = null;
 			function field(f, name) {
 				var el = f.elements[name];
@@ -558,6 +565,7 @@ templ autosaveLayer() {
 				// Submitting exactly what the form holds: nothing outstanding.
 				edits = Object.create(null);
 				caret = null;
+				viewY = window.scrollY;
 				sentTo = f.getAttribute('action');
 				var el = document.activeElement;
 				if (!el || !el.name || !f.contains(el)) return;
@@ -597,9 +605,11 @@ templ autosaveLayer() {
 			document.addEventListener('htmx:afterSettle', function () {
 				var c = caret;
 				var carried = edits;
+				var y = viewY;
 				var action = sentTo;
 				caret = null;
 				edits = Object.create(null);
+				viewY = null;
 				sentTo = null;
 				var f = liveForm(action);
 				if (!f) return;
@@ -607,12 +617,15 @@ templ autosaveLayer() {
 				if (c) {
 					var focusEl = field(f, c.name);
 					if (focusEl) {
-						focusEl.focus();
+						// preventScroll: the position on the page is put back
+						// below, and focus() must not fight it.
+						focusEl.focus({ preventScroll: true });
 						try {
 							if (c.at !== null) focusEl.setSelectionRange(c.at, c.at);
 						} catch (e2) {}
 					}
 				}
+				if (y !== null && window.scrollY !== y) window.scrollTo(0, y);
 				if (newer) {
 					armed.add(f);
 					save(f, 150);
@@ -655,6 +668,119 @@ templ autosaveLayer() {
 			// A pick is a finished decision; a keystroke may not be.
 			document.addEventListener('change', onEdit(150), true);
 			document.addEventListener('input', onEdit(800), true);
+		})();
+	</script>
+}
+
+// scrollAnchorLayer holds the viewport still across an in-page region swap -
+// live search, filter chips, sort heads, the pager.
+//
+// The browser's own scroll anchoring cannot: its anchor node sits inside the
+// region being replaced, and removing the anchor node suppresses the
+// adjustment, so when the swap brings back a region of a different height the
+// rows under the viewport shift and the page reads as having jumped. The
+// layer does by hand what the browser would have: remember the deepest
+// element at the top edge of the viewport, find it again in the DOM the swap
+// brought in, and move the page back under it.
+//
+// Finding it again is two steps, because a filter re-orders and re-populates
+// the list: the element's place in the tree (a path of child indexes from the
+// region) usually resolves, and where the index now names a different row -
+// rows inserted above the old one, rows before it filtered away - the
+// anchor's own text picks the right sibling out of the list it landed in. A
+// row the filter removed entirely cannot be held; the path still resolves to
+// whatever now sits at that depth, which keeps the viewport in the same part
+// of the list.
+//
+// Whole-body swaps are none of its business: a navigation comes up at the top
+// on purpose, and the autosave layer carries its own scroll through the swap
+// it causes. Focus is not handled here either - htmx refocuses the focused
+// control after a swap when it has an id, which is what swapFocusID
+// (helpers.go) puts on every control inside a region.
+templ scrollAnchorLayer() {
+	<script>
+		(function () {
+			var snap = null;
+			// The deepest element whose top edge is at or above the top of the
+			// viewport: descend into the last child that crosses that line,
+			// then climb back out to the row it belongs to (a table row or a
+			// list item), because the row is what a filter keeps, moves and
+			// drops - and what the eye is anchored on. A region that starts
+			// below the fold needs nothing: everything visible is above it,
+			// and the browser's own anchoring still works there.
+			function pickAnchor(region) {
+				if (region.getBoundingClientRect().top > 0) return null;
+				var el = region;
+				for (;;) {
+					var kids = el.children;
+					var next = null;
+					for (var i = 0; i < kids.length; i++) {
+						if (kids[i].getBoundingClientRect().top <= 0) next = kids[i];
+					}
+					if (!next) break;
+					el = next;
+				}
+				for (var a = el; a !== region; a = a.parentElement) {
+					if (a.tagName === 'TR' || a.tagName === 'LI') return a;
+				}
+				return el;
+			}
+			document.addEventListener('htmx:beforeSwap', function (e) {
+				snap = null;
+				var t = e.detail && e.detail.target;
+				// The id is how the region is found again once an outerHTML
+				// swap has replaced it; every swap region here is an id
+				// selector.
+				if (!t || t === document.body || !t.id) return;
+				var anchor = pickAnchor(t);
+				if (!anchor) return;
+				var steps = [];
+				for (var el = anchor; el !== t; el = el.parentElement) {
+					steps.unshift(Array.prototype.indexOf.call(el.parentElement.children, el));
+				}
+				snap = {
+					id: t.id, steps: steps, top: anchor.getBoundingClientRect().top,
+					sig: anchor.textContent.trim(),
+				};
+			});
+			document.addEventListener('htmx:afterSwap', function (e) {
+				if (!snap || !e.target.closest) return;
+				var region = e.target.closest('#' + snap.id);
+				if (!region) return;
+				var keep = snap;
+				snap = null;
+				var el = region;
+				for (var i = 0; el && i < keep.steps.length; i++) {
+					var kids = el.children;
+					el = keep.steps[i] < kids.length ? kids[keep.steps[i]] : null;
+				}
+				if (!el) return;
+				// Same place in the tree, but a different thing there now: a
+				// filter inserted or dropped rows above the anchor, so the
+				// index names a neighbour. The anchor's own text says which
+				// sibling it became, searched outwards from the index so that
+				// rows sharing their text (a burst of identical requests)
+				// resolve to the nearest one rather than the first. A row the
+				// filter removed outright cannot be held; the neighbour stays,
+				// which keeps the viewport in the same part of the list.
+				if (el.textContent.trim() !== keep.sig && el.parentElement) {
+					var sibs = el.parentElement.children;
+					var at = Array.prototype.indexOf.call(sibs, el);
+					var found = null;
+					for (var off = 0; !found && off < sibs.length; off++) {
+						if (sibs[at - off] && sibs[at - off].textContent.trim() === keep.sig) {
+							found = sibs[at - off];
+						} else if (sibs[at + off] && sibs[at + off].textContent.trim() === keep.sig) {
+							found = sibs[at + off];
+						}
+					}
+					if (found) el = found;
+				}
+				// Back under the anchor whatever the swap did to the layout:
+				// scroll by exactly how far it moved.
+				var shift = el.getBoundingClientRect().top - keep.top;
+				if (shift !== 0) window.scrollBy(0, shift);
+			});
 		})();
 	</script>
 }

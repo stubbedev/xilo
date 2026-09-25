@@ -138,7 +138,8 @@ templ auditChips(d AuditData, param, label, active string, values []string) {
 
 templ auditChip(d AuditData, param, value, label string, on bool) {
 	{{ href := d.Sort.With(param, value) }}
-	@button.Button(button.Props{Href: href, Size: button.SizeSm, Variant: chipVariant(on), Class: "h-7 px-2 font-mono text-xs", Attributes: hxSwapAttrs(href, "#audit-results")}) {
+	{{ v := idSlug(value); if v == "" { v = "all" } }}
+	@button.Button(button.Props{ID: swapFocusID("#audit-results", "chip-"+param+"-"+v), Href: href, Size: button.SizeSm, Variant: chipVariant(on), Class: "h-7 px-2 font-mono text-xs", Attributes: hxSwapAttrs(href, "#audit-results")}) {
 		{ label }
 	}
 }
