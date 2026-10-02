@@ -1,10 +1,12 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -310,6 +312,55 @@ func TestMiddlewarePanicAndLogging(t *testing.T) {
 	}
 	if got := s.metrics.pushReq.Load(); got != beforePush+1 {
 		t.Fatalf("pushReq delta = %d want 1", got-beforePush)
+	}
+}
+
+func TestRequestLogStreams(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	prevInfo, prevOut := requestInfoLog, log.Writer()
+	requestInfoLog = log.New(&stdout, "", 0)
+	log.SetOutput(&stderr)
+	t.Cleanup(func() { requestInfoLog = prevInfo; log.SetOutput(prevOut) })
+
+	for _, logging := range []string{"full", "quiet"} {
+		s, _, _ := newTestServerCfg(t, func(c *config.Config) { c.Logging = logging })
+		hit := func(path string, h http.HandlerFunc) {
+			s.middleware(h).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/c/default/c/"+logging+"-"+path, nil))
+		}
+		status := func(code int) http.HandlerFunc {
+			return func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(code) }
+		}
+		hit("ok", status(http.StatusOK))
+		hit("redirect", status(http.StatusFound))
+		hit("missing", status(http.StatusNotFound))
+		hit("failed", status(http.StatusInternalServerError))
+		hit("panic", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+			panic("late boom")
+		})
+	}
+
+	for path, want := range map[string]string{
+		"full-ok":       "stdout",
+		"full-redirect": "stdout",
+		"full-missing":  "stderr",
+		"full-failed":   "stderr",
+		"full-panic":    "stderr",
+		"quiet-ok":      "",
+		"quiet-missing": "stderr",
+		"quiet-failed":  "stderr",
+		"quiet-panic":   "stderr",
+	} {
+		got := ""
+		switch {
+		case strings.Contains(stdout.String(), path+" "):
+			got = "stdout"
+		case strings.Contains(stderr.String(), path+" "):
+			got = "stderr"
+		}
+		if got != want || (strings.Contains(stdout.String(), path+" ") && strings.Contains(stderr.String(), path+" ")) {
+			t.Errorf("%s logged to %q want %q\nstdout: %s\nstderr: %s", path, got, want, &stdout, &stderr)
+		}
 	}
 }
 
