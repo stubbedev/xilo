@@ -944,7 +944,7 @@ swept mid-push costs one extra dump and never a corrupt or dangling path.
 ## Development
 
 ```sh
-nix develop          # go, templ, air, just, golangci-lint, ...
+devenv shell         # go, templ, air, just, golangci-lint, ...
 just                 # list recipes
 just dev             # live-reload server (air) with seeded demo data
 just generate        # regenerate templ views
@@ -952,6 +952,11 @@ just check           # everything CI runs: lint, test, schema and nix build in s
 just update          # bump deps and the flake vendorHash together
 just release-patch   # tag and push a release (RELEASING.md); -minor and -major too
 ```
+
+The dev shell is a [devenv](https://devenv.sh) project: trust the checkout
+once with `devenv allow` and it auto-activates whenever you `cd` in - no
+direnv hook, no `.envrc`. `flake.nix` carries only the packages and modules
+other Nix code consumes.
 
 The admin UI is [templ](https://templ.guide/) components (the
 [templUI](https://templui.io/) library) styled with

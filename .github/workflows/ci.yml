@@ -46,7 +46,7 @@ jobs:
       # profile stayed on 1.26 through the 1.27 bump and nothing noticed,
       # because nothing in CI built it.
       - name: Go version pins match go.mod
-        run: ./scripts/toolchain.sh check
+        run: nix run nixpkgs#just -- toolchain-check
       - run: go vet ./...
       # Stdlib-first gate (.golangci.yml) — the same set `just lint` runs.
       - uses: golangci/golangci-lint-action@v9

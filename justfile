@@ -98,11 +98,32 @@ sync-schema:
 # GOTOOLCHAIN=auto is set wherever those images build, so even a stale pin
 # fetches the right compiler instead of refusing to build.
 sync-toolchain:
-    ./scripts/toolchain.sh sync
+    #!/usr/bin/env bash
+    set -euo pipefail
+    want=$(awk '/^go [0-9]/ {split($2, v, "."); print v[1] "." v[2]; exit}' go.mod)
+    [ -n "$want" ] || { echo "sync-toolchain: no go directive in go.mod" >&2; exit 1; }
+    under=${want/./_} # 1.27 -> 1_27, for nixpkgs' go_1_27
+    sed -i -E "s/golang:[0-9]+\.[0-9]+-alpine/golang:${want}-alpine/" Dockerfile
+    sed -i -E "s/image: golang:[0-9]+\.[0-9]+$/image: golang:${want}/" tests/k6/compose.yaml
+    sed -i -E "s/go = pkgs\.go_[0-9]+_[0-9]+;/go = pkgs.go_${under};/" flake.nix
+    sed -i -E "s/^([[:space:]]+)go_[0-9]+_[0-9]+$/\1go_${under}/" devenv.nix
 
-# Strict read-only pin check (what CI and `just check` run).
+# Strict read-only pin check (what CI and `just check` run): every pin must
+# spell go.mod's version. Presence checks, not a diff -- a half-done edit
+# elsewhere in one of these files is not drift.
 toolchain-check:
-    ./scripts/toolchain.sh check
+    #!/usr/bin/env bash
+    set -euo pipefail
+    want=$(awk '/^go [0-9]/ {split($2, v, "."); print v[1] "." v[2]; exit}' go.mod)
+    [ -n "$want" ] || { echo "toolchain-check: no go directive in go.mod" >&2; exit 1; }
+    under=${want/./_}
+    drift=0
+    grep -q -- "golang:${want}-alpine" Dockerfile || { echo "DRIFT Dockerfile does not pin Go ${want}" >&2; drift=1; }
+    grep -q -- "image: golang:${want}" tests/k6/compose.yaml || { echo "DRIFT tests/k6/compose.yaml does not pin Go ${want}" >&2; drift=1; }
+    grep -q -- "go = pkgs.go_${under};" flake.nix || { echo "DRIFT flake.nix does not pin Go ${want}" >&2; drift=1; }
+    grep -Eq -- "^[[:space:]]+go_${under}$" devenv.nix || { echo "DRIFT devenv.nix does not pin Go ${want}" >&2; drift=1; }
+    [ "$drift" -eq 0 ] && echo "every Go pin matches go.mod (${want})"
+    exit "$drift"
 
 # Strict read-only schema check (what CI runs on PRs).
 schema-check:
@@ -123,6 +144,7 @@ schema-check:
 # The only supported way to bump dependencies — never edit hashes by hand.
 update:
     nix flake update
+    devenv update
     go get -u ./...
     go mod tidy
     just sync-vendor-hash

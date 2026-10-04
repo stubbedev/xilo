@@ -33,16 +33,18 @@ jobs:
         run: |
           set -euo pipefail
           nix flake update
+          # devenv.lock: the dev shell's own input lock (devenv.yaml).
+          nix run github:cachix/devenv -- update
           nix flake check --print-build-logs
       - name: commit + push if changed
         run: |
           set -euo pipefail
-          if [ -z "$(git status --porcelain flake.lock)" ]; then
-            echo "flake.lock already current."
+          if [ -z "$(git status --porcelain flake.lock devenv.lock)" ]; then
+            echo "locks already current."
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add flake.lock
-          git commit -m 'chore: weekly flake.lock update [skip ci]'
+          git add flake.lock devenv.lock
+          git commit -m 'chore: weekly lock update [skip ci]'
           git push origin HEAD:master
