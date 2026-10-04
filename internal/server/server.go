@@ -213,6 +213,8 @@ func isAdminPage(r *http.Request) bool {
 		strings.HasPrefix(r.URL.Path, "/admin")
 }
 
+var requestInfoLog = log.New(os.Stdout, "", log.LstdFlags)
+
 // middleware wraps the mux with panic recovery + request logging.
 func (s *Server) middleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -250,7 +252,8 @@ func (s *Server) middleware(h http.Handler) http.Handler {
 		}
 		lw := &logWriter{ResponseWriter: w, status: http.StatusOK}
 		defer func() {
-			if rec := recover(); rec != nil {
+			rec := recover()
+			if rec != nil {
 				log.Printf("panic: %v", rec)
 				if !lw.wrote {
 					http.Error(lw, "internal error", http.StatusInternalServerError)
@@ -267,9 +270,14 @@ func (s *Server) middleware(h http.Handler) http.Handler {
 				}
 			}
 			// logging=quiet: only errors and slow requests — the synchronous
-			// log write (global mutex + stderr) is measurable at 10k+ rps.
-			if s.cfg.Logging != "quiet" || lw.status >= 400 || elapsed > time.Second {
-				log.Printf("%s %s %d %s", r.Method, r.URL.Path, lw.status, elapsed.Round(time.Millisecond))
+			// log write (logger mutex + stream write) is measurable at 10k+ rps.
+			requestError := rec != nil || lw.status >= 400
+			if s.cfg.Logging != "quiet" || requestError || elapsed > time.Second {
+				logger := requestInfoLog
+				if requestError {
+					logger = log.Default()
+				}
+				logger.Printf("%s %s %d %s", r.Method, r.URL.Path, lw.status, elapsed.Round(time.Millisecond))
 			}
 			// Activities: successful admin/API mutations only.
 			if lw.status < 400 && auditable(r) {
