@@ -13,44 +13,72 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
-FUZZTIME=${1:?usage: fuzz.sh <fuzztime> [package...]}
-shift
-PKGS=("$@")
-[ "${#PKGS[@]}" -gt 0 ] || PKGS=(./internal/...)
+# run <fuzztime> [package...]   every target under ./internal (CI, nightly)
+# list                          "<package> <FuzzName>" per line, no running --
+#                               ci.yml discovers its matrix from this
+# one <package> <FuzzName> <fuzztime>
+#                               a single target, so ci.yml's per-target jobs
+#                               keep the exact invocation this script owns
+MODE=run
+case "${1:-}" in
+  --list) MODE=list; shift ;;
+  --one) MODE=one; shift ;;
+esac
 
-# One "<package> <FuzzName>" per line, straight from the source.
-targets=$(
-  go list -f '{{.Dir}} {{.ImportPath}}' "${PKGS[@]}" 2>/dev/null | while read -r dir importpath; do
+discover() {
+  local pkgs=("$@")
+  [ "${#pkgs[@]}" -gt 0 ] || pkgs=(./internal/...)
+  go list -f '{{.Dir}} {{.ImportPath}}' "${pkgs[@]}" 2>/dev/null | while read -r dir importpath; do
     grep -hoE '^func (Fuzz[A-Za-z0-9_]*)\(' "$dir"/*_test.go 2>/dev/null |
       sed -E 's/^func (Fuzz[A-Za-z0-9_]*)\($/\1/' | while read -r name; do
       [ -n "$name" ] && echo "$importpath $name"
     done
   done | sort -u
-)
+}
 
-if [ -z "$targets" ]; then
-  echo "fuzz: no Fuzz targets found under ${PKGS[*]}" >&2
-  exit 1
-fi
-
-count=$(echo "$targets" | wc -l | tr -d ' ')
-echo "fuzzing $count target(s) for $FUZZTIME each"
-
-fail=0
-while read -r pkg target; do
-  [ -n "$pkg" ] || continue
+case $MODE in
+list)
+  targets=$(discover)
+  if [ -z "$targets" ]; then
+    echo "fuzz: no Fuzz targets found" >&2
+    exit 1
+  fi
+  echo "$targets"
+  ;;
+one)
+  pkg=${1:?usage: fuzz.sh --one <package> <FuzzName> <fuzztime>}
+  target=${2:?usage: fuzz.sh --one <package> <FuzzName> <fuzztime>}
+  FUZZTIME=${3:?usage: fuzz.sh --one <package> <FuzzName> <fuzztime>}
   # ::group:: folds the run on GitHub and is harmless in a terminal.
   echo "::group::$target ($pkg)"
-  if ! go test "$pkg" -run "^$target\$" -fuzz "^$target\$" -fuzztime="$FUZZTIME" -count=1; then
-    fail=1
-    echo "FAILED $target ($pkg)"
+  go test "$pkg" -run "^$target\$" -fuzz "^$target\$" -fuzztime="$FUZZTIME" -count=1
+  ;;
+run)
+  FUZZTIME=${1:?usage: fuzz.sh <fuzztime> [package...]}
+  shift
+  PKGS=("$@")
+  targets=$(discover "${PKGS[@]}")
+  if [ -z "$targets" ]; then
+    echo "fuzz: no Fuzz targets found under ${PKGS[*]}" >&2
+    exit 1
   fi
-  echo "::endgroup::"
-done <<<"$targets"
-
-if [ "$fail" != 0 ]; then
-  echo >&2
-  echo "A crasher is written to that package's testdata/fuzz: commit it, since" >&2
-  echo "the corpus entry is the reproduction." >&2
-fi
-exit "$fail"
+  count=$(echo "$targets" | wc -l | tr -d ' ')
+  echo "fuzzing $count target(s) for $FUZZTIME each"
+  fail=0
+  while read -r pkg target; do
+    [ -n "$pkg" ] || continue
+    echo "::group::$target ($pkg)"
+    if ! go test "$pkg" -run "^$target\$" -fuzz "^$target\$" -fuzztime="$FUZZTIME" -count=1; then
+      fail=1
+      echo "FAILED $target ($pkg)"
+    fi
+    echo "::endgroup::"
+  done <<<"$targets"
+  if [ "$fail" != 0 ]; then
+    echo >&2
+    echo "A crasher is written to that package's testdata/fuzz: commit it, since" >&2
+    echo "the corpus entry is the reproduction." >&2
+  fi
+  exit "$fail"
+  ;;
+esac

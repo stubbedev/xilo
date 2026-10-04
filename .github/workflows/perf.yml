@@ -6,136 +6,113 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+# A second push to the same ref supersedes the first run: nobody reads the
+# result of a commit that is no longer the head, so stop paying for it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   k6:
-    name: k6 (${{ matrix.tenancy }})
+    name: k6 (${{ matrix.tenancy }}) ${{ matrix.suite }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           # Single-tenant: the classic numbers, tracked release over release.
-          - tenancy: single
-            config: server-perf.yaml
-            churn_config: server-churn.yaml
-            tenants: 0
+          - { tenancy: single, suite: perf,     config: server-perf.yaml,     tenants: 0 }
+          - { tenancy: single, suite: churn,    config: server-churn.yaml,    tenants: 0 }
+          - { tenancy: single, suite: pressure, config: server-perf.yaml,     tenants: 0 }
           # Multi-tenant: same suites with load spread across registered
           # accounts, so per-account isolation is exercised under pressure.
-          - tenancy: multi
-            config: server-mt.yaml
-            churn_config: server-mt-churn.yaml
-            tenants: 4
+          - { tenancy: multi,  suite: perf,     config: server-mt.yaml,       tenants: 4 }
+          - { tenancy: multi,  suite: churn,    config: server-mt-churn.yaml, tenants: 4 }
+          - { tenancy: multi,  suite: pressure, config: server-mt.yaml,       tenants: 4 }
     steps:
       - uses: actions/checkout@v7
 
-      - name: perf suite
+      - uses: docker/setup-buildx-action@v4
+      # One suite per runner: the three used to queue behind each other inside
+      # one job, which set the workflow's wall at their sum (~17 minutes).
+      # Parallel they cost only the slowest one. The image builds against the
+      # GHA layer cache, so every run after the first is a download, not a
+      # compile; compose finds this pre-built image and skips its own build.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: xilo-k6-xilo:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The runner is dedicated to this one suite, so a regression fails the
+      # job directly -- the old run-all-suites-then-verdict dance existed only
+      # because the suites shared a job and a regression would have silenced
+      # the ones behind it.
+      - name: ${{ matrix.suite }} suite
         run: |
+          EXTRA=""
+          if [ "${{ matrix.suite }}" = pressure ]; then
+            EXTRA="-e STORM_VUS=128 -e FLOOD_RPS=1200 -e PULL_VUS=32 -e DURATION_S=45"
+          fi
           XILO_E2E_CONFIG=${{ matrix.config }} docker compose -f tests/k6/compose.yaml \
-            run --rm -e TENANTS=${{ matrix.tenants }} k6
-          docker compose -f tests/k6/compose.yaml run --rm --entrypoint cat k6 /out/summary.json > k6-perf-summary.json
+            run --rm $EXTRA -e TENANTS=${{ matrix.tenants }} \
+            k6 run --summary-export=/out/summary.json /scripts/${{ matrix.suite }}.js
+          docker compose -f tests/k6/compose.yaml run --rm --entrypoint cat k6 /out/summary.json > k6-${{ matrix.suite }}-summary.json
 
-      # continue-on-error, with the verdict collected at the end: a regression
-      # in the first suite used to stop the job before the other two ran, so
-      # one slow number cost you the whole run's data on a workflow that
-      # takes 17 minutes.
-      - name: perf vs baseline
-        id: gate-perf
-        continue-on-error: true
-        run: ./tests/k6/compare.sh tests/k6/baselines/perf.json k6-perf-summary.json perf-${{ matrix.tenancy }}
-
-      - name: integrity churn (hostile GC)
-        run: |
-          docker compose -f tests/k6/compose.yaml down -v
-          XILO_E2E_CONFIG=${{ matrix.churn_config }} docker compose -f tests/k6/compose.yaml \
-            run --rm -e TENANTS=${{ matrix.tenants }} \
-            k6 run --summary-export=/out/summary.json /scripts/churn.js
-          docker compose -f tests/k6/compose.yaml run --rm --entrypoint cat k6 /out/summary.json > k6-churn-summary.json
-
-      # continue-on-error, with the verdict collected at the end: a regression
-      # in the first suite used to stop the job before the other two ran, so
-      # one slow number cost you the whole run's data on a workflow that
-      # takes 17 minutes.
-      - name: churn vs baseline
-        id: gate-churn
-        continue-on-error: true
-        run: ./tests/k6/compare.sh tests/k6/baselines/churn.json k6-churn-summary.json churn-${{ matrix.tenancy }}
-
-      - name: pressure (scaled for 2-core runner)
-        run: |
-          docker compose -f tests/k6/compose.yaml down -v
-          XILO_E2E_CONFIG=${{ matrix.config }} docker compose -f tests/k6/compose.yaml \
-            run --rm \
-            -e STORM_VUS=128 -e FLOOD_RPS=1200 -e PULL_VUS=32 -e DURATION_S=45 \
-            -e TENANTS=${{ matrix.tenants }} \
-            k6 run --summary-export=/out/summary.json /scripts/pressure.js
-          docker compose -f tests/k6/compose.yaml run --rm --entrypoint cat k6 /out/summary.json > k6-pressure-summary.json
-
-      # continue-on-error, with the verdict collected at the end: a regression
-      # in the first suite used to stop the job before the other two ran, so
-      # one slow number cost you the whole run's data on a workflow that
-      # takes 17 minutes.
-      - name: pressure vs baseline
-        id: gate-pressure
-        continue-on-error: true
-        run: ./tests/k6/compare.sh tests/k6/baselines/pressure.json k6-pressure-summary.json pressure-${{ matrix.tenancy }}
+      - name: ${{ matrix.suite }} vs baseline
+        run: ./tests/k6/compare.sh tests/k6/baselines/${{ matrix.suite }}.json k6-${{ matrix.suite }}-summary.json ${{ matrix.suite }}-${{ matrix.tenancy }}
 
       - name: job summary
         if: always()
         run: |
-          summarize() {
-            [ -f "$2" ] || return 0
-            echo "### $1 (${{ matrix.tenancy }}-tenant)" >> "$GITHUB_STEP_SUMMARY"
-            echo '| metric | p50 | p95 | p99 |' >> "$GITHUB_STEP_SUMMARY"
-            echo '|---|---|---|---|' >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.metrics | to_entries[]
-              | select(.key | startswith("http_req_duration"))
-              | "| \(.key) | \(.value["med"] // 0 | round)ms | \(.value["p(95)"] // 0 | round)ms | \(.value["p(99)"] // .value["p(95)"] // 0 | round)ms |"' \
-              "$2" >> "$GITHUB_STEP_SUMMARY"
-            jq -r '"| http_reqs (count) | \(.metrics.http_reqs.count) | | |",
-                   "| http_req_failed (rate) | \(.metrics.http_req_failed.value // 0) | | |"' \
-              "$2" >> "$GITHUB_STEP_SUMMARY" || true
-            echo >> "$GITHUB_STEP_SUMMARY"
-            # Per-scenario failure rates, because the aggregate answers "did
-            # anything fail" and not "what failed": a rate on this page with
-            # no scenario beside it sends you to the raw log to find out.
-            jq -e '.metrics | any(keys[]; startswith("http_req_failed{"))' "$2" >/dev/null 2>&1 || return 0
-            echo '| scenario | failed |' >> "$GITHUB_STEP_SUMMARY"
-            echo '|---|---|' >> "$GITHUB_STEP_SUMMARY"
-            jq -r '.metrics | to_entries[]
-              | select(.key | startswith("http_req_failed{"))
-              | "| \(.key | ltrimstr("http_req_failed{") | rtrimstr("}")) | \(.value.value // 0) |"' \
-              "$2" >> "$GITHUB_STEP_SUMMARY"
-            echo >> "$GITHUB_STEP_SUMMARY"
-          }
-          summarize "perf" k6-perf-summary.json
-          summarize "churn" k6-churn-summary.json
-          summarize "pressure" k6-pressure-summary.json
-
-      # Every comparison's verdict in one place, so the log names all the
-      # regressions rather than only the first suite's.
-      - name: baseline verdict
-        if: always()
-        run: |
-          fail=0
-          for r in "perf:${{ steps.gate-perf.outcome }}" \
-                   "churn:${{ steps.gate-churn.outcome }}" \
-                   "pressure:${{ steps.gate-pressure.outcome }}"; do
-            suite=${r%%:*}; outcome=${r#*:}
-            if [ "$outcome" = failure ]; then
-              echo "::error::$suite regressed against its baseline (see the '$suite vs baseline' step)"
-              fail=1
-            else
-              echo "$suite: $outcome"
-            fi
-          done
-          exit $fail
+          f=k6-${{ matrix.suite }}-summary.json
+          [ -f "$f" ] || exit 0
+          echo "### ${{ matrix.suite }} (${{ matrix.tenancy }}-tenant)" >> "$GITHUB_STEP_SUMMARY"
+          echo '| metric | p50 | p95 | p99 |' >> "$GITHUB_STEP_SUMMARY"
+          echo '|---|---|---|---|' >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.metrics | to_entries[]
+            | select(.key | startswith("http_req_duration"))
+            | "| \(.key) | \(.value["med"] // 0 | round)ms | \(.value["p(95)"] // 0 | round)ms | \(.value["p(99)"] // .value["p(95)"] // 0 | round)ms |"' \
+            "$f" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '"| http_reqs (count) | \(.metrics.http_reqs.count) | | |",
+                 "| http_req_failed (rate) | \(.metrics.http_req_failed.value // 0) | | |"' \
+            "$f" >> "$GITHUB_STEP_SUMMARY" || true
+          # Per-scenario failure rates, because the aggregate answers "did
+          # anything fail" and not "what failed": a rate on this page with
+          # no scenario beside it sends you to the raw log to find out.
+          jq -e '.metrics | any(keys[]; startswith("http_req_failed{"))' "$f" >/dev/null 2>&1 || exit 0
+          echo '| scenario | failed |' >> "$GITHUB_STEP_SUMMARY"
+          echo '|---|---|' >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.metrics | to_entries[]
+            | select(.key | startswith("http_req_failed{"))
+            | "| \(.key | ltrimstr("http_req_failed{") | rtrimstr("}")) | \(.value.value // 0) |"' \
+            "$f" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: k6-summary-${{ matrix.tenancy }}-${{ github.ref_name }}-${{ github.run_number }}
-          path: k6-*-summary.json
+          name: k6-${{ matrix.suite }}-${{ matrix.tenancy }}-${{ github.ref_name }}-${{ github.run_number }}
+          path: k6-${{ matrix.suite }}-summary.json
 
       - name: teardown
         if: always()
         run: docker compose -f tests/k6/compose.yaml down -v
+
+  # One check that holds every suite's baseline, for whoever gates a merge or
+  # a release on this workflow as a whole; the regressed suite names itself
+  # in its own job's error above.
+  verdict:
+    name: baseline verdict
+    needs: k6
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [ "${{ needs.k6.result }}" != success ]; then
+            echo "::error::a k6 suite failed or regressed against its baseline; see the k6 job that failed"
+            exit 1
+          fi
+          echo "all suites held their baselines"

@@ -3,11 +3,25 @@ name: CI
 on:
   push:
     branches: [master, main]
+    # Prose carries no signal CI can check; skipping keeps a README fix from
+    # paying the six-minute tax.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
   pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
   # Dispatched by dependabot-auto-merge.yml after a squash merge: pushes made
   # with GITHUB_TOKEN do not trigger `push`, so the vendorHash auto-commit
   # in the `flake` job would never run for an auto-merged dep bump.
   workflow_dispatch:
+
+# A second push to the same ref supersedes the first run: nobody reads the
+# result of a commit that is no longer the head, so stop paying for it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -84,9 +98,32 @@ jobs:
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
-  fuzz:
-    name: fuzz the parsers
+  # The target list is discovered, so the matrix has to be too: one job
+  # lists, the rest run one target each. Serially the eleven targets took six
+  # minutes and set the wall for the whole workflow; in parallel the wall is
+  # whichever single target compiles slowest.
+  fuzz-list:
+    name: fuzz targets
     runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.list.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - id: list
+        run: echo "targets=$(./scripts/fuzz.sh --list | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+
+  fuzz:
+    name: fuzz ${{ matrix.target }}
+    needs: fuzz-list
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.fuzz-list.outputs.targets) }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -98,11 +135,13 @@ jobs:
       # testdata/fuzz replays every input a longer run ever found. Hunt for
       # new ones locally with `just fuzz <target> <duration>`.
       - name: fuzz
-        run: ./scripts/fuzz.sh 30s
+        run: |
+          read -r pkg name <<<"${{ matrix.target }}"
+          ./scripts/fuzz.sh --one "$pkg" "$name" 30s
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: fuzz-crashers
+          name: fuzz-crashers-${{ strategy.job-index }}
           path: |
             internal/*/testdata/fuzz/**
             ~/.cache/go-build/fuzz/**
