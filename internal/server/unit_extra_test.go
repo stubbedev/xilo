@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -317,10 +318,10 @@ func TestMiddlewarePanicAndLogging(t *testing.T) {
 
 func TestRequestLogStreams(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	prevInfo, prevOut := requestInfoLog, log.Writer()
-	requestInfoLog = log.New(&stdout, "", 0)
+	prevReqLog, prevOut := reqLog, log.Writer()
+	reqLog = requestLog{out: &stdout, errs: &stderr}
 	log.SetOutput(&stderr)
-	t.Cleanup(func() { requestInfoLog = prevInfo; log.SetOutput(prevOut) })
+	t.Cleanup(func() { reqLog = prevReqLog; log.SetOutput(prevOut) })
 
 	for _, logging := range []string{"full", "quiet"} {
 		s, _, _ := newTestServerCfg(t, func(c *config.Config) { c.Logging = logging })
@@ -362,6 +363,68 @@ func TestRequestLogStreams(t *testing.T) {
 			t.Errorf("%s logged to %q want %q\nstdout: %s\nstderr: %s", path, got, want, &stdout, &stderr)
 		}
 	}
+}
+
+func TestRequestLineFormat(t *testing.T) {
+	for _, d := range []time.Duration{
+		0,
+		time.Microsecond,
+		time.Millisecond,
+		time.Millisecond + 500*time.Microsecond,
+		17 * time.Millisecond,
+		time.Second,
+		time.Second + time.Millisecond,
+		time.Second + 50*time.Millisecond,
+		59 * time.Second,
+		time.Minute + 1500*time.Millisecond,
+		10 * time.Minute,
+		time.Hour + time.Second + 5*time.Millisecond,
+		2540400 * time.Hour,
+	} {
+		want := "GET /x 200 " + d.Round(time.Millisecond).String() + "\n"
+		if got := string(appendRequestLine(nil, "GET", "/x", 200, d)); got != want {
+			t.Errorf("d=%v: got %q want %q", d, got, want)
+		}
+	}
+	rng := rand.New(rand.NewSource(1))
+	for range 10000 {
+		d := time.Duration(rng.Int63n(int64(48 * time.Hour)))
+		want := "POST /p 404 " + d.Round(time.Millisecond).String() + "\n"
+		if got := string(appendRequestLine(nil, "POST", "/p", 404, d)); got != want {
+			t.Fatalf("d=%v: got %q want %q", d, got, want)
+		}
+	}
+}
+
+func TestRequestLogAllocations(t *testing.T) {
+	l := requestLog{out: io.Discard, errs: io.Discard}
+	run := func() {
+		l.request("GET", "/c/a/c/nix/store/0aaaa-hello-2.12.1.drv", 200, 3*time.Millisecond, false, false)
+		l.request("POST", "/admin/orgs", 500, time.Second+time.Millisecond, false, true)
+	}
+	run()
+	run()
+	if n := testing.AllocsPerRun(200, run); n != 0 {
+		t.Errorf("allocs per request pair = %v, want 0", n)
+	}
+}
+
+func BenchmarkRequestLog(b *testing.B) {
+	line := "/c/a/c/nix/store/0aaaa-hello-2.12.1.drv"
+	b.Run("sink", func(b *testing.B) {
+		l := requestLog{out: io.Discard, errs: io.Discard}
+		b.ReportAllocs()
+		for b.Loop() {
+			l.request("GET", line, 200, 3*time.Millisecond, false, false)
+		}
+	})
+	b.Run("log", func(b *testing.B) {
+		l := log.New(io.Discard, "", log.LstdFlags)
+		b.ReportAllocs()
+		for b.Loop() {
+			l.Printf("%s %s %d %s", "GET", line, 200, 3*time.Millisecond)
+		}
+	})
 }
 
 func TestRunContextShutdown(t *testing.T) {

@@ -6,12 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -213,7 +215,90 @@ func isAdminPage(r *http.Request) bool {
 		strings.HasPrefix(r.URL.Path, "/admin")
 }
 
-var requestInfoLog = log.New(os.Stdout, "", log.LstdFlags)
+// requestLog writes the finished-request line. Healthy requests (2xx/3xx) go
+// to out, so a stderr capture holds only failures: 4xx, 5xx and panics go to
+// errs, and neither kind of failure is ever suppressed. quiet drops the
+// healthy fast lines, because the synchronous write is measurable at 10k+ rps.
+// The line is built in one pooled buffer and handed to the stream in one
+// Write: no fmt, no logger mutex serialising concurrent requests, no heap
+// traffic per line.
+type requestLog struct {
+	out  io.Writer
+	errs io.Writer
+}
+
+// A request slower than this is worth a line even in quiet mode.
+const slowRequest = time.Second
+
+var reqLog = requestLog{out: os.Stdout, errs: os.Stderr}
+
+// Pooled *[]byte, not []byte: a slice does not fit in an interface word pair,
+// so putting one back would allocate on every line.
+var reqLinePool = sync.Pool{New: func() any { b := make([]byte, 0, 256); return &b }}
+
+// request writes one line for a finished request, stream split by severity.
+func (l requestLog) request(method, path string, status int, took time.Duration, panicked, quiet bool) {
+	failed := panicked || status >= 400
+	if quiet && !failed && took <= slowRequest {
+		return
+	}
+	w := l.out
+	if failed {
+		w = l.errs
+	}
+	bp := reqLinePool.Get().(*[]byte)
+	b := appendRequestLine((*bp)[:0], method, path, status, took)
+	_, _ = w.Write(b)
+	if cap(b) <= 4096 {
+		*bp = b
+		reqLinePool.Put(bp)
+	}
+}
+
+// appendRequestLine appends "METHOD PATH STATUS DURATION\n", the line
+// log.Printf("%s %s %d %s", method, path, status, took) used to write.
+func appendRequestLine(b []byte, method, path string, status int, took time.Duration) []byte {
+	b = append(b, method...)
+	b = append(b, ' ')
+	b = append(b, path...)
+	b = append(b, ' ')
+	b = strconv.AppendInt(b, int64(status), 10)
+	b = append(b, ' ')
+	b = appendRoundMillis(b, took.Round(time.Millisecond))
+	return append(b, '\n')
+}
+
+// appendRoundMillis appends a millisecond-rounded duration byte-for-byte as
+// time.Duration.String would print it ("0s", "17ms", "1.05s", "2m1.5s",
+// "1h0m3.5s") without building a string on the heap. TestRequestLineFormat
+// pins the equality against the real String.
+func appendRoundMillis(b []byte, d time.Duration) []byte {
+	ns := uint64(d)
+	switch {
+	case ns == 0:
+		return append(b, "0s"...)
+	case ns < uint64(time.Second):
+		b = strconv.AppendUint(b, ns/uint64(time.Millisecond), 10)
+		return append(b, "ms"...)
+	}
+	sec := ns / uint64(time.Second)
+	if sec >= 3600 {
+		b = strconv.AppendUint(b, sec/3600, 10)
+		b = append(b, 'h')
+	}
+	if sec >= 60 {
+		b = strconv.AppendUint(b, (sec/60)%60, 10)
+		b = append(b, 'm')
+	}
+	b = strconv.AppendUint(b, sec%60, 10)
+	if ms := ns % uint64(time.Second) / uint64(time.Millisecond); ms > 0 {
+		b = append(b, '.', byte('0'+ms/100), byte('0'+ms/10%10), byte('0'+ms%10))
+		for b[len(b)-1] == '0' {
+			b = b[:len(b)-1]
+		}
+	}
+	return append(b, 's')
+}
 
 // middleware wraps the mux with panic recovery + request logging.
 func (s *Server) middleware(h http.Handler) http.Handler {
@@ -269,16 +354,7 @@ func (s *Server) middleware(h http.Handler) http.Handler {
 					s.metrics.reqDurNs.Add(elapsed.Nanoseconds())
 				}
 			}
-			// logging=quiet: only errors and slow requests — the synchronous
-			// log write (logger mutex + stream write) is measurable at 10k+ rps.
-			requestError := rec != nil || lw.status >= 400
-			if s.cfg.Logging != "quiet" || requestError || elapsed > time.Second {
-				logger := requestInfoLog
-				if requestError {
-					logger = log.Default()
-				}
-				logger.Printf("%s %s %d %s", r.Method, r.URL.Path, lw.status, elapsed.Round(time.Millisecond))
-			}
+			reqLog.request(r.Method, r.URL.Path, lw.status, elapsed, rec != nil, s.cfg.Logging == "quiet")
 			// Activities: successful admin/API mutations only.
 			if lw.status < 400 && auditable(r) {
 				s.recordAudit(r, lw.status, elapsed)
