@@ -1350,7 +1350,7 @@ func (s *Server) handleCacheDetail(w http.ResponseWriter, r *http.Request) {
 // their accounts' caches; outsiders get the same 404 as a nonexistent cache
 // (no existence oracle).
 func (s *Server) cacheForUser(w http.ResponseWriter, r *http.Request, u *store.User) (*store.Cache, bool) {
-	c, err := s.db.GetCache(r.PathValue("account"), r.PathValue("name"))
+	c, err := s.db.GetCache(r.Context(), r.PathValue("account"), r.PathValue("name"))
 	if errors.Is(err, store.ErrNotFound) {
 		s.notFound(w, r)
 		return nil, false
@@ -1495,7 +1495,7 @@ func (s *Server) handlePathDetail(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	p, err := s.db.GetPath(c.ID, r.PathValue("hash"))
+	p, err := s.db.GetPath(r.Context(), c.ID, r.PathValue("hash"))
 	if errors.Is(err, store.ErrNotFound) {
 		s.notFound(w, r)
 		return
@@ -1506,7 +1506,7 @@ func (s *Server) handlePathDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	// A path whose chunks were lost (what fsck reports) still gets a page: the
 	// hashes render without sizes and the header says so.
-	chunks, err := s.db.ChunkKeys(c.Storage, p.Chunks)
+	chunks, err := s.db.ChunkKeys(r.Context(), c.Storage, p.Chunks)
 	broken := errors.Is(err, store.ErrNotFound)
 	if err != nil && !broken {
 		uiError(w, r, err)
@@ -1562,7 +1562,7 @@ func (s *Server) manageCache(w http.ResponseWriter, r *http.Request) (*store.Cac
 	if u == nil {
 		return nil, false
 	}
-	c, err := s.db.GetCache(r.PathValue("account"), r.PathValue("name"))
+	c, err := s.db.GetCache(r.Context(), r.PathValue("account"), r.PathValue("name"))
 	if errors.Is(err, store.ErrNotFound) {
 		http.NotFound(w, r)
 		return nil, false
@@ -1614,7 +1614,7 @@ func (s *Server) handleConfigureCache(w http.ResponseWriter, r *http.Request) {
 	// redirect, so a refresh can never repeat the action.
 	if r.Header.Get("HX-Request") == "true" {
 		if u := s.currentUser(r); u != nil {
-			if fresh, err := s.db.GetCache(r.PathValue("account"), r.PathValue("name")); err == nil {
+			if fresh, err := s.db.GetCache(r.Context(), r.PathValue("account"), r.PathValue("name")); err == nil {
 				// This page is already the one in the address bar; htmx must
 				// not push the URL it posted to onto it.
 				w.Header().Set("HX-Push-Url", "false")
@@ -1631,7 +1631,7 @@ func (s *Server) handleRotateKey(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	nc, err := s.db.RotateKey(c.ID, c.Name)
+	nc, err := s.db.RotateKey(r.Context(), c.ID, c.Name)
 	if err != nil {
 		uiError(w, r, err)
 		return
@@ -1682,7 +1682,7 @@ func (s *Server) tokenScope(u *store.User, r *http.Request) (nsID int64, nsName 
 	}
 	// A token is valid for exactly one cache, which must exist in that
 	// account — a scope naming nothing can only ever 401.
-	if _, gerr := s.db.GetCache(nsName, bare); gerr != nil {
+	if _, gerr := s.db.GetCache(r.Context(), nsName, bare); gerr != nil {
 		return 0, "", nil, errors.New("no cache " + nsName + "/" + bare)
 	}
 	// Account tokens store the bare name within their account.

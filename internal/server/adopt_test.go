@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -61,7 +62,7 @@ func TestAdoptPathAcrossCaches(t *testing.T) {
 	if got := missingPaths(t, ts, "dst", "", []api.PathRef{{Hash: h32}}); len(got) != 1 {
 		t.Fatalf("without a NarHash: missing = %v, want the path to stay missing", got)
 	}
-	if _, err := db.GetPath(dst.ID, h32); err == nil {
+	if _, err := db.GetPath(context.Background(), dst.ID, h32); err == nil {
 		t.Fatal("path registered in dst without adoption")
 	}
 
@@ -69,7 +70,7 @@ func TestAdoptPathAcrossCaches(t *testing.T) {
 	if got := missingPaths(t, ts, "dst", "", []api.PathRef{{Hash: h32, NarHash: narHash}}); len(got) != 0 {
 		t.Fatalf("missing = %v, want none (adopted)", got)
 	}
-	p, err := db.GetPath(dst.ID, h32)
+	p, err := db.GetPath(context.Background(), dst.ID, h32)
 	if err != nil {
 		t.Fatalf("adopted path not in dst: %v", err)
 	}
@@ -117,7 +118,7 @@ func TestAdoptRejects(t *testing.T) {
 		if got := missingPaths(t, ts, "dst", "", refs); len(got) != 1 {
 			t.Fatalf("missing = %v, want the path NOT adopted", got)
 		}
-		if _, err := db.GetPath(dst.ID, refs[0].Hash); err == nil {
+		if _, err := db.GetPath(context.Background(), dst.ID, refs[0].Hash); err == nil {
 			t.Fatal("path was adopted anyway")
 		}
 	}
@@ -146,14 +147,14 @@ func TestAdoptRejects(t *testing.T) {
 			t.Fatal(err)
 		}
 		resp.Body.Close()
-		if _, err := db.GetPath(dst.ID, h32); err == nil {
+		if _, err := db.GetPath(context.Background(), dst.ID, h32); err == nil {
 			t.Fatal("adopted a path the client never asked about")
 		}
 	})
 
 	// Source cache on another storage backend: its chunks can't serve dst.
 	t.Run("different storage backend", func(t *testing.T) {
-		src, err := db.GetCache("default", "src")
+		src, err := db.GetCache(context.Background(), "default", "src")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -199,7 +200,7 @@ func TestAdoptRequiresPullOnSource(t *testing.T) {
 	if got := missingPaths(t, ts, "mine", pushOnly, refs); len(got) != 1 {
 		t.Fatalf("missing = %v, want the path NOT adopted from a cache this token can't pull", got)
 	}
-	if _, err := db.GetPath(dst.ID, h32); err == nil {
+	if _, err := db.GetPath(context.Background(), dst.ID, h32); err == nil {
 		t.Fatal("adopted from a private cache without pull permission")
 	}
 
@@ -208,7 +209,7 @@ func TestAdoptRequiresPullOnSource(t *testing.T) {
 	if got := missingPaths(t, ts, "mine", admin, refs); len(got) != 0 {
 		t.Fatalf("missing = %v, want adopted (admin token)", got)
 	}
-	if _, err := db.GetPath(dst.ID, h32); err != nil {
+	if _, err := db.GetPath(context.Background(), dst.ID, h32); err != nil {
 		t.Fatalf("not adopted with an admin token: %v", err)
 	}
 }
@@ -227,7 +228,7 @@ func TestAdoptWithPullScopedToken(t *testing.T) {
 	}
 	// Read the cache back: CreateCache leaves Storage empty, while every server
 	// read (and so the real handler) sees the column default.
-	dst, err := db.GetCache("default", "mine")
+	dst, err := db.GetCache(context.Background(), "default", "mine")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +255,7 @@ func TestAdoptWithPullScopedToken(t *testing.T) {
 	if got := s.adopt(req(privPull), dst, []string{h32}, refs); len(got) != 0 {
 		t.Fatalf("with pull on the source: missing = %v, want adopted", got)
 	}
-	if _, err := db.GetPath(dst.ID, h32); err != nil {
+	if _, err := db.GetPath(context.Background(), dst.ID, h32); err != nil {
 		t.Fatalf("not adopted with pull permission on the source: %v", err)
 	}
 }
@@ -277,7 +278,7 @@ func TestAdoptFromPublicSourceNeedsNoPullToken(t *testing.T) {
 	if got := missingPaths(t, ts, "mine", pushOnly, []api.PathRef{{Hash: h32, NarHash: narHash}}); len(got) != 0 {
 		t.Fatalf("missing = %v, want adopted from the public cache", got)
 	}
-	if _, err := db.GetPath(dst.ID, h32); err != nil {
+	if _, err := db.GetPath(context.Background(), dst.ID, h32); err != nil {
 		t.Fatalf("not adopted from public source: %v", err)
 	}
 }

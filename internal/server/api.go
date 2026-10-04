@@ -151,7 +151,7 @@ func (s *Server) adopt(r *http.Request, c *store.Cache, missing []string, refs [
 		if err := s.db.TouchChunks(c.Storage, cd.Path.Chunks, now); err != nil {
 			continue
 		}
-		if miss, err := s.db.MissingChunks(c.Storage, cd.Path.Chunks); err != nil || len(miss) > 0 {
+		if miss, err := s.db.MissingChunks(r.Context(), c.Storage, cd.Path.Chunks); err != nil || len(miss) > 0 {
 			continue
 		}
 		if err := s.db.PutPath(c.ID, cd.StoreHash, &cd.Path); err != nil {
@@ -185,7 +185,7 @@ func (s *Server) handleMissingChunks(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	missing, err := s.db.MissingChunks(c.Storage, req.Hashes)
+	missing, err := s.db.MissingChunks(r.Context(), c.Storage, req.Hashes)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -334,7 +334,7 @@ func (s *Server) handlePutPath(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	missing, err := s.db.MissingChunks(c.Storage, req.Chunks)
+	missing, err := s.db.MissingChunks(r.Context(), c.Storage, req.Chunks)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -424,7 +424,7 @@ func (s *Server) handlePutPath(w http.ResponseWriter, r *http.Request) {
 // the whole NAR again. Used on a verify-cache hit, where the arithmetic is known
 // good and only "did a blob disappear" is left to establish.
 func (s *Server) blobsPresent(ctx context.Context, storageName string, chunkHashes []string) error {
-	refs, err := s.db.ChunkKeys(storageName, chunkHashes)
+	refs, err := s.db.ChunkKeys(ctx, storageName, chunkHashes)
 	if err != nil {
 		return err
 	}
@@ -477,7 +477,7 @@ func (s *Server) blobsPresent(ctx context.Context, storageName string, chunkHash
 // bounded look-ahead) and checks the digest + total size against the claimed
 // NarHash/NarSize.
 func (s *Server) verifyReassembly(r *http.Request, storageName string, chunkHashes []string, narHash string, narSize uint64) error {
-	refs, err := s.db.ChunkKeys(storageName, chunkHashes)
+	refs, err := s.db.ChunkKeys(r.Context(), storageName, chunkHashes)
 	if err != nil {
 		return err
 	}

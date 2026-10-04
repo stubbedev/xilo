@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -64,7 +65,7 @@ func TestRetentionCeiling(t *testing.T) {
 	pushFake(t, ts, "r", "cccccccccccccccccccccccccccccccc", data, "")
 
 	// Backdate the path's accessed time far past any ceiling.
-	c, _ := db.GetCache("default", "r")
+	c, _ := db.GetCache(context.Background(), "default", "r")
 	// minAge is hugely negative so the guard (now-accessed < minAge) never
 	// short-circuits a backwards stamp.
 	db.TouchPath(c.ID, "cccccccccccccccccccccccccccccccc", time.Now().Add(-48*time.Hour).Unix(), -1<<62)
@@ -82,7 +83,7 @@ func TestRetentionCeiling(t *testing.T) {
 	if _, _, err := s.runGC(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.GetPath(c.ID, "cccccccccccccccccccccccccccccccc"); err == nil {
+	if _, err := db.GetPath(context.Background(), c.ID, "cccccccccccccccccccccccccccccccc"); err == nil {
 		t.Fatal("path older than the plan ceiling survived the sweep")
 	}
 }

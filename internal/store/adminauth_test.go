@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"path/filepath"
@@ -261,7 +262,7 @@ func TestDeleteCascades(t *testing.T) {
 	if _, err := db.GetAccount("acme"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("org should be gone: %v", err)
 	}
-	if _, err := db.GetCache("acme", "web"); !errors.Is(err, ErrNotFound) {
+	if _, err := db.GetCache(context.Background(), "acme", "web"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cache should be gone: %v", err)
 	}
 	var n int

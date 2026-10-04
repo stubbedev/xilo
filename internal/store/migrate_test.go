@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"path/filepath"
 	"testing"
@@ -109,7 +110,7 @@ func TestNamespacesToAccountsMigration(t *testing.T) {
 	if role := db.MemberRole(teams.ID, 2); role != "admin" {
 		t.Fatalf("owner should become admin, got %q", role)
 	}
-	if c, err := db.GetCache("teams", "web"); err != nil || c.AccountID != teams.ID {
+	if c, err := db.GetCache(context.Background(), "teams", "web"); err != nil || c.AccountID != teams.ID {
 		t.Fatalf("cache rehomed: %+v %v", c, err)
 	}
 	// A workspace for each user, each their own owner — and an organization

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
@@ -140,7 +141,7 @@ func TestListAccountCachesAndStorage(t *testing.T) {
 	if err := db.SetCacheStorage(c1.ID, "bulk"); err != nil {
 		t.Fatalf("SetCacheStorage: %v", err)
 	}
-	got, err := db.GetCacheByID(c1.ID)
+	got, err := db.GetCacheByID(context.Background(), c1.ID)
 	if err != nil || got.Storage != "bulk" {
 		t.Fatalf("storage not applied: %+v %v", got, err)
 	}

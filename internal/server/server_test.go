@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
@@ -205,7 +206,7 @@ func TestStatsAccuracy(t *testing.T) {
 
 func verifyNarinfoSig(t *testing.T, db *store.DB, cache, narinfoText string) {
 	t.Helper()
-	c, err := db.GetCache("default", cache)
+	c, err := db.GetCache(context.Background(), "default", cache)
 	if err != nil {
 		t.Fatal(err)
 	}

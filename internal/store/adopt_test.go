@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -207,7 +208,7 @@ func TestCreateCacheReturnsItsStorage(t *testing.T) {
 	if created.Storage != DefaultStorage {
 		t.Fatalf("returned Storage = %q, want %q", created.Storage, DefaultStorage)
 	}
-	read, err := db.GetCache("acme", "web")
+	read, err := db.GetCache(context.Background(), "acme", "web")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +220,7 @@ func TestCreateCacheReturnsItsStorage(t *testing.T) {
 	if err := db.SetCacheStorage(created.ID, "elsewhere"); err != nil {
 		t.Fatal(err)
 	}
-	read, err = db.GetCache("acme", "web")
+	read, err = db.GetCache(context.Background(), "acme", "web")
 	if err != nil {
 		t.Fatal(err)
 	}

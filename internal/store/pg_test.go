@@ -59,14 +59,14 @@ func TestPostgres(t *testing.T) {
 	if c.ID == 0 || c.PubKey == "" {
 		t.Fatalf("cache = %+v", c)
 	}
-	got, err := db.GetCache("default", "pg-cache")
+	got, err := db.GetCache(context.Background(), "default", "pg-cache")
 	if err != nil || got.Public || got.Priority != 41 {
 		t.Fatalf("GetCache: %+v %v", got, err)
 	}
 	if err := db.UpdateCache(c.ID, true, 30, 3600, 1<<30); err != nil {
 		t.Fatalf("UpdateCache: %v", err)
 	}
-	if rot, err := db.RotateKey(c.ID, c.Name); err != nil || rot.PubKey == got.PubKey {
+	if rot, err := db.RotateKey(context.Background(), c.ID, c.Name); err != nil || rot.PubKey == got.PubKey {
 		t.Fatalf("RotateKey: %+v %v", rot, err)
 	}
 	if list, err := db.ListCaches(); err != nil || len(list) != 1 {
@@ -149,7 +149,7 @@ func TestPostgres(t *testing.T) {
 	if !db.HasChunk("default", "aaa") || db.HasChunk("default", "zzz") {
 		t.Fatal("HasChunk wrong")
 	}
-	missing, err := db.MissingChunks("default", []string{"aaa", "zzz"})
+	missing, err := db.MissingChunks(context.Background(), "default", []string{"aaa", "zzz"})
 	if err != nil || len(missing) != 1 || missing[0] != "zzz" {
 		t.Fatalf("MissingChunks: %v %v", missing, err)
 	}
@@ -169,7 +169,7 @@ func TestPostgres(t *testing.T) {
 	if err := db.PutPath(c.ID, "00000000000000000000000000000000", p); err != nil {
 		t.Fatalf("PutPath upsert: %v", err)
 	}
-	gp, err := db.GetPath(c.ID, "00000000000000000000000000000000")
+	gp, err := db.GetPath(context.Background(), c.ID, "00000000000000000000000000000000")
 	if err != nil || gp.NarSize != 300 || len(gp.Chunks) != 2 {
 		t.Fatalf("GetPath: %+v %v", gp, err)
 	}
@@ -177,7 +177,7 @@ func TestPostgres(t *testing.T) {
 	if err != nil || len(mp) != 1 {
 		t.Fatalf("MissingPaths: %v %v", mp, err)
 	}
-	keys, err := db.ChunkKeys("default", []string{"aaa", "bbb"})
+	keys, err := db.ChunkKeys(context.Background(), "default", []string{"aaa", "bbb"})
 	if err != nil || keys[0].Key != "chunk/aa/aaa" {
 		t.Fatalf("ChunkKeys: %v %v", keys, err)
 	}
@@ -300,7 +300,7 @@ func TestPostgres(t *testing.T) {
 	if err := db.DeleteCache(c.ID); err != nil {
 		t.Fatalf("DeleteCache: %v", err)
 	}
-	if _, err := db.GetCache("default", "pg-cache"); !errors.Is(err, ErrNotFound) {
+	if _, err := db.GetCache(context.Background(), "default", "pg-cache"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cache should be gone: %v", err)
 	}
 

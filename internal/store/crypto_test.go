@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -55,7 +56,7 @@ func TestSaltRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.SetSalt("s3cret")
-	got, err := db.GetCache("acme", "web")
+	got, err := db.GetCache(context.Background(), "acme", "web")
 	if err != nil || !bytes.Equal(got.PrivKey, c.PrivKey) {
 		t.Fatalf("privkey round-trip: %v", err)
 	}
@@ -74,7 +75,7 @@ func TestSaltRoundTrip(t *testing.T) {
 	}
 	defer db.Close()
 	db.SetSalt("other")
-	if _, err := db.GetCache("acme", "web"); err == nil {
+	if _, err := db.GetCache(context.Background(), "acme", "web"); err == nil {
 		t.Fatal("privkey decrypted under the wrong salt")
 	}
 	if _, _, err := db.UserTOTP(u.ID); err == nil {

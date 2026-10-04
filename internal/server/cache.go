@@ -44,7 +44,7 @@ func (s *Server) handleNarinfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	storeHash := strings.TrimSuffix(file, ".narinfo")
-	p, err := s.db.GetPath(c.ID, storeHash)
+	p, err := s.db.GetPath(r.Context(), c.ID, storeHash)
 	if errors.Is(err, store.ErrNotFound) {
 		s.metrics.narinfoMiss.Add(1)
 		// Short negative cache so a CDN doesn't hammer us for absent paths.
@@ -102,7 +102,7 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	storeHash := strings.TrimSuffix(r.PathValue("id"), ".nar")
-	p, err := s.db.GetPath(c.ID, storeHash)
+	p, err := s.db.GetPath(r.Context(), c.ID, storeHash)
 	if errors.Is(err, store.ErrNotFound) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
@@ -118,7 +118,7 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 
 	// Resolve all chunk keys up front — if any is missing we can still return a
 	// clean error before committing a 200 + Content-Length.
-	refs, err := s.db.ChunkKeys(c.Storage, p.Chunks)
+	refs, err := s.db.ChunkKeys(r.Context(), c.Storage, p.Chunks)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

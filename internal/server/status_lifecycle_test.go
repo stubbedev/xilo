@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"testing"
@@ -47,7 +48,7 @@ func TestAccountLifecycle(t *testing.T) {
 	// Read-only: still serving. That is the whole point of the state —
 	// freezing a workspace should not break somebody's build mid-afternoon.
 	setStatus(store.StatusReadOnly)
-	if got := db.AccountStatus(acct.ID); got != store.StatusReadOnly {
+	if got := db.AccountStatus(context.Background(), acct.ID); got != store.StatusReadOnly {
 		t.Fatalf("status = %q", got)
 	}
 	if code := get("/c/admin/pub/nix-cache-info"); code != http.StatusOK {
@@ -78,7 +79,7 @@ func TestAccountLifecycle(t *testing.T) {
 
 	// A state this instance does not define is refused rather than stored.
 	setStatus("frozen")
-	if got := db.AccountStatus(acct.ID); got != store.StatusActive {
+	if got := db.AccountStatus(context.Background(), acct.ID); got != store.StatusActive {
 		t.Errorf("unknown status stuck: %q", got)
 	}
 }

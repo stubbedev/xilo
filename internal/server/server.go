@@ -664,7 +664,7 @@ func (s *Server) assignStorage(c *store.Cache, stName string) error {
 
 // cache resolves the /c/{account}/{cache} path segments, writing 404 if unknown.
 func (s *Server) cache(w http.ResponseWriter, r *http.Request) (*store.Cache, bool) {
-	c, err := s.db.GetCache(r.PathValue("account"), r.PathValue("cache"))
+	c, err := s.db.GetCache(r.Context(), r.PathValue("account"), r.PathValue("cache"))
 	if errors.Is(err, store.ErrNotFound) {
 		http.Error(w, "no such cache", http.StatusNotFound)
 		return nil, false
@@ -676,7 +676,7 @@ func (s *Server) cache(w http.ResponseWriter, r *http.Request) (*store.Cache, bo
 	// A suspended account serves nothing. Checked here because every
 	// binary-cache handler comes through this resolver, so the rule cannot be
 	// missed by a handler added later.
-	if s.db.AccountStatus(c.AccountID) == store.StatusSuspended {
+	if s.db.AccountStatus(r.Context(), c.AccountID) == store.StatusSuspended {
 		http.Error(w, "account suspended", http.StatusForbidden)
 		return nil, false
 	}

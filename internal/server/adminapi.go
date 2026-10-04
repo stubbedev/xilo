@@ -91,7 +91,7 @@ func apiToken(t store.Token) api.Token {
 
 // apiCacheByName resolves {account}/{name}, writing a JSON 404 when unknown.
 func (s *Server) apiCacheByName(w http.ResponseWriter, r *http.Request) (*store.Cache, bool) {
-	c, err := s.db.GetCache(r.PathValue("account"), r.PathValue("name"))
+	c, err := s.db.GetCache(r.Context(), r.PathValue("account"), r.PathValue("name"))
 	if errors.Is(err, store.ErrNotFound) {
 		apiError(w, http.StatusNotFound, "no such cache")
 		return nil, false
@@ -297,7 +297,7 @@ func (s *Server) apiConfigureCache(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	c, err := s.db.GetCacheByID(c.ID)
+	c, err := s.db.GetCacheByID(r.Context(), c.ID)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -310,7 +310,7 @@ func (s *Server) apiRotateKey(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	nc, err := s.db.RotateKey(c.ID, c.Name)
+	nc, err := s.db.RotateKey(r.Context(), c.ID, c.Name)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return

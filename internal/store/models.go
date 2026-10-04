@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"crypto/ed25519"
 	"database/sql"
 	"errors"
@@ -127,8 +128,8 @@ func (db *DB) scanCache(row interface{ Scan(...any) error }) (*Cache, error) {
 }
 
 // GetCache resolves account/name.
-func (db *DB) GetCache(account, name string) (*Cache, error) {
-	row := db.r.QueryRow(`SELECT `+cacheCols+cacheFrom+`WHERE a.slug=? AND c.name=?`, account, name)
+func (db *DB) GetCache(ctx context.Context, account, name string) (*Cache, error) {
+	row := db.r.QueryRowContext(ctx, `SELECT `+cacheCols+cacheFrom+`WHERE a.slug=? AND c.name=?`, account, name)
 	c, err := db.scanCache(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -182,8 +183,8 @@ func (db *DB) SetCacheStorage(id int64, storage string) error {
 }
 
 // GetCacheByID fetches a cache by row id.
-func (db *DB) GetCacheByID(id int64) (*Cache, error) {
-	row := db.r.QueryRow(`SELECT `+cacheCols+cacheFrom+`WHERE c.id=?`, id)
+func (db *DB) GetCacheByID(ctx context.Context, id int64) (*Cache, error) {
+	row := db.r.QueryRowContext(ctx, `SELECT `+cacheCols+cacheFrom+`WHERE c.id=?`, id)
 	c, err := db.scanCache(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -193,7 +194,7 @@ func (db *DB) GetCacheByID(id int64) (*Cache, error) {
 
 // RotateKey generates a fresh signing keypair for a cache. Invalidates the
 // previously-distributed trusted-public-key.
-func (db *DB) RotateKey(id int64, name string) (*Cache, error) {
+func (db *DB) RotateKey(ctx context.Context, id int64, name string) (*Cache, error) {
 	pub, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		return nil, err
@@ -210,7 +211,7 @@ func (db *DB) RotateKey(id int64, name string) (*Cache, error) {
 	if err != nil {
 		return nil, err
 	}
-	return db.GetCacheByID(id)
+	return db.GetCacheByID(ctx, id)
 }
 
 // DeleteCache removes a cache and its path rows (ON DELETE CASCADE). Orphaned
@@ -282,11 +283,11 @@ func (db *DB) HasChunk(storage, hash string) bool {
 // MissingChunks returns the subset of hashes not yet present in a storage
 // backend (dedup is per-backend: a chunk in one storage cannot serve a cache
 // on another).
-func (db *DB) MissingChunks(storage string, hashes []string) ([]string, error) {
+func (db *DB) MissingChunks(ctx context.Context, storage string, hashes []string) ([]string, error) {
 	present := map[string]bool{}
 	err := db.eachBatch(hashes, func(batch []string) error {
 		q := `SELECT hash FROM chunks WHERE storage=? AND hash IN (` + placeholders(len(batch)) + `)`
-		return db.scanSetInto(present, q, append([]any{storage}, toArgs(batch)...)...)
+		return db.scanSetInto(ctx, present, q, append([]any{storage}, toArgs(batch)...)...)
 	})
 	if err != nil {
 		return nil, err
@@ -330,7 +331,7 @@ func (db *DB) MissingPaths(cacheID int64, storeHashes []string) ([]string, error
 	present := map[string]bool{}
 	err := db.eachBatch(storeHashes, func(batch []string) error {
 		q := `SELECT store_hash FROM paths WHERE cache_id=? AND store_hash IN (` + placeholders(len(batch)) + `)`
-		return db.scanSetInto(present, q, append([]any{cacheID}, toArgs(batch)...)...)
+		return db.scanSetInto(context.Background(), present, q, append([]any{cacheID}, toArgs(batch)...)...)
 	})
 	if err != nil {
 		return nil, err
@@ -404,8 +405,8 @@ func (db *DB) PutPath(cacheID int64, storeHash string, p *Path) error {
 	})
 }
 
-func (db *DB) GetPath(cacheID int64, storeHash string) (*Path, error) {
-	row := db.r.QueryRow(
+func (db *DB) GetPath(ctx context.Context, cacheID int64, storeHash string) (*Path, error) {
+	row := db.r.QueryRowContext(ctx,
 		`SELECT store_path,nar_hash,nar_size,deriver,refs,chunks FROM paths WHERE cache_id=? AND store_hash=?`,
 		cacheID, storeHash)
 	var p Path
@@ -539,11 +540,11 @@ func (db *DB) SearchPaths(cacheID int64, q string, limit, offset int, sortKey, s
 // ChunkKeys returns the storage keys for chunk hashes in a backend,
 // preserving order. Batched (one query per ~batchVars hashes) instead of N+1
 // point lookups.
-func (db *DB) ChunkKeys(storage string, hashes []string) ([]ChunkRef, error) {
+func (db *DB) ChunkKeys(ctx context.Context, storage string, hashes []string) ([]ChunkRef, error) {
 	byHash := make(map[string]ChunkRef, len(hashes))
 	err := db.eachBatch(hashes, func(batch []string) error {
 		q := `SELECT storage, hash, storage_key, size, csize FROM chunks WHERE storage=? AND hash IN (` + placeholders(len(batch)) + `)`
-		rows, err := db.r.Query(q, append([]any{storage}, toArgs(batch)...)...)
+		rows, err := db.r.QueryContext(ctx, q, append([]any{storage}, toArgs(batch)...)...)
 		if err != nil {
 			return err
 		}
@@ -577,7 +578,7 @@ func (db *DB) presentSet(table, col string, vals []string) (map[string]bool, err
 	present := map[string]bool{}
 	err := db.eachBatch(vals, func(batch []string) error {
 		q := `SELECT ` + col + ` FROM ` + table + ` WHERE ` + col + ` IN (` + placeholders(len(batch)) + `)`
-		return db.scanSetInto(present, q, toArgs(batch)...)
+		return db.scanSetInto(context.Background(), present, q, toArgs(batch)...)
 	})
 	return present, err
 }
@@ -586,8 +587,8 @@ func (db *DB) presentSet(table, col string, vals []string) (map[string]bool, err
 // "which of these exist?" lookup (presentSet, MissingChunks, MissingPaths),
 // which differ only in the query they run; batches merge into one
 // caller-owned map so a huge hash list still allocates a single set.
-func (db *DB) scanSetInto(set map[string]bool, q string, args ...any) error {
-	rows, err := db.r.Query(q, args...)
+func (db *DB) scanSetInto(ctx context.Context, set map[string]bool, q string, args ...any) error {
+	rows, err := db.r.QueryContext(ctx, q, args...)
 	if err != nil {
 		return err
 	}

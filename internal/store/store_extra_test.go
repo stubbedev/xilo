@@ -30,14 +30,14 @@ func TestCacheCRUD(t *testing.T) {
 	}
 	db.CreateCache("default", "pub", true, 40)
 
-	got, err := db.GetCache("default", "priv")
+	got, err := db.GetCache(context.Background(), "default", "priv")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got.ID != c.ID || got.Public || got.Priority != 30 || got.PubKey != c.PubKey {
 		t.Fatalf("GetCache = %+v", got)
 	}
-	if _, err := db.GetCache("default", "nope"); !errors.Is(err, ErrNotFound) {
+	if _, err := db.GetCache(context.Background(), "default", "nope"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("GetCache(missing) = %v, want ErrNotFound", err)
 	}
 
@@ -49,12 +49,12 @@ func TestCacheCRUD(t *testing.T) {
 	if err := db.UpdateCache(c.ID, true, 50, 3600, 1<<20); err != nil {
 		t.Fatal(err)
 	}
-	got, _ = db.GetCache("default", "priv")
+	got, _ = db.GetCache(context.Background(), "default", "priv")
 	if !got.Public || got.Priority != 50 || got.Retention != 3600 || got.MaxBytes != 1<<20 {
 		t.Fatalf("after UpdateCache: %+v", got)
 	}
 
-	rotated, err := db.RotateKey(c.ID, "priv")
+	rotated, err := db.RotateKey(context.Background(), c.ID, "priv")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,10 +67,10 @@ func TestCacheCRUD(t *testing.T) {
 	if err := db.DeleteCache(c.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.GetCache("default", "priv"); !errors.Is(err, ErrNotFound) {
+	if _, err := db.GetCache(context.Background(), "default", "priv"); !errors.Is(err, ErrNotFound) {
 		t.Fatal("cache still present after delete")
 	}
-	if _, err := db.GetPath(c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); !errors.Is(err, ErrNotFound) {
+	if _, err := db.GetPath(context.Background(), c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); !errors.Is(err, ErrNotFound) {
 		t.Fatal("path row survived cache delete (cascade broken)")
 	}
 }
@@ -306,7 +306,7 @@ func TestAdminNotFound(t *testing.T) {
 func TestGetPathNotFound(t *testing.T) {
 	db := openTest(t)
 	c, _ := db.CreateCache("default", "c", true, 40)
-	if _, err := db.GetPath(c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); !errors.Is(err, ErrNotFound) {
+	if _, err := db.GetPath(context.Background(), c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("GetPath(missing) = %v, want ErrNotFound", err)
 	}
 }
@@ -316,7 +316,7 @@ func TestChunkKeysOrderAndMissing(t *testing.T) {
 	db.PutChunk("default", "h1", 10, 5, "k1", 1)
 	db.PutChunk("default", "h2", 20, 15, "k2", 1)
 
-	refs, err := db.ChunkKeys("default", []string{"h2", "h1"}) // request order != insert order
+	refs, err := db.ChunkKeys(context.Background(), "default", []string{"h2", "h1"}) // request order != insert order
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,11 +324,11 @@ func TestChunkKeysOrderAndMissing(t *testing.T) {
 		refs[1].Hash != "h1" || refs[1].Key != "k1" {
 		t.Fatalf("ChunkKeys order/fields: %+v", refs)
 	}
-	if _, err := db.ChunkKeys("default", []string{"h1", "gone"}); !errors.Is(err, ErrNotFound) {
+	if _, err := db.ChunkKeys(context.Background(), "default", []string{"h1", "gone"}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("ChunkKeys(missing) = %v, want ErrNotFound", err)
 	}
 	// empty input
-	refs, err = db.ChunkKeys("default", nil)
+	refs, err = db.ChunkKeys(context.Background(), "default", nil)
 	if err != nil || len(refs) != 0 {
 		t.Fatalf("ChunkKeys(nil) = %v err=%v", refs, err)
 	}
@@ -346,7 +346,7 @@ func TestBatchingOverBatchVars(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	miss, err := db.MissingChunks("default", append(hashes, "extra1", "extra2"))
+	miss, err := db.MissingChunks(context.Background(), "default", append(hashes, "extra1", "extra2"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +361,7 @@ func TestBatchingOverBatchVars(t *testing.T) {
 	if minCreated != 12345 {
 		t.Fatalf("TouchChunks batch missed rows: min created=%d", minCreated)
 	}
-	refs, err := db.ChunkKeys("default", hashes)
+	refs, err := db.ChunkKeys(context.Background(), "default", hashes)
 	if err != nil || len(refs) != n {
 		t.Fatalf("ChunkKeys over batch: %d err=%v", len(refs), err)
 	}
@@ -760,12 +760,12 @@ func TestUseAfterClose(t *testing.T) {
 	if _, err := db.EvictPathsOlderThan(1); err == nil {
 		t.Fatal("evict after close should error")
 	}
-	if _, err := db.RotateKey(c.ID, "c"); err == nil {
+	if _, err := db.RotateKey(context.Background(), c.ID, "c"); err == nil {
 		t.Fatal("RotateKey after close should error")
 	}
 
 	// reads: closed pool returns errors, not panics
-	if _, err := db.GetCache("default", "c"); err == nil {
+	if _, err := db.GetCache(context.Background(), "default", "c"); err == nil {
 		t.Fatal("GetCache after close should error")
 	}
 	if _, err := db.ListCaches(); err == nil {
@@ -792,16 +792,16 @@ func TestUseAfterClose(t *testing.T) {
 	if _, _, err := db.SearchPaths(c.ID, "", 10, 0, "", ""); err == nil {
 		t.Fatal("SearchPaths after close should error")
 	}
-	if _, err := db.GetPath(c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); err == nil {
+	if _, err := db.GetPath(context.Background(), c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); err == nil {
 		t.Fatal("GetPath after close should error")
 	}
-	if _, err := db.MissingChunks("default", []string{"h"}); err == nil {
+	if _, err := db.MissingChunks(context.Background(), "default", []string{"h"}); err == nil {
 		t.Fatal("MissingChunks after close should error")
 	}
 	if _, err := db.MissingPaths(c.ID, []string{"h"}); err == nil {
 		t.Fatal("MissingPaths after close should error")
 	}
-	if _, err := db.ChunkKeys("default", []string{"h"}); err == nil {
+	if _, err := db.ChunkKeys(context.Background(), "default", []string{"h"}); err == nil {
 		t.Fatal("ChunkKeys after close should error")
 	}
 	if _, err := db.AllChunks("default"); err == nil {

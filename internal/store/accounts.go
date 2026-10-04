@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -359,9 +360,9 @@ var ErrBadStatus = errors.New("unknown account status")
 // AccountStatus is an account's lifecycle state, "" when there is no such
 // account. Read on the binary-cache path, so it stays a single indexed lookup
 // by primary key.
-func (db *DB) AccountStatus(accountID int64) string {
+func (db *DB) AccountStatus(ctx context.Context, accountID int64) string {
 	var status string
-	if err := db.r.QueryRow(`SELECT status FROM accounts WHERE id=?`, accountID).Scan(&status); err != nil {
+	if err := db.r.QueryRowContext(ctx, `SELECT status FROM accounts WHERE id=?`, accountID).Scan(&status); err != nil {
 		return ""
 	}
 	return status
