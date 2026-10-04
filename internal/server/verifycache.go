@@ -4,7 +4,6 @@ import (
 	"container/list"
 	"crypto/sha256"
 	"encoding/hex"
-	"strings"
 	"sync"
 )
 
@@ -47,7 +46,18 @@ func verifyKey(storage, narHash string, chunks []string) string {
 	h.Write([]byte{0})
 	h.Write([]byte(narHash))
 	h.Write([]byte{0})
-	h.Write([]byte(strings.Join(chunks, "\n")))
+	// Hashed line by line through one scratch buffer: a chunk list can run
+	// to thousands of hashes, and joining it first would copy every byte of
+	// it just to feed the digest.
+	var line []byte
+	for i, c := range chunks {
+		line = line[:0]
+		if i > 0 {
+			line = append(line, '\n')
+		}
+		line = append(line, c...)
+		h.Write(line)
+	}
 	return hex.EncodeToString(h.Sum(nil)[:16])
 }
 

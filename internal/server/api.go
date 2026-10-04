@@ -232,7 +232,11 @@ func (s *Server) handlePutChunk(w http.ResponseWriter, r *http.Request) {
 	}
 	want := r.PathValue("hash")
 
-	body, err := io.ReadAll(io.LimitReader(r.Body, s.maxChunkBody()))
+	// readAllInto with the declared size up front: chunks are big (the
+	// threshold is megabytes) and io.ReadAll would grow-and-copy its way
+	// there from 512 bytes on every upload.
+	hint := max(min(r.ContentLength, s.maxChunkBody()), 0)
+	body, err := readAllInto(make([]byte, 0, hint+1), io.LimitReader(r.Body, s.maxChunkBody()))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

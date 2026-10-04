@@ -179,7 +179,9 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			case f.objs[o.Key] == nil:
 				// stricter than AWS quiet mode: report missing keys so the
 				// client's NoSuchKey tolerance is exercised
-				res.WriteString(`<Error><Key>` + o.Key + `</Key><Code>NoSuchKey</Code><Message>missing</Message></Error>`)
+				res.WriteString(`<Error><Key>`)
+				res.WriteString(o.Key)
+				res.WriteString(`</Key><Code>NoSuchKey</Code><Message>missing</Message></Error>`)
 			default:
 				delete(f.objs, o.Key)
 			}

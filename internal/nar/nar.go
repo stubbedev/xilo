@@ -14,6 +14,7 @@
 package nar
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -29,17 +30,28 @@ const Magic = "nix-archive-1"
 // symlinks (never followed), and anything that is not a regular file, directory
 // or symlink is an error — nix refuses those too, so a store path cannot
 // contain one.
+//
+// The walk is buffered because a directory entry is ~6 short writes and the
+// push consumer reads the archive through a synchronous pipe: unbuffered, each
+// of those writes is a goroutine handoff (and a heap allocation — encoder.w is
+// a concrete *bufio.Writer precisely so the small buffers stay on the stack).
+// File contents bypass the buffer via ReadFrom and copy straight through.
 func Dump(w io.Writer, path string) error {
-	e := &encoder{w: w}
+	bw := bufio.NewWriterSize(w, 64<<10)
+	e := &encoder{w: bw}
 	e.str(Magic)
-	if err := e.node(path); err != nil {
-		return err
+	err := e.node(path)
+	if err == nil {
+		err = e.err
 	}
-	return e.err
+	if ferr := bw.Flush(); err == nil {
+		err = ferr
+	}
+	return err
 }
 
 type encoder struct {
-	w   io.Writer
+	w   *bufio.Writer
 	err error
 }
 

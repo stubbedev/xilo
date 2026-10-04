@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"sync"
+	"sync/atomic"
 
 	"github.com/stubbedev/xilo/internal/store"
 )
@@ -103,30 +104,49 @@ func eachOrdered(ctx context.Context, refs []store.ChunkRef, ahead int,
 		data []byte
 		err  error
 	}
-	results := make([]chan result, len(refs))
-	launch := func(i int) {
-		results[i] = make(chan result, 1)
-		go func(i int) {
-			data, err := fetch(ctx, refs[i])
-			results[i] <- result{data, err}
-		}(i)
+	results := make([]result, len(refs))
+	var next atomic.Int64 // next index a worker may fetch
+	var stop atomic.Bool  // the first failure; workers stop taking more
+	// Completions carry their index: receiving i synchronizes with the
+	// worker that filled results[i], which is what makes the in-order
+	// reads below race-free. The buffer holds every index, so a worker
+	// never blocks on send, even once the consumer stopped reading after
+	// an error.
+	done := make(chan int, len(refs))
+	var wg sync.WaitGroup
+	for range min(ahead, len(refs)) {
+		wg.Go(func() {
+			for !stop.Load() {
+				i := int(next.Add(1)) - 1
+				if i >= len(refs) {
+					return
+				}
+				data, err := fetch(ctx, refs[i])
+				results[i] = result{data, err}
+				done <- i
+			}
+		})
 	}
-	for i := 0; i < len(refs) && i < ahead; i++ {
-		launch(i)
-	}
-	for i := range refs {
-		r := <-results[i]
-		results[i] = nil
+	consume := func(i int) error {
+		r := results[i]
+		results[i] = result{}
 		if r.err != nil {
 			return r.err
 		}
 		err := fn(r.data)
 		putChunkBuf(r.data)
-		if err != nil {
-			return err
+		return err
+	}
+	// got tracks which completions have been received, so events for later
+	// chunks can arrive first without being lost.
+	got := make([]bool, len(refs))
+	for i := range refs {
+		for !got[i] {
+			got[<-done] = true
 		}
-		if j := i + ahead; j < len(refs) {
-			launch(j)
+		if err := consume(i); err != nil {
+			stop.Store(true)
+			return err
 		}
 	}
 	return nil

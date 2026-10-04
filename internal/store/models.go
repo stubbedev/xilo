@@ -286,20 +286,7 @@ func (db *DB) MissingChunks(storage string, hashes []string) ([]string, error) {
 	present := map[string]bool{}
 	err := db.eachBatch(hashes, func(batch []string) error {
 		q := `SELECT hash FROM chunks WHERE storage=? AND hash IN (` + placeholders(len(batch)) + `)`
-		args := append([]any{storage}, toArgs(batch)...)
-		rows, err := db.r.Query(q, args...)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var h string
-			if err := rows.Scan(&h); err != nil {
-				return err
-			}
-			present[h] = true
-		}
-		return rows.Err()
+		return db.scanSetInto(present, q, append([]any{storage}, toArgs(batch)...)...)
 	})
 	if err != nil {
 		return nil, err
@@ -343,20 +330,7 @@ func (db *DB) MissingPaths(cacheID int64, storeHashes []string) ([]string, error
 	present := map[string]bool{}
 	err := db.eachBatch(storeHashes, func(batch []string) error {
 		q := `SELECT store_hash FROM paths WHERE cache_id=? AND store_hash IN (` + placeholders(len(batch)) + `)`
-		args := append([]any{cacheID}, toArgs(batch)...)
-		rows, err := db.r.Query(q, args...)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var h string
-			if err := rows.Scan(&h); err != nil {
-				return err
-			}
-			present[h] = true
-		}
-		return rows.Err()
+		return db.scanSetInto(present, q, append([]any{cacheID}, toArgs(batch)...)...)
 	})
 	if err != nil {
 		return nil, err
@@ -603,21 +577,29 @@ func (db *DB) presentSet(table, col string, vals []string) (map[string]bool, err
 	present := map[string]bool{}
 	err := db.eachBatch(vals, func(batch []string) error {
 		q := `SELECT ` + col + ` FROM ` + table + ` WHERE ` + col + ` IN (` + placeholders(len(batch)) + `)`
-		rows, err := db.r.Query(q, toArgs(batch)...)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var v string
-			if err := rows.Scan(&v); err != nil {
-				return err
-			}
-			present[v] = true
-		}
-		return rows.Err()
+		return db.scanSetInto(present, q, toArgs(batch)...)
 	})
 	return present, err
+}
+
+// scanSetInto folds a query's single string column into set. Shared by every
+// "which of these exist?" lookup (presentSet, MissingChunks, MissingPaths),
+// which differ only in the query they run; batches merge into one
+// caller-owned map so a huge hash list still allocates a single set.
+func (db *DB) scanSetInto(set map[string]bool, q string, args ...any) error {
+	rows, err := db.r.Query(q, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return err
+		}
+		set[v] = true
+	}
+	return rows.Err()
 }
 
 // batchVars bounds placeholders per query, well under SQLite's

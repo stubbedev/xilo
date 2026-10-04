@@ -147,7 +147,8 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 	// frames and a concatenation of frames is a valid stream (RFC 8878), so
 	// the whole transfer costs zero compression CPU and has an exact
 	// Content-Length. Identity/gzip clients pay the decompress (+ gzip).
-	if negotiateEncoding(r.Header.Get("Accept-Encoding")) == "zstd" {
+	acc := parseAcceptEncoding(r.Header.Get("Accept-Encoding"))
+	if acc.allows("zstd") {
 		var clen int64
 		for _, ref := range refs {
 			clen += ref.CSize
@@ -168,7 +169,7 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out, done := s.narWriter(w, r, p.NarSize)
+	out, done := s.narWriter(w, r, p.NarSize, acc)
 	defer done()
 	err = s.eachChunkOrdered(r.Context(), refs, s.readAhead(), func(raw []byte) error {
 		s.metrics.narBytes.Add(int64(len(raw)))
@@ -180,13 +181,13 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// narWriter picks a transfer encoding from Accept-Encoding and returns the
-// writer to stream the NAR into plus a cleanup func. Raw transfers keep a
-// Content-Length; gzip ones are chunked. (zstd never reaches here — it is
-// served as stored frames in handleNar.)
-func (s *Server) narWriter(w http.ResponseWriter, r *http.Request, narSize uint64) (io.Writer, func()) {
-	switch negotiateEncoding(r.Header.Get("Accept-Encoding")) {
-	case "gzip":
+// narWriter picks the transfer encoding for a NAR already negotiated by the
+// caller and returns the writer to stream the NAR into plus a cleanup func.
+// Raw transfers keep a Content-Length; gzip ones are chunked. (zstd never
+// reaches here — it is served as stored frames in handleNar.)
+func (s *Server) narWriter(w http.ResponseWriter, r *http.Request, narSize uint64, acc acceptEncodings) (io.Writer, func()) {
+	switch {
+	case acc.allows("gzip"):
 		w.Header().Set("Content-Encoding", "gzip")
 		gz, _ := s.gzipPool.Get().(*gzip.Writer)
 		if gz == nil {
@@ -201,12 +202,20 @@ func (s *Server) narWriter(w http.ResponseWriter, r *http.Request, narSize uint6
 	}
 }
 
+// touchKey is the touched map's key. A struct, not a "<cacheID>/<hash>"
+// string: this runs on every narinfo and NAR request, and a comparable
+// struct key costs no allocation or formatting on the hit path.
+type touchKey struct {
+	cacheID   int64
+	storeHash string
+}
+
 // touchPath bumps a path's LRU stamp at most hourly. The in-memory gate
 // means the hot path (mass narinfo queries on the same paths) costs one
 // sync.Map read instead of a DB read + goroutine per request; the DB write
 // still happens via store.TouchPath's own staleness check.
 func (s *Server) touchPath(cacheID int64, storeHash string) {
-	key := fmt.Sprintf("%d/%s", cacheID, storeHash)
+	key := touchKey{cacheID, storeHash}
 	now := timeNow()
 	if v, ok := s.touched.Load(key); ok && now-v.(int64) < 3600 {
 		return
@@ -215,8 +224,15 @@ func (s *Server) touchPath(cacheID int64, storeHash string) {
 	go s.db.TouchPath(cacheID, storeHash, now, 3600)
 }
 
-// addEgress accumulates served bytes for an account in memory.
+// addEgress accumulates served bytes for an account in memory. Load before
+// LoadOrStore: the accounting entry exists after the first NAR of the
+// process lifetime, and LoadOrStore would allocate a fresh counter on every
+// call just to throw it away.
 func (s *Server) addEgress(accountID, n int64) {
+	if v, ok := s.egress.Load(accountID); ok {
+		v.(*atomic.Int64).Add(n)
+		return
+	}
 	v, _ := s.egress.LoadOrStore(accountID, new(atomic.Int64))
 	v.(*atomic.Int64).Add(n)
 }
@@ -251,18 +267,38 @@ func contentETag(narHash, pubKey string) string {
 // negotiateEncoding prefers zstd, then gzip, honoring q=0 (explicit refusal).
 func negotiateEncoding(accept string) string {
 	acc := parseAcceptEncoding(accept)
-	if acc["zstd"] {
+	if acc.allows("zstd") {
 		return "zstd"
 	}
-	if acc["gzip"] {
+	if acc.allows("gzip") {
 		return "gzip"
 	}
 	return ""
 }
 
-// parseAcceptEncoding returns the set of encodings the client accepts (q>0).
-func parseAcceptEncoding(accept string) map[string]bool {
-	out := map[string]bool{}
+// acceptEncodings is the parsed Accept-Encoding header: the encodings named
+// with q>0. A fixed array because this parses on every NAR request, and the
+// set is queried exactly twice — a map would allocate a bucket chain to
+// answer two membership questions about a 30-byte header. Real clients name a
+// handful; the cap only truncates the tail past anything this server serves.
+type acceptEncodings struct {
+	names [16]string
+	n     int
+}
+
+func (a acceptEncodings) allows(name string) bool {
+	for i := range a.n {
+		if a.names[i] == name {
+			return true
+		}
+	}
+	return false
+}
+
+// parseAcceptEncoding returns the encodings the client accepts (q>0),
+// allocation-free: every value it keeps is a substring of the header.
+func parseAcceptEncoding(accept string) acceptEncodings {
+	var out acceptEncodings
 	for part := range strings.SplitSeq(accept, ",") {
 		name := strings.TrimSpace(part)
 		q := 1.0
@@ -277,8 +313,9 @@ func parseAcceptEncoding(accept string) map[string]bool {
 				}
 			}
 		}
-		if name != "" && q > 0 {
-			out[name] = true
+		if name != "" && q > 0 && out.n < len(out.names) {
+			out.names[out.n] = name
+			out.n++
 		}
 	}
 	return out

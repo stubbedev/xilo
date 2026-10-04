@@ -12,7 +12,6 @@ package bloom
 import (
 	"encoding/binary"
 	"errors"
-	"hash/fnv"
 	"math"
 )
 
@@ -67,16 +66,38 @@ func New(n int) *Filter {
 func (f *Filter) Len() int { return headerSize + len(f.bits)*8 }
 
 // probes derives the k bit positions for s. The inputs are sha256 hex digests
-// (already uniformly distributed), so two FNV-1a variants are ample mixing for
-// Kirsch-Mitzenmacher double hashing.
+// (already uniformly distributed), so two FNV variants are ample mixing for
+// Kirsch-Mitzenmacher double hashing. Inlined FNV rather than hash/fnv: the
+// filter is probed once per chunk of every push and rebuilt over every stored
+// chunk, and the stdlib type heap-allocates its state (plus a []byte copy of
+// the input) on each of those.
 func (f *Filter) probes(s string) (h1, h2 uint64) {
-	a := fnv.New64a()
-	a.Write([]byte(s))
-	h1 = a.Sum64()
-	b := fnv.New64()
-	b.Write([]byte(s))
-	h2 = b.Sum64() | 1 // odd, so h1+i*h2 walks the whole table
+	h1 = fnv1a(s)
+	h2 = fnv1(s) | 1 // odd, so h1+i*h2 walks the whole table
 	return h1, h2
+}
+
+const (
+	fnvOffset64 = 14695981039346656037
+	fnvPrime64  = 1099511628211
+)
+
+func fnv1a(s string) uint64 {
+	h := uint64(fnvOffset64)
+	for i := range len(s) {
+		h ^= uint64(s[i])
+		h *= fnvPrime64
+	}
+	return h
+}
+
+func fnv1(s string) uint64 {
+	h := uint64(fnvOffset64)
+	for i := range len(s) {
+		h *= fnvPrime64
+		h ^= uint64(s[i])
+	}
+	return h
 }
 
 func (f *Filter) Add(s string) error {

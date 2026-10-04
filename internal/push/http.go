@@ -15,13 +15,15 @@ import (
 )
 
 func (c *Client) url(parts ...string) string {
-	u := c.base + "/c/" + c.cache
-	var uSb18 strings.Builder
+	var b strings.Builder
+	b.WriteString(c.base)
+	b.WriteString("/c/")
+	b.WriteString(c.cache)
 	for _, p := range parts {
-		uSb18.WriteString("/" + p)
+		b.WriteByte('/')
+		b.WriteString(p)
 	}
-	u += uSb18.String()
-	return u
+	return b.String()
 }
 
 func (c *Client) do(req *http.Request) (*http.Response, error) {
