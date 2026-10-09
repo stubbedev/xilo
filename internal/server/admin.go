@@ -1085,7 +1085,10 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin", http.StatusSeeOther)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{
+		Name: sessionCookie, Value: "", Path: "/", MaxAge: -1,
+		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.secureCookies(),
+	})
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
@@ -1982,7 +1985,10 @@ func (s *Server) popFlash(w http.ResponseWriter, r *http.Request) views.Flash {
 	if err != nil || c.Value == "" {
 		return views.Flash{}
 	}
-	http.SetCookie(w, &http.Cookie{Name: flashCookie, Path: "/admin", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{
+		Name: flashCookie, Path: "/admin", MaxAge: -1,
+		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.secureCookies(),
+	})
 	raw, code := c.Value, ""
 	if i := strings.IndexByte(raw, '|'); i >= 0 {
 		raw, code = raw[:i], raw[i+1:]

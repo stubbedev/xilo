@@ -43,7 +43,10 @@ func walletIDs(r *http.Request) []string {
 // setWallet writes the wallet cookie (or clears it when empty).
 func (s *Server) setWallet(w http.ResponseWriter, ids []string) {
 	if len(ids) == 0 {
-		http.SetCookie(w, &http.Cookie{Name: walletCookie, Value: "", Path: "/", MaxAge: -1})
+		http.SetCookie(w, &http.Cookie{
+			Name: walletCookie, Value: "", Path: "/", MaxAge: -1,
+			HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.secureCookies(),
+		})
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
