@@ -100,4 +100,8 @@ jobs:
       - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: critical
+          # templ is MIT with BSD-3-Clause files (lsp/, safehtml/), both allowed,
+          # but GitHub's metadata renders the pair as the unparseable
+          # LicenseRef-bad-mit-bsd-3-clause. LICENSE files checked by hand.
+          allow-dependencies-licenses: pkg:golang/github.com/a-h/templ
           allow-licenses: BSD-2-Clause, BSD-3-Clause, MIT, MIT-0, Apache-2.0, MPL-2.0, ISC, LicenseRef-scancode-google-patent-license-golang, Unlicense, CC-BY-4.0
