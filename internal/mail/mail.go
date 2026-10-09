@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	netmail "net/mail"
 	"net/smtp"
 	"strings"
 	"time"
@@ -36,10 +37,18 @@ func Send(c Config, to, subject, body string) error {
 	if !c.Enabled() || to == "" {
 		return nil
 	}
-	// Reject header-injection at the boundary: a CR/LF in any header field
-	// would let a caller inject extra SMTP headers (Bcc, spoofed From, …).
-	if strings.ContainsAny(to+subject+c.From, "\r\n") {
-		return errors.New("mail: header field contains a newline")
+	// Reject header-injection at the boundary: a control character in any
+	// header field would let a caller inject extra SMTP headers (Bcc, spoofed
+	// From, …) or corrupt the envelope commands, so only printable runes pass.
+	for _, h := range []string{to, subject, c.From} {
+		if strings.IndexFunc(h, func(r rune) bool { return r < ' ' || r == 0x7f }) >= 0 {
+			return errors.New("mail: header field contains a control character")
+		}
+	}
+	// The recipient is also the envelope destination: an address that does
+	// not parse is a relay-abuse attempt, not a deliverable mailbox.
+	if _, err := netmail.ParseAddress(to); err != nil {
+		return fmt.Errorf("mail: invalid recipient %q: %w", to, err)
 	}
 	port := c.Port
 	if port == 0 {

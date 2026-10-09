@@ -62,7 +62,9 @@ func scanUser(row interface{ Scan(...any) error }) (*User, error) {
 
 // CreateUser inserts a dashboard user with a bcrypt password hash, plus their
 // personal account (kind "user", slug == username) with the user as its
-// admin. Usernames and account slugs share one global pool.
+// admin. Usernames and account slugs share one global pool. It returns the
+// stored row, so what callers render and mail is the record validation
+// accepted — never the raw form echo.
 func (db *DB) CreateUser(name, email, passHash, role string) (*User, error) {
 	return db.createUser(name, email, passHash, role, "active")
 }
@@ -110,7 +112,7 @@ func (db *DB) createUser(name, email, passHash, role, status string) (*User, err
 	if err != nil {
 		return nil, err
 	}
-	return u, nil
+	return db.GetUser(u.ID)
 }
 
 // GetUser resolves a live user; a soft-deleted one reads as ErrNotFound. The
