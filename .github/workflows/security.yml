@@ -68,7 +68,17 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: stable
+          go-version-file: go.mod
+      # govulncheck type-checks the whole graph, so it needs the generated
+      # artifacts like any build does (same steps as ci.yml's vuln job):
+      # no xilo-tw.css fails go:embed, no *_templ.go leaves the views undefined.
+      - name: Build admin CSS
+        run: |
+          curl -sSL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.2/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
+          chmod +x /usr/local/bin/tailwindcss
+          ./scripts/build-css.sh
+      - name: Generate templ views
+        run: go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Run govulncheck
