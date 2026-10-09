@@ -27,6 +27,8 @@ jobs:
   test:
     name: build + test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       # Declares that everything the suites need is installed here, so a
       # missing prerequisite fails instead of skipping (internal/testenv).
@@ -75,6 +77,8 @@ jobs:
   vuln:
     name: known vulnerabilities
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -105,6 +109,8 @@ jobs:
   fuzz-list:
     name: fuzz targets
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       targets: ${{ steps.list.outputs.targets }}
     steps:
@@ -120,6 +126,8 @@ jobs:
     name: fuzz ${{ matrix.target }}
     needs: fuzz-list
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -149,6 +157,8 @@ jobs:
   postgres:
     name: store suite against PostgreSQL
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:16-alpine
@@ -180,6 +190,8 @@ jobs:
   garage:
     name: S3 backend against Garage
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -263,6 +275,8 @@ jobs:
   e2e:
     name: CLI end-to-end (real nix + containerized server)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -350,6 +364,8 @@ jobs:
   ops:
     name: k6 operations conformance
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - name: run ops suite (single-tenant)

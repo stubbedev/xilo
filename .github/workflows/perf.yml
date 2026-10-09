@@ -16,6 +16,8 @@ jobs:
   k6:
     name: k6 (${{ matrix.tenancy }}) ${{ matrix.suite }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -109,6 +111,8 @@ jobs:
     needs: k6
     if: always()
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - run: |
           if [ "${{ needs.k6.result }}" != success ]; then
