@@ -3,12 +3,15 @@ package push
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/stubbedev/xilo/internal/api"
 	"github.com/stubbedev/xilo/internal/chunk"
@@ -26,11 +29,71 @@ func (c *Client) url(parts ...string) string {
 	return b.String()
 }
 
+// retryBackoff is the wait before the first retry, doubled for each one
+// after it. A var so tests need not sleep through real backoff.
+var retryBackoff = 500 * time.Millisecond
+
+// maxRetries bounds how often one request is replayed after a transient
+// failure: about 3.5s of backoff in all, enough to ride out a proxy hiccup
+// without stalling a push that is really failing.
+const maxRetries = 3
+
+// do sends one push request, replaying it after a transient failure. Every
+// request here is safe to repeat: chunk uploads are content-addressed, the
+// presence queries read, and put-path registers the same row again. One proxy
+// error would otherwise abort a closure of thousands of paths.
 func (c *Client) do(req *http.Request) (*http.Response, error) {
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
-	return c.http.Do(req)
+	for attempt := 0; ; attempt++ {
+		resp, err := c.http.Do(req)
+		if attempt == maxRetries || !transient(resp, err) || (req.Body != nil && req.GetBody == nil) {
+			return resp, err
+		}
+		if resp != nil {
+			io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+			resp.Body.Close()
+		}
+		select {
+		case <-req.Context().Done():
+			if resp != nil {
+				return nil, fmt.Errorf("%s %s: %s, then %w", req.Method, req.URL.Path, resp.Status, req.Context().Err())
+			}
+			return nil, err
+		case <-time.After(retryBackoff << attempt):
+		}
+		if req.GetBody != nil {
+			body, err := req.GetBody()
+			if err != nil {
+				return nil, fmt.Errorf("rewind %s %s body for retry: %w", req.Method, req.URL.Path, err)
+			}
+			req.Body = body
+		}
+	}
+}
+
+// transient reports whether a failed attempt is worth repeating: a gateway
+// that could not reach the server (Cloudflare's 520-524 included), or a
+// connection that broke. Not a timeout, which already waited the client's
+// whole budget, nor a cancelled context or a certificate the client rejects.
+func transient(resp *http.Response, err error) bool {
+	if err == nil {
+		switch resp.StatusCode {
+		case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout,
+			520, 521, 522, 523, 524:
+			return true
+		}
+		return false
+	}
+	var ne net.Error
+	var cert *tls.CertificateVerificationError
+	switch {
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded),
+		errors.As(err, &ne) && ne.Timeout(), errors.As(err, &cert):
+		return false
+	}
+	return true
 }
 
 // loadConfig fetches the server's push config and populates the auto-derived
