@@ -167,15 +167,7 @@ func (s *Server) RunContext(ctx context.Context) error {
 	s.startAuditPrune(ctx)
 	s.startStatusSampler(ctx)
 
-	srv := &http.Server{
-		Addr:    s.cfg.Listen,
-		Handler: s.middleware(s.Handler()),
-		// Header timeout guards against slowloris. Read/Write are left open:
-		// NAR uploads/downloads are large and legitimately slow.
-		ReadHeaderTimeout: 15 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		ErrorLog:          log.Default(),
-	}
+	srv := s.httpServer()
 
 	errc := make(chan error, 1)
 	go func() {
@@ -191,6 +183,26 @@ func (s *Server) RunContext(ctx context.Context) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
+	}
+}
+
+// cloudflareProxyIdle is how long Cloudflare keeps an idle origin connection
+// open for reuse, the longest reuse window of the common reverse proxies.
+const cloudflareProxyIdle = 900 * time.Second
+
+// httpServer builds the listener's server. Header timeout guards against
+// slowloris. Read/Write are left open: NAR uploads/downloads are large and
+// legitimately slow. The idle timeout outlasts every proxy's reuse window: a
+// proxy that sends a request down a connection we just closed gets a reset
+// instead of a response, which Cloudflare reports as a 520 and the push client
+// as a failed chunk upload.
+func (s *Server) httpServer() *http.Server {
+	return &http.Server{
+		Addr:              s.cfg.Listen,
+		Handler:           s.middleware(s.Handler()),
+		ReadHeaderTimeout: 15 * time.Second,
+		IdleTimeout:       cloudflareProxyIdle + time.Minute,
+		ErrorLog:          log.Default(),
 	}
 }
 

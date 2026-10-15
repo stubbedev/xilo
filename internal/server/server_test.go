@@ -382,3 +382,10 @@ func TestNegotiateEncoding(t *testing.T) {
 		}
 	}
 }
+
+func TestIdleConnectionsOutlastProxyReuse(t *testing.T) {
+	s, _, _ := newTestServer(t, false)
+	if got := s.httpServer().IdleTimeout; got <= cloudflareProxyIdle {
+		t.Fatalf("idle timeout %s closes connections a proxy may still reuse (up to %s)", got, cloudflareProxyIdle)
+	}
+}

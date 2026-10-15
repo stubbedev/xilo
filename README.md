@@ -667,6 +667,13 @@ xilo speaks plain HTTP; terminate TLS with Caddy, nginx or equivalent and set
 `base_url: "https://..."` so session cookies are `Secure`. See
 [`examples/Caddyfile`](./examples/Caddyfile).
 
+Every push request is small (one chunk, at most `chunking.max_size` or
+`chunking.nar_threshold`, whichever is larger), so proxy body limits such as
+Cloudflare's 100 MB never apply. xilo keeps idle connections open for 16
+minutes, longer than any common proxy reuses one (Cloudflare: 900 s), so a
+proxy never sends a request down a connection xilo has just closed; one with a
+longer reuse window would answer those requests with a 502 or 520.
+
 The real client IP, used for login rate limiting and the activity log, is read
 from `X-Forwarded-For` or `X-Real-IP` when the proxy sits on a loopback or
 private address, which needs no configuration in the usual colocated setup. For
