@@ -1,0 +1,10 @@
+ignore:
+  - vulnerability: GO-2026-5932
+    include-aliases: true
+    package:
+      name: golang.org/x/crypto
+      type: go-module
+    reason: >-
+      The advisory covers golang.org/x/crypto/openpgp, which nothing in xilo
+      imports. Grype matches whole modules; govulncheck traces imports and
+      reports this advisory the moment openpgp enters the build.

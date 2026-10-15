@@ -81,9 +81,13 @@ jobs:
         run: go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      # Reachability-filtered like ci.yml's vuln job: a "note" is an advisory
+      # for a package of a required module that nothing imports, so the binary
+      # cannot contain it. Imported (warning) and called (error) stay.
       - name: Run govulncheck
         run: |
-          govulncheck -C . -format sarif ./... > results.sarif
+          govulncheck -C . -format sarif ./... > all.sarif
+          jq '.runs[].results |= map(select(.level != "note"))' all.sarif > results.sarif
       - uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           sarif_file: results.sarif
