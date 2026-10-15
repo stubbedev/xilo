@@ -202,6 +202,7 @@ func (s *Server) httpServer() *http.Server {
 		Handler:           s.middleware(s.Handler()),
 		ReadHeaderTimeout: 15 * time.Second,
 		IdleTimeout:       cloudflareProxyIdle + time.Minute,
+		ConnState:         s.metrics.trackConn,
 		ErrorLog:          log.Default(),
 	}
 }

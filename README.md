@@ -689,9 +689,9 @@ proxy trust and keys on the socket peer instead.
   `xilo_chunks_received_total`, `xilo_chunks_deduped_total`,
   `xilo_paths_pushed_total`, `xilo_paths_adopted_total`,
   `xilo_auth_failures_total`, with pull-serving and push-upload latency counted
-  separately) plus Go runtime gauges. Counters are persisted alongside the
-  metadata, so totals and the dashboard figures survive restarts. A Grafana
-  dashboard is in
+  separately) plus Go runtime gauges and `xilo_http_connections_open`. Counters
+  are persisted alongside the metadata, so totals and the dashboard figures
+  survive restarts. A Grafana dashboard is in
   [`examples/grafana-dashboard.json`](./examples/grafana-dashboard.json).
 - Activity log: every successful admin or API mutation is recorded with actor,
   method, path, source IP, user agent, latency and status, and is browsable at
