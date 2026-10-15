@@ -112,7 +112,7 @@ func (c *Client) putChunk(ctx context.Context, ch chunk.Chunk) error {
 	body := ch.Data
 	encoding := ""
 	if c.acceptZstd {
-		body = c.enc.EncodeAll(ch.Data, nil)
+		body = chunk.Compress(c.enc, ch.Data)
 		encoding = "zstd"
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.url("api", "chunk", ch.Hash), bytes.NewReader(body))

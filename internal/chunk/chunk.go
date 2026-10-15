@@ -10,6 +10,7 @@ import (
 	"io"
 
 	fastcdc "github.com/jotfs/fastcdc-go"
+	"github.com/klauspost/compress/zstd"
 )
 
 // Default chunk sizes tuned for NARs: big enough to keep per-chunk overhead
@@ -43,6 +44,14 @@ type Chunk struct {
 func Hash(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+// Compress encodes one chunk as a single zstd frame. The output is sized to the
+// input up front: EncodeAll does that itself only below 1 MiB, and a
+// max-sized chunk would otherwise grow its way there append by append, about
+// 2.4 MB of garbage per call on every upload.
+func Compress(enc *zstd.Encoder, raw []byte) []byte {
+	return enc.EncodeAll(raw, make([]byte, 0, len(raw)))
 }
 
 // Split reads r to EOF, calling fn for each chunk in order. fn owns Data (it is

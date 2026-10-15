@@ -22,7 +22,7 @@ func getChunkBuf(capHint int64) []byte {
 }
 
 func putChunkBuf(b []byte) {
-	if cap(b) > 4<<20 { // don't hoard oversized one-offs
+	if cap(b) == 0 || cap(b) > 4<<20 { // nothing to reuse, or an oversized one-off
 		return
 	}
 	chunkBufPool.Put(&b)

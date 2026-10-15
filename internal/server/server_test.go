@@ -25,7 +25,7 @@ import (
 	"github.com/stubbedev/xilo/internal/store"
 )
 
-func newTestServer(t *testing.T, openBootstrap bool) (*Server, *store.DB, *httptest.Server) {
+func newTestServer(t testing.TB, openBootstrap bool) (*Server, *store.DB, *httptest.Server) {
 	t.Helper()
 	dir := t.TempDir()
 	cfg, err := config.Load("")
