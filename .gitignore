@@ -4,6 +4,7 @@
 /xilo.yaml
 /result
 .direnv/
+.devenv/
 *.db
 *.db-wal
 *.db-shm

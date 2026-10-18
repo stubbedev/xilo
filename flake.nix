@@ -38,7 +38,7 @@
           pname = if client then "xilo-cli" else "xilo";
           version = "0-unstable-${self.shortRev or "dirty"}";
           src = self;
-          vendorHash = "sha256-RINMguPggv4MFbJkRWyaKKGgaT2tskXLvnwzfRTRGxg=";
+          vendorHash = "sha256-2N+i9hDKNv2IeK1F6+qyKdrfnfzZVm4RWkAG68AiM3I=";
           # Hash the module cache (go mod download), not a vendor tree: `go mod
           # vendor` walks the import graph, so its output would depend on the
           # generated _templ.go (templui is imported only from codegen) and on
@@ -94,26 +94,10 @@
             inherit xilo-riscv64;
           };
 
-        # Dev shell: everything `just` recipes need.
-        devShells.default = pkgs.mkShell {
-          packages = with pkgs; [
-            go_latest # plain `go` is still 1.26 in nixpkgs; go.mod wants 1.27
-            gopls
-            gotools # goimports
-            golangci-lint
-            templ # regenerate views: `just generate`
-            air # live reload: `just dev`
-            just
-            sqlite # inspect the metadata db
-            curl
-          ] ++ lib.optional hasWebToolchain tailwindcss_4; # admin CSS: `just css`
-          shellHook = ''
-            # A GOROOT inherited from an older shell points the toolchain at a
-            # go that is not the one on PATH ("compile: version ... does not
-            # match"). The nix go finds its own root; never carry one over.
-            unset GOROOT
-          '';
-        };
+        # The development shell is a devenv project (devenv.yaml + devenv.nix,
+        # auto-activated by the devenv CLI) rather than a flake output: this
+        # file is what other flakes and NixOS/home-manager configurations
+        # consume, the shell is what a human sitting in the checkout gets.
       }) // {
       # NixOS module: `services.xilo.enable = true;` runs the server under
       # systemd and puts the client CLI in systemPackages. Config lives in

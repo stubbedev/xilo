@@ -3,16 +3,32 @@ name: CI
 on:
   push:
     branches: [master, main]
+    # Prose carries no signal CI can check; skipping keeps a README fix from
+    # paying the six-minute tax.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
   pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
   # Dispatched by dependabot-auto-merge.yml after a squash merge: pushes made
   # with GITHUB_TOKEN do not trigger `push`, so the vendorHash auto-commit
   # in the `flake` job would never run for an auto-merged dep bump.
   workflow_dispatch:
 
+# A second push to the same ref supersedes the first run: nobody reads the
+# result of a commit that is no longer the head, so stop paying for it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: build + test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       # Declares that everything the suites need is installed here, so a
       # missing prerequisite fails instead of skipping (internal/testenv).
@@ -46,12 +62,12 @@ jobs:
       # profile stayed on 1.26 through the 1.27 bump and nothing noticed,
       # because nothing in CI built it.
       - name: Go version pins match go.mod
-        run: ./scripts/toolchain.sh check
+        run: nix run nixpkgs#just -- toolchain-check
       - run: go vet ./...
       # Stdlib-first gate (.golangci.yml) — the same set `just lint` runs.
       - uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.13.1
+          version: v2.14.0
       - run: go build ./...
       # Client-only build (flake packages.xilo-cli): fails if anything outside
       # internal/cli/serve.go starts importing internal/server.
@@ -61,6 +77,8 @@ jobs:
   vuln:
     name: known vulnerabilities
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -84,9 +102,36 @@ jobs:
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
-  fuzz:
-    name: fuzz the parsers
+  # The target list is discovered, so the matrix has to be too: one job
+  # lists, the rest run one target each. Serially the eleven targets took six
+  # minutes and set the wall for the whole workflow; in parallel the wall is
+  # whichever single target compiles slowest.
+  fuzz-list:
+    name: fuzz targets
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      targets: ${{ steps.list.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - id: list
+        run: echo "targets=$(./scripts/fuzz.sh --list | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+
+  fuzz:
+    name: fuzz ${{ matrix.target }}
+    needs: fuzz-list
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.fuzz-list.outputs.targets) }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -98,11 +143,13 @@ jobs:
       # testdata/fuzz replays every input a longer run ever found. Hunt for
       # new ones locally with `just fuzz <target> <duration>`.
       - name: fuzz
-        run: ./scripts/fuzz.sh 30s
+        run: |
+          read -r pkg name <<<"${{ matrix.target }}"
+          ./scripts/fuzz.sh --one "$pkg" "$name" 30s
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: fuzz-crashers
+          name: fuzz-crashers-${{ strategy.job-index }}
           path: |
             internal/*/testdata/fuzz/**
             ~/.cache/go-build/fuzz/**
@@ -110,6 +157,8 @@ jobs:
   postgres:
     name: store suite against PostgreSQL
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     services:
       postgres:
         image: postgres:16-alpine
@@ -141,6 +190,8 @@ jobs:
   garage:
     name: S3 backend against Garage
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -224,6 +275,8 @@ jobs:
   e2e:
     name: CLI end-to-end (real nix + containerized server)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -311,6 +364,8 @@ jobs:
   ops:
     name: k6 operations conformance
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - name: run ops suite (single-tenant)

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"testing"
 )
 
@@ -53,7 +54,7 @@ func TestDeletePathsAndChunkRows(t *testing.T) {
 	if db.HasChunk("default", "h1") {
 		t.Fatal("chunk row survived")
 	}
-	if _, err := db.GetPath(c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); err == nil {
+	if _, err := db.GetPath(context.Background(), c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"); err == nil {
 		t.Fatal("path survived")
 	}
 	// Empty inputs are no-ops.

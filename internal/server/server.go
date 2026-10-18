@@ -6,12 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -41,7 +43,7 @@ type Server struct {
 	niCache   *narinfoCache // rendered+signed narinfo bodies
 	vfCache   *verifyCache  // chunk lists already proven to reassemble
 	gzipPool  sync.Pool     // *gzip.Writer for NAR wire compression
-	touched   sync.Map      // "<cacheID>/<storeHash>" → unix secs of last LRU bump
+	touched   sync.Map      // touchKey{cache,hash} → unix secs of last LRU bump
 	// chunkFilters memoizes the per-storage chunk presence filter served to
 	// pushers (storage name → *chunkFilterBody).
 	chunkFilters sync.Map
@@ -165,15 +167,7 @@ func (s *Server) RunContext(ctx context.Context) error {
 	s.startAuditPrune(ctx)
 	s.startStatusSampler(ctx)
 
-	srv := &http.Server{
-		Addr:    s.cfg.Listen,
-		Handler: s.middleware(s.Handler()),
-		// Header timeout guards against slowloris. Read/Write are left open:
-		// NAR uploads/downloads are large and legitimately slow.
-		ReadHeaderTimeout: 15 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		ErrorLog:          log.Default(),
-	}
+	srv := s.httpServer()
 
 	errc := make(chan error, 1)
 	go func() {
@@ -189,6 +183,27 @@ func (s *Server) RunContext(ctx context.Context) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
+	}
+}
+
+// cloudflareProxyIdle is how long Cloudflare keeps an idle origin connection
+// open for reuse, the longest reuse window of the common reverse proxies.
+const cloudflareProxyIdle = 900 * time.Second
+
+// httpServer builds the listener's server. Header timeout guards against
+// slowloris. Read/Write are left open: NAR uploads/downloads are large and
+// legitimately slow. The idle timeout outlasts every proxy's reuse window: a
+// proxy that sends a request down a connection we just closed gets a reset
+// instead of a response, which Cloudflare reports as a 520 and the push client
+// as a failed chunk upload.
+func (s *Server) httpServer() *http.Server {
+	return &http.Server{
+		Addr:              s.cfg.Listen,
+		Handler:           s.middleware(s.Handler()),
+		ReadHeaderTimeout: 15 * time.Second,
+		IdleTimeout:       cloudflareProxyIdle + time.Minute,
+		ConnState:         s.metrics.trackConn,
+		ErrorLog:          log.Default(),
 	}
 }
 
@@ -211,6 +226,91 @@ func (s *Server) uiLocale(r *http.Request) string {
 func isAdminPage(r *http.Request) bool {
 	return (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
 		strings.HasPrefix(r.URL.Path, "/admin")
+}
+
+// requestLog writes the finished-request line. Healthy requests (2xx/3xx) go
+// to out, so a stderr capture holds only failures: 4xx, 5xx and panics go to
+// errs, and neither kind of failure is ever suppressed. quiet drops the
+// healthy fast lines, because the synchronous write is measurable at 10k+ rps.
+// The line is built in one pooled buffer and handed to the stream in one
+// Write: no fmt, no logger mutex serialising concurrent requests, no heap
+// traffic per line.
+type requestLog struct {
+	out  io.Writer
+	errs io.Writer
+}
+
+// A request slower than this is worth a line even in quiet mode.
+const slowRequest = time.Second
+
+var reqLog = requestLog{out: os.Stdout, errs: os.Stderr}
+
+// Pooled *[]byte, not []byte: a slice does not fit in an interface word pair,
+// so putting one back would allocate on every line.
+var reqLinePool = sync.Pool{New: func() any { b := make([]byte, 0, 256); return &b }}
+
+// request writes one line for a finished request, stream split by severity.
+func (l requestLog) request(method, path string, status int, took time.Duration, panicked, quiet bool) {
+	failed := panicked || status >= 400
+	if quiet && !failed && took <= slowRequest {
+		return
+	}
+	w := l.out
+	if failed {
+		w = l.errs
+	}
+	bp := reqLinePool.Get().(*[]byte)
+	b := appendRequestLine((*bp)[:0], method, path, status, took)
+	_, _ = w.Write(b)
+	if cap(b) <= 4096 {
+		*bp = b
+		reqLinePool.Put(bp)
+	}
+}
+
+// appendRequestLine appends "METHOD PATH STATUS DURATION\n", the line
+// log.Printf("%s %s %d %s", method, path, status, took) used to write.
+func appendRequestLine(b []byte, method, path string, status int, took time.Duration) []byte {
+	b = append(b, method...)
+	b = append(b, ' ')
+	b = append(b, path...)
+	b = append(b, ' ')
+	b = strconv.AppendInt(b, int64(status), 10)
+	b = append(b, ' ')
+	b = appendRoundMillis(b, took.Round(time.Millisecond))
+	return append(b, '\n')
+}
+
+// appendRoundMillis appends a millisecond-rounded duration byte-for-byte as
+// time.Duration.String would print it ("0s", "17ms", "1.05s", "2m1.5s",
+// "1h0m3.5s") without building a string on the heap. TestRequestLineFormat
+// pins the equality against the real String.
+func appendRoundMillis(b []byte, d time.Duration) []byte {
+	ns := uint64(d)
+	switch {
+	case ns == 0:
+		return append(b, "0s"...)
+	case ns < uint64(time.Second):
+		b = strconv.AppendUint(b, ns/uint64(time.Millisecond), 10)
+		return append(b, "ms"...)
+	}
+	sec := ns / uint64(time.Second)
+	if sec >= 3600 {
+		b = strconv.AppendUint(b, sec/3600, 10)
+		b = append(b, 'h')
+	}
+	if sec >= 60 {
+		b = strconv.AppendUint(b, (sec/60)%60, 10)
+		b = append(b, 'm')
+	}
+	b = strconv.AppendUint(b, sec%60, 10)
+	if ms := ns % uint64(time.Second) / uint64(time.Millisecond); ms > 0 {
+		b = append(b, '.', byte('0'+ms/100), byte('0'+ms/10%10), byte('0'+ms%10))
+		for b[len(b)-1] == '0' {
+			b = b[:len(b)-1]
+		}
+	}
+	return append(b, 's')
 }
 
 // middleware wraps the mux with panic recovery + request logging.
@@ -250,7 +350,8 @@ func (s *Server) middleware(h http.Handler) http.Handler {
 		}
 		lw := &logWriter{ResponseWriter: w, status: http.StatusOK}
 		defer func() {
-			if rec := recover(); rec != nil {
+			rec := recover()
+			if rec != nil {
 				log.Printf("panic: %v", rec)
 				if !lw.wrote {
 					http.Error(lw, "internal error", http.StatusInternalServerError)
@@ -266,11 +367,7 @@ func (s *Server) middleware(h http.Handler) http.Handler {
 					s.metrics.reqDurNs.Add(elapsed.Nanoseconds())
 				}
 			}
-			// logging=quiet: only errors and slow requests — the synchronous
-			// log write (global mutex + stderr) is measurable at 10k+ rps.
-			if s.cfg.Logging != "quiet" || lw.status >= 400 || elapsed > time.Second {
-				log.Printf("%s %s %d %s", r.Method, r.URL.Path, lw.status, elapsed.Round(time.Millisecond))
-			}
+			reqLog.request(r.Method, r.URL.Path, lw.status, elapsed, rec != nil, s.cfg.Logging == "quiet")
 			// Activities: successful admin/API mutations only.
 			if lw.status < 400 && auditable(r) {
 				s.recordAudit(r, lw.status, elapsed)
@@ -580,7 +677,7 @@ func (s *Server) assignStorage(c *store.Cache, stName string) error {
 
 // cache resolves the /c/{account}/{cache} path segments, writing 404 if unknown.
 func (s *Server) cache(w http.ResponseWriter, r *http.Request) (*store.Cache, bool) {
-	c, err := s.db.GetCache(r.PathValue("account"), r.PathValue("cache"))
+	c, err := s.db.GetCache(r.Context(), r.PathValue("account"), r.PathValue("cache"))
 	if errors.Is(err, store.ErrNotFound) {
 		http.Error(w, "no such cache", http.StatusNotFound)
 		return nil, false
@@ -592,7 +689,7 @@ func (s *Server) cache(w http.ResponseWriter, r *http.Request) (*store.Cache, bo
 	// A suspended account serves nothing. Checked here because every
 	// binary-cache handler comes through this resolver, so the rule cannot be
 	// missed by a handler added later.
-	if s.db.AccountStatus(c.AccountID) == store.StatusSuspended {
+	if s.db.AccountStatus(r.Context(), c.AccountID) == store.StatusSuspended {
 		http.Error(w, "account suspended", http.StatusForbidden)
 		return nil, false
 	}

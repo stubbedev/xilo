@@ -143,7 +143,7 @@ func TestIntegrationRealServerFastPaths(t *testing.T) {
 	if got := dumpCounts(t)[base]; got != 1 {
 		t.Fatalf("dumps = %d, want 1: cache two should have adopted the path", got)
 	}
-	if _, err := db.GetPath(mustCacheID(t, db, "two"), storeHash); err != nil {
+	if _, err := db.GetPath(context.Background(), mustCacheID(t, db, "two"), storeHash); err != nil {
 		t.Fatalf("path not registered in cache two: %v", err)
 	}
 	code, got = fetch(t, ts.URL+"/c/default/two/nar/"+storeHash+".nar")
@@ -154,7 +154,7 @@ func TestIntegrationRealServerFastPaths(t *testing.T) {
 	// 4. Drop the path and its chunks. With the manifest cache back in play the
 	// client tries put-path first, gets a 409, and must dump again to recover.
 	t.Setenv("XILO_CACHE_DIR", stateOne)
-	p, err := db.GetPath(mustCacheID(t, db, "one"), storeHash)
+	p, err := db.GetPath(context.Background(), mustCacheID(t, db, "one"), storeHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestIntegrationRealServerFastPaths(t *testing.T) {
 
 func mustCacheID(t *testing.T, db *store.DB, name string) int64 {
 	t.Helper()
-	c, err := db.GetCache("default", name)
+	c, err := db.GetCache(context.Background(), "default", name)
 	if err != nil {
 		t.Fatal(err)
 	}

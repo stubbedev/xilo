@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/url"
 	"testing"
 	"time"
@@ -63,7 +64,7 @@ func TestInstanceRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	cache, err := db.GetCache("admin", "ruled")
+	cache, err := db.GetCache(context.Background(), "admin", "ruled")
 	if err != nil {
 		t.Fatalf("GetCache: %v", err)
 	}

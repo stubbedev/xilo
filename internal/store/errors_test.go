@@ -47,7 +47,7 @@ func TestScanErrorBranches(t *testing.T) {
 	if _, err := db.ListCaches(); err == nil {
 		t.Error("ListCaches should fail on poison row")
 	}
-	if _, err := db.GetCache("default", "bad"); err == nil {
+	if _, err := db.GetCache(context.Background(), "default", "bad"); err == nil {
 		t.Error("GetCache should fail on poison row")
 	}
 	if _, err := db.ListTokens(); err == nil {
@@ -62,7 +62,7 @@ func TestScanErrorBranches(t *testing.T) {
 	if _, err := db.AllChunks("default"); err == nil {
 		t.Error("AllChunks should fail on poison row")
 	}
-	if _, err := db.ChunkKeys("default", []string{"bad"}); err == nil {
+	if _, err := db.ChunkKeys(context.Background(), "default", []string{"bad"}); err == nil {
 		t.Error("ChunkKeys should fail on poison row")
 	}
 	if _, err := db.chunkSizes(); err == nil {
@@ -77,7 +77,7 @@ func TestScanErrorBranches(t *testing.T) {
 	if _, err := db.EnforceGlobalCap(1); err == nil {
 		t.Error("enforceCap should fail scanning poison path")
 	}
-	if _, err := db.GetPath(c.ID, "badbadbadbadbadbadbadbadbadbadba"); err == nil {
+	if _, err := db.GetPath(context.Background(), c.ID, "badbadbadbadbadbadbadbadbadbadba"); err == nil {
 		t.Error("GetPath should fail on poison row")
 	}
 }

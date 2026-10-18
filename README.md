@@ -667,6 +667,13 @@ xilo speaks plain HTTP; terminate TLS with Caddy, nginx or equivalent and set
 `base_url: "https://..."` so session cookies are `Secure`. See
 [`examples/Caddyfile`](./examples/Caddyfile).
 
+Every push request is small (one chunk, at most `chunking.max_size` or
+`chunking.nar_threshold`, whichever is larger), so proxy body limits such as
+Cloudflare's 100 MB never apply. xilo keeps idle connections open for 16
+minutes, longer than any common proxy reuses one (Cloudflare: 900 s), so a
+proxy never sends a request down a connection xilo has just closed; one with a
+longer reuse window would answer those requests with a 502 or 520.
+
 The real client IP, used for login rate limiting and the activity log, is read
 from `X-Forwarded-For` or `X-Real-IP` when the proxy sits on a loopback or
 private address, which needs no configuration in the usual colocated setup. For
@@ -682,9 +689,9 @@ proxy trust and keys on the socket peer instead.
   `xilo_chunks_received_total`, `xilo_chunks_deduped_total`,
   `xilo_paths_pushed_total`, `xilo_paths_adopted_total`,
   `xilo_auth_failures_total`, with pull-serving and push-upload latency counted
-  separately) plus Go runtime gauges. Counters are persisted alongside the
-  metadata, so totals and the dashboard figures survive restarts. A Grafana
-  dashboard is in
+  separately) plus Go runtime gauges and `xilo_http_connections_open`. Counters
+  are persisted alongside the metadata, so totals and the dashboard figures
+  survive restarts. A Grafana dashboard is in
   [`examples/grafana-dashboard.json`](./examples/grafana-dashboard.json).
 - Activity log: every successful admin or API mutation is recorded with actor,
   method, path, source IP, user agent, latency and status, and is browsable at
@@ -944,7 +951,7 @@ swept mid-push costs one extra dump and never a corrupt or dangling path.
 ## Development
 
 ```sh
-nix develop          # go, templ, air, just, golangci-lint, ...
+devenv shell         # go, templ, air, just, golangci-lint, ...
 just                 # list recipes
 just dev             # live-reload server (air) with seeded demo data
 just generate        # regenerate templ views
@@ -952,6 +959,11 @@ just check           # everything CI runs: lint, test, schema and nix build in s
 just update          # bump deps and the flake vendorHash together
 just release-patch   # tag and push a release (RELEASING.md); -minor and -major too
 ```
+
+The dev shell is a [devenv](https://devenv.sh) project: trust the checkout
+once with `devenv allow` and it auto-activates whenever you `cd` in - no
+direnv hook, no `.envrc`. `flake.nix` carries only the packages and modules
+other Nix code consumes.
 
 The admin UI is [templ](https://templ.guide/) components (the
 [templUI](https://templui.io/) library) styled with

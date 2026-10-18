@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -147,7 +148,7 @@ func TestAdminCSRF(t *testing.T) {
 	req.Header.Set("Origin", ts.URL)
 	resp, _ = c.Do(req)
 	resp.Body.Close()
-	if _, err := db.GetCache("default", "csrf-ok"); err != nil {
+	if _, err := db.GetCache(context.Background(), "default", "csrf-ok"); err != nil {
 		t.Fatalf("same-origin create failed: %v", err)
 	}
 }
@@ -160,7 +161,7 @@ func TestAdminCacheCRUD(t *testing.T) {
 	// create via form (private, clamped priority)
 	resp, _ := c.PostForm(ts.URL+"/admin/caches", url.Values{"name": {"web"}, "namespace": {"default"}, "priority": {"500"}, "private": {"on"}})
 	resp.Body.Close()
-	cc, err := db.GetCache("default", "web")
+	cc, err := db.GetCache(context.Background(), "default", "web")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +212,7 @@ func TestAdminCacheCRUD(t *testing.T) {
 		"max_value": {"1"}, "max_unit": {"MiB"},
 	})
 	resp.Body.Close()
-	cc, _ = db.GetCache("default", "web")
+	cc, _ = db.GetCache(context.Background(), "default", "web")
 	if !cc.Public || cc.Priority != 7 || cc.Retention != 86400 || cc.MaxBytes != 1<<20 {
 		t.Fatalf("configured cache: %+v", cc)
 	}
@@ -223,7 +224,7 @@ func TestAdminCacheCRUD(t *testing.T) {
 		"max_value": {""}, "max_unit": {"MiB"},
 	})
 	resp.Body.Close()
-	cc, _ = db.GetCache("default", "web")
+	cc, _ = db.GetCache(context.Background(), "default", "web")
 	if cc.Retention != 0 || cc.MaxBytes != 0 {
 		t.Errorf("emptied retention/cap → %d/%d want 0/0", cc.Retention, cc.MaxBytes)
 	}
@@ -246,7 +247,7 @@ func TestAdminCacheCRUD(t *testing.T) {
 	if got := resp.Header.Get("HX-Push-Url"); got != "false" {
 		t.Errorf("hx configure HX-Push-Url = %q want false", got)
 	}
-	cc, _ = db.GetCache("default", "web")
+	cc, _ = db.GetCache(context.Background(), "default", "web")
 	if cc.Priority != 11 || cc.Retention != 2*86400 {
 		t.Errorf("hx configure saved %+v", cc)
 	}
@@ -262,7 +263,7 @@ func TestAdminCacheCRUD(t *testing.T) {
 	if b := body(t, resp); !strings.Contains(b, "rotated") {
 		t.Fatalf("rotate response: %q", b)
 	}
-	cc, _ = db.GetCache("default", "web")
+	cc, _ = db.GetCache(context.Background(), "default", "web")
 	if cc.PubKey == oldKey {
 		t.Fatal("pubkey did not rotate")
 	}
@@ -270,7 +271,7 @@ func TestAdminCacheCRUD(t *testing.T) {
 	// delete
 	resp, _ = c.PostForm(ts.URL+"/admin/cache/default/web/delete", nil)
 	resp.Body.Close()
-	if _, err := db.GetCache("default", "web"); err == nil {
+	if _, err := db.GetCache(context.Background(), "default", "web"); err == nil {
 		t.Fatal("cache still exists after delete")
 	}
 

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/klauspost/compress/zstd"
 
@@ -23,7 +25,7 @@ import (
 	"github.com/stubbedev/xilo/internal/store"
 )
 
-func newTestServer(t *testing.T, openBootstrap bool) (*Server, *store.DB, *httptest.Server) {
+func newTestServer(t testing.TB, openBootstrap bool) (*Server, *store.DB, *httptest.Server) {
 	t.Helper()
 	dir := t.TempDir()
 	cfg, err := config.Load("")
@@ -205,7 +207,7 @@ func TestStatsAccuracy(t *testing.T) {
 
 func verifyNarinfoSig(t *testing.T, db *store.DB, cache, narinfoText string) {
 	t.Helper()
-	c, err := db.GetCache("default", cache)
+	c, err := db.GetCache(context.Background(), "default", cache)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,5 +381,40 @@ func TestNegotiateEncoding(t *testing.T) {
 		if got := negotiateEncoding(c.in); got != c.want {
 			t.Errorf("negotiateEncoding(%q)=%q want %q", c.in, got, c.want)
 		}
+	}
+}
+
+func TestIdleConnectionsOutlastProxyReuse(t *testing.T) {
+	s, _, _ := newTestServer(t, false)
+	if got := s.httpServer().IdleTimeout; got <= cloudflareProxyIdle {
+		t.Fatalf("idle timeout %s closes connections a proxy may still reuse (up to %s)", got, cloudflareProxyIdle)
+	}
+}
+
+func TestOpenConnectionsGauge(t *testing.T) {
+	s, _, _ := newTestServer(t, false)
+	ts := httptest.NewUnstartedServer(nil)
+	ts.Config = s.httpServer()
+	ts.Start()
+	t.Cleanup(ts.Close)
+	client := ts.Client()
+
+	resp, err := client.Get(ts.URL + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if got := s.metrics.openConns.Load(); got != 1 {
+		t.Fatalf("open connections with one idle keep-alive = %d, want 1", got)
+	}
+
+	client.CloseIdleConnections()
+	deadline := time.Now().Add(5 * time.Second)
+	for s.metrics.openConns.Load() != 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("open connections after the client hung up = %d, want 0", s.metrics.openConns.Load())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

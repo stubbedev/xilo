@@ -15,8 +15,9 @@
 //                 aborts mid-body; the server must shrug off half-closed
 //                 connections (no goroutine/FD leak, no stall)
 //   leakwatch     scrapes /metrics every 5s through the whole run and records
-//                 go_goroutines + heap; teardown asserts the server drained
-//                 back to an idle goroutine count and stayed healthy
+//                 go_goroutines + heap; teardown asserts every goroutine not
+//                 parked on an open connection drained and the server stayed
+//                 healthy
 //
 // Scale knobs (env): STORM_VUS=512 FLOOD_RPS=5000 PULL_VUS=128 DURATION_S=60
 //   docker compose -f tests/k6/compose.yaml run --rm k6 run /scripts/pressure.js
@@ -310,18 +311,25 @@ export function teardown(data) {
   sleep(15);
   adminLogin(); // /metrics is admin-only; teardown runs in its own VU jar
   const res = http.get(`${BASE}/metrics`);
-  const g = String(res.body).match(/^go_goroutines (\d+)/m);
-  if (!g) fail("metrics endpoint dead after pressure run");
+  const body = String(res.body);
+  const g = body.match(/^go_goroutines (\d+)/m);
+  const c = body.match(/^xilo_http_connections_open (\d+)/m);
+  if (!g || !c) fail("metrics endpoint dead after pressure run");
   const n = parseInt(g[1]);
-  console.log(`post-load goroutines: ${n}`);
-  // Idle keepalive connections from k6's still-open VU pools hold ~2 server
-  // goroutines each until IdleTimeout — scale the bound with client count.
-  // A real leak (chunk prefetchers, per-request spawns) shows up in the
-  // thousands and still trips this. Far tighter than GOROUTINE_CEILING on
-  // purpose: this runs 15s after load stopped, so the connections should be
-  // going away rather than merely bounded (CI measures 45 here).
+  const conns = parseInt(c[1]);
+  console.log(`post-load goroutines: ${n}, open connections: ${conns}`);
+  // Idle keepalive connections from k6's still-open VU pools are kept for the
+  // server's whole IdleTimeout (longer than any proxy's reuse window, so far
+  // longer than this run) and each holds one goroutine. Those are not a leak,
+  // so the bound applies to the goroutines left once they are subtracted. A
+  // real leak (chunk prefetchers, per-request spawns) is not parked on a
+  // connection, shows up in the thousands and still trips this. Far tighter
+  // than GOROUTINE_CEILING on purpose: load stopped 15s ago.
+  const unparked = n - conns;
   const bound = 200 + Math.ceil(STORM_VUS / 4);
-  if (n > bound) fail(`goroutine leak: ${n} still alive 15s after load stopped (bound ${bound})`);
+  if (unparked > bound) {
+    fail(`goroutine leak: ${unparked} not parked on a connection 15s after load stopped (bound ${bound}; ${n} goroutines, ${conns} connections)`);
+  }
 
   // Verify a few NARs per tenant are still byte-exact.
   for (let i = 0; i < data.targets.length; i++) {

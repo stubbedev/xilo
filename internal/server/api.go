@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/stubbedev/xilo/internal/api"
+	"github.com/stubbedev/xilo/internal/chunk"
 	"github.com/stubbedev/xilo/internal/narinfo"
 	"github.com/stubbedev/xilo/internal/storage"
 	"github.com/stubbedev/xilo/internal/store"
@@ -151,7 +152,7 @@ func (s *Server) adopt(r *http.Request, c *store.Cache, missing []string, refs [
 		if err := s.db.TouchChunks(c.Storage, cd.Path.Chunks, now); err != nil {
 			continue
 		}
-		if miss, err := s.db.MissingChunks(c.Storage, cd.Path.Chunks); err != nil || len(miss) > 0 {
+		if miss, err := s.db.MissingChunks(r.Context(), c.Storage, cd.Path.Chunks); err != nil || len(miss) > 0 {
 			continue
 		}
 		if err := s.db.PutPath(c.ID, cd.StoreHash, &cd.Path); err != nil {
@@ -185,7 +186,7 @@ func (s *Server) handleMissingChunks(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	missing, err := s.db.MissingChunks(c.Storage, req.Hashes)
+	missing, err := s.db.MissingChunks(r.Context(), c.Storage, req.Hashes)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -231,22 +232,43 @@ func (s *Server) handlePutChunk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	want := r.PathValue("hash")
+	enc := r.Header.Get("Content-Encoding")
+	if enc != "" && enc != "zstd" {
+		http.Error(w, "unsupported Content-Encoding: "+enc, http.StatusBadRequest)
+		return
+	}
 
-	body, err := io.ReadAll(io.LimitReader(r.Body, s.maxChunkBody()))
+	// Only buffers that never leave this handler come from the pool: the one
+	// handed to storage is the request body of an S3 PUT, which the transport
+	// may still be reading after Put returns. readAllInto gets the declared
+	// size up front, since io.ReadAll would grow-and-copy its way to a chunk
+	// from 512 bytes on every upload.
+	hint := max(min(r.ContentLength, s.maxChunkBody()), 0) + 1
+	var buf []byte
+	if enc == "" {
+		buf = getChunkBuf(hint)
+	} else {
+		buf = make([]byte, 0, hint)
+	}
+	body, err := readAllInto(buf, io.LimitReader(r.Body, s.maxChunkBody()))
+	if enc == "" {
+		defer putChunkBuf(body)
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	// raw is what we hash; compressed (if non-nil) is the blob to store as-is.
 	var raw, compressed []byte
-	switch enc := r.Header.Get("Content-Encoding"); enc {
-	case "":
+	if enc == "" {
 		raw = body
-	case "zstd":
+	} else {
 		// s.dec is capped via WithDecoderMaxMemory, so a bomb can't blow the
 		// heap; the explicit length check backstops it. Endpoint is push-authed.
 		compressed = body
-		if raw, err = s.dec.DecodeAll(body, nil); err != nil {
+		raw, err = s.dec.DecodeAll(body, getChunkBuf(0))
+		defer func() { putChunkBuf(raw) }()
+		if err != nil {
 			http.Error(w, "zstd decode: "+err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -254,9 +276,6 @@ func (s *Server) handlePutChunk(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "chunk too large", http.StatusBadRequest)
 			return
 		}
-	default:
-		http.Error(w, "unsupported Content-Encoding: "+enc, http.StatusBadRequest)
-		return
 	}
 	sum := sha256.Sum256(raw)
 	got := hex.EncodeToString(sum[:])
@@ -282,7 +301,7 @@ func (s *Server) handlePutChunk(w http.ResponseWriter, r *http.Request) {
 
 	key := storage.ChunkKey(want)
 	if compressed == nil { // raw upload: compress at rest ourselves
-		compressed = s.enc.EncodeAll(raw, nil)
+		compressed = chunk.Compress(s.enc, raw)
 	}
 	if err := s.stOf(c.Storage).Put(r.Context(), key, bytes.NewReader(compressed)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -330,7 +349,7 @@ func (s *Server) handlePutPath(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	missing, err := s.db.MissingChunks(c.Storage, req.Chunks)
+	missing, err := s.db.MissingChunks(r.Context(), c.Storage, req.Chunks)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -420,7 +439,7 @@ func (s *Server) handlePutPath(w http.ResponseWriter, r *http.Request) {
 // the whole NAR again. Used on a verify-cache hit, where the arithmetic is known
 // good and only "did a blob disappear" is left to establish.
 func (s *Server) blobsPresent(ctx context.Context, storageName string, chunkHashes []string) error {
-	refs, err := s.db.ChunkKeys(storageName, chunkHashes)
+	refs, err := s.db.ChunkKeys(ctx, storageName, chunkHashes)
 	if err != nil {
 		return err
 	}
@@ -473,7 +492,7 @@ func (s *Server) blobsPresent(ctx context.Context, storageName string, chunkHash
 // bounded look-ahead) and checks the digest + total size against the claimed
 // NarHash/NarSize.
 func (s *Server) verifyReassembly(r *http.Request, storageName string, chunkHashes []string, narHash string, narSize uint64) error {
-	refs, err := s.db.ChunkKeys(storageName, chunkHashes)
+	refs, err := s.db.ChunkKeys(r.Context(), storageName, chunkHashes)
 	if err != nil {
 		return err
 	}

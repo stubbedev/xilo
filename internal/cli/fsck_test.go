@@ -41,7 +41,7 @@ func fsckWorld(t *testing.T) (*store.DB, storage.Storage, string, func(hash stri
 		if err := db.PutChunk("default", hash, int64(len(data)), 0, key, 100); err != nil {
 			t.Fatal(err)
 		}
-		c, err := db.GetCache("default", "c")
+		c, err := db.GetCache(context.Background(), "default", "c")
 		if err != nil {
 			if c, err = db.CreateCache("default", "c", true, 40); err != nil {
 				t.Fatal(err)
@@ -133,10 +133,10 @@ func TestFsckRepairHeals(t *testing.T) {
 	if db.HasChunk("default", victim) {
 		t.Fatal("bad chunk row survived repair")
 	}
-	if _, err := db.GetPath(mustCache(t, db), strings.Repeat("v", 32)); err == nil {
+	if _, err := db.GetPath(context.Background(), mustCache(t, db), strings.Repeat("v", 32)); err == nil {
 		t.Fatal("broken path survived repair")
 	}
-	if _, err := db.GetPath(mustCache(t, db), strings.Repeat("g", 32)); err != nil {
+	if _, err := db.GetPath(context.Background(), mustCache(t, db), strings.Repeat("g", 32)); err != nil {
 		t.Fatal("good path was harmed by repair")
 	}
 	if out2, err := fsckRun(t, db, st, true, false); err != nil {
@@ -146,7 +146,7 @@ func TestFsckRepairHeals(t *testing.T) {
 
 func mustCache(t *testing.T, db *store.DB) int64 {
 	t.Helper()
-	c, err := db.GetCache("default", "c")
+	c, err := db.GetCache(context.Background(), "default", "c")
 	if err != nil {
 		t.Fatal(err)
 	}

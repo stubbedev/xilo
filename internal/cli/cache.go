@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -251,7 +252,7 @@ func cacheInfoCmd() *cobra.Command {
 				base = apic.base
 			} else {
 				defer db.Close()
-				ca, err := db.GetCache(ns, cname)
+				ca, err := db.GetCache(context.Background(), ns, cname)
 				if err != nil {
 					return err
 				}
@@ -335,7 +336,7 @@ func cacheConfigureCmd() *cobra.Command {
 				}
 			} else {
 				defer db.Close()
-				cur, err := db.GetCache(ns, cname)
+				cur, err := db.GetCache(context.Background(), ns, cname)
 				if err != nil {
 					return err
 				}
@@ -399,11 +400,11 @@ func cacheRotateCmd() *cobra.Command {
 				name, pubkey = ca.Account+"/"+ca.Name, ca.PubKey
 			} else {
 				defer db.Close()
-				ca, err := db.GetCache(ns, cname)
+				ca, err := db.GetCache(context.Background(), ns, cname)
 				if err != nil {
 					return err
 				}
-				nc, err := db.RotateKey(ca.ID, ca.Name)
+				nc, err := db.RotateKey(context.Background(), ca.ID, ca.Name)
 				if err != nil {
 					return err
 				}
@@ -439,7 +440,7 @@ func cacheDestroyCmd() *cobra.Command {
 				}
 			} else {
 				defer db.Close()
-				ca, err := db.GetCache(ns, cname)
+				ca, err := db.GetCache(context.Background(), ns, cname)
 				if err != nil {
 					return err
 				}

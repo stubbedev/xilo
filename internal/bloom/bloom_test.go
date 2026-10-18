@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"hash/fnv"
+	"strings"
 	"testing"
 )
 
@@ -12,7 +14,7 @@ import (
 func hashes(prefix string, n int) []string {
 	out := make([]string, n)
 	for i := range out {
-		sum := sha256.Sum256([]byte(fmt.Sprintf("%s-%d", prefix, i)))
+		sum := sha256.Sum256(fmt.Appendf(nil, "%s-%d", prefix, i))
 		out[i] = hex.EncodeToString(sum[:])
 	}
 	return out
@@ -156,5 +158,32 @@ func BenchmarkHas(b *testing.B) {
 	b.ResetTimer()
 	for i := range b.N {
 		f.Has(hs[i%len(hs)])
+	}
+}
+
+// The hand-rolled FNV in probes must stay bit-identical to hash/fnv: the
+// filter's false-positive rate (and so the pusher's trust in a hit) is a
+// property of these exact hashes, not of "some decent mixer".
+func TestProbesMatchHashFnv(t *testing.T) {
+	f := New(1024)
+	corpus := []string{
+		"",
+		"a",
+		"abcd",
+		strings.Repeat("e3b0c44298fc1c14", 4),
+		"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+	}
+	for _, s := range corpus {
+		h1, h2 := f.probes(s)
+		a := fnv.New64a()
+		a.Write([]byte(s))
+		b := fnv.New64()
+		b.Write([]byte(s))
+		if h1 != a.Sum64() {
+			t.Fatalf("fnv1a(%q) = %d, hash/fnv says %d", s, h1, a.Sum64())
+		}
+		if h2 != b.Sum64()|1 {
+			t.Fatalf("fnv1(%q) = %d, hash/fnv says %d", s, h2, b.Sum64()|1)
+		}
 	}
 }

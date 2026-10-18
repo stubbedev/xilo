@@ -67,7 +67,7 @@ func (s *Server) handleConsole(w http.ResponseWriter, r *http.Request) {
 			uiError(w, r, err)
 			return
 		}
-		info.Status = s.db.AccountStatus(acct.ID)
+		info.Status = s.db.AccountStatus(r.Context(), acct.ID)
 		d.Orgs = append(d.Orgs, info)
 	}
 	caches, err := s.db.ListCaches()

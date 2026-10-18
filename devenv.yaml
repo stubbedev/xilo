@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://devenv.sh/devenv.schema.json
+# devenv project definition (https://devenv.sh). The development shell
+# itself lives in devenv.nix; flake.nix is deliberately free of it - that
+# file is the package/module surface consumers build against.
+#
+# Same nixpkgs ref as flake.nix, but locked separately: devenv keeps its own
+# devenv.lock, refreshed alongside flake.lock by `just update` and the
+# weekly flake-lock-update workflow.
+inputs:
+  nixpkgs:
+    url: github:NixOS/nixpkgs/nixos-unstable

@@ -157,7 +157,7 @@ func TestMissingPathsAndChunksDedup(t *testing.T) {
 	}
 
 	db.PutChunk("default", "c1", 1, 1, "k", 1)
-	mc, _ := db.MissingChunks("default", []string{"c1", "c2", "c2"})
+	mc, _ := db.MissingChunks(context.Background(), "default", []string{"c1", "c2", "c2"})
 	if len(mc) != 1 || mc[0] != "c2" {
 		t.Fatalf("MissingChunks=%v", mc)
 	}
@@ -173,7 +173,7 @@ func TestPutPathUpsertRoundTrip(t *testing.T) {
 	if err := db.PutPath(c.ID, h, p); err != nil {
 		t.Fatal(err)
 	}
-	got, err := db.GetPath(c.ID, h)
+	got, err := db.GetPath(context.Background(), c.ID, h)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestPutPathUpsertRoundTrip(t *testing.T) {
 	}
 	// empty chunks/refs round-trip to nil, not [""]
 	putPath(t, db, c.ID, "cccccccccccccccccccccccccccccccc", nil)
-	g2, _ := db.GetPath(c.ID, "cccccccccccccccccccccccccccccccc")
+	g2, _ := db.GetPath(context.Background(), c.ID, "cccccccccccccccccccccccccccccccc")
 	if g2.Chunks != nil || g2.Refs != nil {
 		t.Fatalf("empty should decode to nil, got chunks=%v refs=%v", g2.Chunks, g2.Refs)
 	}

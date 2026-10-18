@@ -1,10 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -311,6 +314,121 @@ func TestMiddlewarePanicAndLogging(t *testing.T) {
 	if got := s.metrics.pushReq.Load(); got != beforePush+1 {
 		t.Fatalf("pushReq delta = %d want 1", got-beforePush)
 	}
+}
+
+func TestRequestLogStreams(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	prevReqLog, prevOut := reqLog, log.Writer()
+	reqLog = requestLog{out: &stdout, errs: &stderr}
+	log.SetOutput(&stderr)
+	t.Cleanup(func() { reqLog = prevReqLog; log.SetOutput(prevOut) })
+
+	for _, logging := range []string{"full", "quiet"} {
+		s, _, _ := newTestServerCfg(t, func(c *config.Config) { c.Logging = logging })
+		hit := func(path string, h http.HandlerFunc) {
+			s.middleware(h).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/c/default/c/"+logging+"-"+path, nil))
+		}
+		status := func(code int) http.HandlerFunc {
+			return func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(code) }
+		}
+		hit("ok", status(http.StatusOK))
+		hit("redirect", status(http.StatusFound))
+		hit("missing", status(http.StatusNotFound))
+		hit("failed", status(http.StatusInternalServerError))
+		hit("panic", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+			panic("late boom")
+		})
+	}
+
+	for path, want := range map[string]string{
+		"full-ok":       "stdout",
+		"full-redirect": "stdout",
+		"full-missing":  "stderr",
+		"full-failed":   "stderr",
+		"full-panic":    "stderr",
+		"quiet-ok":      "",
+		"quiet-missing": "stderr",
+		"quiet-failed":  "stderr",
+		"quiet-panic":   "stderr",
+	} {
+		got := ""
+		switch {
+		case strings.Contains(stdout.String(), path+" "):
+			got = "stdout"
+		case strings.Contains(stderr.String(), path+" "):
+			got = "stderr"
+		}
+		if got != want || (strings.Contains(stdout.String(), path+" ") && strings.Contains(stderr.String(), path+" ")) {
+			t.Errorf("%s logged to %q want %q\nstdout: %s\nstderr: %s", path, got, want, &stdout, &stderr)
+		}
+	}
+}
+
+func TestRequestLineFormat(t *testing.T) {
+	for _, d := range []time.Duration{
+		0,
+		time.Microsecond,
+		time.Millisecond,
+		time.Millisecond + 500*time.Microsecond,
+		17 * time.Millisecond,
+		time.Second,
+		time.Second + time.Millisecond,
+		time.Second + 50*time.Millisecond,
+		59 * time.Second,
+		time.Minute + 1500*time.Millisecond,
+		10 * time.Minute,
+		time.Hour + time.Second + 5*time.Millisecond,
+		2540400 * time.Hour,
+	} {
+		want := "GET /x 200 " + d.Round(time.Millisecond).String() + "\n"
+		if got := string(appendRequestLine(nil, "GET", "/x", 200, d)); got != want {
+			t.Errorf("d=%v: got %q want %q", d, got, want)
+		}
+	}
+	rng := rand.New(rand.NewSource(1))
+	for range 10000 {
+		d := time.Duration(rng.Int63n(int64(48 * time.Hour)))
+		want := "POST /p 404 " + d.Round(time.Millisecond).String() + "\n"
+		if got := string(appendRequestLine(nil, "POST", "/p", 404, d)); got != want {
+			t.Fatalf("d=%v: got %q want %q", d, got, want)
+		}
+	}
+}
+
+func TestRequestLogAllocations(t *testing.T) {
+	l := requestLog{out: io.Discard, errs: io.Discard}
+	run := func() {
+		l.request("GET", "/c/a/c/nix/store/0aaaa-hello-2.12.1.drv", 200, 3*time.Millisecond, false, false)
+		l.request("POST", "/admin/orgs", 500, time.Second+time.Millisecond, false, true)
+	}
+	run()
+	run()
+	// The old log.Printf line allocated on every request, so only a per-line
+	// regression may fail here. A stray alloc from a goroutine an earlier test
+	// left behind can land in the measured window, which -race builds count
+	// too; a thousand pairs amortize it below the bar.
+	if n := testing.AllocsPerRun(1000, run); n > 1.5 {
+		t.Errorf("allocs per request pair = %v, want below 1.5", n)
+	}
+}
+
+func BenchmarkRequestLog(b *testing.B) {
+	line := "/c/a/c/nix/store/0aaaa-hello-2.12.1.drv"
+	b.Run("sink", func(b *testing.B) {
+		l := requestLog{out: io.Discard, errs: io.Discard}
+		b.ReportAllocs()
+		for b.Loop() {
+			l.request("GET", line, 200, 3*time.Millisecond, false, false)
+		}
+	})
+	b.Run("log", func(b *testing.B) {
+		l := log.New(io.Discard, "", log.LstdFlags)
+		b.ReportAllocs()
+		for b.Loop() {
+			l.Printf("%s %s %d %s", "GET", line, 200, 3*time.Millisecond)
+		}
+	})
 }
 
 func TestRunContextShutdown(t *testing.T) {

@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"runtime"
 	"sync/atomic"
@@ -62,6 +63,20 @@ type metrics struct {
 	reqDurNs  atomic.Int64 // summed pull-request wall time
 	pushReq   atomic.Int64 // push-API requests
 	pushDurNs atomic.Int64 // summed push-request wall time
+	// openConns is a gauge, not a counter: never persisted, so not in defs().
+	openConns atomic.Int64
+}
+
+// trackConn is the listener's ConnState hook. Every open connection holds a
+// goroutine, and idle keep-alive ones stay open for the whole IdleTimeout, so
+// a leak check has to tell those apart from goroutines nothing is waiting on.
+func (m *metrics) trackConn(_ net.Conn, st http.ConnState) {
+	switch st {
+	case http.StateNew:
+		m.openConns.Add(1)
+	case http.StateClosed, http.StateHijacked:
+		m.openConns.Add(-1)
+	}
 }
 
 // counterDef ties a Prometheus name to its backing atomic. counters(),
@@ -128,10 +143,11 @@ func (m *metrics) restore(snap map[string]int64) {
 	}
 }
 
-// runtimeGauges surfaces the process health signals a leak would show up in
-// (goroutine count, heap, GC). Hand-rolled from the runtime package to keep
-// the zero-runtime-dependency guarantee.
-func runtimeGauges() []struct {
+// gauges surfaces the process health signals a leak would show up in
+// (goroutine count, heap, GC) next to the open connections that legitimately
+// hold goroutines. Hand-rolled from the runtime package to keep the
+// zero-runtime-dependency guarantee.
+func (m *metrics) gauges() []struct {
 	Name, Help string
 	V          int64
 } {
@@ -145,6 +161,7 @@ func runtimeGauges() []struct {
 		{"go_heap_inuse_bytes", "heap bytes in use", int64(ms.HeapInuse)},
 		{"go_sys_bytes", "total bytes obtained from the OS", int64(ms.Sys)},
 		{"go_gc_cycles_total", "completed GC cycles", int64(ms.NumGC)},
+		{"xilo_http_connections_open", "client connections currently open, idle keep-alive ones included", m.openConns.Load()},
 	}
 }
 
@@ -165,7 +182,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		for _, c := range m.counters() {
 			out[c.Name] = c.V
 		}
-		for _, g := range runtimeGauges() {
+		for _, g := range m.gauges() {
 			out[g.Name] = g.V
 		}
 		jsonOut(w, out)
@@ -175,7 +192,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	for _, c := range m.counters() {
 		fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s counter\n%s %d\n", c.Name, c.Help, c.Name, c.Name, c.V)
 	}
-	for _, g := range runtimeGauges() {
+	for _, g := range m.gauges() {
 		fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s gauge\n%s %d\n", g.Name, g.Help, g.Name, g.Name, g.V)
 	}
 }
