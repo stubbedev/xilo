@@ -20,3 +20,6 @@ internal/server/static/xilo-tw.css
 
 # Compiled test binaries (`go test -c`) — one got committed once
 *.test
+
+# Playwright MCP output (snapshots, screenshots)
+.playwright-mcp/
