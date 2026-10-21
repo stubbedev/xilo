@@ -309,13 +309,13 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v23
 
       # Inline `just sync-vendor-hash` (no just on the runner). Re-pins
-      # flake.nix's vendorHash against the current go.mod/go.sum: the sentinel
+      # nix/package.nix's vendorHash against the current go.mod/go.sum: the sentinel
       # makes the build fail and report the real hash, which is written back.
-      - name: sync flake.nix vendorHash
+      - name: sync nix/package.nix vendorHash
         run: |
           set -euo pipefail
           SENTINEL="sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-          sed -i 's|vendorHash = "[^"]*";|vendorHash = "'"$SENTINEL"'";|' flake.nix
+          sed -i 's|vendorHash = "[^"]*";|vendorHash = "'"$SENTINEL"'";|' nix/package.nix
           set +e
           OUT=$(nix build .#default --no-link 2>&1)
           BUILD_STATUS=$?
@@ -330,7 +330,7 @@ jobs:
             fi
             exit 1
           fi
-          sed -i 's|vendorHash = "[^"]*";|vendorHash = "'"$NEW_HASH"'";|' flake.nix
+          sed -i 's|vendorHash = "[^"]*";|vendorHash = "'"$NEW_HASH"'";|' nix/package.nix
           echo "vendorHash -> $NEW_HASH"
 
       # Drift is reported, not fatal. Dependabot PRs get a read-only token, so
@@ -338,25 +338,25 @@ jobs:
       # would park every dep bump until someone ran `just sync-vendor-hash` by
       # hand. The build below still validates the corrected tree, and the run
       # dispatched after merge commits the hash.
-      - name: report flake.nix drift (PR)
+      - name: report nix/package.nix drift (PR)
         if: github.event_name == 'pull_request'
         run: |
-          if [ -n "$(git status --porcelain flake.nix)" ]; then
-            echo "::warning::flake.nix vendorHash was stale; this run built with the corrected hash, which is auto-committed by the CI run dispatched after merge."
-            git --no-pager diff flake.nix
+          if [ -n "$(git status --porcelain nix/package.nix)" ]; then
+            echo "::warning::nix/package.nix vendorHash was stale; this run built with the corrected hash, which is auto-committed by the CI run dispatched after merge."
+            git --no-pager diff nix/package.nix
           fi
 
-      - name: auto-commit flake.nix bump (default branch)
+      - name: auto-commit nix/package.nix bump (default branch)
         if: github.event_name != 'pull_request'
         run: |
-          if [ -z "$(git status --porcelain flake.nix)" ]; then
-            echo "flake.nix already in sync; nothing to commit."
+          if [ -z "$(git status --porcelain nix/package.nix)" ]; then
+            echo "nix/package.nix already in sync; nothing to commit."
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add flake.nix
-          git commit -m 'chore: auto-bump flake.nix vendorHash [skip ci]'
+          git add nix/package.nix
+          git commit -m 'chore: auto-bump nix/package.nix vendorHash [skip ci]'
           git push origin HEAD:${GITHUB_REF_NAME}
 
       - run: nix build .#default -L

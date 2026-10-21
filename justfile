@@ -88,7 +88,7 @@ sync-schema:
     fi
 
 # Rewrite every hand-written Go version pin from go.mod: the release image,
-# the k6 race-profile image, and flake.nix's compiler (packages and dev shell
+# the k6 race-profile image, and nix/toolchain.nix's compiler (packages and dev shell
 # alike). Same contract as sync-schema and sync-vendor-hash -- anything that
 # can be regenerated is, and nobody edits these by hand.
 #
@@ -105,7 +105,7 @@ sync-toolchain:
     under=${want/./_} # 1.27 -> 1_27, for nixpkgs' go_1_27
     sed -i -E "s/golang:[0-9]+\.[0-9]+-alpine/golang:${want}-alpine/" Dockerfile
     sed -i -E "s/image: golang:[0-9]+\.[0-9]+$/image: golang:${want}/" tests/k6/compose.yaml
-    sed -i -E "s/goFor = p: p\.go_[0-9]+_[0-9]+;/goFor = p: p.go_${under};/" flake.nix
+    sed -i -E "s/goFor = p: p\.go_[0-9]+_[0-9]+;/goFor = p: p.go_${under};/" nix/toolchain.nix
 
 # Strict read-only pin check (what CI and `just check` run): every pin must
 # spell go.mod's version. Presence checks, not a diff -- a half-done edit
@@ -119,7 +119,7 @@ toolchain-check:
     drift=0
     grep -q -- "golang:${want}-alpine" Dockerfile || { echo "DRIFT Dockerfile does not pin Go ${want}" >&2; drift=1; }
     grep -q -- "image: golang:${want}" tests/k6/compose.yaml || { echo "DRIFT tests/k6/compose.yaml does not pin Go ${want}" >&2; drift=1; }
-    grep -q -- "goFor = p: p.go_${under};" flake.nix || { echo "DRIFT flake.nix does not pin Go ${want}" >&2; drift=1; }
+    grep -q -- "goFor = p: p.go_${under};" nix/toolchain.nix || { echo "DRIFT nix/toolchain.nix does not pin Go ${want}" >&2; drift=1; }
     [ "$drift" -eq 0 ] && echo "every Go pin matches go.mod (${want})"
     exit "$drift"
 
@@ -146,19 +146,19 @@ update:
     go mod tidy
     just sync-vendor-hash
 
-# Re-pin flake.nix vendorHash from go.mod/go.sum. Same contract as
+# Re-pin nix/package.nix vendorHash from go.mod/go.sum. Same contract as
 # sync-schema: anything that can be regenerated is. Run after any dep
 # change (`just update` does it for you).
 sync-vendor-hash:
     #!/usr/bin/env bash
     set -euo pipefail
-    sed -i 's|vendorHash = "[^"]*";|vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";|' flake.nix
+    sed -i 's|vendorHash = "[^"]*";|vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";|' nix/package.nix
     got=$( (nix build .#default --no-link 2>&1 || true) | sed -n 's/.*got: *//p' | head -1)
     if [ -z "$got" ]; then
         echo "sync-vendor-hash: could not extract vendor hash from nix build output" >&2
         exit 1
     fi
-    sed -i "s|vendorHash = \"[^\"]*\";|vendorHash = \"$got\";|" flake.nix
+    sed -i "s|vendorHash = \"[^\"]*\";|vendorHash = \"$got\";|" nix/package.nix
     echo "vendorHash → $got"
     nix build .#default --no-link
     echo "nix build OK"
@@ -512,8 +512,8 @@ _release-checks:
     fi
     # Re-pins vendorHash against the new lock and re-runs the nix build.
     just sync-vendor-hash
-    if [ -n "$(git status --porcelain flake.nix)" ]; then
-        git add flake.nix
+    if [ -n "$(git status --porcelain nix/package.nix)" ]; then
+        git add nix/package.nix
         git commit -m "chore: update vendorHash for release"
     fi
 

@@ -10,7 +10,7 @@ just update          # bump deps and the flake vendorHash together
 just release-patch   # tag and push a release (RELEASING.md); -minor and -major too
 ```
 
-The dev shell is `flake.nix`'s `devShells.default`, sharing the Go pin and
+The dev shell is `nix/shell.nix`'s `devShells.default`, sharing the Go pin and
 nixpkgs lock with the packages. With [direnv](https://direnv.net) and
 [nix-direnv](https://github.com/nix-community/nix-direnv), `direnv allow` once
 and the checked-in `.envrc` loads it whenever you `cd` in.
