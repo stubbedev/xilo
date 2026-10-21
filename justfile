@@ -88,9 +88,9 @@ sync-schema:
     fi
 
 # Rewrite every hand-written Go version pin from go.mod: the release image,
-# the k6 race-profile image, and the nix package's compiler. Same contract as
-# sync-schema and sync-vendor-hash -- anything that can be regenerated is, and
-# nobody edits these by hand.
+# the k6 race-profile image, and flake.nix's compiler (packages and dev shell
+# alike). Same contract as sync-schema and sync-vendor-hash -- anything that
+# can be regenerated is, and nobody edits these by hand.
 #
 # go.mod is the source of truth because Docker's FROM cannot read a file, so
 # an image tag has to be a literal somewhere; making it a derived literal is
@@ -105,8 +105,7 @@ sync-toolchain:
     under=${want/./_} # 1.27 -> 1_27, for nixpkgs' go_1_27
     sed -i -E "s/golang:[0-9]+\.[0-9]+-alpine/golang:${want}-alpine/" Dockerfile
     sed -i -E "s/image: golang:[0-9]+\.[0-9]+$/image: golang:${want}/" tests/k6/compose.yaml
-    sed -i -E "s/go = pkgs\.go_[0-9]+_[0-9]+;/go = pkgs.go_${under};/" flake.nix
-    sed -i -E "s/^([[:space:]]+)go_[0-9]+_[0-9]+$/\1go_${under}/" devenv.nix
+    sed -i -E "s/goFor = p: p\.go_[0-9]+_[0-9]+;/goFor = p: p.go_${under};/" flake.nix
 
 # Strict read-only pin check (what CI and `just check` run): every pin must
 # spell go.mod's version. Presence checks, not a diff -- a half-done edit
@@ -120,8 +119,7 @@ toolchain-check:
     drift=0
     grep -q -- "golang:${want}-alpine" Dockerfile || { echo "DRIFT Dockerfile does not pin Go ${want}" >&2; drift=1; }
     grep -q -- "image: golang:${want}" tests/k6/compose.yaml || { echo "DRIFT tests/k6/compose.yaml does not pin Go ${want}" >&2; drift=1; }
-    grep -q -- "go = pkgs.go_${under};" flake.nix || { echo "DRIFT flake.nix does not pin Go ${want}" >&2; drift=1; }
-    grep -Eq -- "^[[:space:]]+go_${under}$" devenv.nix || { echo "DRIFT devenv.nix does not pin Go ${want}" >&2; drift=1; }
+    grep -q -- "goFor = p: p.go_${under};" flake.nix || { echo "DRIFT flake.nix does not pin Go ${want}" >&2; drift=1; }
     [ "$drift" -eq 0 ] && echo "every Go pin matches go.mod (${want})"
     exit "$drift"
 
@@ -144,7 +142,6 @@ schema-check:
 # The only supported way to bump dependencies — never edit hashes by hand.
 update:
     nix flake update
-    devenv update
     go get -u ./...
     go mod tidy
     just sync-vendor-hash

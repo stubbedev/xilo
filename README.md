@@ -122,7 +122,7 @@ CI measures these numbers and commits them; none are typed in by hand.
 ## Development
 
 ```sh
-devenv shell   # go, templ, air, just, golangci-lint, ...
+nix develop    # go, templ, air, just, golangci-lint, ...
 just dev       # live-reload server with demo data on :8090 (admin / demo)
 just check     # everything CI runs
 ```

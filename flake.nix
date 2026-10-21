@@ -25,16 +25,21 @@
         # platforms it has no binary for (riscv64-linux), so probe it.
         hasWebToolchain = (builtins.tryEval pkgs.tailwindcss_4.drvPath).success;
 
+        # The one Go pin, shared by the packages and the dev shell; `just
+        # sync-toolchain` rewrites it from go.mod. go.mod asks for 1.27 and
+        # nixpkgs' default `go` is still 1.26. The sandbox has no network, so
+        # the auto-toolchain fetch that papers over that outside nix fails
+        # here. A function of the package set so the riscv64 cross build picks
+        # its own. Drop it once nixpkgs' default catches up.
+        goFor = p: p.go_1_27;
+
         # client = drop `xilo serve` (build tag `noserver`), which takes
         # internal/server out of the import graph and with it the need for
         # templ/Tailwind at build time.
-        # go.mod asks for 1.27 and nixpkgs' default `go` is still 1.26. The
-        # sandbox has no network, so the auto-toolchain fetch that papers over
-        # that outside nix fails here — and `go` has to be overridden on
-        # buildGoModule itself, not passed as a derivation attr, or the
-        # goModules (vendor) derivation keeps using the default. Drop the
-        # override once nixpkgs' default catches up.
-        mkXilo = { client, pkgs }: (pkgs.buildGoModule.override { go = pkgs.go_1_27; }) {
+        # `go` has to be overridden on buildGoModule itself, not passed as a
+        # derivation attr, or the goModules (vendor) derivation keeps using
+        # the default.
+        mkXilo = { client, pkgs }: (pkgs.buildGoModule.override { go = goFor pkgs; }) {
           pname = if client then "xilo-cli" else "xilo";
           version = "0-unstable-${self.shortRev or "dirty"}";
           src = self;
@@ -94,10 +99,28 @@
             inherit xilo-riscv64;
           };
 
-        # The development shell is a devenv project (devenv.yaml + devenv.nix,
-        # auto-activated by the devenv CLI) rather than a flake output: this
-        # file is what other flakes and NixOS/home-manager configurations
-        # consume, the shell is what a human sitting in the checkout gets.
+        # Loaded by direnv (`use flake` in .envrc).
+        devShells.default = pkgs.mkShell {
+          packages = with pkgs;
+            [
+              (goFor pkgs)
+              gopls
+              gotools # goimports
+              golangci-lint
+              templ # regenerate views: `just generate`
+              air # live reload: `just dev`
+              just
+              sqlite # inspect the metadata db
+              curl
+            ] ++ lib.optionals hasWebToolchain [ tailwindcss_4 ]; # admin CSS: `just css`
+
+          # A GOROOT inherited from an older shell points the toolchain at a go
+          # that is not the one on PATH ("compile: version ... does not match").
+          # The nix go finds its own root; never carry one over.
+          shellHook = ''
+            unset GOROOT
+          '';
+        };
       }) // {
       # NixOS module: `services.xilo.enable = true;` runs the server under
       # systemd and puts the client CLI in systemPackages. Config lives in

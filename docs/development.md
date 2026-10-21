@@ -1,7 +1,7 @@
 # Development
 
 ```sh
-devenv shell         # go, templ, air, just, golangci-lint, ...
+nix develop          # go, templ, air, just, golangci-lint, ...
 just                 # list recipes
 just dev             # live-reload server (air) with seeded demo data
 just generate        # regenerate templ views
@@ -10,10 +10,10 @@ just update          # bump deps and the flake vendorHash together
 just release-patch   # tag and push a release (RELEASING.md); -minor and -major too
 ```
 
-The dev shell is a [devenv](https://devenv.sh) project: trust the checkout
-once with `devenv allow` and it auto-activates whenever you `cd` in - no
-direnv hook, no `.envrc`. `flake.nix` carries only the packages and modules
-other Nix code consumes.
+The dev shell is `flake.nix`'s `devShells.default`, sharing the Go pin and
+nixpkgs lock with the packages. With [direnv](https://direnv.net) and
+[nix-direnv](https://github.com/nix-community/nix-direnv), `direnv allow` once
+and the checked-in `.envrc` loads it whenever you `cd` in.
 
 The admin UI is [templ](https://templ.guide/) components (the
 [templUI](https://templui.io/) library) styled with
