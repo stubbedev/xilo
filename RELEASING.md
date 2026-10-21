@@ -36,7 +36,7 @@ git tag v1.2.3 && git push origin v1.2.3
 That one push does everything automatable:
 
 - **Release workflow** builds linux (amd64/arm64/riscv64) and darwin
-  (amd64/arm64) tarballs (version-less
+  (arm64) tarballs (version-less
   asset names, so `releases/latest/download/xilo-<os>-<arch>.tar.gz` stays a
   stable install URL) and publishes the GitHub release with generated notes.
 - **Docker workflow** publishes `ghcr.io/stubbedev/xilo` tagged `latest`,

@@ -14,7 +14,7 @@ deployment with a restart policy and a commented S3 block;
 ## Prebuilt binary
 
 Every release publishes static binaries for `linux` (amd64, arm64, riscv64) and
-`darwin` (amd64, arm64):
+`darwin` (arm64):
 
 ```sh
 curl -fsSL https://github.com/stubbedev/xilo/releases/latest/download/xilo-linux-amd64.tar.gz \

@@ -44,7 +44,6 @@ runs:
           Linux-x86_64)  plat=linux-amd64 ;;
           Linux-aarch64) plat=linux-arm64 ;;
           Linux-riscv64) plat=linux-riscv64 ;;
-          Darwin-x86_64) plat=darwin-amd64 ;;
           Darwin-arm64)  plat=darwin-arm64 ;;
           *) echo "unsupported platform: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
         esac

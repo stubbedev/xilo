@@ -91,7 +91,7 @@ binary:
 - One static, cgo-free binary in a distroless image, published for
   `linux/amd64` and `linux/arm64`. Its size sits beside the alternatives' in
   the [comparison](benchmarks.md#against-other-nix-caches).
-- Prebuilt binaries for `linux` amd64/arm64/riscv64 and `darwin` amd64/arm64.
+- Prebuilt binaries for `linux` amd64/arm64/riscv64 and `darwin` arm64.
 - A flake with a NixOS module, a home-manager module, and a server-less client
   build for platforms without a Tailwind toolchain.
 
