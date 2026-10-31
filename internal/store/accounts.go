@@ -358,8 +358,7 @@ const (
 var ErrBadStatus = errors.New("unknown account status")
 
 // AccountStatus is an account's lifecycle state, "" when there is no such
-// account. Read on the binary-cache path, so it stays a single indexed lookup
-// by primary key.
+// account.
 func (db *DB) AccountStatus(ctx context.Context, accountID int64) string {
 	var status string
 	if err := db.r.QueryRowContext(ctx, `SELECT status FROM accounts WHERE id=?`, accountID).Scan(&status); err != nil {

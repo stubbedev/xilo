@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"database/sql"
 	"errors"
+	"fmt"
 	"iter"
 	"slices"
 	"strings"
@@ -24,6 +25,7 @@ type Cache struct {
 	ID        int64
 	AccountID int64
 	Account   string // account slug; substituter URL is /c/<Account>/<Name>
+	Status    string
 	Name      string
 	Storage   string // named blob backend holding this cache's chunks
 	Public    bool
@@ -39,7 +41,7 @@ type Cache struct {
 // URLs (under /c/), token scopes and the CLI.
 func (c *Cache) Ref() string { return c.Account + "/" + c.Name }
 
-const cacheCols = `c.id,c.account_id,a.slug,c.name,c.storage,c.public,c.priority,c.retention,c.max_bytes,c.pubkey,c.privkey,c.created`
+const cacheCols = `c.id,c.account_id,a.slug,a.status,c.name,c.storage,c.public,c.priority,c.retention,c.max_bytes,c.pubkey,c.privkey,c.created`
 
 // The status filter lives in the JOIN so every cache read (GetCache,
 // GetCacheByID, ListCaches, ListAccountCaches) treats a cache under a
@@ -99,6 +101,9 @@ func (db *DB) CreateCache(account, name string, public bool, priority int) (*Cac
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
+		if err := tx.QueryRow(`SELECT status FROM accounts WHERE id=?`, c.AccountID).Scan(&c.Status); err != nil {
+			return fmt.Errorf("account %d status: %w", c.AccountID, err)
+		}
 		// RETURNING instead of LastInsertId — works on both SQLite and
 		// Postgres (pgx does not implement LastInsertId).
 		return tx.QueryRow(
@@ -115,7 +120,7 @@ func (db *DB) scanCache(row interface{ Scan(...any) error }) (*Cache, error) {
 	var c Cache
 	var pub int
 	var priv []byte
-	if err := row.Scan(&c.ID, &c.AccountID, &c.Account, &c.Name, &c.Storage, &pub, &c.Priority, &c.Retention, &c.MaxBytes, &c.PubKey, &priv, &c.Created); err != nil {
+	if err := row.Scan(&c.ID, &c.AccountID, &c.Account, &c.Status, &c.Name, &c.Storage, &pub, &c.Priority, &c.Retention, &c.MaxBytes, &c.PubKey, &priv, &c.Created); err != nil {
 		return nil, err
 	}
 	priv, err := db.unseal(priv)
