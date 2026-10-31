@@ -179,9 +179,11 @@ func (db *DB) RevokeToken(id int64) error {
 	})
 }
 
+const liveTokenQuery = `SELECT ` + tokenCols + tokenFrom + `WHERE t.hash=CAST(? AS TEXT)`
+
 // lookupLive fetches a live (not revoked/expired) token by secret.
 func (db *DB) lookupLive(secret string, now int64) (*Token, bool) {
-	t, err := scanToken(db.r.QueryRow(`SELECT `+tokenCols+tokenFrom+`WHERE t.hash=?`, db.HashToken(secret)))
+	t, err := scanToken(db.r.QueryRow(liveTokenQuery, db.HashToken(secret)))
 	if err != nil || t.Revoked || t.Expired(now) {
 		return nil, false
 	}

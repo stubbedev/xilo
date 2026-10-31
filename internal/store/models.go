@@ -136,9 +136,11 @@ func (db *DB) scanCache(row interface{ Scan(...any) error }) (*Cache, error) {
 	return &c, nil
 }
 
+const cacheByRefQuery = `SELECT ` + cacheCols + cacheFrom + `WHERE a.slug=CAST(? AS TEXT) AND c.name=CAST(? AS TEXT)`
+
 // GetCache resolves account/name.
 func (db *DB) GetCache(ctx context.Context, account, name string) (*Cache, error) {
-	row := db.r.QueryRowContext(ctx, `SELECT `+cacheCols+cacheFrom+`WHERE a.slug=? AND c.name=?`, account, name)
+	row := db.r.QueryRowContext(ctx, cacheByRefQuery, account, name)
 	c, err := db.scanCache(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
