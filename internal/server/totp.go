@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/a-h/templ"
 	"github.com/skip2/go-qrcode"
 )
 
@@ -62,10 +63,10 @@ func secretB32(secret []byte) string {
 }
 
 // totpQRDataURI renders the enrollment URI as a PNG data: URI for an <img>.
-func totpQRDataURI(uri string) (string, error) {
+func totpQRDataURI(uri string) (templ.SafeURL, error) {
 	png, err := qrcode.Encode(uri, qrcode.Medium, 256)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("encode totp qr: %w", err)
 	}
-	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(png), nil
+	return templ.SafeURL("data:image/png;base64," + base64.StdEncoding.EncodeToString(png)), nil
 }

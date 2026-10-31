@@ -259,7 +259,7 @@ templ PwHint(state string) {
 // done. The whole flow used to be a page of its own, which made adding a
 // second factor feel like leaving the account behind. A wrong code re-renders
 // this body in place, with the same secret, and the dialog stays open.
-templ TOTPEnrollBody(qrDataURI, secret, errMsg string) {
+templ TOTPEnrollBody(qrDataURI templ.SafeURL, secret, errMsg string) {
 	<form
 		method="post"
 		action="/admin/account/totp/enable"
