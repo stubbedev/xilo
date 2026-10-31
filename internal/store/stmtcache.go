@@ -6,8 +6,12 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"reflect"
 
+	"modernc.org/libc"
+	"modernc.org/libc/sys/types"
 	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 const stmtCacheSize = 256
@@ -58,7 +62,32 @@ func (c stmtConnector) Connect(ctx context.Context) (driver.Conn, error) {
 		conn.Close()
 		return nil, fmt.Errorf("sqlite connection %T lacks the driver interfaces the statement cache forwards", conn)
 	}
+	if err := enablePlanStability(conn); err != nil {
+		return nil, errors.Join(err, conn.Close())
+	}
 	return &stmtConn{sqliteConn: sc, byQuery: make(map[string]*list.Element, stmtCacheSize)}, nil
+}
+
+func enablePlanStability(conn driver.Conn) error {
+	v := reflect.ValueOf(conn)
+	if v.Kind() != reflect.Pointer || v.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("sqlite connection %T is not a struct pointer", conn)
+	}
+	db, tlsField := v.Elem().FieldByName("db"), v.Elem().FieldByName("tls")
+	if db.Kind() != reflect.Uintptr || db.Uint() == 0 || !tlsField.IsValid() || tlsField.Type() != reflect.TypeFor[*libc.TLS]() || tlsField.IsNil() {
+		return fmt.Errorf("sqlite connection %T no longer exposes the db and tls handles needed to set SQLITE_DBCONFIG_ENABLE_QPSG", conn)
+	}
+	tls := (*libc.TLS)(tlsField.UnsafePointer())
+	const vaSlot = 8
+	va := libc.Xmalloc(tls, types.Size_t(2*vaSlot))
+	if va == 0 {
+		return errors.New("sqlite: out of memory setting SQLITE_DBCONFIG_ENABLE_QPSG")
+	}
+	defer libc.Xfree(tls, va)
+	if rc := sqlite3.Xsqlite3_db_config(tls, uintptr(db.Uint()), sqlite3.SQLITE_DBCONFIG_ENABLE_QPSG, libc.VaList(va, int32(1), uintptr(0))); rc != sqlite3.SQLITE_OK {
+		return fmt.Errorf("sqlite3_db_config(SQLITE_DBCONFIG_ENABLE_QPSG) returned %d", rc)
+	}
+	return nil
 }
 
 type stmtConn struct {

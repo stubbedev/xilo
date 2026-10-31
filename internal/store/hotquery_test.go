@@ -13,9 +13,10 @@ import (
 )
 
 type hotQuery struct {
-	name  string
-	query string
-	args  [][]any
+	name        string
+	query       string
+	args        [][]any
+	boundedSort bool
 }
 
 func hotQueries(t *testing.T, db *DB) []hotQuery {
@@ -31,10 +32,11 @@ func hotQueries(t *testing.T, db *DB) []hotQuery {
 		putPath(t, db, c.ID, h, []string{"x"})
 	}
 	return []hotQuery{
-		{"cache by ref", cacheByRefQuery, [][]any{{"acme", "web"}, {"other", "web"}, {"acme", "nope"}}},
-		{"path meta", pathMetaQuery, [][]any{{c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, {c.ID, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, {c.ID + 1, "a"}}},
-		{"path", pathQuery, [][]any{{c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, {c.ID, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, {c.ID + 1, "a"}}},
-		{"live token", liveTokenQuery, [][]any{{db.HashToken("one")}, {db.HashToken("two")}, {db.HashToken("three")}}},
+		{"cache by ref", cacheByRefQuery, [][]any{{"acme", "web"}, {"other", "web"}, {"acme", "nope"}}, false},
+		{"path meta", pathMetaQuery, [][]any{{c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, {c.ID, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, {c.ID + 1, "a"}}, false},
+		{"path", pathQuery, [][]any{{c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, {c.ID, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, {c.ID + 1, "a"}}, false},
+		{"live token", liveTokenQuery, [][]any{{db.HashToken("one")}, {db.HashToken("two")}, {db.HashToken("three")}}, false},
+		{"user accounts", userAccountsQuery, [][]any{{int64(1)}, {int64(2)}, {int64(3)}}, true},
 	}
 }
 
@@ -71,6 +73,9 @@ func TestHotQueriesSearchAnIndex(t *testing.T) {
 		}
 		rows.Close()
 		for _, step := range plan {
+			if q.boundedSort && step == "USE TEMP B-TREE FOR ORDER BY" {
+				continue
+			}
 			if !strings.HasPrefix(step, "SEARCH ") || !strings.Contains(step, " USING ") {
 				t.Errorf("%s: plan step %q is not an index search (plan %q)", q.name, step, plan)
 			}
@@ -97,7 +102,7 @@ func TestHotQueriesStayPreparedAcrossBindings(t *testing.T) {
 			t.Fatalf("%s: %v", q.name, err)
 		}
 		if n != 0 {
-			t.Errorf("%s: SQLite recompiled the cached statement %d times across %d bindings; a bare ? that the planner treats as plan-dependent turns every call into a full prepare", q.name, n, len(q.args))
+			t.Errorf("%s: SQLite recompiled the cached statement %d times across %d bindings; SQLITE_DBCONFIG_ENABLE_QPSG must be set on every connection, or the planner recompiles any statement whose plan it thinks a bound value could change", q.name, n, len(q.args))
 		}
 	}
 }

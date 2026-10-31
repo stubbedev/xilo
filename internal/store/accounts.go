@@ -160,10 +160,12 @@ func (db *DB) ListAccounts() ([]Account, error) {
 	return db.listAccounts(`SELECT id, slug, kind, plan_id, created FROM accounts WHERE status<>'deleted' ORDER BY slug`)
 }
 
+const userAccountsQuery = `SELECT a.id, a.slug, a.kind, a.plan_id, a.created FROM accounts a
+		JOIN account_members m ON m.account_id = a.id WHERE m.user_id=? AND a.status<>'deleted' ORDER BY a.slug`
+
 // UserAccounts lists the accounts a user belongs to.
 func (db *DB) UserAccounts(userID int64) ([]Account, error) {
-	return db.listAccounts(`SELECT a.id, a.slug, a.kind, a.plan_id, a.created FROM accounts a
-		JOIN account_members m ON m.account_id = a.id WHERE m.user_id=? AND a.status<>'deleted' ORDER BY a.slug`, userID)
+	return db.listAccounts(userAccountsQuery, userID)
 }
 
 func (db *DB) listAccounts(q string, args ...any) ([]Account, error) {

@@ -179,7 +179,7 @@ func (db *DB) RevokeToken(id int64) error {
 	})
 }
 
-const liveTokenQuery = `SELECT ` + tokenCols + tokenFrom + `WHERE t.hash=CAST(? AS TEXT)`
+const liveTokenQuery = `SELECT ` + tokenCols + tokenFrom + `WHERE t.hash=?`
 
 // lookupLive fetches a live (not revoked/expired) token by secret.
 func (db *DB) lookupLive(secret string, now int64) (*Token, bool) {

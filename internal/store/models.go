@@ -136,7 +136,7 @@ func (db *DB) scanCache(row interface{ Scan(...any) error }) (*Cache, error) {
 	return &c, nil
 }
 
-const cacheByRefQuery = `SELECT ` + cacheCols + cacheFrom + `WHERE a.slug=CAST(? AS TEXT) AND c.name=CAST(? AS TEXT)`
+const cacheByRefQuery = `SELECT ` + cacheCols + cacheFrom + `WHERE a.slug=? AND c.name=?`
 
 // GetCache resolves account/name.
 func (db *DB) GetCache(ctx context.Context, account, name string) (*Cache, error) {
