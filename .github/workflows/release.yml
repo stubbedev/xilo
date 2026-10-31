@@ -38,7 +38,7 @@ jobs:
           ./scripts/build-css.sh
           # templ must run as a host binary regardless of the target platform;
           # its version comes from go.mod so it can't drift.
-          GOOS= GOARCH= go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
+          GOOS= GOARCH= go tool templ generate
           # Asset names carry no version (the release tag does) so the stable
           # URL releases/latest/download/xilo-<os>-<arch>.tar.gz always works —
           # the GitHub Action and install docs rely on it.

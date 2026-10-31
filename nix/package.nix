@@ -32,7 +32,7 @@
             ]
           );
         };
-        vendorHash = "sha256-2N+i9hDKNv2IeK1F6+qyKdrfnfzZVm4RWkAG68AiM3I=";
+        vendorHash = "sha256-n6lm4ZLHkyvpX7RKwUl0/3cbV/hWN7wI1JLC1o00vw4=";
         # Hash the module cache (go mod download), not a vendor tree: `go mod
         # vendor` walks the import graph, so its output would depend on the
         # generated _templ.go (templui is imported only from codegen) and on
@@ -41,11 +41,13 @@
         proxyVendor = true;
         subPackages = ["cmd/xilo"];
         tags = lib.optional client "noserver";
-        nativeBuildInputs = lib.optionals (!client) [pkgs.templ pkgs.tailwindcss_4];
+        nativeBuildInputs = lib.optionals (!client) [pkgs.tailwindcss_4];
         # Build the admin CSS (embedded via go:embed) then generate views.
+        overrideModAttrs = _: _: {preBuild = "";};
         preBuild = lib.optionalString (!client) ''
           sh scripts/build-css.sh
-          templ generate
+          GOOS= GOARCH= go build -ldflags=-linkmode=internal -o "$TMPDIR/templ" github.com/a-h/templ/cmd/templ
+          "$TMPDIR/templ" generate
         '';
         env.CGO_ENABLED = 0; # sqlite via modernc.org, pure Go
         ldflags =
@@ -76,8 +78,9 @@
       client = true;
       inherit pkgs;
     };
-    # Full binary for riscv64, cross-compiled. templ and tailwindcss are
-    # nativeBuildInputs, so they run on this (x86_64/aarch64) builder and
+    # Full binary for riscv64, cross-compiled. tailwindcss is a
+    # nativeBuildInputs and templ is a go tool built for the host (GOOS=
+    # GOARCH= in preBuild), so both run on this (x86_64/aarch64) builder and
     # only Go targets riscv64 — which is how riscv64 gets the server
     # despite nixpkgs having no riscv64 tailwindcss_4. Needs a non-riscv64
     # builder (local, or a remote builder / substituter).

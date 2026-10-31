@@ -6,7 +6,7 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-cmd = "templ generate && just css && go build -o ./tmp/xilo ./cmd/xilo"
+cmd = "go tool templ generate && just css && go build -o ./tmp/xilo ./cmd/xilo"
 bin = "./tmp/xilo"
 args_bin = ["serve"]
 include_ext = ["go", "templ", "css"]

@@ -14,7 +14,6 @@
           gopls
           gotools # goimports
           golangci-lint
-          templ # regenerate views: `just generate`
           air # live reload: `just dev`
           just
           sqlite # inspect the metadata db

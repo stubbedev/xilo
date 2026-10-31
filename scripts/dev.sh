@@ -32,7 +32,7 @@ if curl -fs -o /dev/null "$APP/healthz" 2>/dev/null; then
 fi
 
 echo "== building =="
-templ generate >/dev/null
+go tool templ generate >/dev/null
 just css >/dev/null
 go build -o "$XILO" ./cmd/xilo
 

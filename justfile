@@ -14,7 +14,7 @@ GO_LDFLAGS := "-X main.version=$(git describe --tags --always --dirty 2>/dev/nul
 
 # Regenerate templ views (internal/server/views/*_templ.go).
 generate:
-    templ generate
+    go tool templ generate
 
 # Rebuild the Tailwind stylesheet (internal/server/static/xilo-tw.css) from the
 # templ views + templui component sources. The output is a generated artifact

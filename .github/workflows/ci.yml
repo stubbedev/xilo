@@ -52,7 +52,7 @@ jobs:
           ./scripts/build-css.sh
       # *_templ.go is not committed — generate it (templ version from go.mod).
       - name: generate templ views
-        run: go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
+        run: go tool templ generate
       - name: gofmt
         run: |
           out=$(gofmt -l .)
@@ -95,7 +95,7 @@ jobs:
           chmod +x /usr/local/bin/tailwindcss
           ./scripts/build-css.sh
       - name: generate templ views
-        run: go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
+        run: go tool templ generate
       # Reachability-filtered: govulncheck traces call paths, so an advisory
       # in a function nothing calls does not fail the build. Anything it does
       # report is code this binary can actually run.
@@ -290,7 +290,7 @@ jobs:
           chmod +x /usr/local/bin/tailwindcss
           ./scripts/build-css.sh
       - name: generate templ views
-        run: go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
+        run: go tool templ generate
       - name: run CLI e2e suite
         run: ./tests/e2e/cli.sh
 
@@ -409,7 +409,7 @@ jobs:
           ./scripts/build-css.sh
       - name: regenerate schema
         run: |
-          go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
+          go tool templ generate
           mkdir -p schemas
           go run ./tools/schemagen --out schemas/xilo.schema.json
 

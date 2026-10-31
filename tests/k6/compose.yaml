@@ -74,7 +74,7 @@ services:
         wget -qO /usr/local/bin/tailwindcss https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.2/tailwindcss-linux-x64 &&
         chmod +x /usr/local/bin/tailwindcss &&
         sh scripts/build-css.sh &&
-        go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate &&
+        go tool templ generate &&
         exec go run -race ./cmd/xilo serve --config /xilo.yaml
     # Unlike the distroless `xilo` image this one has a shell, so the boot is
     # a compose condition rather than a blind wait in k6: a server that dies

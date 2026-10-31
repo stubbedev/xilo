@@ -64,7 +64,7 @@ jobs:
           chmod +x /usr/local/bin/tailwindcss
           ./scripts/build-css.sh
       - name: generate templ views
-        run: go run github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ) generate
+        run: go tool templ generate
       # An interrupted push must leave the path absent rather than
       # half-registered, a re-push must complete, and every NAR pushed before
       # the kill must still reassemble byte-exact through `nix copy`. Runs
