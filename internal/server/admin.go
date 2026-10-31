@@ -1000,13 +1000,16 @@ func (s *Server) handleTOTPEnroll(w http.ResponseWriter, r *http.Request) {
 		uiError(w, r, err)
 		return
 	}
-	uri := totpURI(secret, "xilo", u.Name+"@"+hostOf(s.cfg.BaseURL))
-	qr, err := totpQRDataURI(uri)
+	s.renderTOTPEnroll(w, r, u, secret, "")
+}
+
+func (s *Server) renderTOTPEnroll(w http.ResponseWriter, r *http.Request, u *store.User, secret []byte, errMsg string) {
+	qr, err := totpQRDataURI(totpURI(secret, "xilo", u.Name+"@"+hostOf(s.cfg.BaseURL)))
 	if err != nil {
 		uiError(w, r, err)
 		return
 	}
-	views.TOTPEnrollBody(qr, secretB32(secret), "").Render(r.Context(), w)
+	views.TOTPEnrollBody(qr, secretB32(secret), errMsg).Render(r.Context(), w)
 }
 
 func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
@@ -1014,11 +1017,13 @@ func (s *Server) handleTOTPEnable(w http.ResponseWriter, r *http.Request) {
 	if u == nil {
 		return
 	}
-	secret, _, _ := s.db.UserTOTP(u.ID)
+	secret, _, err := s.db.UserTOTP(u.ID)
+	if err != nil {
+		uiError(w, r, err)
+		return
+	}
 	if len(secret) == 0 || !totpVerify(secret, r.FormValue("code"), time.Now()) {
-		uri := totpURI(secret, "xilo", u.Name+"@"+hostOf(s.cfg.BaseURL))
-		qr, _ := totpQRDataURI(uri)
-		views.TOTPEnrollBody(qr, secretB32(secret), views.T(r.Context(), "flash.badcode")).Render(r.Context(), w)
+		s.renderTOTPEnroll(w, r, u, secret, views.T(r.Context(), "flash.badcode"))
 		return
 	}
 	if err := s.db.SetUserTOTPEnabled(u.ID, true); err != nil {
