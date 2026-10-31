@@ -70,8 +70,8 @@ func (s *Server) openMode() bool {
 	if !s.cfg.Security.AllowOpenBootstrap {
 		return false
 	}
-	toks, err := s.db.ListTokens()
-	return err == nil && len(toks) == 0
+	has, err := s.db.HasTokens()
+	return err == nil && !has
 }
 
 func unauthorized(w http.ResponseWriter) {

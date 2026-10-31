@@ -371,3 +371,16 @@ func TestSearchPathsFuzzy(t *testing.T) {
 		t.Fatalf("sort path asc: %v", got)
 	}
 }
+
+func TestHasTokens(t *testing.T) {
+	db := openTest(t)
+	if has, err := db.HasTokens(); err != nil || has {
+		t.Fatalf("HasTokens on a fresh DB = %v, %v; want false, nil", has, err)
+	}
+	if _, _, err := db.CreateToken(0, "ci", []string{"*"}, []string{"admin"}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if has, err := db.HasTokens(); err != nil || !has {
+		t.Fatalf("HasTokens after CreateToken = %v, %v; want true, nil", has, err)
+	}
+}

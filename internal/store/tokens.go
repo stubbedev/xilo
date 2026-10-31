@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -87,6 +88,14 @@ const tokenFrom = ` FROM tokens t LEFT JOIN accounts a ON a.id = t.account_id `
 
 func (db *DB) ListTokens() ([]Token, error) {
 	return db.listTokens(`SELECT ` + tokenCols + tokenFrom + `ORDER BY t.id`)
+}
+
+func (db *DB) HasTokens() (bool, error) {
+	var has bool
+	if err := db.r.QueryRow(`SELECT EXISTS (SELECT 1 FROM tokens)`).Scan(&has); err != nil {
+		return false, fmt.Errorf("check for tokens: %w", err)
+	}
+	return has, nil
 }
 
 // ListAccountTokens lists tokens owned by one account.
