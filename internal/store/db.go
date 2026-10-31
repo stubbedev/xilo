@@ -13,8 +13,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	_ "modernc.org/sqlite"
 )
 
 type DB struct {
@@ -59,18 +57,14 @@ func Open(path string) (*DB, error) { return open(path, 1) }
 func OpenDurable(path string) (*DB, error) { return open(path, 2) }
 
 func open(path string, sync int) (*DB, error) {
-	dsn := fmt.Sprintf("file:%s%s%d)", path, pragmaBase, sync)
-	w, err := sql.Open("sqlite", dsn)
+	connector, err := newStmtConnector(fmt.Sprintf("file:%s%s%d)", path, pragmaBase, sync))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
+	w := sql.OpenDB(connector)
 	w.SetMaxOpenConns(1) // the single writer
 
-	r, err := sql.Open("sqlite", dsn)
-	if err != nil {
-		w.Close()
-		return nil, err
-	}
+	r := sql.OpenDB(connector)
 	// Keep hot reader connections warm instead of churning per request.
 	n := max(4, runtime.NumCPU())
 	r.SetMaxOpenConns(n)
