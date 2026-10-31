@@ -18,7 +18,9 @@ func TestSaltRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db.SetSalt("s3cret")
+	if err := db.SetSalt("s3cret"); err != nil {
+		t.Fatal(err)
+	}
 
 	c, err := db.CreateCache("acme", "web", true, 40)
 	if err != nil {
@@ -55,7 +57,9 @@ func TestSaltRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	db.SetSalt("s3cret")
+	if err := db.SetSalt("s3cret"); err != nil {
+		t.Fatal(err)
+	}
 	got, err := db.GetCache(context.Background(), "acme", "web")
 	if err != nil || !bytes.Equal(got.PrivKey, c.PrivKey) {
 		t.Fatalf("privkey round-trip: %v", err)
@@ -74,7 +78,9 @@ func TestSaltRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	db.SetSalt("other")
+	if err := db.SetSalt("other"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.GetCache(context.Background(), "acme", "web"); err == nil {
 		t.Fatal("privkey decrypted under the wrong salt")
 	}

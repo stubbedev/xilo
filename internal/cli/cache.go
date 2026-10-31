@@ -485,6 +485,9 @@ func openStore(cfg *config.Config) (*store.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetSalt(cfg.Database.Salt)
+	if err := db.SetSalt(cfg.Database.Salt); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return db, nil
 }

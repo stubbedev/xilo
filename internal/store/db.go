@@ -5,6 +5,7 @@
 package store
 
 import (
+	"crypto/cipher"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -21,9 +22,10 @@ type DB struct {
 	// pg is set when backed by Postgres: r is a normal concurrent pool and
 	// writes run directly on it (MVCC — no single-writer funnel needed).
 	pg bool
-	// key encrypts sensitive columns and keys token hashes; nil = plaintext.
-	// Derived from the configured database.salt via SetSalt.
-	key []byte
+	// key keys token hashes and aead encrypts sensitive columns; nil =
+	// plaintext. Both derived from the configured database.salt via SetSalt.
+	key  []byte
+	aead cipher.AEAD
 	// statsMu guards refreshing, the set of caches whose stored summary is
 	// being recomputed right now (see StatsFor).
 	statsMu    sync.Mutex

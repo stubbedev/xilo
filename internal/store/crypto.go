@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 )
 
 var errSealed = errors.New("cannot decrypt: database.salt differs from the salt that encrypted this database")
@@ -18,52 +19,46 @@ var errSealed = errors.New("cannot decrypt: database.salt differs from the salt 
 // writes. The salt must stay stable for the lifetime of the database — a
 // different salt cannot decrypt existing rows and invalidates every issued
 // token. Empty salt = plaintext columns and unsalted token hashes.
-func (db *DB) SetSalt(salt string) {
+func (db *DB) SetSalt(salt string) error {
 	if salt == "" {
-		return
+		return nil
 	}
 	k := sha256.Sum256([]byte("xilo-db-key:" + salt))
-	db.key = k[:]
+	block, err := aes.NewCipher(k[:])
+	if err != nil {
+		return fmt.Errorf("database salt cipher: %w", err)
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return fmt.Errorf("database salt cipher: %w", err)
+	}
+	db.key, db.aead = k[:], aead
+	return nil
 }
 
 // seal encrypts b with AES-256-GCM (random nonce prefixed). Pass-through when
 // no salt is set; nil stays nil so NULL columns survive.
 func (db *DB) seal(b []byte) ([]byte, error) {
-	if db.key == nil || b == nil {
+	if db.aead == nil || b == nil {
 		return b, nil
 	}
-	block, err := aes.NewCipher(db.key)
-	if err != nil {
-		return nil, err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	nonce := make([]byte, gcm.NonceSize())
+	nonce := make([]byte, db.aead.NonceSize(), db.aead.NonceSize()+len(b)+db.aead.Overhead())
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, err
 	}
-	return gcm.Seal(nonce, nonce, b, nil), nil
+	return db.aead.Seal(nonce, nonce, b, nil), nil
 }
 
 // unseal reverses seal. Fails when the salt differs from the one that sealed.
 func (db *DB) unseal(b []byte) ([]byte, error) {
-	if db.key == nil || b == nil {
+	if db.aead == nil || b == nil {
 		return b, nil
 	}
-	block, err := aes.NewCipher(db.key)
-	if err != nil {
-		return nil, err
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, err
-	}
-	if len(b) < gcm.NonceSize() {
+	n := db.aead.NonceSize()
+	if len(b) < n {
 		return nil, errSealed
 	}
-	out, err := gcm.Open(nil, b[:gcm.NonceSize()], b[gcm.NonceSize():], nil)
+	out, err := db.aead.Open(nil, b[:n], b[n:], nil)
 	if err != nil {
 		return nil, errSealed
 	}
