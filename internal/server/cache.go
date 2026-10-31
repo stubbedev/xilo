@@ -44,7 +44,7 @@ func (s *Server) handleNarinfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	storeHash := strings.TrimSuffix(file, ".narinfo")
-	p, err := s.db.GetPath(r.Context(), c.ID, storeHash)
+	p, err := s.db.GetPathMeta(r.Context(), c.ID, storeHash)
 	if errors.Is(err, store.ErrNotFound) {
 		s.metrics.narinfoMiss.Add(1)
 		// Short negative cache so a CDN doesn't hammer us for absent paths.
@@ -60,7 +60,7 @@ func (s *Server) handleNarinfo(w http.ResponseWriter, r *http.Request) {
 	s.touchPath(c.ID, storeHash)
 
 	key := narinfoKey{cacheID: c.ID, storeHash: storeHash, narHash: p.NarHash, pubKey: c.PubKey}
-	body, cached := s.niCache.get(key)
+	ent, cached := s.niCache.get(key)
 	if !cached {
 		refBases := make([]string, len(p.Refs))
 		for i, ref := range p.Refs {
@@ -79,8 +79,8 @@ func (s *Server) handleNarinfo(w http.ResponseWriter, r *http.Request) {
 		}
 		fp := narinfo.Fingerprint(p.StorePath, p.NarHash, p.NarSize, p.Refs)
 		ni.Sig = []string{narinfo.Sign(c.Name, c.PrivKey, fp)}
-		body = ni.String()
-		s.niCache.put(key, body)
+		ent = narinfoEnt{body: ni.String(), etag: contentETag(p.NarHash, c.PubKey)}
+		s.niCache.put(key, ent)
 	}
 
 	w.Header().Set("Content-Type", "text/x-nix-narinfo")
@@ -89,8 +89,8 @@ func (s *Server) handleNarinfo(w http.ResponseWriter, r *http.Request) {
 	// changes on key rotation — a CDN holding the old narinfo against a new
 	// NAR would hand clients a permanent hash mismatch.
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-	w.Header().Set("ETag", contentETag(p.NarHash, c.PubKey))
-	io.WriteString(w, body)
+	w.Header().Set("ETag", ent.etag)
+	io.WriteString(w, ent.body)
 }
 
 func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {

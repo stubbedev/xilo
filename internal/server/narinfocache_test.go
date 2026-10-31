@@ -10,12 +10,12 @@ func TestNarinfoCacheLRU(t *testing.T) {
 	k := func(i int) narinfoKey {
 		return narinfoKey{cacheID: 1, storeHash: strconv.Itoa(i), narHash: "h", pubKey: "k"}
 	}
-	c.put(k(1), "one")
-	c.put(k(2), "two")
-	if v, ok := c.get(k(1)); !ok || v != "one" {
+	c.put(k(1), narinfoEnt{body: "one"})
+	c.put(k(2), narinfoEnt{body: "two"})
+	if v, ok := c.get(k(1)); !ok || v.body != "one" {
 		t.Fatal("miss on fresh entry")
 	}
-	c.put(k(3), "three") // evicts k(2): k(1) was touched more recently
+	c.put(k(3), narinfoEnt{body: "three"}) // evicts k(2): k(1) was touched more recently
 	if _, ok := c.get(k(2)); ok {
 		t.Fatal("LRU kept the stale entry")
 	}
@@ -23,8 +23,8 @@ func TestNarinfoCacheLRU(t *testing.T) {
 		t.Fatal("LRU evicted the recently used entry")
 	}
 	// overwrite in place
-	c.put(k(1), "uno")
-	if v, _ := c.get(k(1)); v != "uno" {
+	c.put(k(1), narinfoEnt{body: "uno"})
+	if v, _ := c.get(k(1)); v.body != "uno" {
 		t.Fatal("put did not replace")
 	}
 }
@@ -36,7 +36,7 @@ func TestNarinfoCacheLRU(t *testing.T) {
 func TestNarinfoCacheKeyedOnContentAndKey(t *testing.T) {
 	c := newNarinfoCache(8)
 	base := narinfoKey{cacheID: 1, storeHash: "s", narHash: "old", pubKey: "k1"}
-	c.put(base, "old-body")
+	c.put(base, narinfoEnt{body: "old-body"})
 
 	repushed := base
 	repushed.narHash = "new"

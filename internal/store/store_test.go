@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -382,5 +384,39 @@ func TestHasTokens(t *testing.T) {
 	}
 	if has, err := db.HasTokens(); err != nil || !has {
 		t.Fatalf("HasTokens after CreateToken = %v, %v; want true, nil", has, err)
+	}
+}
+
+func TestGetPathMetaMatchesGetPath(t *testing.T) {
+	db := openTest(t)
+	c, err := db.CreateCache("default", "c", true, 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	p := &Path{
+		StorePath: "/nix/store/" + h + "-n",
+		NarHash:   "sha256:z",
+		NarSize:   5,
+		Deriver:   "n.drv",
+		Refs:      []string{"/nix/store/r1", "/nix/store/r2"},
+		Chunks:    []string{"z1", "z2"},
+	}
+	if err := db.PutPath(c.ID, h, p); err != nil {
+		t.Fatal(err)
+	}
+	meta, err := db.GetPathMeta(t.Context(), c.ID, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full, err := db.GetPath(t.Context(), c.ID, h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(*meta, p.PathMeta) || !reflect.DeepEqual(full.PathMeta, p.PathMeta) || !slices.Equal(full.Chunks, p.Chunks) {
+		t.Fatalf("GetPathMeta = %+v, GetPath = %+v; want %+v", *meta, *full, *p)
+	}
+	if _, err := db.GetPathMeta(t.Context(), c.ID, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetPathMeta of an absent path: %v, want ErrNotFound", err)
 	}
 }

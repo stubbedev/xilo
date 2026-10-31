@@ -49,13 +49,17 @@ const cacheCols = `c.id,c.account_id,a.slug,a.status,c.name,c.storage,c.public,c
 // filter would keep leaking a deleted account's caches to anonymous pulls.
 const cacheFrom = ` FROM caches c JOIN accounts a ON a.id = c.account_id AND a.status<>'deleted' `
 
-type Path struct {
+type PathMeta struct {
 	StorePath string
 	NarHash   string // sha256:<base32>
 	NarSize   uint64
 	Deriver   string   // base name or ""
 	Refs      []string // full store paths
-	Chunks    []string // chunk hashes, in NAR order
+}
+
+type Path struct {
+	PathMeta
+	Chunks []string // chunk hashes, in NAR order
 }
 
 // ---- caches ----
@@ -411,23 +415,42 @@ func (db *DB) PutPath(cacheID int64, storeHash string, p *Path) error {
 }
 
 func (db *DB) GetPath(ctx context.Context, cacheID int64, storeHash string) (*Path, error) {
-	row := db.r.QueryRowContext(ctx,
-		`SELECT store_path,nar_hash,nar_size,deriver,refs,chunks FROM paths WHERE cache_id=? AND store_hash=?`,
-		cacheID, storeHash)
 	var p Path
-	var narSize int64
-	var refs, chunks string
-	err := row.Scan(&p.StorePath, &p.NarHash, &narSize, &p.Deriver, &refs, &chunks)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
+	var chunks string
+	if err := scanPathMeta(db.r.QueryRowContext(ctx, pathQuery, cacheID, storeHash), &p.PathMeta, &chunks); err != nil {
 		return nil, err
 	}
-	p.NarSize = uint64(narSize)
-	p.Refs = splitLines(refs)
 	p.Chunks = splitLines(chunks)
 	return &p, nil
+}
+
+func (db *DB) GetPathMeta(ctx context.Context, cacheID int64, storeHash string) (*PathMeta, error) {
+	var m PathMeta
+	if err := scanPathMeta(db.r.QueryRowContext(ctx, pathMetaQuery, cacheID, storeHash), &m); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+const (
+	pathMetaCols  = `store_path,nar_hash,nar_size,deriver,refs`
+	pathMetaQuery = `SELECT ` + pathMetaCols + ` FROM paths WHERE cache_id=? AND store_hash=?`
+	pathQuery     = `SELECT ` + pathMetaCols + `,chunks FROM paths WHERE cache_id=? AND store_hash=?`
+)
+
+func scanPathMeta(row *sql.Row, m *PathMeta, rest ...any) error {
+	var narSize int64
+	var refs string
+	err := row.Scan(append([]any{&m.StorePath, &m.NarHash, &narSize, &m.Deriver, &refs}, rest...)...)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	m.NarSize = uint64(narSize)
+	m.Refs = splitLines(refs)
+	return nil
 }
 
 // PathInfo is a dashboard listing row: the store path, its NAR size, and when
