@@ -3,29 +3,56 @@ package server
 import (
 	"context"
 	"io"
+	"math/bits"
 	"sync"
+
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/stubbedev/xilo/internal/store"
 )
 
-// chunkBufPool recycles chunk-sized buffers across requests. Under parallel
-// pulls the prefetch pipeline otherwise allocates (raw + compressed) per
-// chunk and leaves the garbage to GC — pooling keeps steady-state RSS flat.
-var chunkBufPool = sync.Pool{New: func() any { b := make([]byte, 0, 1<<20); return &b }}
+// chunkBufPools recycle chunk-sized buffers across requests, one pool per
+// power-of-two size class. Under parallel pulls the prefetch pipeline otherwise
+// allocates (raw + compressed) per chunk and leaves the garbage to GC.
+var chunkBufPools [chunkBufMaxShift - chunkBufMinShift + 1]sync.Pool
+
+const (
+	chunkBufMinShift = 12
+	chunkBufMaxShift = 22
+)
+
+func chunkBufClass(n int64) (int, bool) {
+	if n > 1<<chunkBufMaxShift {
+		return 0, false
+	}
+	return max(bits.Len64(uint64(max(n, 1)-1)), chunkBufMinShift) - chunkBufMinShift, true
+}
 
 func getChunkBuf(capHint int64) []byte {
-	b := *(chunkBufPool.Get().(*[]byte))
-	if int64(cap(b)) < capHint {
+	class, ok := chunkBufClass(capHint)
+	if !ok {
 		return make([]byte, 0, capHint)
 	}
-	return b[:0]
+	if b, ok := chunkBufPools[class].Get().(*[]byte); ok {
+		return (*b)[:0]
+	}
+	return make([]byte, 0, 1<<(class+chunkBufMinShift))
 }
 
 func putChunkBuf(b []byte) {
-	if cap(b) == 0 || cap(b) > 4<<20 { // nothing to reuse, or an oversized one-off
+	class, ok := chunkBufClass(int64(cap(b)))
+	if !ok || cap(b) != 1<<(class+chunkBufMinShift) {
 		return
 	}
-	chunkBufPool.Put(&b)
+	chunkBufPools[class].Put(&b)
+}
+
+func decodedSizeHint(frame []byte, limit int64) int64 {
+	var h zstd.Header
+	if h.Decode(frame) != nil || !h.HasFCS {
+		return 0
+	}
+	return int64(min(h.FrameContentSize, uint64(limit)))
 }
 
 // fetchChunk gets one compressed chunk from storage and decompresses it.
@@ -53,7 +80,7 @@ func (s *Server) fetchChunkRaw(ctx context.Context, ref store.ChunkRef) ([]byte,
 		return nil, err
 	}
 	defer rc.Close()
-	buf, err := readAllInto(getChunkBuf(ref.CSize), rc)
+	buf, err := readAllInto(getChunkBuf(ref.CSize+1), rc)
 	if err != nil {
 		putChunkBuf(buf)
 		return nil, err

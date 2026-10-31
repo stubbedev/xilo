@@ -266,7 +266,7 @@ func (s *Server) handlePutChunk(w http.ResponseWriter, r *http.Request) {
 		// s.dec is capped via WithDecoderMaxMemory, so a bomb can't blow the
 		// heap; the explicit length check backstops it. Endpoint is push-authed.
 		compressed = body
-		raw, err = s.dec.DecodeAll(body, getChunkBuf(0))
+		raw, err = s.dec.DecodeAll(body, getChunkBuf(decodedSizeHint(body, s.maxChunkBody())))
 		defer func() { putChunkBuf(raw) }()
 		if err != nil {
 			http.Error(w, "zstd decode: "+err.Error(), http.StatusBadRequest)
