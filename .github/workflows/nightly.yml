@@ -58,6 +58,10 @@ jobs:
           go-version-file: go.mod
           cache: true
       - uses: DeterminateSystems/nix-installer-action@v23
+        with:
+          extra-conf: |
+            extra-substituters = https://nix.stubbe.dev/c/default/flakes
+            extra-trusted-public-keys = flakes:0Dr9MyPOvA6va2GVzflJcbrChNoZUeIZflyrww3O+YM=
       - name: build admin CSS
         run: |
           curl -sSL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.2/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss

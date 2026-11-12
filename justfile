@@ -87,10 +87,10 @@ sync-schema:
         echo "sync-schema: schema already in sync"; \
     fi
 
-# Rewrite every hand-written Go version pin from go.mod: the release image,
-# the k6 race-profile image, and nix/toolchain.nix's compiler (packages and dev shell
-# alike). Same contract as sync-schema and sync-vendor-hash -- anything that
-# can be regenerated is, and nobody edits these by hand.
+# Rewrite every hand-written Go version pin from go.mod: the release image
+# and the k6 race-profile image. Same contract as sync-schema and
+# sync-vendor-hash -- anything that can be regenerated is, and nobody edits
+# these by hand.
 #
 # go.mod is the source of truth because Docker's FROM cannot read a file, so
 # an image tag has to be a literal somewhere; making it a derived literal is
@@ -102,10 +102,8 @@ sync-toolchain:
     set -euo pipefail
     want=$(awk '/^go [0-9]/ {split($2, v, "."); print v[1] "." v[2]; exit}' go.mod)
     [ -n "$want" ] || { echo "sync-toolchain: no go directive in go.mod" >&2; exit 1; }
-    under=${want/./_} # 1.27 -> 1_27, for nixpkgs' go_1_27
     sed -i -E "s/golang:[0-9]+\.[0-9]+-alpine/golang:${want}-alpine/" Dockerfile
     sed -i -E "s/image: golang:[0-9]+\.[0-9]+$/image: golang:${want}/" tests/k6/compose.yaml
-    sed -i -E "s/goFor = p: p\.go_[0-9]+_[0-9]+;/goFor = p: p.go_${under};/" nix/toolchain.nix
 
 # Strict read-only pin check (what CI and `just check` run): every pin must
 # spell go.mod's version. Presence checks, not a diff -- a half-done edit
@@ -115,11 +113,9 @@ toolchain-check:
     set -euo pipefail
     want=$(awk '/^go [0-9]/ {split($2, v, "."); print v[1] "." v[2]; exit}' go.mod)
     [ -n "$want" ] || { echo "toolchain-check: no go directive in go.mod" >&2; exit 1; }
-    under=${want/./_}
     drift=0
     grep -q -- "golang:${want}-alpine" Dockerfile || { echo "DRIFT Dockerfile does not pin Go ${want}" >&2; drift=1; }
     grep -q -- "image: golang:${want}" tests/k6/compose.yaml || { echo "DRIFT tests/k6/compose.yaml does not pin Go ${want}" >&2; drift=1; }
-    grep -q -- "goFor = p: p.go_${under};" nix/toolchain.nix || { echo "DRIFT nix/toolchain.nix does not pin Go ${want}" >&2; drift=1; }
     [ "$drift" -eq 0 ] && echo "every Go pin matches go.mod (${want})"
     exit "$drift"
 
