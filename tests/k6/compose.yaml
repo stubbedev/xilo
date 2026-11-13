@@ -45,7 +45,7 @@ services:
   # caches them for reruns.
   xilo-race:
     profiles: [race]
-    # Must satisfy go.mod's `go` directive (1.27.0). The official images pin
+    # Must satisfy go.mod's `go` directive (1.27.4). The official images pin
     # GOTOOLCHAIN=local, so a stale tag here fails outright instead of
     # fetching what it needs: this profile sat broken from the 1.27 bump until
     # the nightly started running it. GOTOOLCHAIN=auto below is the belt to
