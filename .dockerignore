@@ -9,3 +9,5 @@ xilo.yaml
 .git/
 .direnv/
 *.test
+tests/
+docs/

@@ -75,8 +75,7 @@ jobs:
       # dynamically linked).
       - name: build admin CSS
         run: |
-          curl -sSL https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.2/tailwindcss-linux-x64 -o /usr/local/bin/tailwindcss
-          chmod +x /usr/local/bin/tailwindcss
+          ./scripts/install-tailwind.sh /usr/local/bin/tailwindcss
           ./scripts/build-css.sh
       - name: generate templ views
         run: go tool templ generate
