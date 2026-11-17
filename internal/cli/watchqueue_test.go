@@ -5,96 +5,228 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
 
-func TestPathQueueDropsNothingWhilePushIsSlow(t *testing.T) {
-	const total = 20000
-	q := newPathQueue()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+type fakeWatcher struct {
+	ready chan func(string)
+}
 
-	release := make(chan struct{})
-	var mu sync.Mutex
-	pushed := map[string]bool{}
-	done := make(chan error, 1)
-	go func() {
-		done <- q.run(ctx, func(_ context.Context, batch []string) error {
-			<-release
-			mu.Lock()
-			for _, p := range batch {
-				pushed[p] = true
-			}
-			n := len(pushed)
-			mu.Unlock()
-			if n == total {
-				cancel()
-			}
-			return nil
-		})
-	}()
+func newFakeWatcher() *fakeWatcher { return &fakeWatcher{ready: make(chan func(string), 1)} }
 
-	want := make([]string, total)
-	for i := range want {
-		want[i] = fmt.Sprintf("/nix/store/%032d-p", i)
-		q.add(want[i])
-		q.add(want[i])
+func (w *fakeWatcher) watch(ctx context.Context, _ string, onValid func(string)) error {
+	w.ready <- onValid
+	<-ctx.Done()
+	return nil
+}
+
+type recordingPusher struct {
+	mu      sync.Mutex
+	pushed  map[string]bool
+	started chan []string
+	release chan struct{}
+	fail    error
+}
+
+func newRecordingPusher() *recordingPusher {
+	return &recordingPusher{pushed: map[string]bool{}, started: make(chan []string, 64), release: make(chan struct{})}
+}
+
+func (p *recordingPusher) push(ctx context.Context, batch []string) error {
+	p.started <- batch
+	select {
+	case <-p.release:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-	close(release)
+	if p.fail != nil {
+		return p.fail
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, b := range batch {
+		p.pushed[b] = true
+	}
+	return nil
+}
+
+func (p *recordingPusher) got() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Sorted(maps.Keys(p.pushed))
+}
+
+func storePaths(n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = fmt.Sprintf("/nix/store/%032d-p", i)
+	}
+	return out
+}
+
+func TestWatchDropsNothingWhilePushIsSlow(t *testing.T) {
+	const total = 20000
+	stop, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w, p := newFakeWatcher(), newRecordingPusher()
+	done := make(chan error, 1)
+	go func() { done <- watchAndPush(stop, context.Background(), "", w.watch, p.push) }()
+
+	add := <-w.ready
+	want := storePaths(total)
+	for _, path := range want {
+		add(path)
+		add(path)
+	}
+	cancel()
+	close(p.release)
 
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("run: %v", err)
+			t.Fatalf("watch: %v", err)
 		}
 	case <-time.After(10 * time.Second):
-		t.Fatal("queue did not drain")
+		t.Fatal("watch did not drain")
 	}
-	got := slices.Sorted(maps.Keys(pushed))
-	if !slices.Equal(got, want) {
+	if got := p.got(); !slices.Equal(got, want) {
 		t.Fatalf("pushed %d distinct paths, want all %d added", len(got), total)
 	}
 }
 
-func TestPathQueueFailedPushIsAnErrorNamingThePath(t *testing.T) {
-	q := newPathQueue()
-	boom := errors.New("server down")
-	q.add("/nix/store/aaaa-broken")
-	err := q.run(context.Background(), func(context.Context, []string) error { return boom })
-	if !errors.Is(err, boom) || !strings.Contains(err.Error(), "/nix/store/aaaa-broken") {
-		t.Fatalf("err = %v, want the push failure naming the path", err)
-	}
-}
-
-func TestPathQueueStoppedWithPendingPathsIsAnError(t *testing.T) {
-	q := newPathQueue()
-	ctx, cancel := context.WithCancel(context.Background())
-	started := make(chan struct{})
+func TestWatchStopFinishesTheInFlightPushAndDrainsTheQueue(t *testing.T) {
+	stop, cancel := context.WithCancel(context.Background())
+	w, p := newFakeWatcher(), newRecordingPusher()
 	done := make(chan error, 1)
-	go func() {
-		done <- q.run(ctx, func(ctx context.Context, _ []string) error {
-			close(started)
-			<-ctx.Done()
-			return ctx.Err()
-		})
-	}()
-	q.add("/nix/store/aaaa-inflight")
-	<-started
+	go func() { done <- watchAndPush(stop, context.Background(), "", w.watch, p.push) }()
+
+	add := <-w.ready
+	paths := storePaths(3)
+	add(paths[0])
+	<-p.started
+	add(paths[1])
+	add(paths[2])
 	cancel()
-	err := <-done
-	if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "/nix/store/aaaa-inflight") {
-		t.Fatalf("err = %v, want an error naming the path that was not pushed", err)
+	time.Sleep(50 * time.Millisecond)
+	close(p.release)
+
+	if err := <-done; err != nil {
+		t.Fatalf("watch after stop: %v", err)
+	}
+	if got := p.got(); !slices.Equal(got, paths) {
+		t.Fatalf("pushed %v after the stop, want the in-flight and queued paths %v", got, paths)
 	}
 }
 
-func TestPathQueueStoppedIdleIsClean(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+func TestWatchFailedDrainNamesEveryUnpushedPath(t *testing.T) {
+	stop, cancel := context.WithCancel(context.Background())
+	w, p := newFakeWatcher(), newRecordingPusher()
+	p.fail = errors.New("server down")
+	done := make(chan error, 1)
+	go func() { done <- watchAndPush(stop, context.Background(), "", w.watch, p.push) }()
+
+	add := <-w.ready
+	paths := storePaths(3)
+	add(paths[0])
+	<-p.started
+	add(paths[1])
+	add(paths[2])
 	cancel()
-	if err := newPathQueue().run(ctx, func(context.Context, []string) error { return nil }); err != nil {
+	close(p.release)
+
+	err := <-done
+	if !errors.Is(err, p.fail) {
+		t.Fatalf("err = %v, want the push failure", err)
+	}
+	for _, path := range paths {
+		if !strings.Contains(err.Error(), path) {
+			t.Errorf("error does not name unpushed %s: %v", path, err)
+		}
+	}
+}
+
+func TestWatchAbortDuringDrainNamesEveryUnpushedPath(t *testing.T) {
+	stop, cancelStop := context.WithCancel(context.Background())
+	pushCtx, abort := context.WithCancelCause(context.Background())
+	w, p := newFakeWatcher(), newRecordingPusher()
+	done := make(chan error, 1)
+	go func() { done <- watchAndPush(stop, pushCtx, "", w.watch, p.push) }()
+
+	add := <-w.ready
+	paths := storePaths(2)
+	add(paths[0])
+	<-p.started
+	add(paths[1])
+	cancelStop()
+	abort(errors.New("aborted by a second signal"))
+
+	err := <-done
+	if err == nil {
+		t.Fatal("aborted drain exited cleanly")
+	}
+	for _, path := range paths {
+		if !strings.Contains(err.Error(), path) {
+			t.Errorf("error does not name unpushed %s: %v", path, err)
+		}
+	}
+}
+
+func TestWatchStoppedIdleIsClean(t *testing.T) {
+	stop, cancel := context.WithCancel(context.Background())
+	w, p := newFakeWatcher(), newRecordingPusher()
+	done := make(chan error, 1)
+	go func() { done <- watchAndPush(stop, context.Background(), "", w.watch, p.push) }()
+	<-w.ready
+	cancel()
+	if err := <-done; err != nil {
 		t.Fatalf("idle stop: %v", err)
+	}
+}
+
+func TestWatcherErrorStillDrainsTheQueue(t *testing.T) {
+	broken := errors.New("inotify queue overflowed")
+	p := newRecordingPusher()
+	close(p.release)
+	paths := storePaths(2)
+	err := watchAndPush(context.Background(), context.Background(), "", func(_ context.Context, _ string, onValid func(string)) error {
+		for _, path := range paths {
+			onValid(path)
+		}
+		return broken
+	}, p.push)
+	if !errors.Is(err, broken) {
+		t.Fatalf("err = %v, want the watcher's failure", err)
+	}
+	if got := p.got(); !slices.Equal(got, paths) {
+		t.Fatalf("pushed %v, want %v drained after the watcher failed", got, paths)
+	}
+}
+
+func TestSecondSignalAbortsThePush(t *testing.T) {
+	stop := t.Context()
+	pushCtx, release := abortOnSecondSignal(stop)
+	defer release()
+
+	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-pushCtx.Done():
+		t.Fatal("the first signal aborted the push")
+	case <-time.After(200 * time.Millisecond):
+	}
+	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-pushCtx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("the second signal did not abort the push")
 	}
 }

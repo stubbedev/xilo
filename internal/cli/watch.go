@@ -6,7 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -19,6 +22,34 @@ import (
 // syscalls directly — no external dependency: inotify reports each lock-file
 // deletion (watch_linux.go), kqueue only that the directory changed, so the
 // store is rescanned (watch_darwin.go).
+func abortOnSecondSignal(stopCtx context.Context) (context.Context, context.CancelFunc) {
+	abortCtx, abort := context.WithCancelCause(context.WithoutCancel(stopCtx))
+	sigs := make(chan os.Signal, 2)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	seen := 0
+	if stopCtx.Err() != nil {
+		seen = 1
+	}
+	go func() {
+		defer signal.Stop(sigs)
+		for {
+			select {
+			case <-sigs:
+				seen++
+				if seen == 1 {
+					fmt.Fprintln(os.Stderr, "xilo watch: stopping; pushing what is queued (signal again to abort)")
+					continue
+				}
+				abort(errors.New("aborted by a second signal"))
+				return
+			case <-abortCtx.Done():
+				return
+			}
+		}
+	}()
+	return abortCtx, func() { abort(context.Canceled) }
+}
+
 func watchCmd() *cobra.Command {
 	var url, token, storeDir string
 	c := &cobra.Command{
@@ -38,18 +69,9 @@ func watchCmd() *cobra.Command {
 			cl.Quiet = true
 			fmt.Printf("watching %s → pushing to %s\n", storeDir, cache)
 
-			ctx, cancel := context.WithCancel(cmd.Context())
-			defer cancel()
-			queue := newPathQueue()
-			pushed := make(chan error, 1)
-			go func() {
-				err := queue.run(ctx, cl.Push)
-				cancel()
-				pushed <- err
-			}()
-			watchErr := watchStore(ctx, storeDir, queue.add)
-			cancel()
-			return errors.Join(watchErr, <-pushed)
+			pushCtx, abort := abortOnSecondSignal(cmd.Context())
+			defer abort()
+			return watchAndPush(cmd.Context(), pushCtx, storeDir, watchStore, cl.Push)
 		},
 	}
 	c.Flags().StringVar(&url, "url", "", "server base URL (env XILO_URL / saved login)")

@@ -57,8 +57,16 @@ entirely. The example hook uses `--detach`; drop the flag to let a failed push
 fail the build.
 
 The watcher never drops a path: paths that become valid while a push is
-running are queued and pushed together in the next batch. If a push fails, or
-the watcher is stopped with paths still queued, it exits non-zero naming them.
+running are queued and pushed together in the next batch. If a push fails, it
+stops and exits non-zero naming every path it did not push.
+
+Stop it with SIGINT or SIGTERM (`kill <pid>`, Ctrl-C). The first signal stops
+watching the store, then finishes the push in flight and pushes everything
+still queued; it exits 0 once all of it is in the cache. A second signal
+aborts at once. Either way, a path that did not make it is named in the error
+and the exit status is non-zero, so a CI step that stops the watcher fails
+instead of leaving the cache short.
+
 Every push, from `xilo push` or the watcher, publishes a path only after all of
 its references are in the cache, so an interrupted push never leaves a
 narinfo whose closure the cache cannot serve.

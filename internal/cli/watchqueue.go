@@ -2,10 +2,15 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 )
+
+type pushFunc func(context.Context, []string) error
+
+type watchFunc func(ctx context.Context, storeDir string, onValid func(path string)) error
 
 type pathQueue struct {
 	mu      sync.Mutex
@@ -40,22 +45,46 @@ func (q *pathQueue) take() []string {
 	return batch
 }
 
-func (q *pathQueue) run(ctx context.Context, push func(context.Context, []string) error) error {
+func (q *pathQueue) run(watched <-chan struct{}, pushCtx context.Context, push pushFunc) error {
 	for {
-		select {
-		case <-ctx.Done():
-			if left := q.take(); len(left) > 0 {
-				return fmt.Errorf("stopped with %d store paths not pushed: %s", len(left), strings.Join(left, ", "))
-			}
-			return nil
-		case <-q.wake:
-		}
 		batch := q.take()
 		if len(batch) == 0 {
-			continue
+			select {
+			case <-q.wake:
+				continue
+			case <-watched:
+				if batch = q.take(); len(batch) == 0 {
+					return nil
+				}
+			case <-pushCtx.Done():
+				if left := q.take(); len(left) > 0 {
+					return notPushed(left, context.Cause(pushCtx))
+				}
+				return nil
+			}
 		}
-		if err := push(ctx, batch); err != nil {
-			return fmt.Errorf("pushing %s: %w", strings.Join(batch, ", "), err)
+		if err := push(pushCtx, batch); err != nil {
+			return notPushed(append(batch, q.take()...), err)
 		}
 	}
+}
+
+func notPushed(paths []string, cause error) error {
+	return fmt.Errorf("%d store paths not pushed: %s: %w", len(paths), strings.Join(paths, ", "), cause)
+}
+
+func watchAndPush(stopCtx, pushCtx context.Context, storeDir string, watch watchFunc, push pushFunc) error {
+	watchCtx, stopWatching := context.WithCancel(stopCtx)
+	defer stopWatching()
+	q := newPathQueue()
+	watched := make(chan struct{})
+	var watchErr error
+	go func() {
+		watchErr = watch(watchCtx, storeDir, q.add)
+		close(watched)
+	}()
+	pushErr := q.run(watched, pushCtx, push)
+	stopWatching()
+	<-watched
+	return errors.Join(watchErr, pushErr)
 }
