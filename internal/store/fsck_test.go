@@ -71,6 +71,9 @@ func TestOpenDurable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.SetKeyHost("xilo.test"); err != nil {
+		t.Fatal(err)
+	}
 	defer db.Close()
 	if _, err := db.CreateCache("default", "c", true, 40); err != nil {
 		t.Fatal(err)

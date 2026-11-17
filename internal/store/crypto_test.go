@@ -18,6 +18,9 @@ func TestSaltRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.SetKeyHost("xilo.test"); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.SetSalt("s3cret"); err != nil {
 		t.Fatal(err)
 	}
@@ -57,6 +60,9 @@ func TestSaltRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.SetKeyHost("xilo.test"); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.SetSalt("s3cret"); err != nil {
 		t.Fatal(err)
 	}
@@ -75,6 +81,9 @@ func TestSaltRoundTrip(t *testing.T) {
 	// Different salt: reads fail, token hash no longer matches.
 	db, err = Open(path)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetKeyHost("xilo.test"); err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()

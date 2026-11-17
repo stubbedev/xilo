@@ -86,6 +86,9 @@ func openBench(tb testing.TB) *DB {
 	if err != nil {
 		tb.Fatal(err)
 	}
+	if err := db.SetKeyHost("xilo.test"); err != nil {
+		tb.Fatal(err)
+	}
 	tb.Cleanup(func() { db.Close() })
 	return db
 }

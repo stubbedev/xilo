@@ -139,6 +139,33 @@ func TestValidateBadBackend(t *testing.T) {
 	}
 }
 
+func TestBaseURLGivesTheKeyHost(t *testing.T) {
+	for raw, want := range map[string]string{
+		"https://xilos.dev":               "xilos.dev",
+		"https://cache.example.com:8443/": "cache.example.com",
+		"http://localhost:8080":           "localhost",
+		"https://[::1]:8080":              "::1",
+	} {
+		t.Setenv("XILO_BASE_URL", raw)
+		c, err := Load("")
+		if err != nil {
+			t.Fatalf("Load(base_url=%q): %v", raw, err)
+		}
+		if c.KeyHost() != want {
+			t.Errorf("base_url %q: KeyHost = %q, want %q", raw, c.KeyHost(), want)
+		}
+	}
+}
+
+func TestValidateRejectsABaseURLWithoutHost(t *testing.T) {
+	for _, raw := range []string{"xilos.dev", "ftp://xilos.dev", "https://", "https://%zz"} {
+		t.Setenv("XILO_BASE_URL", raw)
+		if _, err := Load(""); err == nil || !strings.Contains(err.Error(), "base_url") {
+			t.Errorf("base_url %q: err = %v, want a base_url error", raw, err)
+		}
+	}
+}
+
 func TestEnvOverrides(t *testing.T) {
 	t.Setenv("XILO_ADMIN_PASSWORD", "envpw")
 	t.Setenv("XILO_S3_ACCESS_KEY", "envak")

@@ -8,7 +8,7 @@
     },
     "base_url": {
       "type": "string",
-      "description": "Public base URL clients reach this cache at, e.g.\n\"https://cache.example.com\". Used to render setup snippets in the admin\nUI. Defaults to http://localhost\u003clisten\u003e when empty."
+      "description": "Public base URL clients reach this cache at, e.g.\n\"https://cache.example.com\". Used to render setup snippets in the admin\nUI, and its host prefixes the name of every signing key a cache is given\n(\"cache.example.com/\u003caccount\u003e/\u003ccache\u003e-1\"). Defaults to\nhttp://localhost\u003clisten\u003e when empty."
     },
     "data_dir": {
       "type": "string",

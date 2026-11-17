@@ -9,7 +9,18 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 )
+
+var errKeyHostUnset = errors.New("cache signing key host is not set (SetKeyHost)")
+
+func (db *DB) SetKeyHost(host string) error {
+	if host == "" || strings.ContainsAny(host, ":/ \t\n") {
+		return fmt.Errorf("invalid signing key host %q", host)
+	}
+	db.keyHost = host
+	return nil
+}
 
 var errSealed = errors.New("cannot decrypt: database.salt differs from the salt that encrypted this database")
 

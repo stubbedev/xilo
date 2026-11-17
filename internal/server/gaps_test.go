@@ -34,6 +34,9 @@ func TestClosedDBErrorPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.SetKeyHost("xilo.test"); err != nil {
+		t.Fatal(err)
+	}
 	st, err := storage.New(cfg.Storage)
 	if err != nil {
 		t.Fatal(err)

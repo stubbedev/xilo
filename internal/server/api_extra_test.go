@@ -46,6 +46,9 @@ func newTestServerCfg(t *testing.T, mut func(*config.Config)) (*Server, *store.D
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.SetKeyHost("xilo.test"); err != nil {
+		t.Fatal(err)
+	}
 	st, err := storage.New(cfg.Storage)
 	if err != nil {
 		t.Fatal(err)

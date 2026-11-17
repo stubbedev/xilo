@@ -72,6 +72,9 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.SetKeyHost("xilo.test"); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { db.Close() })
 	c, err := db.CreateCache("acct", "c", true, 40)
 	if err != nil {

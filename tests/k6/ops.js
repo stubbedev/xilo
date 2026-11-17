@@ -36,6 +36,8 @@ export const options = {
 const ADMIN = ADMIN_PASSWORD;
 // The account every cache in this suite lives under.
 const NS = ACCOUNT;
+const keyNamed = (cache, gen) => new RegExp(`(?:^|[\\s>"'])[^/:\\s"'<>]+/${NS}/${cache}-${gen}:`);
+const sigBy = (cache, gen) => new RegExp(`\nSig: [^/:\\s]+/${NS}/${cache}-${gen}:`);
 
 // This suite deliberately provokes 4xxs; correctness is asserted via checks.
 http.setResponseCallback(http.expectedStatuses({ min: 200, max: 499 }));
@@ -162,7 +164,7 @@ export default function () {
   must(res, "create cache priv", okOrFlash);
 
   res = http.get(`${BASE}/admin/cache/${NS}/pub`);
-  must(res, "cache detail shows pubkey", (r) => r.status === 200 && r.body.includes("pub:"));
+  must(res, "cache detail shows pubkey", (r) => r.status === 200 && keyNamed("pub", 1).test(r.body));
   res = http.get(`${BASE}/admin/status`);
   must(res, "status page", (r) => r.status === 200);
   res = http.get(`${BASE}/admin/status/data?range=1h`);
@@ -225,7 +227,7 @@ export default function () {
   must(res, "api config", (r) => {
     const cfg = JSON.parse(r.body);
     return r.status === 200 && cfg.minSize > 0 && cfg.avgSize >= cfg.minSize && cfg.maxSize >= cfg.avgSize &&
-      cfg.publicKey.startsWith("pub:") && cfg.public === true;
+      keyNamed("pub", 1).test(cfg.publicKey) && cfg.public === true;
   });
 
   // get-missing-chunks before upload: both missing
@@ -329,7 +331,7 @@ export default function () {
     r.status === 200 && r.body.byteLength === 131072 && crypto.sha256(r.body, "hex") === narHex);
   res = http.get(`${BASE}/c/${NS}/adopt/${storeHash}.narinfo`);
   must(res, "adopted narinfo signed by the adopting cache", (r) =>
-    r.status === 200 && r.body.includes("Sig: adopt:"));
+    r.status === 200 && sigBy("adopt", 1).test(r.body));
   // A NAR hash that doesn't match what's stored must not adopt anything.
   res = http.post(adoptURL,
     JSON.stringify({
@@ -348,7 +350,7 @@ export default function () {
     r.body.includes(`URL: nar/${storeHash}.nar`) &&
     r.body.includes("NarSize: 131072") &&
     r.body.includes("Compression: none") &&
-    r.body.includes("Sig: pub:") &&
+    sigBy("pub", 1).test(r.body) &&
     r.headers["Cache-Control"].includes("immutable") &&
     // content-derived ETag (survives re-push upserts + key rotation)
     r.headers["Etag"].length > 10);
@@ -437,7 +439,7 @@ export default function () {
   res = http.get(`${c("pub")}/nix-cache-info`);
   must(res, "priority applied", (r) => r.body.includes("Priority: 30"));
 
-  // key rotation: pubkey must change, old narinfo re-signed with new key name
+  // key rotation: pubkey must change, old narinfo re-signed under the next key generation
   const keyBefore = String(http.get(`${c("pub")}/api/config`, { headers: bearer(pushTok) }).body);
   res = http.post(`${BASE}/admin/cache/${NS}/pub/rotate`);
   must(res, "rotate key", (r) => r.status === 200);
@@ -446,7 +448,7 @@ export default function () {
     JSON.parse(keyBefore).publicKey !== JSON.parse(keyAfter).publicKey);
   res = http.get(`${c("pub")}/${storeHash}.narinfo`);
   must(res, "narinfo re-signed after rotate", (r) =>
-    r.status === 200 && r.body.includes(`Sig: pub:`));
+    r.status === 200 && sigBy("pub", 2).test(r.body));
 
   // GC via dashboard button: nothing referenced should vanish
   res = http.post(`${BASE}/admin/gc`);

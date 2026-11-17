@@ -24,8 +24,9 @@ type DB struct {
 	pg bool
 	// key keys token hashes and aead encrypts sensitive columns; nil =
 	// plaintext. Both derived from the configured database.salt via SetSalt.
-	key  []byte
-	aead cipher.AEAD
+	key     []byte
+	aead    cipher.AEAD
+	keyHost string
 	// statsMu guards refreshing, the set of caches whose stored summary is
 	// being recomputed right now (see StatsFor).
 	statsMu    sync.Mutex

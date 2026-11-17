@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/stubbedev/xilo/internal/api"
+	"github.com/stubbedev/xilo/internal/narinfo"
 )
 
 const (
@@ -39,9 +41,12 @@ func useCmd() *cobra.Command {
 
 			if remove {
 				sub := strings.TrimRight(url, "/") + "/c/" + cache
-				// The trusted-key label is the bare cache name.
-				_, bare := splitRef(cache)
-				if err := removeFromNixConf(sub, bare); err != nil {
+				host, err := keyHostOf(url)
+				if err != nil {
+					return err
+				}
+				account, bare := splitRef(cache)
+				if err := removeFromNixConf(sub, host, account, bare); err != nil {
 					return err
 				}
 				fmt.Printf("removed %s from nix.conf\n", sub)
@@ -105,9 +110,7 @@ func useCmd() *cobra.Command {
 	return c
 }
 
-// removeFromNixConf drops a cache's substituter + its trusted key (key name ==
-// cache name) from the managed block.
-func removeFromNixConf(sub, cache string) error {
+func removeFromNixConf(sub, host, account, cache string) error {
 	path := filepath.Join(configDir(), "nix", "nix.conf")
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -115,7 +118,10 @@ func removeFromNixConf(sub, cache string) error {
 	}
 	subs, keys := parseManagedBlock(string(body))
 	subs = slices.DeleteFunc(subs, func(s string) bool { return s == sub })
-	keys = slices.DeleteFunc(keys, func(k string) bool { return strings.HasPrefix(k, cache+":") })
+	keys = slices.DeleteFunc(keys, func(k string) bool {
+		name := narinfo.KeyName(k)
+		return name == cache || narinfo.IsCacheKeyName(name, host, account, cache)
+	})
 	return os.WriteFile(path, []byte(replaceManagedBlock(string(body), subs, keys)), 0o644)
 }
 
@@ -239,6 +245,14 @@ func fields(line string) []string {
 }
 
 // hostOf strips scheme + trailing slash from a base URL, leaving host[:port].
+func keyHostOf(rawURL string) (string, error) {
+	u, err := neturl.Parse(rawURL)
+	if err != nil || u.Hostname() == "" {
+		return "", fmt.Errorf("server URL %q has no host", rawURL)
+	}
+	return u.Hostname(), nil
+}
+
 func hostOf(url string) string {
 	h := url
 	if i := strings.Index(h, "://"); i >= 0 {

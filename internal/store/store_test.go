@@ -29,6 +29,9 @@ func openTest(t *testing.T) *DB {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.SetKeyHost("xilo.test"); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { db.Close() })
 	return db
 }

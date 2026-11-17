@@ -53,6 +53,9 @@ func newCountingServer(t *testing.T) (*Server, *store.DB, *httptest.Server, *cou
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.SetKeyHost("xilo.test"); err != nil {
+		t.Fatal(err)
+	}
 	base, err := storage.New(cfg.Storage)
 	if err != nil {
 		t.Fatal(err)

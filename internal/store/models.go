@@ -41,6 +41,8 @@ type Cache struct {
 // URLs (under /c/), token scopes and the CLI.
 func (c *Cache) Ref() string { return c.Account + "/" + c.Name }
 
+func (c *Cache) KeyName() string { return narinfo.KeyName(c.PubKey) }
+
 const cacheCols = `c.id,c.account_id,a.slug,a.status,c.name,c.storage,c.public,c.priority,c.retention,c.max_bytes,c.pubkey,c.privkey,c.created`
 
 // The status filter lives in the JOIN so every cache read (GetCache,
@@ -64,10 +66,10 @@ type Path struct {
 
 // ---- caches ----
 
-// CreateCache generates an ed25519 keypair (key name = cache name) and inserts
-// the cache into the named account, creating it (as an org) if missing. The
-// signing key never leaves the server.
 func (db *DB) CreateCache(account, name string, public bool, priority int) (*Cache, error) {
+	if db.keyHost == "" {
+		return nil, errKeyHostUnset
+	}
 	acc, err := db.EnsureAccount(account, "org")
 	if err != nil {
 		return nil, err
@@ -87,7 +89,7 @@ func (db *DB) CreateCache(account, name string, public bool, priority int) (*Cac
 		Storage:  DefaultStorage,
 		Public:   public,
 		Priority: priority,
-		PubKey:   narinfo.PublicKeyString(name, pub),
+		PubKey:   narinfo.PublicKeyString(narinfo.CacheKeyName(db.keyHost, acc.Slug, name, 1), pub),
 		PrivKey:  priv,
 		Created:  time.Now().Unix(),
 	}
@@ -203,20 +205,29 @@ func (db *DB) GetCacheByID(ctx context.Context, id int64) (*Cache, error) {
 	return c, err
 }
 
-// RotateKey generates a fresh signing keypair for a cache. Invalidates the
-// previously-distributed trusted-public-key.
-func (db *DB) RotateKey(ctx context.Context, id int64, name string) (*Cache, error) {
+func (db *DB) RotateKey(ctx context.Context, id int64) (*Cache, error) {
+	if db.keyHost == "" {
+		return nil, errKeyHostUnset
+	}
 	pub, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		return nil, err
 	}
-	pubStr := narinfo.PublicKeyString(name, pub)
 	sealed, err := db.seal(priv)
 	if err != nil {
 		return nil, err
 	}
 	err = db.write(func(tx *sql.Tx) error {
-		_, err := tx.Exec(`UPDATE caches SET pubkey=?, privkey=? WHERE id=?`, pubStr, sealed, id)
+		var account, name, current string
+		err := tx.QueryRow(`SELECT a.slug, c.name, c.pubkey FROM caches c JOIN accounts a ON a.id = c.account_id WHERE c.id=?`, id).Scan(&account, &name, &current)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("rotate key of cache %d: %w", id, err)
+		}
+		pubStr := narinfo.PublicKeyString(narinfo.NextCacheKeyName(db.keyHost, account, name, current), pub)
+		_, err = tx.Exec(`UPDATE caches SET pubkey=?, privkey=? WHERE id=?`, pubStr, sealed, id)
 		return err
 	})
 	if err != nil {

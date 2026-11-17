@@ -9,7 +9,7 @@ filled in):
 
 ```
 extra-substituters = http://localhost:8080/c/myteam/mycache
-extra-trusted-public-keys = mycache:<public-key>
+extra-trusted-public-keys = localhost/myteam/mycache-1:<public-key>
 ```
 
 Or let the CLI write it:
@@ -114,7 +114,7 @@ instance with `--server <url> --token <admin-token>`:
 | `xilo cache create <name>` | create a cache (`--private`, `--priority`, `--storage`) |
 | `xilo cache list` / `info <name>` | list caches, show one cache's key and usage |
 | `xilo cache configure <name>` | visibility, `--priority`, `--retention`, `--max-size` |
-| `xilo cache rotate <name>` | generate a new signing key |
+| `xilo cache rotate <name>` | generate a new signing key under the next key name generation (`…/mycache-1` becomes `…/mycache-2`) |
 | `xilo cache destroy <name>` | delete a cache (`--yes`) |
 | `xilo token create <name>` | mint a token (`--cache`, `--pull`, `--push`, `--manage`, `--admin`, `--ttl`) |
 | `xilo token list` / `revoke <id>` | list tokens, revoke one |

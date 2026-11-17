@@ -310,7 +310,7 @@ func (s *Server) apiRotateKey(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	nc, err := s.db.RotateKey(r.Context(), c.ID, c.Name)
+	nc, err := s.db.RotateKey(r.Context(), c.ID)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return

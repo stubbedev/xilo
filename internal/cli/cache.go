@@ -404,7 +404,7 @@ func cacheRotateCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				nc, err := db.RotateKey(context.Background(), ca.ID, ca.Name)
+				nc, err := db.RotateKey(context.Background(), ca.ID)
 				if err != nil {
 					return err
 				}
@@ -486,6 +486,10 @@ func openStore(cfg *config.Config) (*store.DB, error) {
 		return nil, err
 	}
 	if err := db.SetSalt(cfg.Database.Salt); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := db.SetKeyHost(cfg.KeyHost()); err != nil {
 		db.Close()
 		return nil, err
 	}

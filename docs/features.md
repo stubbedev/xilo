@@ -7,7 +7,10 @@
 - The standard HTTP binary-cache protocol under `/c/{account}/{cache}`:
   `nix-cache-info`, `{hash}.narinfo`, `nar/{hash}.nar` reassembled from chunks.
 - `narinfo` responses are signed per request with the cache's rotatable ed25519
-  key, so pushers never hold a signing key.
+  key, so pushers never hold a signing key. Keys are named
+  `<base_url host>/<account>/<cache>-<generation>`, so no two caches, on one
+  instance or across instances, give a client two keys under one name; a
+  rotation moves to the next generation.
 - `zstd`, `gzip` and identity are negotiated; zstd pulls come straight from the
   stored frames, so no compression runs on the pull path.
 - Responses carry `ETag` and `immutable`, so a CDN or proxy in front can cache

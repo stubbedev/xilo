@@ -78,7 +78,7 @@ func (s *Server) handleNarinfo(w http.ResponseWriter, r *http.Request) {
 			Deriver:     p.Deriver,
 		}
 		fp := narinfo.Fingerprint(p.StorePath, p.NarHash, p.NarSize, p.Refs)
-		ni.Sig = []string{narinfo.Sign(c.Name, c.PrivKey, fp)}
+		ni.Sig = []string{narinfo.Sign(c.KeyName(), c.PrivKey, fp)}
 		ent = narinfoEnt{body: ni.String(), etag: contentETag(p.NarHash, c.PubKey)}
 		s.niCache.put(key, ent)
 	}

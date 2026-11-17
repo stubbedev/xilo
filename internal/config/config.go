@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -46,8 +47,11 @@ type Config struct {
 	Listen string `yaml:"listen" json:"listen"`
 	// Public base URL clients reach this cache at, e.g.
 	// "https://cache.example.com". Used to render setup snippets in the admin
-	// UI. Defaults to http://localhost<listen> when empty.
+	// UI, and its host prefixes the name of every signing key a cache is given
+	// ("cache.example.com/<account>/<cache>-1"). Defaults to
+	// http://localhost<listen> when empty.
 	BaseURL string `yaml:"base_url" json:"base_url"`
+	keyHost string
 	// Directory for the metadata database (and local storage, unless
 	// storage.local.root is set). Created if missing.
 	DataDir string `yaml:"data_dir" json:"data_dir"`
@@ -530,7 +534,17 @@ func (c *Config) applyEnv() {
 	}
 }
 
+func (c *Config) KeyHost() string { return c.keyHost }
+
 func (c *Config) validate() error {
+	u, err := url.Parse(c.BaseURL)
+	if err != nil {
+		return fmt.Errorf("base_url %q invalid: %w", c.BaseURL, err)
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return fmt.Errorf("base_url %q invalid (want http(s)://host[:port][/path])", c.BaseURL)
+	}
+	c.keyHost = u.Hostname()
 	switch c.Storage.Backend {
 	case "local", "s3":
 	default:

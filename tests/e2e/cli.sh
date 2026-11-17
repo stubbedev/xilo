@@ -101,7 +101,7 @@ assert "push from stdin" bash -c "echo \"$CLOSURE_ROOT\" | \"$XILO\" push defaul
 
 echo "== pull (nix verifies hashes itself) =="
 H=${CLOSURE_ROOT#/nix/store/}; H=${H%%-*}
-curl -fs "$URL/c/default/e2e/$H.narinfo" | grep -q "Sig: e2e:" && pass "narinfo signed" || fail "narinfo signed"
+curl -fs "$URL/c/default/e2e/$H.narinfo" | grep -qE "^Sig: [^/:]+/default/e2e-1:" && pass "narinfo signed" || fail "narinfo signed"
 nix copy --no-check-sigs --from "$URL/c/default/e2e" --to "local?root=$WORK/nixroot" "$CLOSURE_ROOT" >/dev/null 2>&1 \
   && pass "nix copy substitutes from cache" || fail "nix copy substitutes from cache"
 [ -e "$WORK/nixroot$CLOSURE_ROOT" ] && pass "copied path materialized" || fail "copied path materialized"

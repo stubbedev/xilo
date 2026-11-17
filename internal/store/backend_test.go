@@ -80,6 +80,9 @@ func openTestPG(t *testing.T, dsn string) *DB {
 		t.Fatalf("open postgres store: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
+	if err := db.SetKeyHost("xilo.test"); err != nil {
+		t.Fatal(err)
+	}
 	return db
 }
 

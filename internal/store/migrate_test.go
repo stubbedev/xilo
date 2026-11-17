@@ -101,6 +101,9 @@ func TestNamespacesToAccountsMigration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open (migrate): %v", err)
 	}
+	if err := db.SetKeyHost("xilo.test"); err != nil {
+		t.Fatal(err)
+	}
 	defer db.Close()
 
 	teams, err := db.GetAccount("teams")
@@ -133,6 +136,9 @@ func TestMigrateCatppuccinBecomesDefaultPalette(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.SetKeyHost("xilo.test"); err != nil {
+		t.Fatal(err)
+	}
 	cat, err := db.CreateUser("cat", "", "x", RoleUser)
 	if err != nil {
 		t.Fatal(err)
@@ -153,6 +159,9 @@ func TestMigrateCatppuccinBecomesDefaultPalette(t *testing.T) {
 
 	db, err = Open(path)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetKeyHost("xilo.test"); err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()

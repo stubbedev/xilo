@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -59,6 +60,39 @@ func Sign(keyName string, priv ed25519.PrivateKey, fp string) string {
 // "<keyName>:<base64 pubkey>".
 func PublicKeyString(keyName string, pub ed25519.PublicKey) string {
 	return keyName + ":" + base64.StdEncoding.EncodeToString(pub)
+}
+
+func KeyName(publicKey string) string {
+	name, _, _ := strings.Cut(publicKey, ":")
+	return name
+}
+
+func CacheKeyName(host, account, cache string, generation int) string {
+	return cacheKeyBase(host, account, cache) + strconv.Itoa(generation)
+}
+
+func NextCacheKeyName(host, account, cache, publicKey string) string {
+	return CacheKeyName(host, account, cache, cacheKeyGeneration(host, account, cache, KeyName(publicKey))+1)
+}
+
+func IsCacheKeyName(keyName, host, account, cache string) bool {
+	return cacheKeyGeneration(host, account, cache, keyName) > 0
+}
+
+func cacheKeyBase(host, account, cache string) string {
+	return host + "/" + account + "/" + cache + "-"
+}
+
+func cacheKeyGeneration(host, account, cache, keyName string) int {
+	rest, ok := strings.CutPrefix(keyName, cacheKeyBase(host, account, cache))
+	if !ok {
+		return 0
+	}
+	n, err := strconv.Atoi(rest)
+	if err != nil || n < 1 || strconv.Itoa(n) != rest {
+		return 0
+	}
+	return n
 }
 
 // String renders the narinfo in the canonical field order Nix expects.

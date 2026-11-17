@@ -24,6 +24,9 @@ func fsckWorld(t *testing.T) (*store.DB, storage.Storage, string, func(hash stri
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.SetKeyHost("xilo.test"); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { db.Close() })
 	st, err := storage.NewLocal(filepath.Join(dir, "storage"))
 	if err != nil {

@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -85,7 +86,7 @@ func TestCacheLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "created cache default/foo") || !strings.Contains(out, "trusted-public-keys = foo:") {
+	if !strings.Contains(out, "created cache default/foo") || !strings.Contains(out, "trusted-public-keys = localhost/default/foo-1:") {
 		t.Fatalf("create output: %q", out)
 	}
 
@@ -434,6 +435,38 @@ func TestUseRemoveNoNixConf(t *testing.T) {
 	}
 	if !strings.Contains(out, "removed") {
 		t.Fatalf("out = %q", out)
+	}
+}
+
+func TestUseRemoveDropsEveryKeyGenerationOfThatCacheOnly(t *testing.T) {
+	isolateEnv(t)
+	sub := "http://x:8080/c/default/c1"
+	for _, s := range []struct{ sub, key string }{
+		{sub, "x/default/c1-1:AAAA"},
+		{sub, "x/default/c1-2:BBBB"},
+		{sub, "c1:CCCC"},
+		{"http://x:8080/c/default/c10", "x/default/c10-1:DDDD"},
+		{"http://x:8080/c/other/c1", "x/other/c1-1:EEEE"},
+		{"https://cache.nixos.org", "cache.nixos.org-1:FFFF"},
+	} {
+		if err := updateNixConf(s.sub, s.key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := runRoot(t, "use", "default/c1", "--remove", "--url", "http://x:8080"); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(configDir(), "nix", "nix.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	subs, keys := parseManagedBlock(string(body))
+	if slices.Contains(subs, sub) {
+		t.Errorf("substituter %s survived remove: %v", sub, subs)
+	}
+	want := []string{"x/default/c10-1:DDDD", "x/other/c1-1:EEEE", "cache.nixos.org-1:FFFF"}
+	if !slices.Equal(keys, want) {
+		t.Errorf("keys after remove = %v, want %v", keys, want)
 	}
 }
 

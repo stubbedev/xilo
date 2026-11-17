@@ -57,7 +57,7 @@ Pull from it by adding the cache to `nix.conf`. `xilo use myteam/mycache` adds i
 
 ```
 extra-substituters = http://localhost:8080/c/myteam/mycache
-extra-trusted-public-keys = mycache:<public-key>
+extra-trusted-public-keys = localhost/myteam/mycache-1:<public-key>
 ```
 
 Prebuilt binaries, the Nix flake, and the NixOS and home-manager modules are covered in

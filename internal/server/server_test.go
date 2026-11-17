@@ -41,6 +41,9 @@ func newTestServer(t testing.TB, openBootstrap bool) (*Server, *store.DB, *httpt
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.SetKeyHost("xilo.test"); err != nil {
+		t.Fatal(err)
+	}
 	st, err := storage.New(cfg.Storage)
 	if err != nil {
 		t.Fatal(err)
@@ -211,7 +214,12 @@ func verifyNarinfoSig(t *testing.T, db *store.DB, cache, narinfoText string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pub := ed25519.PublicKey(c.PrivKey.Public().(ed25519.PublicKey))
+	keyName, pubB64, _ := strings.Cut(c.PubKey, ":")
+	pubRaw, err := base64.StdEncoding.DecodeString(pubB64)
+	if err != nil {
+		t.Fatalf("published key %q: %v", c.PubKey, err)
+	}
+	pub := ed25519.PublicKey(pubRaw)
 	var storePath, narHash, sig string
 	var refs []string
 	var narSize uint64
@@ -241,7 +249,10 @@ func verifyNarinfoSig(t *testing.T, db *store.DB, cache, narinfoText string) {
 			sig = v
 		}
 	}
-	_, b64, _ := strings.Cut(sig, ":")
+	sigName, b64, _ := strings.Cut(sig, ":")
+	if sigName != keyName {
+		t.Fatalf("narinfo signed as %q, but clients trust the key as %q", sigName, keyName)
+	}
 	raw, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
 		t.Fatal(err)

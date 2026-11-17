@@ -17,6 +17,99 @@ import (
 
 // ---- caches CRUD ----
 
+func TestCacheKeyNamesAreScopedByHostAndAccount(t *testing.T) {
+	db := openTest(t)
+	a, err := db.CreateCache("acme", "web", true, 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := db.CreateCache("other", "web", true, 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.KeyName() != "xilo.test/acme/web-1" || b.KeyName() != "xilo.test/other/web-1" {
+		t.Fatalf("key names = %q, %q", a.KeyName(), b.KeyName())
+	}
+	got, err := db.GetCache(context.Background(), "acme", "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.KeyName() != a.KeyName() {
+		t.Fatalf("stored key name %q, created %q", got.KeyName(), a.KeyName())
+	}
+}
+
+func TestRotateKeyAdvancesTheKeyGeneration(t *testing.T) {
+	db := openTest(t)
+	c, err := db.CreateCache("acme", "web", true, 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"xilo.test/acme/web-2", "xilo.test/acme/web-3"} {
+		if c, err = db.RotateKey(context.Background(), c.ID); err != nil {
+			t.Fatal(err)
+		}
+		if c.KeyName() != want {
+			t.Fatalf("after rotate: key name %q, want %q", c.KeyName(), want)
+		}
+	}
+}
+
+func TestRotateKeyMovesALegacyKeyNameToTheScopedScheme(t *testing.T) {
+	db := openTest(t)
+	c, err := db.CreateCache("acme", "web", true, 40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, b64, _ := strings.Cut(c.PubKey, ":")
+	if err := db.write(func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE caches SET pubkey=? WHERE id=?`, "web:"+b64, c.ID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := db.GetCacheByID(context.Background(), c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.KeyName() != "web" {
+		t.Fatalf("legacy key name %q, want web", legacy.KeyName())
+	}
+	rotated, err := db.RotateKey(context.Background(), c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rotated.KeyName() != "xilo.test/acme/web-1" {
+		t.Fatalf("rotated legacy key name %q", rotated.KeyName())
+	}
+}
+
+func TestKeyGenerationRequiresAKeyHost(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "x.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if _, err := db.CreateCache("acme", "web", true, 40); !errors.Is(err, errKeyHostUnset) {
+		t.Fatalf("CreateCache without key host: err = %v, want errKeyHostUnset", err)
+	}
+	if _, err := db.RotateKey(context.Background(), 1); !errors.Is(err, errKeyHostUnset) {
+		t.Fatalf("RotateKey without key host: err = %v, want errKeyHostUnset", err)
+	}
+	for _, bad := range []string{"", "host:8080", "a/b", "a b"} {
+		if err := db.SetKeyHost(bad); err == nil {
+			t.Errorf("SetKeyHost(%q) accepted", bad)
+		}
+	}
+}
+
+func TestRotateKeyOfMissingCache(t *testing.T) {
+	db := openTest(t)
+	if _, err := db.RotateKey(context.Background(), 4242); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("RotateKey(missing) = %v, want ErrNotFound", err)
+	}
+}
+
 func TestCacheCRUD(t *testing.T) {
 	db := openTest(t)
 
@@ -54,7 +147,7 @@ func TestCacheCRUD(t *testing.T) {
 		t.Fatalf("after UpdateCache: %+v", got)
 	}
 
-	rotated, err := db.RotateKey(context.Background(), c.ID, "priv")
+	rotated, err := db.RotateKey(context.Background(), c.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -742,6 +835,9 @@ func TestUseAfterClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.SetKeyHost("xilo.test"); err != nil {
+		t.Fatal(err)
+	}
 	c, _ := db.CreateCache("default", "c", true, 40)
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
@@ -760,7 +856,7 @@ func TestUseAfterClose(t *testing.T) {
 	if _, err := db.EvictPathsOlderThan(1); err == nil {
 		t.Fatal("evict after close should error")
 	}
-	if _, err := db.RotateKey(context.Background(), c.ID, "c"); err == nil {
+	if _, err := db.RotateKey(context.Background(), c.ID); err == nil {
 		t.Fatal("RotateKey after close should error")
 	}
 

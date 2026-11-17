@@ -35,6 +35,9 @@ func TestPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
+	if err := db.SetKeyHost("xilo.test"); err != nil {
+		t.Fatal(err)
+	}
 	// Fresh slate: earlier runs against the same server leave rows behind.
 	for _, tbl := range []string{"paths", "chunks", "tokens", "caches", "passkeys", "sessions", "metrics_minutes", "users", "account_members", "accounts"} {
 		if err := db.write(func(tx *sql.Tx) error { _, err := tx.Exec(`DELETE FROM ` + tbl); return err }); err != nil {
@@ -46,6 +49,9 @@ func TestPostgres(t *testing.T) {
 	db2, err := OpenPostgres(dsn)
 	if err != nil {
 		t.Fatalf("re-open (migrate idempotence): %v", err)
+	}
+	if err := db2.SetKeyHost("xilo.test"); err != nil {
+		t.Fatal(err)
 	}
 	db2.Close()
 
@@ -66,7 +72,7 @@ func TestPostgres(t *testing.T) {
 	if err := db.UpdateCache(c.ID, true, 30, 3600, 1<<30); err != nil {
 		t.Fatalf("UpdateCache: %v", err)
 	}
-	if rot, err := db.RotateKey(context.Background(), c.ID, c.Name); err != nil || rot.PubKey == got.PubKey {
+	if rot, err := db.RotateKey(context.Background(), c.ID); err != nil || rot.PubKey == got.PubKey {
 		t.Fatalf("RotateKey: %+v %v", rot, err)
 	}
 	if list, err := db.ListCaches(); err != nil || len(list) != 1 {
