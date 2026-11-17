@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"testing/iotest"
 
@@ -367,5 +369,25 @@ func TestIsNotFound(t *testing.T) {
 		if got := isNotFound(c.err); got != c.want {
 			t.Errorf("isNotFound(%v) = %v, want %v", c.err, got, c.want)
 		}
+	}
+}
+
+func TestLocalFailedPutLeavesNoTempFile(t *testing.T) {
+	root := t.TempDir()
+	l, err := NewLocal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := fmt.Errorf("write: %w", syscall.ENOSPC)
+	err = l.Put(context.Background(), ChunkKey("abcdef"), iotest.ErrReader(full))
+	if !errors.Is(err, syscall.ENOSPC) {
+		t.Fatalf("err = %v, want ENOSPC to reach the caller", err)
+	}
+	leftovers, err := filepath.Glob(filepath.Join(root, "chunk", "ab", ".tmp-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leftovers) != 0 {
+		t.Fatalf("failed Put left %v behind", leftovers)
 	}
 }

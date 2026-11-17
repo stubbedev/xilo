@@ -9,9 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net/http"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/stubbedev/xilo/internal/api"
@@ -304,11 +306,11 @@ func (s *Server) handlePutChunk(w http.ResponseWriter, r *http.Request) {
 		compressed = chunk.Compress(s.enc, raw)
 	}
 	if err := s.stOf(c.Storage).Put(r.Context(), key, bytes.NewReader(compressed)); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		storeFailed(w, "store chunk "+want+" on "+c.Storage, err)
 		return
 	}
 	if err := s.db.PutChunk(c.Storage, want, int64(len(raw)), int64(len(compressed)), key, timeNow()); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		storeFailed(w, "record chunk "+want, err)
 		return
 	}
 	s.metrics.chunksRecv.Add(1)
@@ -537,4 +539,16 @@ func writeJSONStatus(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(v)
+}
+
+// storeFailed ends a push request whose bytes or row could not be written.
+// The detail (paths, driver text) goes to the log, never to the client; a
+// full disk is 507 so a pusher can tell it from a bug.
+func storeFailed(w http.ResponseWriter, what string, err error) {
+	log.Printf("%s: %v", what, err)
+	if errors.Is(err, syscall.ENOSPC) {
+		http.Error(w, "insufficient storage: the server is out of disk space", http.StatusInsufficientStorage)
+		return
+	}
+	http.Error(w, "internal error: could not store the chunk", http.StatusInternalServerError)
 }
