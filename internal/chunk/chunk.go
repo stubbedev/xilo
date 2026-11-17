@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"sync"
 
 	fastcdc "github.com/jotfs/fastcdc-go"
 	"github.com/klauspost/compress/zstd"
@@ -78,17 +79,23 @@ func SplitRaw(r io.Reader, p Params, fn func(hash string, data []byte) error) er
 	return split(r, p, fn)
 }
 
+var gearTable sync.RWMutex
+
 func split(r io.Reader, p Params, fn func(hash string, data []byte) error) error {
+	gearTable.Lock()
 	ch, err := fastcdc.NewChunker(r, fastcdc.Options{
 		MinSize:     p.MinSize,
 		AverageSize: p.AvgSize,
 		MaxSize:     p.MaxSize,
 	})
+	gearTable.Unlock()
 	if err != nil {
 		return err
 	}
 	for {
+		gearTable.RLock()
 		c, err := ch.Next()
+		gearTable.RUnlock()
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
