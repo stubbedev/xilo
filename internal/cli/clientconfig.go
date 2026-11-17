@@ -31,12 +31,15 @@ type clientConfig struct {
 	Token string `yaml:"token,omitempty"`
 }
 
-func clientConfigPath() string {
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		dir = filepath.Join(os.Getenv("HOME"), ".config")
+func configDir() string {
+	if d := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(d) {
+		return d
 	}
-	return filepath.Join(dir, "xilo", "config.yaml")
+	return filepath.Join(os.Getenv("HOME"), ".config")
+}
+
+func clientConfigPath() string {
+	return filepath.Join(configDir(), "xilo", "config.yaml")
 }
 
 func loadClientConfig() clientConfig {

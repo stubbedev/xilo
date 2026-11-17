@@ -238,13 +238,6 @@ func fields(line string) []string {
 	return strings.Fields(val)
 }
 
-func configDir() string {
-	if d, err := os.UserConfigDir(); err == nil {
-		return d
-	}
-	return filepath.Join(os.Getenv("HOME"), ".config")
-}
-
 // hostOf strips scheme + trailing slash from a base URL, leaving host[:port].
 func hostOf(url string) string {
 	h := url

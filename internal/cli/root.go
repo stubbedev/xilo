@@ -36,11 +36,9 @@ func defaultConfig() string {
 		return "xilo.yaml"
 	}
 	// XDG user config (used by the home-manager module).
-	if dir, err := os.UserConfigDir(); err == nil {
-		p := filepath.Join(dir, "xilo", "xilo.yaml")
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
+	userConfig := filepath.Join(configDir(), "xilo", "xilo.yaml")
+	if _, err := os.Stat(userConfig); err == nil {
+		return userConfig
 	}
 	// System-wide fallback (used by the NixOS module and other service installs).
 	if _, err := os.Stat("/etc/xilo/xilo.yaml"); err == nil {

@@ -595,7 +595,6 @@ func TestRootHasSubcommands(t *testing.T) {
 }
 
 func TestConfigDirFallback(t *testing.T) {
-	// UserConfigDir errors when both XDG_CONFIG_HOME and HOME are unset.
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("HOME", "")
 	os.Unsetenv("XDG_CONFIG_HOME")
@@ -750,5 +749,22 @@ func TestResolveRefUsesWhoami(t *testing.T) {
 	if _, err := resolveRef(srv.URL, "", "web"); err == nil ||
 		!strings.Contains(err.Error(), "<account>/web") {
 		t.Fatalf("no token: err = %v", err)
+	}
+}
+
+func TestConfigDirFollowsXDGOnEveryPlatform(t *testing.T) {
+	home := isolateEnv(t)
+	os.Unsetenv("XDG_CONFIG_HOME")
+	if got, want := configDir(), filepath.Join(home, ".config"); got != want {
+		t.Fatalf("XDG_CONFIG_HOME unset: configDir = %q, want %q (where nix reads nix.conf)", got, want)
+	}
+	t.Setenv("XDG_CONFIG_HOME", "relative/dir")
+	if got, want := configDir(), filepath.Join(home, ".config"); got != want {
+		t.Fatalf("relative XDG_CONFIG_HOME must be ignored: configDir = %q, want %q", got, want)
+	}
+	custom := filepath.Join(home, "xdg")
+	t.Setenv("XDG_CONFIG_HOME", custom)
+	if got := configDir(); got != custom {
+		t.Fatalf("configDir = %q, want %q", got, custom)
 	}
 }
