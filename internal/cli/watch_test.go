@@ -94,24 +94,14 @@ func TestWatchStore(t *testing.T) {
 		t.Fatal("slow-pkg not reported after its lock went")
 	}
 
-	// Cancellation closes the fd, but on Linux a read already blocked on it
-	// only wakes on the next event — generate events until watchStore returns.
 	cancel()
-	deadline = time.After(5 * time.Second)
-	for {
-		f := filepath.Join(dir, "wake.lock")
-		os.WriteFile(f, nil, 0o644)
-		os.Remove(f)
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Fatalf("watchStore returned %v after cancel, want nil", err)
-			}
-			return
-		case <-deadline:
-			t.Fatal("watchStore did not return after cancel")
-		case <-time.After(20 * time.Millisecond):
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("watchStore returned %v after cancel, want nil", err)
 		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("watchStore did not return after cancel without a further store event")
 	}
 }
 
@@ -151,26 +141,17 @@ func TestWatchCmdRunsAndStops(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- root.ExecuteContext(ctx) }()
 
-	time.Sleep(100 * time.Millisecond) // let the watch establish
+	time.Sleep(100 * time.Millisecond)
 	cancel()
 
-	// wake the blocked read with a harmless (non-.lock) deletion
-	deadline := time.After(5 * time.Second)
-	for {
-		f := filepath.Join(storeDir, "wake")
-		os.WriteFile(f, nil, 0o644)
-		os.Remove(f)
-		select {
-		case err := <-done:
-			os.Stdout = old
-			if err != nil {
-				t.Fatalf("watch returned %v after cancel, want nil", err)
-			}
-			return
-		case <-deadline:
-			os.Stdout = old
-			t.Fatal("watch did not stop after cancel")
-		case <-time.After(20 * time.Millisecond):
+	select {
+	case err := <-done:
+		os.Stdout = old
+		if err != nil {
+			t.Fatalf("watch returned %v after cancel, want nil", err)
 		}
+	case <-time.After(5 * time.Second):
+		os.Stdout = old
+		t.Fatal("watch did not stop after cancel without a further store event")
 	}
 }

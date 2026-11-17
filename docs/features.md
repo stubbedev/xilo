@@ -29,8 +29,8 @@ binary:
 - Uploads run in parallel at the capacity the server advertises.
 - Paths signed by a configured upstream key (`cache.nixos.org-1`, for example)
   are skipped.
-- Automatic push through a `post-build-hook`, a detached background push, an
-  inotify store watcher, or the composite GitHub Action.
+- Automatic push through a `post-build-hook`, a detached background push, a
+  store watcher (inotify on Linux, kqueue on macOS), or the composite GitHub Action.
 
 ### Storage and deduplication
 

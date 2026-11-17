@@ -3,8 +3,9 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -37,25 +38,18 @@ func watchCmd() *cobra.Command {
 			cl.Quiet = true
 			fmt.Printf("watching %s → pushing to %s\n", storeDir, cache)
 
-			// Decouple pushing from the watch loop: a buffered queue +
-			// worker keeps draining the fd so a build burst can't overflow the
-			// kernel event queue and drop store paths.
-			queue := make(chan string, 1024)
+			ctx, cancel := context.WithCancel(cmd.Context())
+			defer cancel()
+			queue := newPathQueue()
+			pushed := make(chan error, 1)
 			go func() {
-				for path := range queue {
-					if err := cl.Push(cmd.Context(), []string{path}); err != nil {
-						fmt.Fprintf(os.Stderr, "push %s: %v\n", path, err)
-					}
-				}
+				err := queue.run(ctx, cl.Push)
+				cancel()
+				pushed <- err
 			}()
-
-			return watchStore(cmd.Context(), storeDir, func(path string) {
-				select {
-				case queue <- path:
-				default:
-					fmt.Fprintf(os.Stderr, "watch: queue full, dropping %s\n", path)
-				}
-			})
+			watchErr := watchStore(ctx, storeDir, queue.add)
+			cancel()
+			return errors.Join(watchErr, <-pushed)
 		},
 	}
 	c.Flags().StringVar(&url, "url", "", "server base URL (env XILO_URL / saved login)")

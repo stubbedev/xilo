@@ -56,6 +56,13 @@ errors go to `~/.cache/xilo/push.log`), and the watcher pushes out of band
 entirely. The example hook uses `--detach`; drop the flag to let a failed push
 fail the build.
 
+The watcher never drops a path: paths that become valid while a push is
+running are queued and pushed together in the next batch. If a push fails, or
+the watcher is stopped with paths still queued, it exits non-zero naming them.
+Every push, from `xilo push` or the watcher, publishes a path only after all of
+its references are in the cache, so an interrupted push never leaves a
+narinfo whose closure the cache cannot serve.
+
 ### GitHub Actions
 
 The repository doubles as a composite action: it installs the CLI, saves the
