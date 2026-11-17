@@ -29,12 +29,12 @@ Stored on disk: a host store keeps the closure unpacked, a cache stores it compr
 
 | Measure | xilo | attic | harmonia | nix-serve-ng | Garage + nix copy |
 |---|--:|--:|--:|--:|--:|
-| narinfo throughput (requests/s, higher is better) | 6,982/s | 2,108/s | **7,868/s** | 3,562/s | 4,381/s |
-| NAR pull throughput (MB/s, higher is better) | **1190 MB/s** | 131 MB/s | 1084 MB/s | 26 MB/s | — |
-| Memory under pull load (peak RAM in use, lower is better) | 100 MiB | 216 MiB | 28 MiB | 45 MiB | **18 MiB** |
-| CPU per MB/s served (% of a core per MB/s, lower is better) | **0.15** | 1.12 | 0.17 | 4.13 | — |
-| Cold push of the closure (seconds, lower is better) | **2.8 s** | 6.2 s | — | — | 70.3 s |
-| Repeat push of the closure (seconds, lower is better) | **0.1 s** | 0.5 s | — | — | **0.1 s** |
+| narinfo throughput (requests/s, higher is better) | 6,318/s | 1,697/s | **6,890/s** | 3,075/s | 4,396/s |
+| NAR pull throughput (MB/s, higher is better) | 1037 MB/s | 149 MB/s | **1256 MB/s** | 31 MB/s | — |
+| Memory under pull load (peak RAM in use, lower is better) | 98 MiB | 122 MiB | 23 MiB | 43 MiB | **21 MiB** |
+| CPU per MB/s served (% of a core per MB/s, lower is better) | 0.19 | 1.12 | **0.16** | 3.81 | — |
+| Cold push of the closure (seconds, lower is better) | **3.4 s** | 7.0 s | — | — | 78.6 s |
+| Repeat push of the closure (seconds, lower is better) | **0.0 s** | 0.5 s | — | — | 0.1 s |
 | Stored on disk (bytes for this closure) | 225 MB | 212 MB | 654 MB | 654 MB | 157 MB |
 | Image or closure to deploy (bytes, lower is better) | **11 MB** | 87 MB | 78 MB | 220 MB | 28 MB |
 
