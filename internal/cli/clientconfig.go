@@ -2,8 +2,10 @@ package cli
 
 import (
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -95,7 +97,8 @@ func activeProfile() serverProfile {
 var errNoServer = errors.New("no server configured. Pass --url <url>, set XILO_URL, or run `xilo login <url>`")
 
 // resolveServer picks URL + token: flag > env > saved profile. The URL comes
-// back empty when none of those is set; callers report errNoServer.
+// back empty when none of those is set; callers report errNoServer. The token
+// follows resolveToken: a saved one only travels to the server it was saved for.
 func resolveServer(urlFlag, tokenFlag string) (url, token string) {
 	p := activeProfile()
 	url = urlFlag
@@ -105,14 +108,61 @@ func resolveServer(urlFlag, tokenFlag string) (url, token string) {
 	if url == "" {
 		url = p.URL
 	}
-	token = tokenFlag
-	if token == "" {
-		token = os.Getenv("XILO_TOKEN")
+	return url, resolveToken(p, url, tokenFlag)
+}
+
+// resolveToken picks the token to send to server: flag > env > the profile's
+// saved token, the last only when server is the profile's own server. A token
+// is a credential for one server, so pointing a command elsewhere with --url,
+// --server or XILO_URL must not hand that host the token saved for another;
+// it gets none unless one is passed explicitly.
+func resolveToken(p serverProfile, server, tokenFlag string) string {
+	if tokenFlag != "" {
+		return tokenFlag
 	}
-	if token == "" {
-		token = p.Token
+	if t := os.Getenv("XILO_TOKEN"); t != "" {
+		return t
 	}
-	return url, token
+	if sameServer(server, p.URL) {
+		return p.Token
+	}
+	return ""
+}
+
+// serverID is a base URL reduced to what identifies the server behind it.
+type serverID struct{ scheme, host, port, path string }
+
+// parseServer normalizes a base URL: scheme and host lowercased, the scheme's
+// default port dropped, trailing slashes trimmed off the path. Anything that
+// does not parse to a scheme and a host is not a server.
+func parseServer(raw string) (serverID, bool) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return serverID{}, false
+	}
+	id := serverID{
+		scheme: strings.ToLower(u.Scheme),
+		host:   strings.ToLower(u.Hostname()),
+		port:   u.Port(),
+		path:   strings.TrimRight(u.EscapedPath(), "/"),
+	}
+	if (id.scheme == "https" && id.port == "443") || (id.scheme == "http" && id.port == "80") {
+		id.port = ""
+	}
+	return id, true
+}
+
+// sameServer reports whether two base URLs name the same server. Spelling
+// differences (host case, a default port, a trailing slash) do not matter;
+// a different scheme, host, port or path does, and so does a URL that fails
+// to parse.
+func sameServer(a, b string) bool {
+	x, ok := parseServer(a)
+	if !ok {
+		return false
+	}
+	y, ok := parseServer(b)
+	return ok && x == y
 }
 
 // defaultCache returns the saved default push/use target ("ns/cache"), if any.

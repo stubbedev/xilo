@@ -27,7 +27,14 @@ func loginCmd() *cobra.Command {
 				cc.Servers = map[string]serverProfile{}
 			}
 			p := cc.Servers[name]
-			p.URL = strings.TrimRight(args[0], "/")
+			newURL := strings.TrimRight(args[0], "/")
+			if token == "" && p.Token != "" && !sameServer(p.URL, newURL) {
+				// The saved token is a credential for the old server; keeping
+				// it would send it to the new one on every later command.
+				p.Token = ""
+				fmt.Fprintln(os.Stderr, styleDim("note: dropped the token saved for "+p.URL+" — pass --token to save one for "+newURL))
+			}
+			p.URL = newURL
 			// A token sent over plain HTTP to a non-local host travels in
 			// cleartext (Authorization: Bearer). Warn; don't block (local dev).
 			if token != "" && strings.HasPrefix(p.URL, "http://") &&
