@@ -54,12 +54,12 @@ jobs:
       # the ones behind it.
       - name: ${{ matrix.suite }} suite
         run: |
-          EXTRA=""
+          extra=()
           if [ "${{ matrix.suite }}" = pressure ]; then
-            EXTRA="-e STORM_VUS=128 -e FLOOD_RPS=1200 -e PULL_VUS=32 -e DURATION_S=45"
+            extra=(-e STORM_VUS=128 -e FLOOD_RPS=1200 -e PULL_VUS=32 -e DURATION_S=45)
           fi
           XILO_E2E_CONFIG=${{ matrix.config }} docker compose -f tests/k6/compose.yaml \
-            run --rm $EXTRA -e TENANTS=${{ matrix.tenants }} \
+            run --rm "${extra[@]}" -e TENANTS=${{ matrix.tenants }} \
             k6 run --summary-export=/out/summary.json /scripts/${{ matrix.suite }}.js
           docker compose -f tests/k6/compose.yaml run --rm --entrypoint cat k6 /out/summary.json > k6-${{ matrix.suite }}-summary.json
 
@@ -71,27 +71,31 @@ jobs:
         run: |
           f=k6-${{ matrix.suite }}-summary.json
           [ -f "$f" ] || exit 0
-          echo "### ${{ matrix.suite }} (${{ matrix.tenancy }}-tenant)" >> "$GITHUB_STEP_SUMMARY"
-          echo '| metric | p50 | p95 | p99 |' >> "$GITHUB_STEP_SUMMARY"
-          echo '|---|---|---|---|' >> "$GITHUB_STEP_SUMMARY"
-          jq -r '.metrics | to_entries[]
-            | select(.key | startswith("http_req_duration"))
-            | "| \(.key) | \(.value["med"] // 0 | round)ms | \(.value["p(95)"] // 0 | round)ms | \(.value["p(99)"] // .value["p(95)"] // 0 | round)ms |"' \
-            "$f" >> "$GITHUB_STEP_SUMMARY"
-          jq -r '"| http_reqs (count) | \(.metrics.http_reqs.count) | | |",
-                 "| http_req_failed (rate) | \(.metrics.http_req_failed.value // 0) | | |"' \
-            "$f" >> "$GITHUB_STEP_SUMMARY" || true
+          {
+            echo "### ${{ matrix.suite }} (${{ matrix.tenancy }}-tenant)"
+            echo '| metric | p50 | p95 | p99 |'
+            echo '|---|---|---|---|'
+            jq -r '.metrics | to_entries[]
+              | select(.key | startswith("http_req_duration"))
+              | "| \(.key) | \(.value["med"] // 0 | round)ms | \(.value["p(95)"] // 0 | round)ms | \(.value["p(99)"] // .value["p(95)"] // 0 | round)ms |"' \
+              "$f"
+            jq -r '"| http_reqs (count) | \(.metrics.http_reqs.count) | | |",
+                   "| http_req_failed (rate) | \(.metrics.http_req_failed.value // 0) | | |"' \
+              "$f" || true
+          } >> "$GITHUB_STEP_SUMMARY"
           # Per-scenario failure rates, because the aggregate answers "did
           # anything fail" and not "what failed": a rate on this page with
           # no scenario beside it sends you to the raw log to find out.
           jq -e '.metrics | any(keys[]; startswith("http_req_failed{"))' "$f" >/dev/null 2>&1 || exit 0
-          echo '| scenario | failed |' >> "$GITHUB_STEP_SUMMARY"
-          echo '|---|---|' >> "$GITHUB_STEP_SUMMARY"
-          jq -r '.metrics | to_entries[]
-            | select(.key | startswith("http_req_failed{"))
-            | "| \(.key | ltrimstr("http_req_failed{") | rtrimstr("}")) | \(.value.value // 0) |"' \
-            "$f" >> "$GITHUB_STEP_SUMMARY"
-          echo >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo '| scenario | failed |'
+            echo '|---|---|'
+            jq -r '.metrics | to_entries[]
+              | select(.key | startswith("http_req_failed{"))
+              | "| \(.key | ltrimstr("http_req_failed{") | rtrimstr("}")) | \(.value.value // 0) |"' \
+              "$f"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
         if: always()

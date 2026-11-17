@@ -80,7 +80,7 @@ jobs:
       - run: go test -race ./...
 
   macos:
-    name: macOS watcher
+    name: macOS client
     runs-on: macos-latest
     permissions:
       contents: read
@@ -92,8 +92,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - run: go vet -tags noserver ./internal/cli/
-      - run: go test -race -tags noserver ./internal/cli/
+      - uses: DeterminateSystems/nix-installer-action@v23
+      - name: packages in the darwin client binary
+        run: |
+          go list -tags noserver -deps ./cmd/xilo | grep '^github.com/stubbedev/xilo/internal/' > "$RUNNER_TEMP/client-packages"
+          cat "$RUNNER_TEMP/client-packages"
+      - run: go build -tags noserver -o /dev/null ./cmd/xilo
+      - run: xargs go vet -tags noserver < "$RUNNER_TEMP/client-packages"
+      - run: xargs go test -race -tags noserver < "$RUNNER_TEMP/client-packages"
 
   vuln:
     name: known vulnerabilities
@@ -384,7 +390,7 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add nix/package.nix
           git commit -m 'chore: auto-bump nix/package.nix vendorHash [skip ci]'
-          git push origin HEAD:${GITHUB_REF_NAME}
+          git push origin "HEAD:${GITHUB_REF_NAME}"
 
       - run: nix build .#default -L
 
