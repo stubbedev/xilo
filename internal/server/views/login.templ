@@ -128,7 +128,7 @@ templ AuthShell(title string, flash Flash) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>Xilo — { title }</title>
-			<link rel="icon" type="image/svg+xml" href={ Asset("favicon.svg") }/>
+			@favicon()
 			<link rel="stylesheet" href={ Asset("xilo-tw.css") }/>
 			<script src={ Asset("htmx.min.js") }></script>
 			<script>
