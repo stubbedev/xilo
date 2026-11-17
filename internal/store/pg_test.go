@@ -277,7 +277,7 @@ func TestPostgres(t *testing.T) {
 			t.Fatalf("blob put: %v", err)
 		}
 	}
-	if n, err := db.EvictCachePathsOlderThan(c.ID, now+9999); err != nil || n != 1 {
+	if n, err := db.EvictCachePathsOlderThan(c.ID, now+9999); err != nil || n.Total() != 1 {
 		t.Fatalf("EvictCachePathsOlderThan: %d %v", n, err)
 	}
 	deleted, freed, err := db.GC(ctx, blob, "default", now+99999)

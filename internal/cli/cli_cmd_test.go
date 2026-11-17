@@ -4,7 +4,9 @@ package cli
 // capturing stdout (commands print with fmt.Printf).
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,8 +14,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stubbedev/xilo/internal/api"
+	"github.com/stubbedev/xilo/internal/storage"
 	"github.com/stubbedev/xilo/internal/store"
 )
 
@@ -201,21 +205,67 @@ func TestGCCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "evicted 0 paths older than 1h0m0s") || !strings.Contains(out, "removed 0 chunks, freed 0 bytes") {
+	if !strings.Contains(out, "evicted 0 paths\n") || !strings.Contains(out, "removed 0 chunks, freed 0 bytes") {
 		t.Fatalf("gc output: %q", out)
 	}
 }
 
-func TestGCBadGraceFallsBack(t *testing.T) {
+func TestLocalGCEnforcesTheCacheCapAndCacheInfoShowsIt(t *testing.T) {
 	isolateEnv(t)
-	cfg := writeConfig(t, "gc:\n  grace: banana\n")
+	cfg := writeConfig(t, "")
+	if _, err := runRoot(t, "--config", cfg, "cache", "create", "acct/c"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runRoot(t, "--config", cfg, "cache", "configure", "acct/c", "--max-size", "250B"); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := store.Open(filepath.Join(filepath.Dir(cfg), "data", "xilo.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := db.GetCache(context.Background(), "acct", "c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().Unix()
+	for i := range 4 {
+		h := fmt.Sprintf("chunk%d", i)
+		sh := fmt.Sprintf("%032d", i)
+		if err := db.PutChunk("default", h, 100, 100, storage.ChunkKey(h), 1); err != nil {
+			t.Fatal(err)
+		}
+		p := &store.Path{StorePath: "/nix/store/" + sh + "-p", NarHash: "sha256:h", NarSize: 100, Chunks: []string{h}}
+		if err := db.PutPath(ca.ID, sh, p); err != nil {
+			t.Fatal(err)
+		}
+		db.TouchPath(ca.ID, sh, now+int64(i), 0)
+	}
+	db.Close()
 
 	out, err := runRoot(t, "--config", cfg, "gc")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, `bad gc.grace "banana", using 1h`) {
+	if !strings.Contains(out, "evicted 2 paths\n") || !strings.Contains(out, "removed 2 chunks, freed 200 bytes") {
 		t.Fatalf("gc output: %q", out)
+	}
+	out, err = runRoot(t, "--config", cfg, "cache", "info", "acct/c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "paths:       2\n") || !strings.Contains(out, "physical:    200 bytes") {
+		t.Fatalf("cache info after gc: %q", out)
+	}
+}
+
+func TestGCBadGraceRefusesToRun(t *testing.T) {
+	isolateEnv(t)
+	cfg := writeConfig(t, "gc:\n  grace: banana\n")
+
+	_, err := runRoot(t, "--config", cfg, "gc")
+	if err == nil || !strings.Contains(err.Error(), `gc.grace: bad duration "banana"`) {
+		t.Fatalf("err = %v, want the bad gc.grace named", err)
 	}
 }
 

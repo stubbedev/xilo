@@ -297,16 +297,13 @@ func TestStartGCDisabled(t *testing.T) {
 }
 
 func TestStartGCSweepsOnTick(t *testing.T) {
-	s, db, ts := newTestServerCfg(t, func(cfg *config.Config) {
+	s, db, _ := newTestServerCfg(t, func(cfg *config.Config) {
 		cfg.GC.Interval = "1ms"
-		cfg.GC.Grace = "-1s"
+		cfg.GC.Grace = "0"
 	})
 	db.CreateCache("default", "c", true, 40)
-	// orphan chunk: uploaded, never referenced by a path
-	data := []byte("orphan chunk")
-	ch, _, _ := fakeNar(data)
-	if r := put(t, ts, "/c/default/c/api/chunk/"+ch, data, ""); r.StatusCode != http.StatusOK {
-		t.Fatalf("put chunk: %d", r.StatusCode)
+	if err := db.PutChunk("default", strings.Repeat("ab", 32), 25, 25, storage.ChunkKey(strings.Repeat("ab", 32)), 1); err != nil {
+		t.Fatal(err)
 	}
 	ctx := t.Context()
 	s.startGC(ctx)
@@ -412,15 +409,13 @@ func TestIndexUnknownSingleSegment(t *testing.T) {
 // redeployed or rebooted more often than gc.interval would otherwise never
 // sweep. Interval here is long enough that a tick can't be what fires.
 func TestStartGCSweepsAtStartup(t *testing.T) {
-	s, db, ts := newTestServerCfg(t, func(cfg *config.Config) {
+	s, db, _ := newTestServerCfg(t, func(cfg *config.Config) {
 		cfg.GC.Interval = "24h"
-		cfg.GC.Grace = "-1s"
+		cfg.GC.Grace = "0"
 	})
 	db.CreateCache("default", "c", true, 40)
-	data := []byte("orphan chunk")
-	ch, _, _ := fakeNar(data)
-	if r := put(t, ts, "/c/default/c/api/chunk/"+ch, data, ""); r.StatusCode != http.StatusOK {
-		t.Fatalf("put chunk: %d", r.StatusCode)
+	if err := db.PutChunk("default", strings.Repeat("ab", 32), 25, 25, storage.ChunkKey(strings.Repeat("ab", 32)), 1); err != nil {
+		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer func() { cancel(); s.gcDone.Wait() }()

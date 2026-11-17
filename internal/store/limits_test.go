@@ -25,8 +25,8 @@ func TestEnforceCacheCapLRU(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 2 {
-		t.Fatalf("evicted %d, want 2", n)
+	if n.Total() != 2 {
+		t.Fatalf("evicted %d, want 2", n.Total())
 	}
 	// newest path survives
 	miss, _ := db.MissingPaths(c.ID, []string{"cccccccccccccccccccccccccccccccc"})
@@ -53,7 +53,7 @@ func TestEnforceCapSharedChunk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 2 {
+	if n.Total() != 2 {
 		t.Fatalf("evicted %d, want 2 (shared chunk keeps size until last ref gone)", n)
 	}
 }
@@ -70,8 +70,8 @@ func TestEnforceGlobalCap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
-		t.Fatalf("evicted %d, want 1", n)
+	if n.Total() != 1 || n[a.ID] != 1 {
+		t.Fatalf("evicted %v, want the one path of the older cache", n)
 	}
 }
 

@@ -479,8 +479,8 @@ func TestEvictPathsOlderThan(t *testing.T) {
 
 	// per-cache: only cache a's old row goes; boundary accessed==cutoff survives
 	n, err := db.EvictCachePathsOlderThan(a.ID, 100)
-	if err != nil || n != 1 {
-		t.Fatalf("per-cache evicted %d err=%v, want 1", n, err)
+	if err != nil || n.Total() != 1 || n[a.ID] != 1 {
+		t.Fatalf("per-cache evicted %v err=%v, want 1 from cache a", n, err)
 	}
 	if m, _ := db.MissingPaths(b.ID, []string{"cccccccccccccccccccccccccccccccc"}); len(m) != 0 {
 		t.Fatal("other cache's path evicted")
@@ -488,8 +488,8 @@ func TestEvictPathsOlderThan(t *testing.T) {
 
 	// global: remaining old row in b goes, a's accessed=100 survives cutoff=100
 	n, err = db.EvictPathsOlderThan(100)
-	if err != nil || n != 1 {
-		t.Fatalf("global evicted %d err=%v, want 1", n, err)
+	if err != nil || n.Total() != 1 || n[b.ID] != 1 {
+		t.Fatalf("global evicted %v err=%v, want 1 from cache b", n, err)
 	}
 	if m, _ := db.MissingPaths(a.ID, []string{"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}); len(m) != 0 {
 		t.Fatal("accessed==cutoff row should survive (strict <)")
@@ -503,14 +503,14 @@ func TestEnforceCapNoops(t *testing.T) {
 	putPathAt(t, db, c.ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []string{"x"}, 10)
 
 	// cap 0 = unlimited
-	if n, err := db.EnforceCacheCap(c.ID, 0); err != nil || n != 0 {
+	if n, err := db.EnforceCacheCap(c.ID, 0); err != nil || n.Total() != 0 {
 		t.Fatalf("cap 0: n=%d err=%v", n, err)
 	}
-	if n, err := db.EnforceGlobalCap(0); err != nil || n != 0 {
+	if n, err := db.EnforceGlobalCap(0); err != nil || n.Total() != 0 {
 		t.Fatalf("global cap 0: n=%d err=%v", n, err)
 	}
 	// already under cap → nothing evicted
-	if n, err := db.EnforceCacheCap(c.ID, 100); err != nil || n != 0 {
+	if n, err := db.EnforceCacheCap(c.ID, 100); err != nil || n.Total() != 0 {
 		t.Fatalf("under cap: n=%d err=%v", n, err)
 	}
 }
@@ -810,7 +810,7 @@ func TestUseAfterClose(t *testing.T) {
 	if _, err := db.LiveChunkSet("default"); err == nil {
 		t.Fatal("LiveChunkSet after close should error")
 	}
-	if _, err := db.chunkSizes(); err == nil {
+	if _, err := db.chunkSizes(`SELECT hash, csize FROM chunks`); err == nil {
 		t.Fatal("chunkSizes after close should error")
 	}
 	if _, _, err := db.GC(context.Background(), failDelete{}, "default", 1); err == nil {

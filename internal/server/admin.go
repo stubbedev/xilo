@@ -821,9 +821,9 @@ func (s *Server) renderInstance(w http.ResponseWriter, r *http.Request, flash vi
 	d := views.InstanceData{
 		Nav: s.nav(r, u), Flash: flash,
 		SelfService:   s.cfg.SelfService,
-		InstanceCap:   s.settingInt(settingInstanceCap),
+		InstanceCap:   s.db.SettingInt(store.SettingInstanceCap),
 		DefaultRetain: s.defaultRetention(),
-		MaxTokenTTL:   s.settingInt(settingMaxTokenTTL),
+		MaxTokenTTL:   s.db.SettingInt(settingMaxTokenTTL),
 		DefaultPlan:   s.defaultPlan(),
 	}
 	var err error
@@ -1865,12 +1865,12 @@ func (s *Server) handleGC(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return
 	}
-	deleted, freed, err := s.runGC(r.Context())
+	res, err := s.runGC(r.Context(), 0)
 	if err != nil {
 		uiError(w, r, err)
 		return
 	}
-	s.instanceFlash(w, r, views.Tf(r.Context(), "flash.gcdone", deleted, humanBytes(freed)))
+	s.instanceFlash(w, r, views.Tf(r.Context(), "flash.gcdone", res.Deleted, humanBytes(res.Freed)))
 }
 
 // ---- user management (admin role only) ----
@@ -2192,7 +2192,7 @@ func (s *Server) handleDeleteOrg(w http.ResponseWriter, r *http.Request) {
 		s.flashStore(w, r, "/admin/org/"+ns.Slug, err)
 		return
 	}
-	go s.runGC(context.Background())
+	go s.runGC(context.Background(), 0)
 	s.orgsFlash(w, r, views.Tf(r.Context(), "flash.orgdeleted", ns.Slug))
 }
 

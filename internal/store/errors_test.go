@@ -65,7 +65,7 @@ func TestScanErrorBranches(t *testing.T) {
 	if _, err := db.ChunkKeys(context.Background(), "default", []string{"bad"}); err == nil {
 		t.Error("ChunkKeys should fail on poison row")
 	}
-	if _, err := db.chunkSizes(); err == nil {
+	if _, err := db.chunkSizes(`SELECT hash, csize FROM chunks`); err == nil {
 		t.Error("chunkSizes should fail on poison row")
 	}
 	if _, _, err := db.SearchPaths(c.ID, "", 10, 0, "", ""); err == nil {

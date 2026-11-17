@@ -59,9 +59,15 @@ type Server struct {
 	// and store.DB.Close() closes the writer channel, so a sweep still
 	// deleting rows would panic sending on it.
 	gcDone sync.WaitGroup
+	// gcPolicy is the gc block, parsed once in New.
+	gcPolicy config.GCPolicy
 }
 
 func New(cfg *config.Config, db *store.DB, sts map[string]storage.Storage) (*Server, error) {
+	gcPolicy, err := cfg.GC.Policy()
+	if err != nil {
+		return nil, err
+	}
 	enc, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstdLevel(cfg.Compression.Level)))
 	if err != nil {
 		return nil, err
@@ -90,6 +96,7 @@ func New(cfg *config.Config, db *store.DB, sts map[string]storage.Storage) (*Ser
 		niCache:   newNarinfoCache(16384), // ~64B/key + body ~600B ⇒ ~10MB cap
 		vfCache:   newVerifyCache(8192),   // 32B keys ⇒ well under 1MB
 		webAuthn:  newWebAuthn(cfg),
+		gcPolicy:  gcPolicy,
 	}
 	s.restoreCounters()
 	return s, nil
@@ -474,7 +481,7 @@ func (w *logWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // startGC launches the background sweeper if gc.interval is set.
 func (s *Server) startGC(ctx context.Context) {
-	interval := parseDur(s.cfg.GC.Interval)
+	interval := s.gcPolicy.Interval
 	if interval <= 0 {
 		return
 	}
@@ -485,10 +492,10 @@ func (s *Server) startGC(ctx context.Context) {
 		// Sweep once at startup: a ticker alone means a box redeployed or
 		// rebooted more often than gc.interval never sweeps at all.
 		for {
-			if del, freed, err := s.runGC(ctx); err != nil {
+			if res, err := s.runGC(ctx, 0); err != nil {
 				log.Printf("gc: %v", err)
-			} else if del > 0 {
-				log.Printf("gc: swept %d chunks, freed %d bytes", del, freed)
+			} else if res.Deleted > 0 || res.Evicted > 0 {
+				log.Printf("gc: evicted %d paths, swept %d chunks, freed %d bytes", res.Evicted, res.Deleted, res.Freed)
 			}
 			select {
 			case <-ctx.Done():
@@ -513,7 +520,7 @@ const (
 // startAuditPrune launches the low-priority activity pruner if
 // gc.audit_retention is set (default one year).
 func (s *Server) startAuditPrune(ctx context.Context) {
-	ret := parseDur(s.cfg.GC.AuditRetention)
+	ret := s.gcPolicy.AuditRetention
 	if ret <= 0 {
 		return
 	}
@@ -559,34 +566,6 @@ func (s *Server) pruneAudit(ctx context.Context, retention time.Duration) {
 	if total > 0 {
 		log.Printf("audit: pruned %d expired entries", total)
 	}
-}
-
-// parseDur treats "" and "0" as disabled.
-func parseDur(s string) time.Duration {
-	if s == "" || s == "0" {
-		return 0
-	}
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		log.Printf("config: bad duration %q: %v", s, err)
-		return 0
-	}
-	return d
-}
-
-// parseDurSafe is parseDur for durations where "unparsable" must fail SAFE
-// (fall back to def), not fail open. A typo'd gc.grace returning 0 would make
-// every unreferenced chunk instantly sweepable.
-func parseDurSafe(s string, def time.Duration) time.Duration {
-	if s == "" || s == "0" {
-		return 0 // explicit opt-out
-	}
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		log.Printf("config: bad duration %q: %v (using %s)", s, err, def)
-		return def
-	}
-	return d
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {

@@ -3,7 +3,9 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseBytes(t *testing.T) {
@@ -299,5 +301,27 @@ func TestMultiTenantAliasesSelfService(t *testing.T) {
 	}
 	if c, err = Load(path); err != nil || c.SelfService {
 		t.Fatalf("default should be off: %v %v", c.SelfService, err)
+	}
+}
+
+func TestGCPolicyParsesEveryField(t *testing.T) {
+	p, err := GC{Interval: "12h", Retention: "0", Grace: "30m", AuditRetention: ""}.Policy()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Interval != 12*time.Hour || p.Retention != 0 || p.Grace != 30*time.Minute || p.AuditRetention != 0 {
+		t.Fatalf("policy = %+v", p)
+	}
+}
+
+func TestLoadRefusesABadGCField(t *testing.T) {
+	for field, val := range map[string]string{"grace": "banana", "retention": "-1h", "interval": "soon", "audit_retention": "1y"} {
+		path := filepath.Join(t.TempDir(), "xilo.yaml")
+		if err := os.WriteFile(path, []byte("gc:\n  "+field+": "+val+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "gc."+field) {
+			t.Errorf("gc.%s: %q loaded with err = %v, want an error naming the field", field, val, err)
+		}
 	}
 }

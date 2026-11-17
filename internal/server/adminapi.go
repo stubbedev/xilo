@@ -392,20 +392,10 @@ func (s *Server) apiGC(w http.ResponseWriter, r *http.Request) {
 	if r.ContentLength != 0 && !decodeJSON(w, r, &req) {
 		return
 	}
-	var evicted int64
-	if req.EvictOlderThan > 0 {
-		cutoff := time.Now().Unix() - req.EvictOlderThan
-		n, err := s.db.EvictPathsOlderThan(cutoff)
-		if err != nil {
-			apiError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		evicted = n
-	}
-	deleted, freed, err := s.runGC(r.Context())
+	res, err := s.runGC(r.Context(), time.Duration(req.EvictOlderThan)*time.Second)
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	jsonOut(w, api.GCResp{Evicted: evicted, Deleted: deleted, FreedBytes: freed})
+	jsonOut(w, api.GCResp{Evicted: int64(res.Evicted), Deleted: res.Deleted, FreedBytes: res.Freed})
 }

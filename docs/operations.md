@@ -4,11 +4,14 @@
 
 Chunks are content-addressed and shared between paths and caches, so GC is a
 mark-sweep over unreferenced chunks. It runs on a schedule (`gc.interval`),
-from the dashboard, or from the CLI:
+from the dashboard, or from the CLI. Every one of them runs the same sweep:
+evict paths by the limits below, then delete the chunks no path references.
+A local `xilo gc` on the server's database enforces exactly what the
+background sweep does.
 
 ```sh
-xilo gc                     # sweep unreferenced chunks
-xilo gc --older-than 720h   # evict paths not pulled in 30 days, then sweep
+xilo gc                     # enforce every limit, then sweep unreferenced chunks
+xilo gc --older-than 720h   # also evict paths not pulled in 30 days
 ```
 
 Four limits apply, all optional:
@@ -19,6 +22,10 @@ Four limits apply, all optional:
 | per-cache retention | `xilo cache configure --retention`, dashboard | overrides the global window for that cache |
 | per-cache size cap | `xilo cache configure --max-size`, dashboard | caps one cache's stored bytes |
 | `limits.total` | config, or the instance storage ceiling in Settings | evicts least-recently-pulled paths across all caches |
+
+Plan retention ceilings cap a cache's retention too. Limits are enforced by
+the sweep, not on each push, so a burst of pushes can overshoot them until the
+next one.
 
 `gc.grace` (default `1h`) protects chunks newer than the window, so a chunk
 uploaded by an in-flight push is never swept before its path is registered; it

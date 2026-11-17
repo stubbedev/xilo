@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -245,6 +246,50 @@ type GC struct {
 	AuditRetention string `yaml:"audit_retention" json:"audit_retention"`
 }
 
+// GCPolicy is the gc block parsed, validated once when the config loads.
+type GCPolicy struct {
+	Interval       time.Duration
+	Retention      time.Duration
+	Grace          time.Duration
+	AuditRetention time.Duration
+}
+
+// Policy parses the gc block. Empty or "0" disables a duration.
+func (g GC) Policy() (GCPolicy, error) {
+	var p GCPolicy
+	for _, d := range []struct {
+		key string
+		raw string
+		out *time.Duration
+	}{
+		{"gc.interval", g.Interval, &p.Interval},
+		{"gc.retention", g.Retention, &p.Retention},
+		{"gc.grace", g.Grace, &p.Grace},
+		{"gc.audit_retention", g.AuditRetention, &p.AuditRetention},
+	} {
+		v, err := parseDuration(d.raw)
+		if err != nil {
+			return GCPolicy{}, fmt.Errorf("%s: %w", d.key, err)
+		}
+		*d.out = v
+	}
+	return p, nil
+}
+
+func parseDuration(s string) (time.Duration, error) {
+	if s == "" || s == "0" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("bad duration %q: %w", s, err)
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("bad duration %q: negative", s)
+	}
+	return d, nil
+}
+
 // Admin configures the management dashboard.
 type Admin struct {
 	// Password for the admin dashboard. Overridable at runtime with
@@ -468,6 +513,9 @@ func (c *Config) validate() error {
 	case "normal", "full":
 	default:
 		return fmt.Errorf("durability %q invalid (want normal|full)", c.Durability)
+	}
+	if _, err := c.GC.Policy(); err != nil {
+		return err
 	}
 	return nil
 }

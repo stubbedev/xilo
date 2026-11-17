@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"strconv"
 	"time"
 )
 
@@ -160,6 +161,31 @@ func (db *DB) Setting(key string) string {
 		return ""
 	}
 	return v
+}
+
+// SettingInstanceCap is the instance rule holding the ceiling on total stored
+// bytes across every cache.
+const SettingInstanceCap = "instance_max_bytes"
+
+// SettingInt reads a rule as a non-negative count of bytes or seconds. Zero
+// (and anything unparseable) means "no rule", which is the default for all of
+// them: a fresh instance imposes nothing.
+func (db *DB) SettingInt(key string) int64 {
+	n, err := strconv.ParseInt(db.Setting(key), 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+// InstanceCap is the ceiling on everything stored, from the rule when set and
+// the configured limits.total otherwise: the config value is the floor an
+// operator boots with, the rule is what they can change while it runs.
+func (db *DB) InstanceCap(configured int64) int64 {
+	if n := db.SettingInt(SettingInstanceCap); n > 0 {
+		return n
+	}
+	return configured
 }
 
 // SetSetting upserts one instance setting.

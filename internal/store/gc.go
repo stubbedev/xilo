@@ -165,86 +165,122 @@ func (db *DB) deleteChunkRowIf(storageName, hash string, graceCutoff int64) (boo
 	return len(gone) > 0, err
 }
 
+// Evicted counts the paths an eviction removed, per cache id.
+type Evicted map[int64]int
+
+// Total is the number of paths evicted across every cache.
+func (e Evicted) Total() int {
+	n := 0
+	for _, c := range e {
+		n += c
+	}
+	return n
+}
+
+// Merge adds other's counts into e.
+func (e Evicted) Merge(other Evicted) {
+	for id, n := range other {
+		e[id] += n
+	}
+}
+
 // EvictPathsOlderThan deletes path rows across all caches not accessed since
 // cutoff (unix secs). Chunks orphaned by this are reclaimed on the next GC.
-func (db *DB) EvictPathsOlderThan(cutoff int64) (int64, error) {
-	return db.evict(`DELETE FROM paths WHERE accessed < ?`, cutoff)
+func (db *DB) EvictPathsOlderThan(cutoff int64) (Evicted, error) {
+	return db.evict(`DELETE FROM paths WHERE accessed < ? RETURNING cache_id`, cutoff)
 }
 
 // EvictCachePathsOlderThan is the per-cache variant, honoring a cache's own
 // retention window.
-func (db *DB) EvictCachePathsOlderThan(cacheID, cutoff int64) (int64, error) {
-	return db.evict(`DELETE FROM paths WHERE cache_id=? AND accessed < ?`, cacheID, cutoff)
+func (db *DB) EvictCachePathsOlderThan(cacheID, cutoff int64) (Evicted, error) {
+	return db.evict(`DELETE FROM paths WHERE cache_id=? AND accessed < ? RETURNING cache_id`, cacheID, cutoff)
 }
 
 type pathRow struct {
 	id       int64
+	cacheID  int64
 	accessed int64
 	chunks   []string
 }
 
 // EnforceCacheCap evicts least-recently-pulled paths from one cache until the
 // compressed size of the distinct chunks it references is <= cap (0 = no cap).
-func (db *DB) EnforceCacheCap(cacheID, cap int64) (int, error) {
+func (db *DB) EnforceCacheCap(cacheID, cap int64) (Evicted, error) {
 	if cap <= 0 {
-		return 0, nil
+		return Evicted{}, nil
 	}
-	return db.enforceCap(cap, `SELECT id, accessed, chunks FROM paths WHERE cache_id=?`, cacheID)
+	return db.enforceCap(fixedCap(cap), `SELECT hash, csize FROM chunks`, nil,
+		`SELECT id, cache_id, accessed, chunks FROM paths WHERE cache_id=?`, cacheID)
 }
 
 // EnforceGlobalCap evicts least-recently-pulled paths across ALL caches until
 // total stored (compressed) size is <= cap (0 = no cap). Reclaimed on the next
-// chunk sweep, which runGC runs right after.
-func (db *DB) EnforceGlobalCap(cap int64) (int, error) {
+// chunk sweep.
+func (db *DB) EnforceGlobalCap(cap int64) (Evicted, error) {
 	if cap <= 0 {
-		return 0, nil
+		return Evicted{}, nil
 	}
-	return db.enforceCap(cap, `SELECT id, accessed, chunks FROM paths`)
+	return db.enforceCap(fixedCap(cap), `SELECT hash, csize FROM chunks`, nil,
+		`SELECT id, cache_id, accessed, chunks FROM paths`)
 }
 
-func (db *DB) enforceCap(cap int64, query string, args ...any) (int, error) {
+func fixedCap(cap int64) func(int64) int64 { return func(int64) int64 { return cap } }
+
+func (db *DB) enforceCap(capFor func(total int64) int64, sizesQuery string, sizesArgs []any, query string, args ...any) (Evicted, error) {
 	rows, err := db.r.Query(query, args...)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	var paths []pathRow
 	for rows.Next() {
 		var p pathRow
 		var chunks string
-		if err := rows.Scan(&p.id, &p.accessed, &chunks); err != nil {
+		if err := rows.Scan(&p.id, &p.cacheID, &p.accessed, &chunks); err != nil {
 			rows.Close()
-			return 0, err
+			return nil, err
 		}
 		p.chunks = distinct(splitLines(chunks))
 		paths = append(paths, p)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	csize, err := db.chunkSizes()
+	csize, err := db.chunkSizes(sizesQuery, sizesArgs...)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	evict := evictToFit(paths, csize, cap)
+	evict := evictToFit(paths, csize, capFor)
+	out := Evicted{}
 	if len(evict) == 0 {
-		return 0, nil
+		return out, nil
 	}
-	err = db.eachIDBatch(evict, func(args []any) error {
+	ids := make([]int64, len(evict))
+	for i, p := range evict {
+		ids[i] = p.id
+	}
+	err = db.eachIDBatch(ids, func(args []any) error {
 		return db.write(func(tx *sql.Tx) error {
 			_, err := tx.Exec(`DELETE FROM paths WHERE id IN (`+placeholders(len(args))+`)`, args...)
 			return err
 		})
 	})
-	return len(evict), err
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range evict {
+		out[p.cacheID]++
+	}
+	return out, nil
 }
 
-// evictToFit returns the ids of the oldest-accessed paths to remove so the
-// distinct referenced chunks' compressed size drops to <= cap. Refcounts ensure
-// a chunk's size only leaves the total when its last referencing path goes.
-func evictToFit(paths []pathRow, csize map[string]int64, cap int64) []int64 {
+// evictToFit returns the oldest-accessed paths to remove so the distinct
+// referenced chunks' compressed size drops to <= capFor(total). Refcounts
+// ensure a chunk's size only leaves the total when its last referencing path
+// goes.
+func evictToFit(paths []pathRow, csize map[string]int64, capFor func(total int64) int64) []pathRow {
 	ref := map[string]int{}
 	var total int64
 	for _, p := range paths {
@@ -255,16 +291,19 @@ func evictToFit(paths []pathRow, csize map[string]int64, cap int64) []int64 {
 			ref[h]++
 		}
 	}
+	cap := capFor(total)
 	if total <= cap {
 		return nil
 	}
-	slices.SortFunc(paths, func(a, b pathRow) int { return cmp.Compare(a.accessed, b.accessed) })
-	var evict []int64
+	slices.SortFunc(paths, func(a, b pathRow) int {
+		return cmp.Or(cmp.Compare(a.accessed, b.accessed), cmp.Compare(a.id, b.id))
+	})
+	var evict []pathRow
 	for _, p := range paths {
 		if total <= cap {
 			break
 		}
-		evict = append(evict, p.id)
+		evict = append(evict, p)
 		for _, h := range p.chunks {
 			ref[h]--
 			if ref[h] == 0 {
@@ -275,8 +314,8 @@ func evictToFit(paths []pathRow, csize map[string]int64, cap int64) []int64 {
 	return evict
 }
 
-func (db *DB) chunkSizes() (map[string]int64, error) {
-	rows, err := db.r.Query(`SELECT hash, csize FROM chunks`)
+func (db *DB) chunkSizes(query string, args ...any) (map[string]int64, error) {
+	rows, err := db.r.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -305,15 +344,25 @@ func distinct(in []string) []string {
 	return out
 }
 
-func (db *DB) evict(q string, args ...any) (int64, error) {
-	var n int64
+func (db *DB) evict(q string, args ...any) (Evicted, error) {
+	out := Evicted{}
 	err := db.write(func(tx *sql.Tx) error {
-		res, err := tx.Exec(q, args...)
+		rows, err := tx.Query(q, args...)
 		if err != nil {
 			return err
 		}
-		n, err = res.RowsAffected()
-		return err
+		defer rows.Close()
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			out[id]++
+		}
+		return rows.Err()
 	})
-	return n, err
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }

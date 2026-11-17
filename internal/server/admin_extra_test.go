@@ -340,7 +340,7 @@ func TestAdminTokenCRUD(t *testing.T) {
 
 func TestAdminGC(t *testing.T) {
 	_, db, ts := newTestServerCfg(t, func(cfg *config.Config) {
-		cfg.GC.Grace = "-1s" // everything unreferenced is instantly sweepable
+		cfg.GC.Grace = "0"
 		cfg.GC.Retention = "1h"
 		cfg.Limits.Total = "10GB"
 	})
@@ -353,6 +353,7 @@ func TestAdminGC(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := adminClient(t, ts)
+	time.Sleep(1100 * time.Millisecond)
 	resp, _ := c.PostForm(ts.URL+"/admin/gc", nil)
 	if b := body(t, resp); !strings.Contains(b, "Removed") {
 		t.Fatalf("gc response: %q", b)

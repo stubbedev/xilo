@@ -250,13 +250,6 @@ func TestSmallHelpers(t *testing.T) {
 			t.Errorf("zstdLevel(%q) = %v want %v", name, got, want)
 		}
 	}
-	// parseDur / parseDurSafe
-	if parseDur("") != 0 || parseDur("0") != 0 || parseDur("bogus") != 0 || parseDur("5m") != 5*time.Minute {
-		t.Error("parseDur table failed")
-	}
-	if parseDurSafe("", time.Hour) != 0 || parseDurSafe("bogus", time.Hour) != time.Hour || parseDurSafe("30m", time.Hour) != 30*time.Minute {
-		t.Error("parseDurSafe table failed")
-	}
 	// isCacheTraffic
 	for path, want := range map[string]bool{
 		"/":                        false,

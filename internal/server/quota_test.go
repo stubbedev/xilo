@@ -80,7 +80,7 @@ func TestRetentionCeiling(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, _, err := s.runGC(t.Context()); err != nil {
+	if _, err := s.runGC(t.Context(), 0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.GetPath(context.Background(), c.ID, "cccccccccccccccccccccccccccccccc"); err == nil {
