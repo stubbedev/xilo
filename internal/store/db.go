@@ -401,6 +401,9 @@ func migrate(w *sql.DB, pg bool) error {
 	if err := migratePersonalAccounts(w); err != nil {
 		return fmt.Errorf("migrate personal accounts: %w", err)
 	}
+	if _, err := w.Exec(`UPDATE users SET theme='' WHERE theme='catppuccin'`); err != nil {
+		return fmt.Errorf("migrate catppuccin to the default palette: %w", err)
+	}
 	// Heal databases hurt by an earlier ordering bug: the namespace rebuild
 	// used to recreate caches without the storage column added moments before.
 	// No-op everywhere else.

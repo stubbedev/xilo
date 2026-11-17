@@ -126,3 +126,43 @@ func TestNamespacesToAccountsMigration(t *testing.T) {
 		t.Fatalf("account tokens: %v %v", toks, err)
 	}
 }
+
+func TestMigrateCatppuccinBecomesDefaultPalette(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "palette.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cat, err := db.CreateUser("cat", "", "x", RoleUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nord, err := db.CreateUser("nordic", "", "x", RoleUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetUserTheme(cat.ID, "catppuccin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetUserTheme(nord.ID, "nord"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for id, want := range map[int64]string{cat.ID: "", nord.ID: "nord"} {
+		got, err := db.GetUser(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Theme != want {
+			t.Errorf("user %d theme = %q, want %q", id, got.Theme, want)
+		}
+	}
+}

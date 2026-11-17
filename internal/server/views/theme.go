@@ -9,9 +9,9 @@ type Palette struct {
 
 // Palettes is the Appearance picker, default first.
 var Palettes = []Palette{
-	{"", "Xilo"},
+	{"", "Catppuccin"},
+	{"xilo", "Xilo"},
 	{"ayu", "Ayu"},
-	{"catppuccin", "Catppuccin"},
 	{"dracula", "Dracula"},
 	{"everforest", "Everforest"},
 	{"github-dark", "GitHub Dark"},

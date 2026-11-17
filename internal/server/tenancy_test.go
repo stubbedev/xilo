@@ -346,8 +346,8 @@ func TestAccountEmail(t *testing.T) {
 	// clearing is allowed in single-tenant mode
 	// Palette: a known id sticks and reaches the <html> tag; junk falls back
 	// to the default instead of erroring.
-	_, b = postFlash(t, c, ts.URL+"/admin/account/appearance", url.Values{"theme": {"catppuccin"}})
-	if !contains(b, "Appearance saved") || !contains(b, `data-palette="catppuccin"`) {
+	_, b = postFlash(t, c, ts.URL+"/admin/account/appearance", url.Values{"theme": {"nord"}})
+	if !contains(b, "Appearance saved") || !contains(b, `data-palette="nord"`) {
 		t.Errorf("theme not applied:\n%s", b[:min(len(b), 400)])
 	}
 	_, b = postFlash(t, c, ts.URL+"/admin/account/appearance", url.Values{"theme": {"hotdog-stand"}})
