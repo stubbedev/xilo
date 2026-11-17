@@ -70,7 +70,7 @@ jobs:
       # Stdlib-first gate (.golangci.yml) — the same set `just lint` runs.
       - uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.14.0
+          version: v2.15.0
       - run: go build ./...
       # Client-only build (flake packages.xilo-cli): fails if anything outside
       # internal/cli/serve.go starts importing internal/server.
