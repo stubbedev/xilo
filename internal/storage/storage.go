@@ -29,6 +29,18 @@ type BulkDeleter interface {
 	DeleteMany(ctx context.Context, keys []string) error
 }
 
+// Space is a filesystem's size and the bytes still available to xilo.
+type Space struct {
+	Free  uint64
+	Total uint64
+}
+
+// SpaceReporter is implemented by backends that sit on a filesystem whose
+// free space can run out under them (local). Object stores have no such floor.
+type SpaceReporter interface {
+	Space() (Space, error)
+}
+
 // ChunkKey is the storage key for a chunk given its sha256 hex hash. Sharded by
 // the first two hex chars so no single directory/prefix holds every chunk.
 func ChunkKey(hash string) string {

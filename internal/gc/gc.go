@@ -1,7 +1,8 @@
 // Package gc is the one garbage-collection routine, shared by the server's
 // background sweep, the dashboard and API triggers, and a local `xilo gc`:
-// evict by age, retention, plan ceilings and storage caps, sweep the chunks
-// nothing references any more, and refresh the stored summaries of every cache that lost paths.
+// evict by age, retention, plan ceilings and storage caps, keep each local
+// backend above its free-space floor, sweep the chunks nothing references any
+// more, and refresh the stored summaries of every cache that lost paths.
 package gc
 
 import (
@@ -64,7 +65,11 @@ func run(ctx context.Context, db *store.DB, sts map[string]storage.Storage, sw S
 
 	graceCutoff := now.Add(-sw.Policy.Grace).Unix()
 	for _, name := range slices.Sorted(maps.Keys(sts)) {
-		d, f, err := db.GC(ctx, sts[name], name, graceCutoff)
+		st := sts[name]
+		if err := keepFloor(db, name, st, sw.Policy.MinFree, evicted); err != nil {
+			return res, err
+		}
+		d, f, err := db.GC(ctx, st, name, graceCutoff)
 		res.Deleted += d
 		res.Freed += f
 		if err != nil {
@@ -127,6 +132,31 @@ func retentionCeiling(db *store.DB, accountID int64) (time.Duration, error) {
 		return 0, nil
 	}
 	return time.Duration(plan.MaxRetention) * time.Second, nil
+}
+
+func keepFloor(db *store.DB, name string, st storage.Storage, floor config.FreeFloor, evicted store.Evicted) error {
+	if !floor.Set() {
+		return nil
+	}
+	sr, ok := st.(storage.SpaceReporter)
+	if !ok {
+		return nil
+	}
+	sp, err := sr.Space()
+	if err != nil {
+		return fmt.Errorf("measure free space of storage %q: %w", name, err)
+	}
+	want := floor.Bytes(sp.Total)
+	if sp.Free >= want {
+		return nil
+	}
+	need := int64(want - sp.Free)
+	e, err := db.FreeOnStorage(name, need)
+	if err != nil {
+		return fmt.Errorf("free %d bytes on storage %q: %w", need, name, err)
+	}
+	evicted.Merge(e)
+	return nil
 }
 
 func refreshStats(db *store.DB, evicted store.Evicted) error {

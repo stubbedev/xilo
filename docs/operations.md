@@ -14,7 +14,7 @@ xilo gc                     # enforce every limit, then sweep unreferenced chunk
 xilo gc --older-than 720h   # also evict paths not pulled in 30 days
 ```
 
-Four limits apply, all optional:
+Five limits apply, all optional:
 
 | limit | where it is set | effect |
 |---|---|---|
@@ -22,10 +22,12 @@ Four limits apply, all optional:
 | per-cache retention | `xilo cache configure --retention`, dashboard | overrides the global window for that cache |
 | per-cache size cap | `xilo cache configure --max-size`, dashboard | caps one cache's stored bytes |
 | `limits.total` | config, or the instance storage ceiling in Settings | evicts least-recently-pulled paths across all caches |
+| `gc.min_free` | config (`"10%"` or `"50GB"`) | when a local backend's filesystem has less free space, evicts least-recently-pulled paths stored on it until enough is reclaimable |
 
 Plan retention ceilings cap a cache's retention too. Limits are enforced by
 the sweep, not on each push, so a burst of pushes can overshoot them until the
-next one.
+next one; `gc.min_free` is the guard against that burst filling the disk. A
+push that does hit a full disk fails with `507 Insufficient Storage`.
 
 `gc.grace` (default `1h`) protects chunks newer than the window, so a chunk
 uploaded by an in-flight push is never swept before its path is registered; it

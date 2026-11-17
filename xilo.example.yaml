@@ -91,6 +91,7 @@ gc:
   retention: "" # e.g. "720h"; evict paths not pulled in this window (per-cache overrides)
   grace: "1h" # never sweep chunks newer than this (must exceed your longest push)
   audit_retention: "8760h" # delete activity entries older than this (default 1 year); "0" keeps forever
+  min_free: "" # e.g. "10%" or "50GB"; evict LRU paths when a local backend's filesystem has less free space
 
 security:
   skip_upload_verify: false # false = verify reassembly == NarHash on push (proof of possession)

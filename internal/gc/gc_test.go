@@ -53,6 +53,13 @@ func (m *memStorage) Delete(_ context.Context, key string) error {
 	return nil
 }
 
+type spaceStorage struct {
+	*memStorage
+	space storage.Space
+}
+
+func (s spaceStorage) Space() (storage.Space, error) { return s.space, nil }
+
 type fixture struct {
 	db    *store.DB
 	cache *store.Cache
@@ -218,5 +225,43 @@ func TestRunWithinEveryLimitLosesNothing(t *testing.T) {
 		Sweep{Policy: config.GCPolicy{Retention: time.Hour}, ConfiguredCap: 1000}, f.t0+10)
 	if res.Evicted != 0 || !equal(f.present(t), 0, 1, 2) {
 		t.Fatalf("evicted %d, present %v; want nothing evicted", res.Evicted, f.present(t))
+	}
+}
+
+func TestRunEvictsUntilTheFreeSpaceFloorIsMet(t *testing.T) {
+	f := newFixture(t)
+	for i := range 4 {
+		f.addPath(t, i, 100, int64(i))
+	}
+	floor, err := config.ParseFreeFloor("10%")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem := newMem()
+	for i := range 4 {
+		mem.blobs[storage.ChunkKey(fmt.Sprintf("chunk%d", i))] = []byte{1}
+	}
+	st := spaceStorage{memStorage: mem, space: storage.Space{Total: 10000, Free: 850}}
+	res := sweepAt(t, f, map[string]storage.Storage{"default": st}, Sweep{Policy: config.GCPolicy{MinFree: floor}}, f.t0+10)
+	if res.Evicted != 2 || !equal(f.present(t), 2, 3) {
+		t.Fatalf("evicted %d, present %v; want the two least recently pulled gone to free 150 bytes", res.Evicted, f.present(t))
+	}
+	if res.Deleted != 2 || res.Freed != 200 {
+		t.Fatalf("swept %d chunks freeing %d bytes, want 2 and 200", res.Deleted, res.Freed)
+	}
+}
+
+func TestRunAboveTheFreeSpaceFloorEvictsNothing(t *testing.T) {
+	f := newFixture(t)
+	for i := range 4 {
+		f.addPath(t, i, 100, int64(i))
+	}
+	floor, err := config.ParseFreeFloor("10%")
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := spaceStorage{memStorage: newMem(), space: storage.Space{Total: 10000, Free: 1000}}
+	if res := sweepAt(t, f, map[string]storage.Storage{"default": st}, Sweep{Policy: config.GCPolicy{MinFree: floor}}, f.t0+10); res.Evicted != 0 {
+		t.Fatalf("evicted %d above the floor", res.Evicted)
 	}
 }

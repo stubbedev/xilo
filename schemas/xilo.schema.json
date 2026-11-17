@@ -309,6 +309,10 @@
         "audit_retention": {
           "type": "string",
           "description": "Delete activity entries older than this on each sweep. Empty defaults\nto one year (\"8760h\"); \"0\" keeps entries forever."
+        },
+        "min_free": {
+          "type": "string",
+          "description": "Free-space floor for local storage backends, as a share of the\nfilesystem (\"10%\") or a size (\"50GB\"). When a sweep finds less free\nspace than this, it evicts least-recently-pulled paths stored on that\nbackend until enough is reclaimable, then sweeps their chunks.\nEmpty/\"0\" disables it."
         }
       },
       "additionalProperties": false,
@@ -317,7 +321,8 @@
         "interval",
         "retention",
         "grace",
-        "audit_retention"
+        "audit_retention",
+        "min_free"
       ],
       "description": "Background garbage collection."
     },

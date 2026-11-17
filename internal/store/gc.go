@@ -224,6 +224,19 @@ func (db *DB) EnforceGlobalCap(cap int64) (Evicted, error) {
 		`SELECT id, cache_id, accessed, chunks FROM paths`)
 }
 
+// FreeOnStorage evicts least-recently-pulled paths of the caches stored on one
+// backend until the compressed size of the chunks no remaining path
+// references is at least need bytes, so the chunk sweep that follows can give
+// that much back to the filesystem.
+func (db *DB) FreeOnStorage(storageName string, need int64) (Evicted, error) {
+	if need <= 0 {
+		return Evicted{}, nil
+	}
+	return db.enforceCap(func(total int64) int64 { return max(total-need, 0) },
+		`SELECT hash, csize FROM chunks WHERE storage=?`, []any{storageName},
+		`SELECT p.id, p.cache_id, p.accessed, p.chunks FROM paths p JOIN caches c ON c.id = p.cache_id WHERE c.storage=?`, storageName)
+}
+
 func fixedCap(cap int64) func(int64) int64 { return func(int64) int64 { return cap } }
 
 func (db *DB) enforceCap(capFor func(total int64) int64, sizesQuery string, sizesArgs []any, query string, args ...any) (Evicted, error) {

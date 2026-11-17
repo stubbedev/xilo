@@ -305,17 +305,47 @@ func TestMultiTenantAliasesSelfService(t *testing.T) {
 }
 
 func TestGCPolicyParsesEveryField(t *testing.T) {
-	p, err := GC{Interval: "12h", Retention: "0", Grace: "30m", AuditRetention: ""}.Policy()
+	p, err := GC{Interval: "12h", Retention: "0", Grace: "30m", AuditRetention: "", MinFree: "10%"}.Policy()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if p.Interval != 12*time.Hour || p.Retention != 0 || p.Grace != 30*time.Minute || p.AuditRetention != 0 {
 		t.Fatalf("policy = %+v", p)
 	}
+	if !p.MinFree.Set() || p.MinFree.Bytes(1000) != 100 {
+		t.Fatalf("10%% floor of 1000 bytes = %d", p.MinFree.Bytes(1000))
+	}
+}
+
+func TestFreeFloorForms(t *testing.T) {
+	for _, tc := range []struct {
+		in    string
+		total uint64
+		want  uint64
+		set   bool
+	}{
+		{"", 1000, 0, false},
+		{"0", 1000, 0, false},
+		{"2.5%", 1000, 25, true},
+		{"1KB", 1 << 30, 1024, true},
+	} {
+		f, err := ParseFreeFloor(tc.in)
+		if err != nil {
+			t.Fatalf("%q: %v", tc.in, err)
+		}
+		if f.Set() != tc.set || f.Bytes(tc.total) != tc.want {
+			t.Errorf("%q of %d: set=%v bytes=%d, want %v %d", tc.in, tc.total, f.Set(), f.Bytes(tc.total), tc.set, tc.want)
+		}
+	}
+	for _, bad := range []string{"0%", "100%", "-5%", "abc%", "-1G", "lots"} {
+		if _, err := ParseFreeFloor(bad); err == nil {
+			t.Errorf("%q parsed, want an error", bad)
+		}
+	}
 }
 
 func TestLoadRefusesABadGCField(t *testing.T) {
-	for field, val := range map[string]string{"grace": "banana", "retention": "-1h", "interval": "soon", "audit_retention": "1y"} {
+	for field, val := range map[string]string{"grace": "banana", "retention": "-1h", "interval": "soon", "audit_retention": "1y", "min_free": "half"} {
 		path := filepath.Join(t.TempDir(), "xilo.yaml")
 		if err := os.WriteFile(path, []byte("gc:\n  "+field+": "+val+"\n"), 0o644); err != nil {
 			t.Fatal(err)

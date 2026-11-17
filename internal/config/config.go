@@ -244,14 +244,22 @@ type GC struct {
 	// Delete activity entries older than this on each sweep. Empty defaults
 	// to one year ("8760h"); "0" keeps entries forever.
 	AuditRetention string `yaml:"audit_retention" json:"audit_retention"`
+	// Free-space floor for local storage backends, as a share of the
+	// filesystem ("10%") or a size ("50GB"). When a sweep finds less free
+	// space than this, it evicts least-recently-pulled paths stored on that
+	// backend until enough is reclaimable, then sweeps their chunks.
+	// Empty/"0" disables it.
+	MinFree string `yaml:"min_free" json:"min_free"`
 }
 
-// GCPolicy is the gc block parsed, validated once when the config loads.
+// GCPolicy is the gc block parsed: every duration and the free-space floor,
+// validated once when the config loads.
 type GCPolicy struct {
 	Interval       time.Duration
 	Retention      time.Duration
 	Grace          time.Duration
 	AuditRetention time.Duration
+	MinFree        FreeFloor
 }
 
 // Policy parses the gc block. Empty or "0" disables a duration.
@@ -273,6 +281,11 @@ func (g GC) Policy() (GCPolicy, error) {
 		}
 		*d.out = v
 	}
+	floor, err := ParseFreeFloor(g.MinFree)
+	if err != nil {
+		return GCPolicy{}, fmt.Errorf("gc.min_free: %w", err)
+	}
+	p.MinFree = floor
 	return p, nil
 }
 
@@ -288,6 +301,41 @@ func parseDuration(s string) (time.Duration, error) {
 		return 0, fmt.Errorf("bad duration %q: negative", s)
 	}
 	return d, nil
+}
+
+// FreeFloor is the free space a filesystem must keep: a share of its size or
+// an absolute byte count. The zero value is no floor.
+type FreeFloor struct {
+	percent float64
+	bytes   int64
+}
+
+// ParseFreeFloor parses "10%" or a size such as "50GB". Empty or "0" is no floor.
+func ParseFreeFloor(s string) (FreeFloor, error) {
+	s = strings.TrimSpace(s)
+	if num, ok := strings.CutSuffix(s, "%"); ok {
+		f, err := strconv.ParseFloat(strings.TrimSpace(num), 64)
+		if err != nil || math.IsNaN(f) || f <= 0 || f >= 100 {
+			return FreeFloor{}, fmt.Errorf("bad share %q: want a percentage above 0 and below 100", s)
+		}
+		return FreeFloor{percent: f}, nil
+	}
+	n, err := ParseBytes(s)
+	if err != nil {
+		return FreeFloor{}, err
+	}
+	return FreeFloor{bytes: n}, nil
+}
+
+// Set reports whether there is a floor at all.
+func (f FreeFloor) Set() bool { return f.percent > 0 || f.bytes > 0 }
+
+// Bytes is the floor on a filesystem of the given total size.
+func (f FreeFloor) Bytes(total uint64) uint64 {
+	if f.percent > 0 {
+		return uint64(float64(total) * f.percent / 100)
+	}
+	return uint64(f.bytes)
 }
 
 // Admin configures the management dashboard.

@@ -3,9 +3,11 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"syscall"
 )
 
 // Local stores blobs as files under Root. Writes are atomic (temp file +
@@ -96,4 +98,13 @@ func (l *Local) DeleteMany(ctx context.Context, keys []string) error {
 		}
 	}
 	return nil
+}
+
+func (l *Local) Space() (Space, error) {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(l.root, &st); err != nil {
+		return Space{}, fmt.Errorf("statfs %s: %w", l.root, err)
+	}
+	bsize := uint64(st.Bsize)
+	return Space{Free: uint64(st.Bavail) * bsize, Total: uint64(st.Blocks) * bsize}, nil
 }
