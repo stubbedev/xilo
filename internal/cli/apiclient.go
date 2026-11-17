@@ -117,7 +117,9 @@ func adminTarget(serverFlag, tokenFlag string) (apic *apiClient, cfg *config.Con
 		}
 		return nil, cfg, db, err
 	}
-	_, token := resolveServer(serverFlag, tokenFlag)
+	// The token for the server actually dialed: a saved profile's token only
+	// when remoteURL is that profile's server.
+	token := resolveToken(activeProfile(), remoteURL, tokenFlag)
 	if token == "" {
 		return nil, nil, nil, fmt.Errorf("admin token required for %s — pass --token, set XILO_TOKEN, or `xilo login`", remoteURL)
 	}
