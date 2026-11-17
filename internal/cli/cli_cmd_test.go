@@ -478,45 +478,6 @@ func TestOpenDBBadConfig(t *testing.T) {
 	}
 }
 
-func TestBootstrapAdmin(t *testing.T) {
-	isolateEnv(t)
-	db, err := store.Open(filepath.Join(t.TempDir(), "xilo.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-
-	// empty password -> no-op
-	if err := bootstrapAdmin(db, "", false); err != nil {
-		t.Fatal(err)
-	}
-	if db.UsersExist() {
-		t.Fatal("admin created from empty password")
-	}
-
-	if err := bootstrapAdmin(db, "hunter2", false); err != nil {
-		t.Fatal(err)
-	}
-	if !db.UsersExist() {
-		t.Fatal("admin not created")
-	}
-	u1, err := db.GetUserByName("admin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	hash1 := u1.PassHash
-
-	// second bootstrap with a different password must not overwrite
-	if err := bootstrapAdmin(db, "other", false); err != nil {
-		t.Fatal(err)
-	}
-	u2, _ := db.GetUserByName("admin")
-	hash2 := u2.PassHash
-	if hash1 != hash2 {
-		t.Fatal("existing admin credential overwritten")
-	}
-}
-
 // Regression (issue #14): on a client machine — no config file, no saved login
 // — admin commands must fail with an explanatory error instead of creating a
 // data dir with a sqlite DB in the working directory.

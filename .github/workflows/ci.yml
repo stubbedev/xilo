@@ -77,6 +77,22 @@ jobs:
       - run: go build -tags noserver -o /dev/null ./cmd/xilo
       - run: go test -race ./...
 
+  macos:
+    name: macOS watcher
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    env:
+      XILO_STRICT_TESTS: 1
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go vet -tags noserver ./internal/cli/
+      - run: go test -race -tags noserver ./internal/cli/
+
   vuln:
     name: known vulnerabilities
     runs-on: ubuntu-latest
