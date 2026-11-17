@@ -1,11 +1,13 @@
-//go:build linux
+//go:build linux || darwin
 
 package cli
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -42,20 +44,15 @@ func TestWatchStore(t *testing.T) {
 		done <- watchStore(ctx, dir, func(p string) { got <- p })
 	}()
 
-	// Create + remove lock files until the watcher (established asynchronously)
-	// reports the deletion. A .drv.lock deletion must be filtered out.
+	// Realise paths as Nix does (lock, path, unlock) until the watcher
+	// (established asynchronously) reports one. Fresh names each round: a path
+	// already present when the watcher starts is not news. A .drv must be
+	// filtered out.
 	deadline := time.After(5 * time.Second)
 	var path string
-	for path == "" {
-		for _, name := range []string{"skip-me.drv.lock", "abc-pkg.lock"} {
-			f := filepath.Join(dir, name)
-			if err := os.WriteFile(f, nil, 0o644); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Remove(f); err != nil {
-				t.Fatal(err)
-			}
-		}
+	for i := 0; path == ""; i++ {
+		realise(t, dir, fmt.Sprintf("skip-me-%d.drv", i))
+		realise(t, dir, fmt.Sprintf("abc-pkg-%d", i))
 		select {
 		case p := <-got:
 			path = p
@@ -64,12 +61,41 @@ func TestWatchStore(t *testing.T) {
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
-	if path != filepath.Join(dir, "abc-pkg") {
-		t.Fatalf("path = %q, want %s/abc-pkg (drv locks must be filtered)", path, dir)
+	if !strings.HasPrefix(path, filepath.Join(dir, "abc-pkg-")) {
+		t.Fatalf("path = %q, want %s/abc-pkg-N (drv locks must be filtered)", path, dir)
 	}
 
-	// Cancellation closes the fd, but a read already blocked on it only wakes
-	// on the next event — generate events until watchStore returns.
+	// A build that holds its lock across several rescans is reported once,
+	// when the lock goes, and not while the path is still being written.
+	slow := filepath.Join(dir, "slow-pkg")
+	lock := slow + ".lock"
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if err := os.Mkdir(slow, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	for len(got) > 0 { // stragglers from the warm-up loop
+		if p := <-got; p == slow {
+			t.Fatal("slow-pkg reported while its lock was held")
+		}
+	}
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case p := <-got:
+		if p != slow {
+			t.Fatalf("path = %q, want %s", p, slow)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("slow-pkg not reported after its lock went")
+	}
+
+	// Cancellation closes the fd, but on Linux a read already blocked on it
+	// only wakes on the next event — generate events until watchStore returns.
 	cancel()
 	deadline = time.After(5 * time.Second)
 	for {
@@ -86,6 +112,22 @@ func TestWatchStore(t *testing.T) {
 			t.Fatal("watchStore did not return after cancel")
 		case <-time.After(20 * time.Millisecond):
 		}
+	}
+}
+
+// realise does to dir what Nix does to the store when it builds name: take
+// the lock, write the path, register it, drop the lock.
+func realise(t *testing.T, dir, name string) {
+	t.Helper()
+	lock := filepath.Join(dir, name+".lock")
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -109,7 +151,7 @@ func TestWatchCmdRunsAndStops(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- root.ExecuteContext(ctx) }()
 
-	time.Sleep(100 * time.Millisecond) // let the inotify watch establish
+	time.Sleep(100 * time.Millisecond) // let the watch establish
 	cancel()
 
 	// wake the blocked read with a harmless (non-.lock) deletion

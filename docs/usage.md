@@ -42,8 +42,8 @@ otherwise. `--dry-run` previews without uploading, `--quiet` suits hooks, and
 
 Point Nix's `post-build-hook` at
 [`examples/post-build-hook.sh`](../examples/post-build-hook.sh), which pushes
-each built path with `xilo push <cache> - --quiet`, or run the inotify watcher
-on Linux:
+each built path with `xilo push <cache> - --quiet`, or run the store watcher
+on Linux or macOS:
 
 ```sh
 xilo watch myteam/mycache   # pushes newly built store paths
@@ -87,7 +87,7 @@ Client commands:
 | `xilo login <url>` | save a server profile (`--token`, `--name`, `--cache`, `--default`) |
 | `xilo use <account>/<cache>` | write `nix.conf` and netrc (`--default`, `--remove`) |
 | `xilo push [account/cache] <path>...` | push paths or a closure (`--jobs`, `--dry-run`, `--quiet`, `--detach`) |
-| `xilo watch <account>/<cache>` | push newly built store paths (Linux; `--store`) |
+| `xilo watch <account>/<cache>` | push newly built store paths (Linux, macOS; `--store`) |
 | `xilo status` | profile, token, scope, perms, expiry, `nix.conf` and netrc state |
 
 Administrative commands, run against the local database or against a remote
