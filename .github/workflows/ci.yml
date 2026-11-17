@@ -488,9 +488,9 @@ jobs:
             git --no-pager diff schemas/xilo.schema.json
             exit 1
           fi
-          if [ -n "$(git status --porcelain README.md docs/benchmarks.md)" ]; then
+          if [ -n "$(git status --porcelain README.md docs/benchmarks.md docs/perf)" ]; then
             echo "::error::the performance charts are stale. Run 'just perf-charts' and commit."
-            git --no-pager diff --stat README.md docs/benchmarks.md
+            git --no-pager diff --stat README.md docs/benchmarks.md docs/perf
             exit 1
           fi
 
@@ -498,12 +498,12 @@ jobs:
       - name: auto-commit (push)
         if: github.event_name == 'push'
         run: |
-          if [ -z "$(git status --porcelain schemas/xilo.schema.json .github/badges/coverage.json README.md docs/benchmarks.md)" ]; then
+          if [ -z "$(git status --porcelain schemas/xilo.schema.json .github/badges/coverage.json README.md docs/benchmarks.md docs/perf)" ]; then
             echo "schema + badge + charts already in sync"; exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add schemas/xilo.schema.json .github/badges/coverage.json README.md docs/benchmarks.md
+          git add schemas/xilo.schema.json .github/badges/coverage.json README.md docs/benchmarks.md docs/perf
           git commit -m 'chore: auto-bump schema + coverage badge + perf charts [skip ci]'
           # The Bench workflow commits charts too, so the two can collide on a
           # week where both run; a rebase costs a second, a failed run costs

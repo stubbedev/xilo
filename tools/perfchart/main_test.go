@@ -1,8 +1,11 @@
 package main
 
 import (
+	"math"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -111,10 +114,10 @@ func TestK6ChartTakesCaptionsFromTheBaseline(t *testing.T) {
 	}
 	// The gate file says which way is better and how many runs it distilled;
 	// the chart must not invent a different story from the same numbers.
-	if got := panelByTitle(t, c, "Requests served per run").scale; got != "requests, higher is better" {
+	if got := panelByTitle(t, c, "Requests served per run").scale(); got != "requests, higher is better" {
 		t.Errorf("served panel scale = %q", got)
 	}
-	if got := panelByTitle(t, c, "Read latency, p95").scale; got != "ms, lower is better" {
+	if got := panelByTitle(t, c, "Read latency, p95").scale(); got != "ms, lower is better" {
 		t.Errorf("read panel scale = %q", got)
 	}
 	if !strings.Contains(c.subtitle, "Worst of 12 sampled runs") {
@@ -218,21 +221,115 @@ func TestBenchChartDividesCPUByBytesServed(t *testing.T) {
 	}
 }
 
-func TestPanelDrawsAZeroBasedBarPerTargetWithItsValue(t *testing.T) {
+var barEnd = regexp.MustCompile(`<path d="M([0-9.]+) [0-9.]+H([0-9.]+)A([0-9.]+) `)
+
+func barLengths(t *testing.T, svg string) []float64 {
+	t.Helper()
+	var out []float64
+	for _, m := range barEnd.FindAllStringSubmatch(svg, -1) {
+		x, _ := strconv.ParseFloat(m[1], 64)
+		h, _ := strconv.ParseFloat(m[2], 64)
+		r, _ := strconv.ParseFloat(m[3], 64)
+		out = append(out, h+r-x)
+	}
+	return out
+}
+
+func TestSVGDrawsZeroBasedBarsScaledToTheLongest(t *testing.T) {
+	p := panel{title: "Throughput", unit: "MB/s", better: higherIsBetter, bars: []bar{
+		{label: "xilo", value: "600 MB/s", amount: 600, highlight: true},
+		{label: "attic", value: "150 MB/s", amount: 150},
+		{label: "nix-serve-ng", value: "300 MB/s", amount: 300},
+	}}
+	svg := chart{panels: []panel{p}}.svg(themes[0])
+	got := barLengths(t, svg)
+	if len(got) != 3 {
+		t.Fatalf("drew %d bars, want 3:\n%s", len(got), svg)
+	}
+	for i, want := range []float64{1, 0.25, 0.5} {
+		if math.Abs(got[i]/got[0]-want) > 0.01 {
+			t.Errorf("bar %d is %.3f of the longest, want %.2f (lengths %v)", i, got[i]/got[0], want, got)
+		}
+	}
+}
+
+func TestSVGHighlightsXiloAndBoldsItAmongOthers(t *testing.T) {
+	_, benchFile := writeFixtures(t)
+	c, err := benchCharts(benchFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, th := range themes {
+		svg := c.svg(th)
+		if got := strings.Count(svg, `fill="`+th.highlight+`"/>`); got != len(c.panels) {
+			t.Errorf("%s: %d highlighted bars for %d panels each holding xilo once", th.name, got, len(c.panels))
+		}
+		if got := strings.Count(svg, `font-weight="600" text-anchor="end" dominant-baseline="central">xilo<`); got != len(c.panels) {
+			t.Errorf("%s: xilo is bold in %d of %d panels; identity must not rest on colour alone", th.name, got, len(c.panels))
+		}
+	}
+}
+
+func TestSVGDoesNotBoldWhenEveryBarIsHighlighted(t *testing.T) {
 	k6Dir, _ := writeFixtures(t)
 	c, err := k6Charts(k6Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	md := panelByTitle(t, c, "Read latency, p95").mermaid()
-	if !strings.HasPrefix(md, "```mermaid\n") || !strings.HasSuffix(md, "```\n") {
-		t.Fatalf("not a fenced mermaid block:\n%s", md)
+	if svg := c.svg(themes[0]); strings.Contains(svg, `font-weight="600" text-anchor="end"`) {
+		t.Errorf("a chart of one target bolded its labels:\n%.400s", svg)
 	}
+}
+
+func TestSVGThemesInkTheirOwnTextOnATransparentGround(t *testing.T) {
+	_, benchFile := writeFixtures(t)
+	c, err := benchCharts(benchFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	light, dark := c.svg(themes[0]), c.svg(themes[1])
+	if !strings.Contains(light, `fill="`+themes[0].text+`"`) || strings.Contains(light, `fill="`+themes[1].text+`"`) {
+		t.Error("light chart is not inked with the light theme's text colour")
+	}
+	if !strings.Contains(dark, `fill="`+themes[1].text+`"`) || strings.Contains(dark, `fill="`+themes[0].text+`"`) {
+		t.Error("dark chart is not inked with the dark theme's text colour")
+	}
+	for _, svg := range []string{light, dark} {
+		if strings.Contains(svg, "<rect") {
+			t.Error("a chart paints its own background; it must sit on the page's")
+		}
+	}
+}
+
+func TestSVGEscapesTextAndNeverPrintsScientificNotation(t *testing.T) {
+	c := chart{alt: `a "b" <c>`, panels: []panel{{title: "A & B", unit: "bytes", bars: []bar{
+		{label: "<x>", value: "225 MB", amount: 225000000},
+		{label: "y", value: "1 B", amount: 1},
+	}}}}
+	svg := c.svg(themes[0])
+	for _, want := range []string{"A &amp; B", "&lt;x&gt;", "a &#34;b&#34; &lt;c&gt;"} {
+		if !strings.Contains(svg, want) {
+			t.Errorf("missing %q in:\n%s", want, svg)
+		}
+	}
+	if regexp.MustCompile(`[0-9]e[+-]?[0-9]`).MatchString(svg) {
+		t.Errorf("scientific notation in:\n%s", svg)
+	}
+}
+
+func TestMarkdownPicksTheChartByThemeAndKeepsATable(t *testing.T) {
+	_, benchFile := writeFixtures(t)
+	c, err := benchCharts(benchFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := c.markdown("compare", "perf")
 	for _, want := range []string{
-		"xychart-beta horizontal",
-		`"narinfo hit  4.8 ms"`,
-		`y-axis "ms, lower is better" 0 --> 100`,
-		"bar [4.8, 64.8, 45]",
+		`<source media="(prefers-color-scheme: dark)" srcset="perf/compare-dark.svg">`,
+		`src="perf/compare-light.svg"`,
+		`alt="Bar charts comparing xilo with other self-hostable Nix caches`,
+		"<summary>The same numbers as a table</summary>",
+		"| Measure | xilo |",
 	} {
 		if !strings.Contains(md, want) {
 			t.Errorf("missing %q in:\n%s", want, md)
@@ -240,10 +337,58 @@ func TestPanelDrawsAZeroBasedBarPerTargetWithItsValue(t *testing.T) {
 	}
 }
 
-func TestMermaidNeverPrintsScientificNotation(t *testing.T) {
-	md := panel{title: "Stored", scale: "bytes", bars: []bar{{label: "xilo", value: "225 MB", amount: 225000000}}}.mermaid()
-	if strings.Contains(md, "e+") {
-		t.Errorf("scientific notation in:\n%s", md)
+func TestTargetTableBoldsTheBestAndMarksMissingTargets(t *testing.T) {
+	c := chart{table: tableByTarget, panels: []panel{
+		{title: "Throughput", unit: "MB/s", better: higherIsBetter, bars: []bar{
+			{label: "xilo", value: "650 MB/s", amount: 650}, {label: "attic", value: "70 MB/s", amount: 70},
+		}},
+		{title: "Push", unit: "s", better: lowerIsBetter, bars: []bar{
+			{label: "xilo", value: "0.1 s", amount: 0.1}, {label: "garage", value: "0.1 s", amount: 0.1},
+		}},
+		{title: "Stored", unit: "bytes", bars: []bar{
+			{label: "xilo", value: "225 MB", amount: 225}, {label: "attic", value: "212 MB", amount: 212},
+		}},
+	}}
+	table := c.targetTable()
+	for _, want := range []string{
+		"| Measure | xilo | attic | garage |\n",
+		"| Throughput (MB/s, higher is better) | **650 MB/s** | 70 MB/s | — |\n",
+		"| Push (s, lower is better) | **0.1 s** | — | **0.1 s** |\n",
+		"| Stored (bytes) | 225 MB | 212 MB | — |\n",
+	} {
+		if !strings.Contains(table, want) {
+			t.Errorf("missing %q in:\n%s", want, table)
+		}
+	}
+}
+
+func TestTargetTableBoldsEveryValueThatReadsAsTheBest(t *testing.T) {
+	c := chart{table: tableByTarget, panels: []panel{{title: "CPU", unit: "%", better: lowerIsBetter, bars: []bar{
+		{label: "xilo", value: "0.28", amount: 0.2789},
+		{label: "harmonia", value: "0.28", amount: 0.2836},
+		{label: "attic", value: "2.38", amount: 2.38},
+	}}}}
+	if table := c.targetTable(); !strings.Contains(table, "| CPU (%, lower is better) | **0.28** | **0.28** | 2.38 |\n") {
+		t.Errorf("two values printed alike must both be bold:\n%s", table)
+	}
+}
+
+func TestRowTableListsEveryBar(t *testing.T) {
+	k6Dir, _ := writeFixtures(t)
+	c, err := k6Charts(k6Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	table := c.rowTable()
+	if !strings.Contains(table, "| Read latency, p95 (ms, lower is better) | narinfo hit | 4.8 ms |\n") {
+		t.Errorf("row missing in:\n%s", table)
+	}
+	bars := 0
+	for _, p := range c.panels {
+		bars += len(p.bars)
+	}
+	if got := strings.Count(table, "\n") - 2; got != bars {
+		t.Errorf("%d table rows for %d bars", got, bars)
 	}
 }
 
@@ -259,7 +404,8 @@ func writeDocs(t *testing.T, body string) string {
 func TestRunFillsEveryRegionAndKeepsTheRest(t *testing.T) {
 	k6Dir, benchFile := writeFixtures(t)
 	doc := writeDocs(t, "intro\n<!-- perfchart:compare -->\nold\n<!-- /perfchart:compare -->\nmiddle\n<!-- perfchart:k6-gate -->\n<!-- /perfchart:k6-gate -->\noutro\n")
-	if err := run(k6Dir, benchFile, []string{doc}, false); err != nil {
+	out := filepath.Join(filepath.Dir(doc), "docs", "perf")
+	if err := run(k6Dir, benchFile, out, []string{doc}, false); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(doc)
@@ -267,7 +413,7 @@ func TestRunFillsEveryRegionAndKeepsTheRest(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(got)
-	for _, want := range []string{"intro\n", "\nmiddle\n", "\noutro\n", `"xilo  5,981/s"`, `"narinfo hit  4.8 ms"`} {
+	for _, want := range []string{"intro\n", "\nmiddle\n", "\noutro\n", `srcset="docs/perf/compare-dark.svg"`, `src="docs/perf/k6-gate-light.svg"`, "| narinfo hit | 4.8 ms |"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("missing %q in:\n%s", want, s)
 		}
@@ -275,8 +421,18 @@ func TestRunFillsEveryRegionAndKeepsTheRest(t *testing.T) {
 	if strings.Contains(s, "\nold\n") {
 		t.Error("the previous chart was not replaced")
 	}
-	if err := run(k6Dir, benchFile, []string{doc}, true); err != nil {
+	svg, err := os.ReadFile(filepath.Join(out, "compare-light.svg"))
+	if err != nil || !strings.Contains(string(svg), "5,981/s") {
+		t.Errorf("compare-light.svg missing or without xilo's figure (err %v)", err)
+	}
+	if err := run(k6Dir, benchFile, out, []string{doc}, true); err != nil {
 		t.Errorf("check right after a write: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "k6-gate-dark.svg"), []byte("<svg/>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(k6Dir, benchFile, out, []string{doc}, true); err == nil || !strings.Contains(err.Error(), "k6-gate-dark.svg") {
+		t.Errorf("check missed a stale chart: %v", err)
 	}
 }
 
@@ -284,7 +440,7 @@ func TestCheckReportsAStaleDocumentWithoutWriting(t *testing.T) {
 	k6Dir, benchFile := writeFixtures(t)
 	body := "<!-- perfchart:compare -->\nold\n<!-- /perfchart:compare -->\n<!-- perfchart:k6-gate -->\n<!-- /perfchart:k6-gate -->\n"
 	doc := writeDocs(t, body)
-	if err := run(k6Dir, benchFile, []string{doc}, true); err == nil {
+	if err := run(k6Dir, benchFile, filepath.Join(filepath.Dir(doc), "perf"), []string{doc}, true); err == nil {
 		t.Fatal("check passed on a stale document")
 	}
 	if got, _ := os.ReadFile(doc); string(got) != body {
@@ -295,7 +451,7 @@ func TestCheckReportsAStaleDocumentWithoutWriting(t *testing.T) {
 func TestRunRefusesAChartWithNowhereToGo(t *testing.T) {
 	k6Dir, benchFile := writeFixtures(t)
 	doc := writeDocs(t, "<!-- perfchart:compare -->\n<!-- /perfchart:compare -->\n")
-	if err := run(k6Dir, benchFile, []string{doc}, false); err == nil || !strings.Contains(err.Error(), "k6-gate") {
+	if err := run(k6Dir, benchFile, filepath.Join(filepath.Dir(doc), "perf"), []string{doc}, false); err == nil || !strings.Contains(err.Error(), "k6-gate") {
 		t.Fatalf("err = %v, want one naming the k6-gate chart", err)
 	}
 }
@@ -303,28 +459,15 @@ func TestRunRefusesAChartWithNowhereToGo(t *testing.T) {
 func TestRunRefusesAnUnclosedRegion(t *testing.T) {
 	k6Dir, benchFile := writeFixtures(t)
 	doc := writeDocs(t, "<!-- perfchart:compare -->\n<!-- perfchart:k6-gate -->\n<!-- /perfchart:k6-gate -->\n")
-	if err := run(k6Dir, benchFile, []string{doc}, false); err == nil {
+	if err := run(k6Dir, benchFile, filepath.Join(filepath.Dir(doc), "perf"), []string{doc}, false); err == nil {
 		t.Fatal("an unclosed region was accepted")
 	}
 }
 
 func TestRunWithoutAnyInput(t *testing.T) {
 	dir := t.TempDir()
-	if err := run(filepath.Join(dir, "nope"), filepath.Join(dir, "nope.json"), nil, false); err == nil {
+	if err := run(filepath.Join(dir, "nope"), filepath.Join(dir, "nope.json"), filepath.Join(dir, "perf"), nil, false); err == nil {
 		t.Fatal("expected an error when neither input exists")
-	}
-}
-
-func TestChartMaxRoundsUp(t *testing.T) {
-	for _, tc := range []struct {
-		in, want float64
-	}{
-		{0, 1}, {0.6, 1}, {4.8, 5}, {6, 10}, {45, 50}, {64.8, 100},
-		{1091, 2000}, {579388, 1000000},
-	} {
-		if got := chartMax(tc.in); got != tc.want {
-			t.Errorf("chartMax(%v) = %v, want %v", tc.in, got, tc.want)
-		}
 	}
 }
 
@@ -351,10 +494,13 @@ func TestRunWritesNothingWhenAChartHasNowhereToGo(t *testing.T) {
 	k6Dir, benchFile := writeFixtures(t)
 	body := "<!-- perfchart:compare -->\nold\n<!-- /perfchart:compare -->\n"
 	doc := writeDocs(t, body)
-	if err := run(k6Dir, benchFile, []string{doc}, false); err == nil {
+	if err := run(k6Dir, benchFile, filepath.Join(filepath.Dir(doc), "perf"), []string{doc}, false); err == nil {
 		t.Fatal("expected an error")
 	}
 	if got, _ := os.ReadFile(doc); string(got) != body {
 		t.Error("a failing run still rewrote the document")
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(doc), "perf")); !os.IsNotExist(err) {
+		t.Errorf("a failing run still wrote charts (stat err %v)", err)
 	}
 }

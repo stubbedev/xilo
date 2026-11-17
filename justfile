@@ -420,9 +420,9 @@ bench TARGETS="xilo,attic,harmonia,nixserve,s3,garage":
     ./tests/bench/bench.sh --targets {{ TARGETS }} --json tests/bench/results.json
     just perf-charts
 
-# Reads tests/k6/baselines/*.json and tests/bench/results.json and redraws the
-# Mermaid charts between the <!-- perfchart:NAME --> markers in README.md and
-# docs/benchmarks.md.
+# Reads tests/k6/baselines/*.json and tests/bench/results.json, draws the
+# per-theme SVG charts in docs/perf, and rewrites the <!-- perfchart:NAME -->
+# regions in README.md and docs/benchmarks.md that show them.
 perf-charts:
     go run ./tools/perfchart
 
