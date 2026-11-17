@@ -90,6 +90,8 @@ type fakeServer struct {
 	haveChunks map[string]bool
 
 	failChunkPut      bool
+	failChunks        map[string]bool
+	afterPathPut      func(api.PathReq)
 	failPathPut       bool
 	failMissingChunks bool
 
@@ -242,7 +244,7 @@ func (f *fakeServer) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		json.NewEncoder(w).Encode(api.MissingResp{Missing: missing})
 	case strings.HasPrefix(rest, "chunk/"):
-		if f.failChunkPut {
+		if f.failChunkPut || f.failChunks[strings.TrimPrefix(rest, "chunk/")] {
 			http.Error(w, "chunk store on fire", http.StatusInternalServerError)
 			return
 		}
@@ -295,6 +297,9 @@ func (f *fakeServer) handle(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.paths = append(f.paths, p)
 		f.mu.Unlock()
+		if f.afterPathPut != nil {
+			f.afterPathPut(p)
+		}
 	default:
 		http.Error(w, "unknown endpoint "+rest, http.StatusNotFound)
 	}

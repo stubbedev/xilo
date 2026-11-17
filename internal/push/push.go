@@ -199,10 +199,24 @@ func (c *Client) Push(ctx context.Context, paths []string) error {
 	// full round trip every window, which is what this replaced.
 	c.win = make(chan struct{}, max(2, c.jobs))
 
+	plan, err := planPublish(missing, byHash)
+	if err != nil {
+		return err
+	}
 	var done atomic.Int64
-	err = eachParallel(missing, c.jobs, func(h string) error {
+	err = eachParallel(plan.order, c.jobs, func(h string) error {
 		in := byHash[h]
-		if err := c.pushOne(ctx, in, params); err != nil {
+		err := c.pushOne(ctx, in, params, func(req api.PathReq) error {
+			if err := plan.await(ctx, h); err != nil {
+				return err
+			}
+			return c.putPath(ctx, req)
+		})
+		plan.finish(h, err)
+		if errors.Is(err, errReferenceNotPushed) {
+			return nil
+		}
+		if err != nil {
 			return fmt.Errorf("%s: %w", in.Path, err)
 		}
 		c.progress(int(done.Add(1)), len(missing))
@@ -273,10 +287,10 @@ type dumpOpts struct {
 //     with the filter off.
 //
 // At most three attempts, and each transition is driven by a distinct cause.
-func (c *Client) pushOne(ctx context.Context, in pathInfo, params chunk.Params) error {
+func (c *Client) pushOne(ctx context.Context, in pathInfo, params chunk.Params, publish func(api.PathReq) error) error {
 	storeHash := narinfo.StoreHash(in.Path)
 	if order := loadManifest(params, storeHash, in.NarHash); order != nil {
-		err := c.putPath(ctx, in.pathReq(order))
+		err := publish(in.pathReq(order))
 		if err == nil {
 			return nil
 		}
@@ -286,7 +300,7 @@ func (c *Client) pushOne(ctx context.Context, in pathInfo, params chunk.Params) 
 	}
 	o := dumpOpts{external: c.externalDump}
 	for attempt := 0; ; attempt++ {
-		err := c.dumpPush(ctx, in, params, o)
+		err := c.dumpPush(ctx, in, params, o, publish)
 		switch {
 		case err == nil:
 			return nil
@@ -304,14 +318,14 @@ func (c *Client) pushOne(ctx context.Context, in pathInfo, params chunk.Params) 
 }
 
 // dumpPush dumps the NAR once and uploads what the server needs.
-func (c *Client) dumpPush(ctx context.Context, in pathInfo, params chunk.Params, o dumpOpts) error {
+func (c *Client) dumpPush(ctx context.Context, in pathInfo, params chunk.Params, o dumpOpts, publish func(api.PathReq) error) error {
 	filter := c.filter
 	if o.pessimistic {
 		filter = nil
 	}
 	// Small NARs are stored as a single chunk — skip CDC overhead entirely.
 	if in.NarSize < uint64(c.narThreshold) {
-		return c.pushWhole(ctx, in, params, filter, o)
+		return c.pushWhole(ctx, in, params, filter, o, publish)
 	}
 
 	p := &pathPush{c: c}
@@ -366,7 +380,7 @@ func (c *Client) dumpPush(ctx context.Context, in pathInfo, params chunk.Params,
 		return err
 	}
 
-	if err := c.putPath(ctx, in.pathReq(order)); err != nil {
+	if err := publish(in.pathReq(order)); err != nil {
 		return err
 	}
 	saveManifest(params, narinfo.StoreHash(in.Path), in.NarHash, order)
@@ -454,7 +468,7 @@ func (p *pathPush) flush(ctx context.Context, window []chunk.Chunk) {
 var errAbort = errors.New("aborted")
 
 // pushWhole uploads a small NAR as one chunk.
-func (c *Client) pushWhole(ctx context.Context, in pathInfo, params chunk.Params, filter *bloom.Filter, o dumpOpts) error {
+func (c *Client) pushWhole(ctx context.Context, in pathInfo, params chunk.Params, filter *bloom.Filter, o dumpOpts, publish func(api.PathReq) error) error {
 	data, err := dumpAll(ctx, in.Path, o.external)
 	if err != nil {
 		return err
@@ -477,7 +491,7 @@ func (c *Client) pushWhole(ctx context.Context, in pathInfo, params chunk.Params
 			return err
 		}
 	}
-	if err := c.putPath(ctx, in.pathReq([]string{ch.Hash})); err != nil {
+	if err := publish(in.pathReq([]string{ch.Hash})); err != nil {
 		return err
 	}
 	saveManifest(params, narinfo.StoreHash(in.Path), in.NarHash, []string{ch.Hash})
