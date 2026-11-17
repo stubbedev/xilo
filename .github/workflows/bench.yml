@@ -139,12 +139,12 @@ jobs:
         run: |
           cp bench-results.json tests/bench/results.json
           go run ./tools/perfchart
-          if [ -z "$(git status --porcelain tests/bench/results.json docs/perf)" ]; then
+          if [ -z "$(git status --porcelain tests/bench/results.json README.md docs/benchmarks.md)" ]; then
             echo "numbers and charts already in sync"; exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add tests/bench/results.json docs/perf
+          git add tests/bench/results.json README.md docs/benchmarks.md
           git commit -m 'chore: refresh cross-implementation benchmark [skip ci]'
           # CI's own artifact commit can land between the checkout and this
           # push; rebasing beats failing a run that measured everything

@@ -1,9 +1,6 @@
 package main
 
 import (
-	"encoding/xml"
-	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -164,9 +161,6 @@ func TestBenchChartOrdersTargetsAndKeepsBytesComparable(t *testing.T) {
 	if strings.Join(labels, ",") != strings.Join(want, ",") {
 		t.Errorf("bar order = %v, want %v", labels, want)
 	}
-	if !qps.bars[0].accent || qps.bars[1].accent {
-		t.Error("accent should mark xilo's bar and no other")
-	}
 
 	// A bucket serving compressed NARs is not serving the same bytes, so it is
 	// left out of the throughput panel rather than winning it.
@@ -224,49 +218,99 @@ func TestBenchChartDividesCPUByBytesServed(t *testing.T) {
 	}
 }
 
-func TestRenderProducesWellFormedThemedSVG(t *testing.T) {
+func TestPanelDrawsAZeroBasedBarPerTargetWithItsValue(t *testing.T) {
 	k6Dir, _ := writeFixtures(t)
 	c, err := k6Charts(k6Dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, th := range themes {
-		svg := render(c, th)
-		dec := xml.NewDecoder(strings.NewReader(svg))
-		for {
-			if _, err := dec.Token(); errors.Is(err, io.EOF) {
-				break
-			} else if err != nil {
-				t.Fatalf("%s theme: SVG is not well-formed XML: %v", th.name, err)
-			}
-		}
-		if !strings.Contains(svg, th.bg) || !strings.Contains(svg, th.accent) {
-			t.Errorf("%s theme: rendered SVG uses neither its background nor its accent", th.name)
-		}
-		if !strings.Contains(svg, "4.8 ms") {
-			t.Errorf("%s theme: measured value missing from the drawing", th.name)
+	md := panelByTitle(t, c, "Read latency, p95").mermaid()
+	if !strings.HasPrefix(md, "```mermaid\n") || !strings.HasSuffix(md, "```\n") {
+		t.Fatalf("not a fenced mermaid block:\n%s", md)
+	}
+	for _, want := range []string{
+		"xychart-beta horizontal",
+		`"narinfo hit  4.8 ms"`,
+		`y-axis "ms, lower is better" 0 --> 100`,
+		"bar [4.8, 64.8, 45]",
+	} {
+		if !strings.Contains(md, want) {
+			t.Errorf("missing %q in:\n%s", want, md)
 		}
 	}
 }
 
-func TestRunWritesBothChartsInBothThemes(t *testing.T) {
-	k6Dir, benchFile := writeFixtures(t)
-	out := filepath.Join(t.TempDir(), "perf")
-	if err := run(k6Dir, benchFile, out); err != nil {
+func TestMermaidNeverPrintsScientificNotation(t *testing.T) {
+	md := panel{title: "Stored", scale: "bytes", bars: []bar{{label: "xilo", value: "225 MB", amount: 225000000}}}.mermaid()
+	if strings.Contains(md, "e+") {
+		t.Errorf("scientific notation in:\n%s", md)
+	}
+}
+
+func writeDocs(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "README.md")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{
-		"k6-gate-light.svg", "k6-gate-dark.svg", "compare-light.svg", "compare-dark.svg",
-	} {
-		if _, err := os.Stat(filepath.Join(out, name)); err != nil {
-			t.Errorf("missing %s: %v", name, err)
+	return path
+}
+
+func TestRunFillsEveryRegionAndKeepsTheRest(t *testing.T) {
+	k6Dir, benchFile := writeFixtures(t)
+	doc := writeDocs(t, "intro\n<!-- perfchart:compare -->\nold\n<!-- /perfchart:compare -->\nmiddle\n<!-- perfchart:k6-gate -->\n<!-- /perfchart:k6-gate -->\noutro\n")
+	if err := run(k6Dir, benchFile, []string{doc}, false); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	for _, want := range []string{"intro\n", "\nmiddle\n", "\noutro\n", `"xilo  5,981/s"`, `"narinfo hit  4.8 ms"`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in:\n%s", want, s)
 		}
+	}
+	if strings.Contains(s, "\nold\n") {
+		t.Error("the previous chart was not replaced")
+	}
+	if err := run(k6Dir, benchFile, []string{doc}, true); err != nil {
+		t.Errorf("check right after a write: %v", err)
+	}
+}
+
+func TestCheckReportsAStaleDocumentWithoutWriting(t *testing.T) {
+	k6Dir, benchFile := writeFixtures(t)
+	body := "<!-- perfchart:compare -->\nold\n<!-- /perfchart:compare -->\n<!-- perfchart:k6-gate -->\n<!-- /perfchart:k6-gate -->\n"
+	doc := writeDocs(t, body)
+	if err := run(k6Dir, benchFile, []string{doc}, true); err == nil {
+		t.Fatal("check passed on a stale document")
+	}
+	if got, _ := os.ReadFile(doc); string(got) != body {
+		t.Error("check rewrote the document")
+	}
+}
+
+func TestRunRefusesAChartWithNowhereToGo(t *testing.T) {
+	k6Dir, benchFile := writeFixtures(t)
+	doc := writeDocs(t, "<!-- perfchart:compare -->\n<!-- /perfchart:compare -->\n")
+	if err := run(k6Dir, benchFile, []string{doc}, false); err == nil || !strings.Contains(err.Error(), "k6-gate") {
+		t.Fatalf("err = %v, want one naming the k6-gate chart", err)
+	}
+}
+
+func TestRunRefusesAnUnclosedRegion(t *testing.T) {
+	k6Dir, benchFile := writeFixtures(t)
+	doc := writeDocs(t, "<!-- perfchart:compare -->\n<!-- perfchart:k6-gate -->\n<!-- /perfchart:k6-gate -->\n")
+	if err := run(k6Dir, benchFile, []string{doc}, false); err == nil {
+		t.Fatal("an unclosed region was accepted")
 	}
 }
 
 func TestRunWithoutAnyInput(t *testing.T) {
 	dir := t.TempDir()
-	if err := run(filepath.Join(dir, "nope"), filepath.Join(dir, "nope.json"), filepath.Join(dir, "out")); err == nil {
+	if err := run(filepath.Join(dir, "nope"), filepath.Join(dir, "nope.json"), nil, false); err == nil {
 		t.Fatal("expected an error when neither input exists")
 	}
 }
@@ -300,5 +344,17 @@ func TestFormatters(t *testing.T) {
 		if tc.got != tc.want {
 			t.Errorf("got %q, want %q", tc.got, tc.want)
 		}
+	}
+}
+
+func TestRunWritesNothingWhenAChartHasNowhereToGo(t *testing.T) {
+	k6Dir, benchFile := writeFixtures(t)
+	body := "<!-- perfchart:compare -->\nold\n<!-- /perfchart:compare -->\n"
+	doc := writeDocs(t, body)
+	if err := run(k6Dir, benchFile, []string{doc}, false); err == nil {
+		t.Fatal("expected an error")
+	}
+	if got, _ := os.ReadFile(doc); string(got) != body {
+		t.Error("a failing run still rewrote the document")
 	}
 }

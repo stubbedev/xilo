@@ -102,10 +102,83 @@ Prebuilt binaries, the Nix flake, and the NixOS and home-manager modules are cov
 
 ## Performance
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/perf/compare-dark.svg">
-  <img alt="Bar charts comparing xilo, attic, harmonia, nix-serve-ng and MinIO and Garage buckets on narinfo throughput, NAR throughput, memory, CPU per MB/s, push time, bytes stored and deployment size" src="docs/perf/compare-light.svg">
-</picture>
+<!-- perfchart:compare -->
+Same machine, same closure (93 paths, 646 MB of NAR), same load script. GitHub ubuntu-latest runner, 2 cores, 2026-11-16.
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 280, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "narinfo throughput"
+    x-axis ["xilo  3,247/s", "attic  1,102/s", "harmonia  3,572/s", "nix-serve-ng  1,708/s", "Garage + nix copy  1,946/s"]
+    y-axis "requests/s, higher is better" 0 --> 5000
+    bar [3247.103, 1102.366, 3572.193, 1708.453, 1946.158]
+```
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 240, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "NAR pull throughput"
+    x-axis ["xilo  647 MB/s", "attic  68 MB/s", "harmonia  684 MB/s", "nix-serve-ng  14 MB/s"]
+    y-axis "MB/s, higher is better" 0 --> 1000
+    bar [647.342, 67.566, 683.671, 13.891]
+```
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 280, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "Memory under pull load"
+    x-axis ["xilo  99 MiB", "attic  108 MiB", "harmonia  24 MiB", "nix-serve-ng  32 MiB", "Garage + nix copy  24 MiB"]
+    y-axis "peak RAM in use, lower is better" 0 --> 200
+    bar [98.88, 107.7, 23.67, 32.45, 23.62]
+```
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 240, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "CPU per MB/s served"
+    x-axis ["xilo  0.28", "attic  2.38", "harmonia  0.28", "nix-serve-ng  8.20"]
+    y-axis "% of a core per MB/s, lower is better" 0 --> 10
+    bar [0.27887577200305247, 2.3804872273036732, 0.2836232632362642, 8.195450291555684]
+```
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 200, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "Cold push of the closure"
+    x-axis ["xilo  3.9 s", "attic  9.8 s", "Garage + nix copy  84.8 s"]
+    y-axis "seconds, lower is better" 0 --> 100
+    bar [3.9, 9.8, 84.8]
+```
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 200, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "Repeat push of the closure"
+    x-axis ["xilo  0.1 s", "attic  0.8 s", "Garage + nix copy  0.1 s"]
+    y-axis "seconds, lower is better" 0 --> 1
+    bar [0.1, 0.8, 0.1]
+```
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 280, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "Stored on disk"
+    x-axis ["xilo  225 MB", "attic  212 MB", "harmonia  654 MB", "nix-serve-ng  654 MB", "Garage + nix copy  157 MB"]
+    y-axis "bytes for this closure; a host store keeps it unpacked" 0 --> 1000000000
+    bar [225354440, 212363843, 654291571, 654291571, 156640678]
+```
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 280, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "Image or closure to deploy"
+    x-axis ["xilo  11 MB", "attic  87 MB", "harmonia  78 MB", "nix-serve-ng  220 MB", "Garage + nix copy  28 MB"]
+    y-axis "bytes, lower is better" 0 --> 500000000
+    bar [11249623, 86969956, 78256816, 220114536, 28103547]
+```
+
+Each chart has its own scale. A missing bar is a target that does not do that thing, not a zero.
+<!-- /perfchart:compare -->
 
 CI measures these numbers and commits them; none are typed in by hand.
 [Benchmarks](docs/benchmarks.md) explains the method, and

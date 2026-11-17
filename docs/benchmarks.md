@@ -12,10 +12,83 @@ those is not a measurement.
 
 ## Against other Nix caches
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="perf/compare-dark.svg">
-  <img alt="Bar charts comparing xilo, attic, harmonia, nix-serve-ng and MinIO and Garage buckets on narinfo throughput, NAR throughput, memory, CPU per MB/s, push time, bytes stored and deployment size" src="perf/compare-light.svg">
-</picture>
+<!-- perfchart:compare -->
+Same machine, same closure (93 paths, 646 MB of NAR), same load script. GitHub ubuntu-latest runner, 2 cores, 2026-11-16.
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 280, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "narinfo throughput"
+    x-axis ["xilo  3,247/s", "attic  1,102/s", "harmonia  3,572/s", "nix-serve-ng  1,708/s", "Garage + nix copy  1,946/s"]
+    y-axis "requests/s, higher is better" 0 --> 5000
+    bar [3247.103, 1102.366, 3572.193, 1708.453, 1946.158]
+```
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 240, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "NAR pull throughput"
+    x-axis ["xilo  647 MB/s", "attic  68 MB/s", "harmonia  684 MB/s", "nix-serve-ng  14 MB/s"]
+    y-axis "MB/s, higher is better" 0 --> 1000
+    bar [647.342, 67.566, 683.671, 13.891]
+```
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 280, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "Memory under pull load"
+    x-axis ["xilo  99 MiB", "attic  108 MiB", "harmonia  24 MiB", "nix-serve-ng  32 MiB", "Garage + nix copy  24 MiB"]
+    y-axis "peak RAM in use, lower is better" 0 --> 200
+    bar [98.88, 107.7, 23.67, 32.45, 23.62]
+```
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 240, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "CPU per MB/s served"
+    x-axis ["xilo  0.28", "attic  2.38", "harmonia  0.28", "nix-serve-ng  8.20"]
+    y-axis "% of a core per MB/s, lower is better" 0 --> 10
+    bar [0.27887577200305247, 2.3804872273036732, 0.2836232632362642, 8.195450291555684]
+```
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 200, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "Cold push of the closure"
+    x-axis ["xilo  3.9 s", "attic  9.8 s", "Garage + nix copy  84.8 s"]
+    y-axis "seconds, lower is better" 0 --> 100
+    bar [3.9, 9.8, 84.8]
+```
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 200, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "Repeat push of the closure"
+    x-axis ["xilo  0.1 s", "attic  0.8 s", "Garage + nix copy  0.1 s"]
+    y-axis "seconds, lower is better" 0 --> 1
+    bar [0.1, 0.8, 0.1]
+```
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 280, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "Stored on disk"
+    x-axis ["xilo  225 MB", "attic  212 MB", "harmonia  654 MB", "nix-serve-ng  654 MB", "Garage + nix copy  157 MB"]
+    y-axis "bytes for this closure; a host store keeps it unpacked" 0 --> 1000000000
+    bar [225354440, 212363843, 654291571, 654291571, 156640678]
+```
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 280, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "Image or closure to deploy"
+    x-axis ["xilo  11 MB", "attic  87 MB", "harmonia  78 MB", "nix-serve-ng  220 MB", "Garage + nix copy  28 MB"]
+    y-axis "bytes, lower is better" 0 --> 500000000
+    bar [11249623, 86969956, 78256816, 220114536, 28103547]
+```
+
+Each chart has its own scale. A missing bar is a target that does not do that thing, not a zero.
+<!-- /perfchart:compare -->
 
 [`tests/bench/bench.sh`](../tests/bench/bench.sh) starts each implementation in
 turn, pushes the same closure into it (where it takes a push), runs the same
@@ -23,7 +96,7 @@ pull load against it, and samples the container's memory and CPU while that
 load runs. [`bench.yml`](../.github/workflows/bench.yml) runs it on the schedule
 above and commits what the runner measured, so
 [`tests/bench/results.json`](../tests/bench/results.json) is the raw data behind
-the chart, which `just perf-charts` (or CI) redraws from it.
+the charts, which `just perf-charts` (or CI) redraws from it.
 
 | target | what it is | accepts a push | dedup |
 |---|---|---|---|
@@ -85,10 +158,38 @@ just bench xilo,attic   # a subset
 
 ## Against its own past
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="perf/k6-gate-dark.svg">
-  <img alt="Bar charts of xilo's committed k6 baselines: read latency p95 per scenario, push round trip p95, and requests served per run" src="perf/k6-gate-light.svg">
-</picture>
+<!-- perfchart:k6-gate -->
+Committed baselines from tests/k6/baselines, measured on 2-core GitHub runners and re-checked on every push. Worst of 12 sampled runs, plus each metric's tolerance.
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 400, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "Read latency, p95"
+    x-axis ["narinfo hit  8.4 ms", "narinfo miss  8.3 ms", "NAR pull  7.3 ms", "NAR pull, zstd  6.6 ms", "NAR pull, 64 MiB  97 ms", "narinfo under push load  38 ms", "narinfo, 512 clients  59 ms", "narinfo, 5000 rps arrival  0.8 ms"]
+    y-axis "ms, lower is better" 0 --> 100
+    bar [8.411690899999995, 8.3399478, 7.273910649999999, 6.570586999999999, 97.01801439999998, 37.6803545, 58.670966, 0.765489]
+```
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 160, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "Push round trip, p95"
+    x-axis ["repeat push (deduped)  1.52 s", "fresh push  1.55 s"]
+    y-axis "ms, lower is better" 0 --> 2000
+    bar [1521.0977961, 1549.921537]
+```
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "#7c7f93", "xAxisLabelColor": "#7c7f93", "xAxisTitleColor": "#7c7f93", "xAxisLineColor": "#9ca0b0", "yAxisTitleColor": "#7c7f93", "yAxisLineColor": "#9ca0b0", "plotColorPalette": "#8839ef"}}, "xyChart": {"height": 160, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%
+xychart-beta horizontal
+    title "Requests served per run"
+    x-axis ["throughput suite  357,331", "pressure suite  390,705"]
+    y-axis "requests, higher is better" 0 --> 500000
+    bar [357331, 390705]
+```
+
+Each chart has its own scale; every bar carries the measured value.
+<!-- /perfchart:k6-gate -->
 
 Every push to `master` runs the k6 suites in single-tenant and multi-tenant
 mode and compares them against the committed baselines in

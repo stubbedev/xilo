@@ -27,8 +27,8 @@ the k6 suites in [`tests/k6`](../tests/k6/README.md) (`just k6-ops`,
 `just k6-perf`, `just k6-churn`, `just k6-pressure`, and their `-mt`
 multi-tenant variants), and the cross-implementation comparison in
 [`tests/bench/bench.sh`](../tests/bench/bench.sh) (`just bench`). `just
-perf-charts` redraws the README's performance graphics from the committed
-numbers.
+perf-charts` redraws the performance charts in the README and in
+[Benchmarks](benchmarks.md) from the committed numbers.
 
 Release process: [RELEASING.md](../RELEASING.md). Vulnerability reporting and
 deployment scope notes: [SECURITY.md](../SECURITY.md). Licensed under

@@ -1,68 +1,153 @@
-// Command perfchart renders the committed performance numbers into the SVG
-// charts the README embeds: the k6 gate (tests/k6/baselines/*.json) and the
-// cross-implementation comparison (tests/bench/results.json).
+// Command perfchart renders the committed performance numbers as Mermaid bar
+// charts inside the markdown that shows them: the k6 gate
+// (tests/k6/baselines/*.json) and the cross-implementation comparison
+// (tests/bench/results.json). Each chart replaces the region between
+// <!-- perfchart:NAME --> and <!-- /perfchart:NAME --> in README.md and
+// docs/benchmarks.md, so GitHub draws it natively in whichever theme the
+// reader has, instead of embedding a picture of one.
 //
 // It lives outside cmd/xilo for the same reason schemagen does: nothing in a
-// user's binary needs to draw a chart. Two files per chart, light and dark, so
-// the README can pick one with <picture> and prefers-color-scheme; a single SVG
-// carrying both palettes would depend on media queries surviving whatever
-// renders it.
+// user's binary needs to draw a chart.
 //
-// Every number drawn comes from a committed file. The tool computes bar
-// lengths and formats labels, and invents nothing: a metric missing from the
-// input is a missing bar, never a zero.
+// Every number drawn comes from a committed file. The tool formats labels and
+// invents nothing: a metric missing from the input is a missing bar, never a
+// zero.
 package main
 
 import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"html"
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
 
+var documents = []string{"README.md", "docs/benchmarks.md"}
+
 func main() {
 	k6Dir := flag.String("k6", "tests/k6/baselines", "directory of committed k6 baselines")
 	benchFile := flag.String("bench", "tests/bench/results.json", "output of tests/bench/bench.sh")
-	outDir := flag.String("out", "docs/perf", "directory to write the SVGs into")
+	verify := flag.Bool("check", false, "fail if a document's charts differ from what would be drawn, instead of writing")
 	flag.Parse()
 
-	if err := run(*k6Dir, *benchFile, *outDir); err != nil {
+	if err := run(*k6Dir, *benchFile, documents, *verify); err != nil {
 		fmt.Fprintln(os.Stderr, "perfchart:", err)
 		os.Exit(1)
 	}
 }
 
-func run(k6Dir, benchFile, outDir string) error {
-	if err := os.MkdirAll(outDir, 0o755); err != nil {
-		return err
-	}
-	wrote := 0
-
-	if charts, err := k6Charts(k6Dir); err != nil {
-		fmt.Fprintln(os.Stderr, "perfchart: skipping k6 chart:", err)
+func run(k6Dir, benchFile string, docs []string, verify bool) error {
+	charts := map[string]chart{}
+	if c, err := k6Charts(k6Dir); err != nil {
+		fmt.Fprintln(os.Stderr, "perfchart: leaving the k6 chart as it is:", err)
 	} else {
-		if err := writeChart(outDir, "k6-gate", charts); err != nil {
-			return err
-		}
-		wrote++
+		charts["k6-gate"] = c
 	}
-
-	if charts, err := benchCharts(benchFile); err != nil {
-		fmt.Fprintln(os.Stderr, "perfchart: skipping comparison chart:", err)
+	if c, err := benchCharts(benchFile); err != nil {
+		fmt.Fprintln(os.Stderr, "perfchart: leaving the comparison chart as it is:", err)
 	} else {
-		if err := writeChart(outDir, "compare", charts); err != nil {
-			return err
-		}
-		wrote++
+		charts["compare"] = c
 	}
-
-	if wrote == 0 {
+	if len(charts) == 0 {
 		return fmt.Errorf("no inputs found (looked for %s and %s)", k6Dir, benchFile)
+	}
+
+	type rewrite struct{ path, contents string }
+	var rewrites []rewrite
+	placed := map[string]bool{}
+	for _, path := range docs {
+		before, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+		after, names, err := fill(string(before), charts)
+		if err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		for _, n := range names {
+			placed[n] = true
+		}
+		if after != string(before) {
+			rewrites = append(rewrites, rewrite{path, after})
+		}
+	}
+	for name := range charts {
+		if !placed[name] {
+			return fmt.Errorf("no document has a <!-- perfchart:%s --> region to draw into", name)
+		}
+	}
+	if verify {
+		if len(rewrites) == 0 {
+			return nil
+		}
+		stale := make([]string, len(rewrites))
+		for i, r := range rewrites {
+			stale[i] = r.path
+		}
+		return fmt.Errorf("charts are stale, run 'just perf-charts' and commit: %s", strings.Join(stale, ", "))
+	}
+	for _, r := range rewrites {
+		if err := writeAtomic(r.path, r.contents); err != nil {
+			return err
+		}
+		fmt.Println("wrote", r.path)
+	}
+	return nil
+}
+
+var region = regexp.MustCompile(`(?s)<!-- perfchart:([a-z0-9-]+) -->\n.*?<!-- /perfchart:([a-z0-9-]+) -->`)
+
+func fill(doc string, charts map[string]chart) (string, []string, error) {
+	var names []string
+	var failure error
+	out := region.ReplaceAllStringFunc(doc, func(m string) string {
+		sub := region.FindStringSubmatch(m)
+		open, closing := sub[1], sub[2]
+		if open != closing {
+			failure = fmt.Errorf("region perfchart:%s is closed by /perfchart:%s", open, closing)
+			return m
+		}
+		names = append(names, open)
+		c, ok := charts[open]
+		if !ok {
+			return m
+		}
+		return "<!-- perfchart:" + open + " -->\n" + c.markdown() + "<!-- /perfchart:" + open + " -->"
+	})
+	if failure != nil {
+		return "", nil, failure
+	}
+	for name := range charts {
+		if strings.Contains(doc, "<!-- perfchart:"+name+" -->") && !slices.Contains(names, name) {
+			return "", nil, fmt.Errorf("region perfchart:%s has no closing <!-- /perfchart:%s -->", name, name)
+		}
+	}
+	return out, names, nil
+}
+
+func writeAtomic(path, contents string) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
+		return fmt.Errorf("stage %s: %w", path, err)
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.WriteString(contents); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write %s: %w", tmp.Name(), err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", tmp.Name(), err)
+	}
+	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+		return fmt.Errorf("chmod %s: %w", tmp.Name(), err)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return fmt.Errorf("move %s into place: %w", path, err)
 	}
 	return nil
 }
@@ -173,9 +258,8 @@ func (r *benchResults) str(target, key string) string {
 
 type bar struct {
 	label  string
-	value  string  // the number, drawn at the end of the bar
-	frac   float64 // 0..1 of the panel's scale
-	accent bool    // xilo's own bar
+	value  string
+	amount float64
 }
 
 type panel struct {
@@ -185,10 +269,8 @@ type panel struct {
 }
 
 type chart struct {
-	title    string
 	subtitle string
 	footnote string
-	cols     int
 	panels   []panel
 }
 
@@ -226,7 +308,7 @@ func k6Charts(dir string) (chart, error) {
 		{"http_req_duration{scenario:flood}", "narinfo, 5000 rps arrival", pressure},
 	} {
 		if v, ok := row.src.stat(row.metric, "p(95)"); ok {
-			read.bars = append(read.bars, bar{label: row.label, value: fmtMs(v), frac: v, accent: true})
+			read.bars = append(read.bars, bar{label: row.label, value: fmtMs(v), amount: v})
 		}
 	}
 
@@ -239,7 +321,7 @@ func k6Charts(dir string) (chart, error) {
 		{"iteration_duration{scenario:push_fresh}", "fresh push"},
 	} {
 		if v, ok := perf.stat(row.metric, "p(95)"); ok {
-			push.bars = append(push.bars, bar{label: row.label, value: fmtMs(v), frac: v, accent: true})
+			push.bars = append(push.bars, bar{label: row.label, value: fmtMs(v), amount: v})
 		}
 	}
 
@@ -255,15 +337,13 @@ func k6Charts(dir string) (chart, error) {
 		{"pressure suite", pressure},
 	} {
 		if v, ok := row.src.stat("http_reqs", "count"); ok {
-			served.bars = append(served.bars, bar{label: row.label, value: fmtCount(v), frac: v, accent: true})
+			served.bars = append(served.bars, bar{label: row.label, value: fmtCount(v), amount: v})
 		}
 	}
 
 	c := chart{
-		title:    "xilo under the k6 gate",
 		subtitle: k6Subtitle(perf),
-		footnote: "Each panel has its own scale; every bar carries the measured value.",
-		cols:     1,
+		footnote: "Each chart has its own scale; every bar carries the measured value.",
 	}
 	for _, p := range []panel{read, push, served} {
 		if len(p.bars) > 0 {
@@ -342,10 +422,7 @@ func benchCharts(path string) (chart, error) {
 		{"Image or closure to deploy", "bytes, lower is better", key("image_bytes"), fmtBytes, false},
 	}
 
-	c := chart{
-		title: "xilo against other self-hostable Nix caches",
-		cols:  2,
-	}
+	var c chart
 	workload := ""
 	if p, ok := r.Workload["paths"].(float64); ok {
 		workload = fmtCount(p) + " paths"
@@ -355,7 +432,7 @@ func benchCharts(path string) (chart, error) {
 	}
 	c.subtitle = strings.TrimSpace(fmt.Sprintf("Same machine, same closure (%s), same load script. %s, %s.",
 		workload, r.Runner, r.Date))
-	c.footnote = "Each panel has its own scale. A missing bar is a target that does not do that thing, not a zero."
+	c.footnote = "Each chart has its own scale. A missing bar is a target that does not do that thing, not a zero."
 
 	for _, s := range specs {
 		p := panel{title: s.title, scale: s.scale}
@@ -370,8 +447,7 @@ func benchCharts(path string) (chart, error) {
 			p.bars = append(p.bars, bar{
 				label:  t.name,
 				value:  s.format(v),
-				frac:   v,
-				accent: t.id == "xilo",
+				amount: v,
 			})
 		}
 		if len(p.bars) > 1 {
@@ -386,158 +462,49 @@ func benchCharts(path string) (chart, error) {
 
 // ── rendering ───────────────────────────────────────────────────────────────
 
-type theme struct {
-	name, bg, fg, muted, grid, accent, other string
-}
-
-// Literal hex, and a pair that was checked on both grounds: an SVG loaded as
-// an image resolves neither var() nor a host page's tokens.
-var themes = []theme{
-	{"light", "#ffffff", "#0f172a", "#64748b", "#e5e9f0", "#b45309", "#94a3b8"},
-	{"dark", "#0d1117", "#e6edf3", "#8b949e", "#30363d", "#f0b429", "#6e7681"},
-}
-
+// Catppuccin, picked to read on both of GitHub's themes, since one Mermaid
+// block cannot switch palettes: Latte's mauve for the bars, and Latte's
+// overlay greys for text and rules, which hold above 4:1 on white and on
+// GitHub's dark ground alike.
 const (
-	width     = 900
-	padX      = 24
-	padY      = 22
-	labelW    = 170
-	valueW    = 108
-	rowH      = 26
-	barH      = 13
-	panelHead = 34
-	panelGap  = 18
-	colGap    = 24
+	barColor  = "#8839ef"
+	textColor = "#7c7f93"
+	ruleColor = "#9ca0b0"
 )
 
-const (
-	sansFont = "ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
-	monoFont = "ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace"
-)
-
-func writeChart(dir, name string, c chart) error {
-	for _, th := range themes {
-		path := filepath.Join(dir, fmt.Sprintf("%s-%s.svg", name, th.name))
-		if err := os.WriteFile(path, []byte(render(c, th)), 0o644); err != nil {
-			return err
-		}
-		fmt.Println("wrote", path)
-	}
-	return nil
-}
-
-// panelHeight is the drawn height of one panel.
-func panelHeight(p panel) float64 {
-	return panelHead + float64(len(p.bars))*rowH + 6
-}
-
-func render(c chart, th theme) string {
-	cols := max(c.cols, 1)
-	panelW := (width - 2*padX - float64(cols-1)*colGap) / float64(cols)
-
-	// Row-major layout, each grid row as tall as its tallest panel, so a panel
-	// with two bars beside one with eight does not stretch to match it.
-	type placed struct {
-		p    panel
-		x, y float64
-		w    float64
-	}
-	var out []placed
-	y := padY + 46.0
-	if c.subtitle == "" {
-		y = padY + 30
-	}
-	for i := 0; i < len(c.panels); i += cols {
-		rowPanels := c.panels[i:min(i+cols, len(c.panels))]
-		rowH := 0.0
-		for _, p := range rowPanels {
-			rowH = math.Max(rowH, panelHeight(p))
-		}
-		for j, p := range rowPanels {
-			out = append(out, placed{
-				p: p,
-				x: padX + float64(j)*(panelW+colGap),
-				y: y,
-				w: panelW,
-			})
-		}
-		y += rowH + panelGap
-	}
-	height := y + 10
-	if c.footnote != "" {
-		height += 18
-	}
-
+func (c chart) markdown() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %.0f" width="%d" height="%.0f" role="img" aria-label="%s">`,
-		width, height, width, height, html.EscapeString(c.title))
-	fmt.Fprintf(&b, `<title>%s</title>`, html.EscapeString(c.title))
-	fmt.Fprintf(&b, `<rect width="100%%" height="100%%" fill="%s"/>`, th.bg)
-	fmt.Fprintf(&b, `<text x="%d" y="%d" fill="%s" font-family="%s" font-size="16" font-weight="600">%s</text>`,
-		padX, padY+8, th.fg, sansFont, html.EscapeString(c.title))
 	if c.subtitle != "" {
-		fmt.Fprintf(&b, `<text x="%d" y="%d" fill="%s" font-family="%s" font-size="11.5">%s</text>`,
-			padX, padY+28, th.muted, sansFont, html.EscapeString(c.subtitle))
+		b.WriteString(c.subtitle + "\n\n")
 	}
-
-	for _, pl := range out {
-		renderPanel(&b, pl.p, pl.x, pl.y, pl.w, th)
+	for _, p := range c.panels {
+		b.WriteString(p.mermaid())
+		b.WriteString("\n")
 	}
-
 	if c.footnote != "" {
-		fmt.Fprintf(&b, `<text x="%d" y="%.0f" fill="%s" font-family="%s" font-size="10.5">%s</text>`,
-			padX, height-8, th.muted, sansFont, html.EscapeString(c.footnote))
+		b.WriteString(c.footnote + "\n")
 	}
-	b.WriteString(`</svg>`)
-	b.WriteString("\n")
 	return b.String()
 }
 
-func renderPanel(b *strings.Builder, p panel, x, y, w float64, th theme) {
-	fmt.Fprintf(b, `<text x="%.0f" y="%.0f" fill="%s" font-family="%s" font-size="12.5" font-weight="600">%s</text>`,
-		x, y+12, th.fg, sansFont, html.EscapeString(p.title))
-	if p.scale != "" {
-		fmt.Fprintf(b, `<text x="%.0f" y="%.0f" fill="%s" font-family="%s" font-size="10.5">%s</text>`,
-			x, y+27, th.muted, sansFont, html.EscapeString(p.scale))
-	}
-
-	trackX := x + labelW
-	trackW := w - labelW - valueW
-	if trackW < 40 {
-		trackW = 40
-	}
-	scale := chartMax(maxFrac(p.bars))
-
-	// One recessive rule at the axis top, and nothing else behind the bars:
-	// a grid on eight bars of one series is furniture.
-	fmt.Fprintf(b, `<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="%s" stroke-width="1"/>`,
-		trackX, y+panelHead-6, trackX+trackW, y+panelHead-6, th.grid)
-
+func (p panel) mermaid() string {
+	labels := make([]string, len(p.bars))
+	amounts := make([]string, len(p.bars))
+	top := 0.0
 	for i, bar := range p.bars {
-		rowY := y + panelHead + float64(i)*rowH
-		fill := th.other
-		if bar.accent {
-			fill = th.accent
-		}
-		length := 2.0
-		if scale > 0 {
-			length = math.Max(2, bar.frac/scale*trackW)
-		}
-		fmt.Fprintf(b, `<text x="%.0f" y="%.1f" fill="%s" font-family="%s" font-size="11.5">%s</text>`,
-			x, rowY+barH-1, th.fg, sansFont, html.EscapeString(bar.label))
-		fmt.Fprintf(b, `<rect x="%.1f" y="%.1f" width="%.1f" height="%d" rx="2" fill="%s"/>`,
-			trackX, rowY+1, length, barH, fill)
-		fmt.Fprintf(b, `<text x="%.1f" y="%.1f" fill="%s" font-family="%s" font-size="11">%s</text>`,
-			trackX+length+8, rowY+barH-1, th.fg, monoFont, html.EscapeString(bar.value))
+		labels[i] = quote(bar.label + "  " + bar.value)
+		amounts[i] = strconv.FormatFloat(bar.amount, 'f', -1, 64)
+		top = math.Max(top, bar.amount)
 	}
+	init := fmt.Sprintf(`%%%%{init: {"theme": "base", "themeVariables": {"xyChart": {"backgroundColor": "transparent", "titleColor": "%[1]s", "xAxisLabelColor": "%[1]s", "xAxisTitleColor": "%[1]s", "xAxisLineColor": "%[2]s", "yAxisTitleColor": "%[1]s", "yAxisLineColor": "%[2]s", "plotColorPalette": "%[3]s"}}, "xyChart": {"height": %[4]d, "yAxis": {"showLabel": false, "showTick": false}, "xAxis": {"showTick": false}}}}%%%%`,
+		textColor, ruleColor, barColor, 80+40*len(p.bars))
+	return fmt.Sprintf("```mermaid\n%s\nxychart-beta horizontal\n    title %s\n    x-axis [%s]\n    y-axis %s 0 --> %s\n    bar [%s]\n```\n",
+		init, quote(p.title), strings.Join(labels, ", "), quote(p.scale),
+		strconv.FormatFloat(chartMax(top), 'f', -1, 64), strings.Join(amounts, ", "))
 }
 
-func maxFrac(bars []bar) float64 {
-	m := 0.0
-	for _, b := range bars {
-		m = math.Max(m, b.frac)
-	}
-	return m
+func quote(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, "'") + `"`
 }
 
 // chartMax rounds a maximum up to the next 1, 2 or 5 times a power of ten, so

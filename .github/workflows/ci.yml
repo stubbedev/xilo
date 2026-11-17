@@ -471,7 +471,7 @@ jobs:
           rm cover.out cover-filtered.out
           cat .github/badges/coverage.json
 
-      # The README's performance graphics are drawn from committed numbers
+      # The performance charts in README.md and docs/benchmarks.md are drawn from committed numbers
       # (tests/k6/baselines/*.json, tests/bench/results.json), so they are
       # generated on every push rather than by whoever last remembered to run
       # `just perf-charts`. The measured numbers themselves come from the Bench
@@ -488,9 +488,9 @@ jobs:
             git --no-pager diff schemas/xilo.schema.json
             exit 1
           fi
-          if [ -n "$(git status --porcelain docs/perf)" ]; then
-            echo "::error::docs/perf is stale. Run 'just perf-charts' and commit."
-            git --no-pager diff --stat docs/perf
+          if [ -n "$(git status --porcelain README.md docs/benchmarks.md)" ]; then
+            echo "::error::the performance charts are stale. Run 'just perf-charts' and commit."
+            git --no-pager diff --stat README.md docs/benchmarks.md
             exit 1
           fi
 
@@ -498,12 +498,12 @@ jobs:
       - name: auto-commit (push)
         if: github.event_name == 'push'
         run: |
-          if [ -z "$(git status --porcelain schemas/xilo.schema.json .github/badges/coverage.json docs/perf)" ]; then
+          if [ -z "$(git status --porcelain schemas/xilo.schema.json .github/badges/coverage.json README.md docs/benchmarks.md)" ]; then
             echo "schema + badge + charts already in sync"; exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add schemas/xilo.schema.json .github/badges/coverage.json docs/perf
+          git add schemas/xilo.schema.json .github/badges/coverage.json README.md docs/benchmarks.md
           git commit -m 'chore: auto-bump schema + coverage badge + perf charts [skip ci]'
           # The Bench workflow commits charts too, so the two can collide on a
           # week where both run; a rebase costs a second, a failed run costs

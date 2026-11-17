@@ -420,13 +420,16 @@ bench TARGETS="xilo,attic,harmonia,nixserve,s3,garage":
     ./tests/bench/bench.sh --targets {{ TARGETS }} --json tests/bench/results.json
     just perf-charts
 
-# Reads tests/k6/baselines/*.json and tests/bench/results.json. The SVGs are
-# generated artifacts that still have to be committed, since a README image
-# cannot be built on demand by whoever is reading it.
-#
-# Redraw docs/perf/*.svg, the README's performance graphics.
+# Reads tests/k6/baselines/*.json and tests/bench/results.json and redraws the
+# Mermaid charts between the <!-- perfchart:NAME --> markers in README.md and
+# docs/benchmarks.md.
 perf-charts:
     go run ./tools/perfchart
+
+# Fails when a committed chart no longer matches the committed numbers, which
+# is what moving a baseline without a redraw leaves behind.
+perf-charts-check:
+    go run ./tools/perfchart -check
 
 # Redraw xilo's mark from its one geometry (tools/brandmark): the favicon, the
 # inline marks the admin embeds, and the animated README banners.
@@ -436,30 +439,6 @@ brand:
 # Fails when a committed mark no longer matches what tools/brandmark draws.
 brand-check:
     go run ./tools/brandmark -check
-
-# Fails when the committed charts no longer match the committed numbers, which
-# is what moving a baseline without a redraw leaves behind.
-#
-# Strict read-only check that docs/perf is in sync.
-perf-charts-check:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    go run ./tools/perfchart > /dev/null
-    drift=$(git status --porcelain docs/perf)
-    if [ -z "$drift" ]; then
-        echo "performance charts in sync"
-        exit 0
-    fi
-    # Untracked and changed are different problems with the same symptom, and
-    # "stale" sends you looking for a diff that is not there.
-    if [ -z "$(echo "$drift" | grep -v '^??')" ]; then
-        echo "::error::docs/perf is not committed yet:"
-        echo "$drift"
-    else
-        echo "::error::docs/perf is stale. Run 'just perf-charts' and commit."
-        git --no-pager diff --stat docs/perf
-    fi
-    exit 1
 
 clean:
     rm -rf bin/
