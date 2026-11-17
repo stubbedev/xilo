@@ -88,12 +88,18 @@ func FuzzDumpDirectoryOrdering(f *testing.F) {
 		if err := os.Mkdir(tree, 0o755); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
-		written := map[string]bool{}
 		for n := range names {
 			if err := os.WriteFile(filepath.Join(tree, n), nil, 0o644); err != nil {
 				t.Skipf("the filesystem would not hold %q: %v", n, err)
 			}
-			written[n] = true
+		}
+		entries, err := os.ReadDir(tree)
+		if err != nil {
+			t.Fatalf("read %s: %v", tree, err)
+		}
+		held := map[string]bool{}
+		for _, e := range entries {
+			held[e.Name()] = true
 		}
 
 		var buf bytes.Buffer
@@ -101,7 +107,7 @@ func FuzzDumpDirectoryOrdering(f *testing.F) {
 			t.Fatalf("Dump: %v", err)
 		}
 		got := entryNames(t, frames(t, buf.Bytes()))
-		want := sortedKeys(written)
+		want := sortedKeys(held)
 		if len(got) != len(want) {
 			t.Fatalf("archive lists %d entries (%q), the directory holds %d (%q)",
 				len(got), got, len(want), want)

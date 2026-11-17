@@ -93,6 +93,10 @@ jobs:
           go-version-file: go.mod
           cache: true
       - uses: DeterminateSystems/nix-installer-action@v23
+      - name: build admin CSS
+        run: |
+          ./scripts/install-tailwind.sh /usr/local/bin/tailwindcss
+          ./scripts/build-css.sh
       - name: generate templ views
         run: go tool templ generate
       - name: packages in the darwin client binary
