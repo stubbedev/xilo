@@ -19,9 +19,9 @@ import (
 // watchCmd auto-pushes newly-built store paths. Mirrors `attic watch-store`:
 // Nix drops a `.lock` file in /nix/store while realising a path and removes it
 // when the path becomes valid. watchStore is per platform, on the stdlib
-// syscalls directly — no external dependency: inotify reports each lock-file
-// deletion (watch_linux.go), kqueue only that the directory changed, so the
-// store is rescanned (watch_darwin.go).
+// syscalls directly: inotify reports each lock-file deletion (watch_linux.go),
+// kqueue only that the directory changed, so the store is rescanned
+// (watch_darwin.go, watchscan.go).
 func abortOnSecondSignal(stopCtx context.Context) (context.Context, context.CancelFunc) {
 	abortCtx, abort := context.WithCancelCause(context.WithoutCancel(stopCtx))
 	sigs := make(chan os.Signal, 2)
@@ -80,17 +80,28 @@ func watchCmd() *cobra.Command {
 	return c
 }
 
-// lockToStorePath turns "<hash>-<name>.drv.lock" style lock file names into the
-// store path they guard, filtering out .drv and -source paths (as attic does).
-func lockToStorePath(storeDir, name string) (string, bool) {
-	base, ok := strings.CutSuffix(name, ".lock")
-	if !ok {
+const lockSuffix = ".lock"
+
+func wakeOnDone(ctx context.Context, storeDir string, wake func() error) (stop func()) {
+	woken := make(chan struct{})
+	stopWake := context.AfterFunc(ctx, func() {
+		defer close(woken)
+		if err := wake(); err != nil {
+			panic(fmt.Sprintf("xilo watch: wake the watcher of %s: %v", storeDir, err))
+		}
+	})
+	return func() {
+		if !stopWake() {
+			<-woken
+		}
+	}
+}
+
+func storePath(storeDir, base string) (string, bool) {
+	if base == "" || strings.HasPrefix(base, ".") {
 		return "", false
 	}
 	if strings.HasSuffix(base, ".drv") || strings.HasSuffix(base, "-source") {
-		return "", false
-	}
-	if base == "" || strings.HasPrefix(base, ".") {
 		return "", false
 	}
 	return storeDir + "/" + base, true

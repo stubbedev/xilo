@@ -12,23 +12,22 @@ import (
 	"time"
 )
 
-func TestLockToStorePath(t *testing.T) {
+func TestStorePath(t *testing.T) {
 	cases := []struct {
-		name string
+		base string
 		want string
 		ok   bool
 	}{
-		{"abc123-hello.lock", "/nix/store/abc123-hello", true},
-		{"abc123-hello.drv.lock", "", false},
-		{"abc123-hello-source.lock", "", false},
-		{"notalock", "", false},
-		{".lock", "", false},
-		{".hidden.lock", "", false},
+		{"abc123-hello", "/nix/store/abc123-hello", true},
+		{"abc123-hello.drv", "", false},
+		{"abc123-hello-source", "", false},
+		{"", "", false},
+		{".links", "", false},
 	}
 	for _, tc := range cases {
-		got, ok := lockToStorePath("/nix/store", tc.name)
+		got, ok := storePath("/nix/store", tc.base)
 		if ok != tc.ok || got != tc.want {
-			t.Errorf("lockToStorePath(%q) = %q, %v; want %q, %v", tc.name, got, ok, tc.want, tc.ok)
+			t.Errorf("storePath(%q) = %q, %v; want %q, %v", tc.base, got, ok, tc.want, tc.ok)
 		}
 	}
 }

@@ -2,122 +2,109 @@ package cli
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
-	"os"
-	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 )
 
-// watchSettle is how long a burst of store changes is left to finish before
-// the store is rescanned: one scan per burst, not one per lock file.
-const watchSettle = 100 * time.Millisecond
+const (
+	watchSettle    = 100 * time.Millisecond
+	watchScanShare = 10
+	watchWakeIdent = 1
 
-// watchStore on macOS. kqueue says only that the directory changed, never what
-// changed, so we put one NOTE_WRITE watch on the directory itself,
-// and on each burst a rescan diffed against the last one: a path is valid
-// once it is present and its lock is gone.
-func watchStore(ctx context.Context, storeDir string, onValid func(path string)) error {
+	direntNamlen = unsafe.Offsetof(syscall.Dirent{}.Namlen)
+	direntMax    = int(unsafe.Sizeof(syscall.Dirent{}))
+)
+
+func watchStore(ctx context.Context, storeDir string, onValid func(path string)) (err error) {
 	kq, err := syscall.Kqueue()
 	if err != nil {
 		return fmt.Errorf("kqueue: %w", err)
 	}
 	defer syscall.Close(kq)
-	dir, err := syscall.Open(storeDir, syscall.O_EVTONLY|syscall.O_CLOEXEC, 0)
+	evt, err := syscall.Open(storeDir, syscall.O_EVTONLY|syscall.O_CLOEXEC, 0)
 	if err != nil {
-		return fmt.Errorf("open %s: %w", storeDir, err)
+		return fmt.Errorf("open %s for events: %w", storeDir, err)
 	}
-	defer syscall.Close(dir)
-
-	var change syscall.Kevent_t
-	syscall.SetKevent(&change, dir, syscall.EVFILT_VNODE, syscall.EV_ADD|syscall.EV_CLEAR)
-	change.Fflags = syscall.NOTE_WRITE
-	if _, err := syscall.Kevent(kq, []syscall.Kevent_t{change}, nil, nil); err != nil {
-		return fmt.Errorf("kevent %s: %w", storeDir, err)
-	}
-
-	names, err := readStore(storeDir)
+	defer syscall.Close(evt)
+	lister, err := openStoreLister(storeDir)
 	if err != nil {
 		return err
 	}
-	seen := map[string]bool{}
-	pending := map[string]bool{}
-	for _, n := range names {
-		if base, ok := strings.CutSuffix(n, ".lock"); ok {
-			pending[base] = true
-		} else {
-			seen[n] = true
-		}
+	defer lister.close()
+
+	changes := make([]syscall.Kevent_t, 2)
+	syscall.SetKevent(&changes[0], evt, syscall.EVFILT_VNODE, syscall.EV_ADD|syscall.EV_CLEAR)
+	changes[0].Fflags = syscall.NOTE_WRITE
+	syscall.SetKevent(&changes[1], watchWakeIdent, syscall.EVFILT_USER, syscall.EV_ADD|syscall.EV_CLEAR)
+	if _, err := syscall.Kevent(kq, changes, nil, nil); err != nil {
+		return fmt.Errorf("kevent register %s: %w", storeDir, err)
+	}
+	defer wakeOnDone(ctx, storeDir, func() error {
+		var wake syscall.Kevent_t
+		syscall.SetKevent(&wake, watchWakeIdent, syscall.EVFILT_USER, 0)
+		wake.Fflags = syscall.NOTE_TRIGGER
+		_, err := syscall.Kevent(kq, []syscall.Kevent_t{wake}, nil, nil)
+		return err
+	})()
+
+	scan, err := newStoreScan(storeDir)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, scan.Close()) }()
+	if err := lister.list(scan, onValid); err != nil {
+		return err
 	}
 
-	events := make([]syscall.Kevent_t, 1)
-	// A timeout rather than closing the queue from another goroutine, which
-	// does not reliably wake a blocked kevent.
-	timeout := syscall.NsecToTimespec(int64(500 * time.Millisecond))
+	events := make([]syscall.Kevent_t, 2)
+	settle := watchSettle
 	for {
-		n, err := syscall.Kevent(kq, nil, events, &timeout)
-		if ctx.Err() != nil {
-			return nil
-		}
+		n, err := syscall.Kevent(kq, nil, events, nil)
 		if errors.Is(err, syscall.EINTR) {
 			continue
 		}
 		if err != nil {
-			return fmt.Errorf("kevent: %w", err)
+			return fmt.Errorf("kevent wait on %s: %w", storeDir, err)
 		}
-		if n == 0 {
-			continue
+		for _, ev := range events[:n] {
+			if ev.Filter == syscall.EVFILT_USER {
+				return nil
+			}
 		}
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(watchSettle):
+		case <-time.After(settle):
 		}
-
-		names, err := readStore(storeDir)
-		if err != nil {
+		start := time.Now()
+		if err := lister.list(scan, onValid); err != nil {
 			return err
 		}
-		locks := map[string]bool{}
-		for _, n := range names {
-			if base, ok := strings.CutSuffix(n, ".lock"); ok {
-				locks[base] = true
-				pending[base] = true
-			}
-		}
-		next := make(map[string]bool, len(names))
-		for _, n := range names {
-			if strings.HasSuffix(n, ".lock") {
-				continue
-			}
-			next[n] = true
-			if (seen[n] && !pending[n]) || locks[n] {
-				continue
-			}
-			delete(pending, n)
-			if path, ok := lockToStorePath(storeDir, n+".lock"); ok {
-				onValid(path)
-			}
-		}
-		// A lock that went without its path appearing was a failed or
-		// cancelled build: nothing to wait for.
-		for base := range pending {
-			if !locks[base] && !next[base] {
-				delete(pending, base)
-			}
-		}
-		seen = next
+		settle = max(watchSettle, watchScanShare*time.Since(start))
 	}
 }
 
-// readStore lists the store's entry names, unsorted and without a stat each:
-// a real store holds tens of thousands of them.
-func readStore(storeDir string) ([]string, error) {
-	f, err := os.Open(storeDir)
-	if err != nil {
-		return nil, err
+func direntNameLen(rec []byte) int {
+	return int(binary.NativeEndian.Uint16(rec[direntNamlen:]))
+}
+
+func (l *storeLister) each(fn func(name []byte) error) error {
+	for {
+		if err := l.rewind(); err != nil {
+			return err
+		}
+		var base uintptr
+		n, err := syscall.Getdirentries(l.fd, l.buf, &base)
+		if err != nil {
+			return fmt.Errorf("list %s: %w", l.dir, err)
+		}
+		if len(l.buf)-n >= direntMax {
+			return l.entries(l.buf[:n], fn)
+		}
+		l.buf = make([]byte, 2*len(l.buf))
 	}
-	defer f.Close()
-	return f.Readdirnames(-1)
 }
