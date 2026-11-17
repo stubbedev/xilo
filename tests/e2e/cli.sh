@@ -73,6 +73,8 @@ KEY_BEFORE=$(exec_srv cache info default/e2e | grep 'public key')
 assert "cache rotate" exec_srv cache rotate default/e2e
 KEY_AFTER=$(exec_srv cache info default/e2e | grep 'public key')
 [ "$KEY_BEFORE" != "$KEY_AFTER" ] && pass "rotate changed key" || fail "rotate changed key"
+E2E_KEY=$(curl -fs "$URL/c/default/e2e/api/config" | sed -nE 's/.*"publicKey":"([^":]+):.*/\1/p')
+[ "$E2E_KEY" = "127.0.0.1/default/e2e-2" ] && pass "rotate moved to the next key generation" || fail "rotate moved to the next key generation (key name '$E2E_KEY')"
 
 echo "== tokens =="
 TOK=$(exec_srv token create e2e-full --cache default/e2e --push --pull 2>/dev/null | grep -oE '[A-Za-z0-9_-]{40,}' | head -1)
@@ -101,7 +103,7 @@ assert "push from stdin" bash -c "echo \"$CLOSURE_ROOT\" | \"$XILO\" push defaul
 
 echo "== pull (nix verifies hashes itself) =="
 H=${CLOSURE_ROOT#/nix/store/}; H=${H%%-*}
-curl -fs "$URL/c/default/e2e/$H.narinfo" | grep -qE "^Sig: [^/:]+/default/e2e-1:" && pass "narinfo signed" || fail "narinfo signed"
+curl -fs "$URL/c/default/e2e/$H.narinfo" | grep -qF "Sig: $E2E_KEY:" && pass "narinfo signed" || fail "narinfo signed"
 nix copy --no-check-sigs --from "$URL/c/default/e2e" --to "local?root=$WORK/nixroot" "$CLOSURE_ROOT" >/dev/null 2>&1 \
   && pass "nix copy substitutes from cache" || fail "nix copy substitutes from cache"
 [ -e "$WORK/nixroot$CLOSURE_ROOT" ] && pass "copied path materialized" || fail "copied path materialized"
@@ -109,7 +111,7 @@ nix copy --no-check-sigs --from "$URL/c/default/e2e" --to "local?root=$WORK/nixr
 echo "== use (nix.conf managed block) =="
 assert "use adds substituter" "$XILO" use default/e2e
 grep -q "$URL/c/default/e2e" "$XDG_CONFIG_HOME/nix/nix.conf" && pass "nix.conf contains substituter" || fail "nix.conf contains substituter"
-grep -q "e2e:" "$XDG_CONFIG_HOME/nix/nix.conf" && pass "nix.conf contains trusted key" || fail "nix.conf contains trusted key"
+grep -qF "$E2E_KEY:" "$XDG_CONFIG_HOME/nix/nix.conf" && pass "nix.conf contains trusted key" || fail "nix.conf contains trusted key"
 assert "use second cache accumulates" "$XILO" use default/e2e-priv --token "$PRIV_TOK"
 grep -q "machine 127.0.0.1:18080" "$HOME/.netrc" && pass "netrc entry for private cache" || fail "netrc entry for private cache"
 assert "use --remove" "$XILO" use default/e2e --remove

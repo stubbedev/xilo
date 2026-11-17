@@ -12,7 +12,7 @@ type ConfigResp struct {
 	NarThreshold int      `json:"narThreshold"`
 	Parallelism  int      `json:"parallelism"`
 	UpstreamKeys []string `json:"upstreamKeys"`
-	PublicKey    string   `json:"publicKey"` // "<cache>:<base64>" for trusted-public-keys
+	PublicKey    string   `json:"publicKey"` // "<key name>:<base64>" for trusted-public-keys
 	Public       bool     `json:"public"`    // false → pull needs a token (netrc)
 	// AcceptZstd advertises that the server decodes zstd-compressed chunk
 	// bodies (Content-Encoding: zstd). Clients only compress the wire when set,

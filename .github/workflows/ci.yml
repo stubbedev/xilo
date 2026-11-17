@@ -93,6 +93,8 @@ jobs:
           go-version-file: go.mod
           cache: true
       - uses: DeterminateSystems/nix-installer-action@v23
+      - name: generate templ views
+        run: go tool templ generate
       - name: packages in the darwin client binary
         run: |
           go list -tags noserver -deps ./cmd/xilo | grep '^github.com/stubbedev/xilo/internal/' > "$RUNNER_TEMP/client-packages"
