@@ -66,6 +66,8 @@ jobs:
       # built it.
       - name: Go version pins match go.mod
         run: nix run nixpkgs#just -- toolchain-check
+      - name: Brand marks match tools/brandmark
+        run: go run ./tools/brandmark -check
       - run: go vet ./...
       # Stdlib-first gate (.golangci.yml) — the same set `just lint` runs.
       - uses: golangci/golangci-lint-action@v9

@@ -186,14 +186,18 @@ templ Layout(title, section string, nav Nav, flash Flash) {
 	</html>
 }
 
+templ logo(size string, svg templ.Component) {
+	<span class={ "inline-block shrink-0 text-brand", size }>
+		@svg
+	</span>
+}
+
 // appSidebar is the collapsible left navigation rail.
 templ appSidebar(section string, nav Nav) {
 	@sidebar.Sidebar(sidebar.Props{ID: "app-sidebar", Collapsible: sidebar.CollapsibleIcon, Collapsed: nav.RailCollapsed}) {
 		@sidebar.Header() {
 			<a href="/admin" class="flex items-center gap-2 px-2 py-1 font-semibold tracking-tight">
-				<span class="text-brand">
-					@Icon("box")
-				</span>
+				@logo("size-5", mark)
 				<span class="group-data-[tui-sidebar-state=collapsed]:hidden">Xilo</span>
 			</a>
 		}

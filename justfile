@@ -189,7 +189,7 @@ coverage:
     }
 
 # Everything CI checks.
-check: lint test schema-check toolchain-check nix-check coverage
+check: lint test schema-check toolchain-check nix-check brand-check coverage
 
 # ─────────────────────────── Run & Dev ───────────────────────────
 
@@ -427,6 +427,15 @@ bench TARGETS="xilo,attic,harmonia,nixserve,s3,garage":
 # Redraw docs/perf/*.svg, the README's performance graphics.
 perf-charts:
     go run ./tools/perfchart
+
+# Redraw xilo's mark from its one geometry (tools/brandmark): the favicon, the
+# inline marks the admin embeds, and the animated README banners.
+brand:
+    go run ./tools/brandmark
+
+# Fails when a committed mark no longer matches what tools/brandmark draws.
+brand-check:
+    go run ./tools/brandmark -check
 
 # Fails when the committed charts no longer match the committed numbers, which
 # is what moving a baseline without a redraw leaves behind.

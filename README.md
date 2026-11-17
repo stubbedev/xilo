@@ -1,4 +1,9 @@
-# xilo
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/banner-dark.svg">
+    <img alt="xilo" src="docs/brand/banner-light.svg" width="640">
+  </picture>
+</h1>
 
 [![CI](https://github.com/stubbedev/xilo/actions/workflows/ci.yml/badge.svg)](https://github.com/stubbedev/xilo/actions/workflows/ci.yml)
 [![coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fstubbedev%2Fxilo%2Fmaster%2F.github%2Fbadges%2Fcoverage.json)](https://github.com/stubbedev/xilo/actions/workflows/ci.yml)

@@ -159,10 +159,8 @@ templ AuthShell(title string, flash Flash) {
 				// could have fronted any admin panel; the line under it is the only
 				// thing on the page that names the job.
 				<div class="mb-6 text-center">
-					<div class="flex items-center justify-center gap-2 text-lg font-semibold">
-						<span class="text-brand">
-							@Icon("box")
-						</span>
+					<div class="flex flex-col items-center gap-2 text-lg font-semibold">
+						@logo("size-16", markAnimated)
 						<span>Xilo</span>
 					</div>
 					<p class="mt-1 font-mono text-xs text-muted-foreground">{ T(ctx, "footer.tagline") }</p>
