@@ -397,9 +397,19 @@ func (s *Server) hasPasskeys() bool {
 	return len(pks) > 0
 }
 
+func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, noPassword bool, flash views.Flash) {
+	d := views.LoginData{NoPassword: noPassword, HasPasskeys: s.hasPasskeys(), CanRegister: s.registrationOpen(), Flash: flash}
+	if u := s.currentUser(r); u != nil {
+		d.SignedInAs = u.Name
+	}
+	if err := views.Login(d).Render(r.Context(), w); err != nil {
+		log.Printf("render sign-in page: %v", err)
+	}
+}
+
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	if !s.loggedIn(r) {
-		views.Login(!s.db.UsersExist(), s.hasPasskeys(), s.registrationOpen(), views.Flash{}).Render(r.Context(), w)
+		s.renderLogin(w, r, !s.db.UsersExist(), views.Flash{})
 		return
 	}
 	s.renderDashboard(w, r, s.popFlash(w, r))
@@ -601,19 +611,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !s.logins.allow(s.clientIP(r)) {
 		s.metrics.authFailures.Add(1)
 		w.WriteHeader(http.StatusTooManyRequests)
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T(r.Context(), "err.throttled")}).Render(r.Context(), w)
+		s.renderLogin(w, r, false, views.Flash{Msg: views.T(r.Context(), "err.throttled")})
 		return
 	}
 	u, err := s.db.GetUserByLogin(strings.TrimSpace(r.FormValue("username")))
 	if errors.Is(err, store.ErrNotFound) {
 		if !s.db.UsersExist() {
-			views.Login(true, s.hasPasskeys(), s.registrationOpen(), views.Flash{}).Render(r.Context(), w)
+			s.renderLogin(w, r, true, views.Flash{})
 			return
 		}
 		// Burn a bcrypt anyway so unknown usernames cost the same as wrong
 		// passwords (no user-enumeration timing signal).
 		bcrypt.CompareHashAndPassword([]byte("$2a$10$0000000000000000000000000000000000000000000000000000"), []byte(r.FormValue("password")))
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T(r.Context(), "flash.badlogin")}).Render(r.Context(), w)
+		s.renderLogin(w, r, false, views.Flash{Msg: views.T(r.Context(), "flash.badlogin")})
 		return
 	}
 	if err != nil {
@@ -621,11 +631,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(u.PassHash), []byte(r.FormValue("password"))) != nil {
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T(r.Context(), "flash.badlogin")}).Render(r.Context(), w)
+		s.renderLogin(w, r, false, views.Flash{Msg: views.T(r.Context(), "flash.badlogin")})
 		return
 	}
 	if u.Status == "pending" {
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T(r.Context(), "flash.awaiting")}).Render(r.Context(), w)
+		s.renderLogin(w, r, false, views.Flash{Msg: views.T(r.Context(), "flash.awaiting")})
 		return
 	}
 	// Password accepted. With 2FA on, the code is a second step gated by a
@@ -654,7 +664,7 @@ func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
 	pid := r.FormValue("pending")
 	uid, ok := s.sess.pendingUser(pid)
 	if !ok {
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T(r.Context(), "flash.loginexpired")}).Render(r.Context(), w)
+		s.renderLogin(w, r, false, views.Flash{Msg: views.T(r.Context(), "flash.loginexpired")})
 		return
 	}
 	secret, on, _ := s.db.UserTOTP(uid)
@@ -669,7 +679,7 @@ func (s *Server) handleLoginCode(w http.ResponseWriter, r *http.Request) {
 		// retried against the ±1-step window for its whole 3-min lifetime;
 		// the user re-does the password step, which the limiter throttles.
 		s.sess.consumePending(pid)
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(), views.Flash{Msg: views.T(r.Context(), "flash.bad2fa")}).Render(r.Context(), w)
+		s.renderLogin(w, r, false, views.Flash{Msg: views.T(r.Context(), "flash.bad2fa")})
 		return
 	}
 	s.sess.consumePending(pid)

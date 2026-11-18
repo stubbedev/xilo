@@ -1,6 +1,7 @@
 package views
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/stubbedev/xilo/internal/store"
@@ -180,15 +181,39 @@ templ AuthShell(title string, flash Flash) {
 	</html>
 }
 
-templ Login(noPassword, hasPasskeys, canRegister bool, flash Flash) {
-	@AuthShell(T(ctx, "login.title"), flash) {
+type LoginData struct {
+	NoPassword  bool
+	HasPasskeys bool
+	CanRegister bool
+	SignedInAs  string
+	Flash       Flash
+}
+
+func (d LoginData) addingAccount() bool { return d.SignedInAs != "" }
+
+func (d LoginData) title(ctx context.Context) string {
+	if d.addingAccount() {
+		return T(ctx, "nav.addaccount")
+	}
+	return T(ctx, "login.title")
+}
+
+func (d LoginData) subtitle(ctx context.Context) string {
+	if d.addingAccount() {
+		return Tf(ctx, "login.addsub", d.SignedInAs)
+	}
+	return T(ctx, "login.subtitle")
+}
+
+templ Login(d LoginData) {
+	@AuthShell(d.title(ctx), d.Flash) {
 		@card.Card() {
 			@card.Header() {
 				@card.Title() {
-					{ T(ctx, "login.title") }
+					{ d.title(ctx) }
 				}
 				@card.Description() {
-					{ T(ctx, "login.subtitle") }
+					{ d.subtitle(ctx) }
 				}
 			}
 			@card.Content(card.ContentProps{Class: "space-y-4"}) {
@@ -203,20 +228,24 @@ templ Login(noPassword, hasPasskeys, canRegister bool, flash Flash) {
 						{ T(ctx, "login.submit") }
 					}
 				</form>
-				if hasPasskeys {
-					@button.Button(button.Props{Variant: button.VariantOutline, FullWidth: true, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": "xiloPasskeyLogin()"}}) {
+				if d.HasPasskeys {
+					@button.Button(button.Props{Variant: button.VariantOutline, FullWidth: true, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": templ.JSFuncCall("xiloPasskeyLogin")}}) {
 						@Icon("fingerprint-pattern")
 						<span>{ T(ctx, "login.passkey") }</span>
 					}
 				}
 			}
-			if canRegister || noPassword {
+			if d.addingAccount() {
+				@card.Footer(card.FooterProps{Class: "justify-center"}) {
+					<a href="/admin" class="text-sm text-muted-foreground hover:text-foreground">{ T(ctx, "login.back") }</a>
+				}
+			} else if d.CanRegister || d.NoPassword {
 				@card.Footer(card.FooterProps{Class: "justify-center"}) {
 					<p class="text-center text-sm text-muted-foreground">
-						if canRegister {
+						if d.CanRegister {
 							{ T(ctx, "login.needacct") } <a href="/register" class="font-medium text-foreground underline-offset-4 hover:underline">{ T(ctx, "login.register") }</a>
 						}
-						if noPassword {
+						if d.NoPassword {
 							{ T(ctx, "login.nopassword") }
 						}
 					</p>

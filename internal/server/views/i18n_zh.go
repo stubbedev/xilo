@@ -481,6 +481,7 @@ var zh = map[string]string{
 	"login.subtitle":      "Xilo 管理界面。",
 	"login.nopassword":    "用任意用户名即可创建第一个管理员账户。",
 	"login.back":          "返回",
+	"login.addsub":        "你仍以 %s 的身份保持登录。",
 	"reg.orghint":         "将由你管理。",
 	"plan.hint":           "每个账户的限制。",
 	"plan.orgsallowed":    "可创建组织",

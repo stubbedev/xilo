@@ -300,7 +300,7 @@ templ themeToggle() {
 	@WithTooltip(T(ctx, "nav.theme")) {
 		@button.Button(button.Props{
 			Variant: button.VariantGhost, Size: button.SizeIcon, Type: button.TypeButton,
-			Attributes: templ.Attributes{"onclick": "xiloTheme()", "aria-label": T(ctx, "nav.theme")},
+			Attributes: templ.Attributes{"onclick": templ.JSFuncCall("xiloTheme"), "aria-label": T(ctx, "nav.theme")},
 		}) {
 			<span class="hidden dark:block">
 				@Icon("sun")

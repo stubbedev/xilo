@@ -22,6 +22,9 @@ func render(t *testing.T, name string, c templ.Component) string {
 	if err := c.Render(context.Background(), &buf); err != nil {
 		t.Fatalf("%s: render error: %v", name, err)
 	}
+	if strings.Contains(buf.String(), templ.FailedSanitizationJS) {
+		t.Fatalf("%s: templ replaced an event handler it would not render:\n%s", name, buf.String())
+	}
 	return buf.String()
 }
 
@@ -63,8 +66,9 @@ func TestSmokeAllComponents(t *testing.T) {
 		{"Layout-palette", views.Layout("t", "caches", views.Nav{LoggedIn: true, Theme: "nord"}, views.Flash{}), `data-palette="nord"`},
 		{"RowAction", views.RowAction("trash-2", "Delete row", true), `type="submit"`},
 		{"TableCard", views.TableCard(), "overflow-x-auto"},
-		{"Login", views.Login(false, false, false, views.Flash{}), "assword"},
-		{"Login-nopw-passkeys", views.Login(true, true, true, views.Flash{Msg: "bad login"}), "passkey"},
+		{"Login", views.Login(views.LoginData{}), "assword"},
+		{"Login-nopw-passkeys", views.Login(views.LoginData{NoPassword: true, HasPasskeys: true, CanRegister: true, Flash: views.Flash{Msg: "bad login"}}), "passkey"},
+		{"Login-adding", views.Login(views.LoginData{SignedInAs: "admin", CanRegister: true}), "You stay signed in as admin."},
 		{"LoginCode", views.LoginCode("pending-id", views.Flash{Msg: "wrong code"}), "code"},
 		{"Account", views.Account(views.AccountData{Nav: views.Nav{LoggedIn: true, UserName: "admin"}, User: &store.User{Name: "admin", Role: "owner", Theme: "catppuccin"}, Passkeys: []store.Passkey{{ID: 1, Name: "yubikey", Created: 1}}}), "Appearance"},
 		{"Instance", views.Instance(views.InstanceData{Nav: views.Nav{LoggedIn: true, UserName: "admin", IsAdmin: true}, Users: []store.User{{ID: 1, Name: "admin", Role: "owner"}}, SelfService: true, AllowRegs: true, Plans: []store.Plan{{ID: 1, Name: "free", MaxCaches: 3, Public: true}}, Flash: views.Flash{Msg: "saved"}}), "saved"},
@@ -107,6 +111,24 @@ func TestSmokeAllComponents(t *testing.T) {
 		out := render(t, tc.name, tc.c)
 		if tc.marker != "" && !strings.Contains(strings.ToLower(out), strings.ToLower(tc.marker)) {
 			t.Errorf("%s: output missing %q:\n%s", tc.name, tc.marker, out)
+		}
+	}
+}
+
+func TestEventHandlersReachThePage(t *testing.T) {
+	signedIn := views.Nav{LoggedIn: true, UserName: "admin"}
+	cases := []struct {
+		name    string
+		c       templ.Component
+		handler string
+	}{
+		{"theme toggle", views.Layout("t", "", signedIn, views.Flash{}), `onclick="xiloTheme()"`},
+		{"passkey sign-in", views.Login(views.LoginData{HasPasskeys: true}), `onclick="xiloPasskeyLogin()"`},
+		{"add passkey", views.Account(views.AccountData{Nav: signedIn, User: &store.User{Name: "admin"}}), `onclick="xiloPasskeyRegister()"`},
+	}
+	for _, tc := range cases {
+		if out := render(t, tc.name, tc.c); !strings.Contains(out, tc.handler) {
+			t.Errorf("%s: output missing %s", tc.name, tc.handler)
 		}
 	}
 }

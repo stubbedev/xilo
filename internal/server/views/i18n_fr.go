@@ -481,6 +481,7 @@ var fr = map[string]string{
 	"login.subtitle":      "Administration Xilo.",
 	"login.nopassword":    "N'importe quel nom d'utilisateur crée le premier compte administrateur.",
 	"login.back":          "Retour",
+	"login.addsub":        "Vous restez connecté en tant que %s.",
 	"reg.orghint":         "Vous l'administrerez.",
 	"plan.hint":           "Limites par compte.",
 	"plan.orgsallowed":    "Peuvent créer des organisations",

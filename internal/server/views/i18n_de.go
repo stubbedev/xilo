@@ -481,6 +481,7 @@ var de = map[string]string{
 	"login.subtitle":      "Xilo-Verwaltung.",
 	"login.nopassword":    "Ein beliebiger Benutzername legt das erste Administratorkonto an.",
 	"login.back":          "Zurück",
+	"login.addsub":        "Du bleibst als %s angemeldet.",
 	"reg.orghint":         "Sie verwalten sie.",
 	"plan.hint":           "Limits pro Konto.",
 	"plan.orgsallowed":    "Darf Organisationen erstellen",

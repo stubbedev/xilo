@@ -156,5 +156,5 @@ func (s *Server) handleSwitchAccount(w http.ResponseWriter, r *http.Request) {
 // handleSignInPage renders the sign-in form to someone already signed in, so
 // they can add a second account without dropping the first.
 func (s *Server) handleSignInPage(w http.ResponseWriter, r *http.Request) {
-	views.Login(!s.db.UsersExist(), s.hasPasskeys(), s.registrationOpen(), views.Flash{}).Render(r.Context(), w)
+	s.renderLogin(w, r, !s.db.UsersExist(), views.Flash{})
 }

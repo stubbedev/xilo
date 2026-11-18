@@ -212,7 +212,7 @@ templ totpEnrollDialog() {
 
 // passkeyAddButton starts the browser's own passkey ceremony.
 templ passkeyAddButton() {
-	@button.Button(button.Props{Size: button.SizeSm, Variant: button.VariantOutline, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": "xiloPasskeyRegister()"}}) {
+	@button.Button(button.Props{Size: button.SizeSm, Variant: button.VariantOutline, Type: button.TypeButton, Attributes: templ.Attributes{"onclick": templ.JSFuncCall("xiloPasskeyRegister")}}) {
 		@Icon("plus")
 		<span>{ T(ctx, "action.add") }</span>
 	}

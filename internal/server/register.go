@@ -183,8 +183,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			return views.T(ctx, "mail.adminsub"),
 				views.Tf(ctx, "mail.adminbody", u.Name, s.cfg.BaseURL)
 		})
-		views.Login(false, s.hasPasskeys(), s.registrationOpen(),
-			views.Flash{Msg: views.T(r.Context(), "flash.regpending"), OK: true}).Render(r.Context(), w)
+		s.renderLogin(w, r, false, views.Flash{Msg: views.T(r.Context(), "flash.regpending"), OK: true})
 		return
 	}
 	s.mailUser(u, views.Tf(r.Context(), "mail.welcomesub", s.cfg.BaseURL),

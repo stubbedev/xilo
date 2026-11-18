@@ -253,6 +253,7 @@ var en = map[string]string{
 	"login.codesub":    "From your authenticator app.",
 	"login.verify":     "Verify",
 	"login.back":       "Back",
+	"login.addsub":     "You stay signed in as %s.",
 	"login.needacct":   "Need an account?",
 	"login.register":   "Register",
 

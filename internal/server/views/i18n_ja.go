@@ -481,6 +481,7 @@ var ja = map[string]string{
 	"login.subtitle":      "Xilo の管理画面。",
 	"login.nopassword":    "任意のユーザー名で最初の管理者アカウントが作成されます。",
 	"login.back":          "戻る",
+	"login.addsub":        "%s としてのサインインは維持されます。",
 	"reg.orghint":         "あなたが管理します。",
 	"plan.hint":           "アカウントごとの上限。",
 	"plan.orgsallowed":    "組織を作成できる",
