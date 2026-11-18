@@ -1567,7 +1567,7 @@ func (s *Server) handlePathDetail(w http.ResponseWriter, r *http.Request) {
 		CSize:      csize,
 		Present:    present,
 		Chunks:     pageChunks,
-		ChunkPager: makePager(r.URL.Path+"#chunks", r.URL.Query(), "chunks", page, pages),
+		ChunkPager: withTarget(makePager(r.URL.Path, r.URL.Query(), "chunks", page, pages), "#chunk-list"),
 		BaseURL:    s.cfg.BaseURL,
 		Bytes:      humanBytes,
 	}).Render(r.Context(), w)

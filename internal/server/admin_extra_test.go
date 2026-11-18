@@ -1,8 +1,10 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"html"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -17,6 +19,7 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/stubbedev/xilo/internal/api"
 	"github.com/stubbedev/xilo/internal/config"
 	"github.com/stubbedev/xilo/internal/store"
 )
@@ -282,6 +285,51 @@ func TestAdminCacheCRUD(t *testing.T) {
 		t.Fatalf("anon create cache → %d want 303", resp.StatusCode)
 	}
 	resp.Body.Close()
+}
+
+func TestPathChunkPager(t *testing.T) {
+	_, db, ts := newTestServerCfg(t, nil)
+	bootstrapAdmin(t, db)
+	c := adminClient(t, ts)
+	if _, err := db.CreateCache("default", "web", true, 40); err != nil {
+		t.Fatal(err)
+	}
+	parts := [][]byte{[]byte("first chunk bytes"), []byte("second chunk bytes")}
+	hashes := make([]string, len(parts))
+	for i, b := range parts {
+		hashes[i], _, _ = fakeNar(b)
+		if r := put(t, ts, "/c/default/web/api/chunk/"+hashes[i], b, ""); r.StatusCode != http.StatusOK {
+			t.Fatalf("put chunk %d: %d", i, r.StatusCode)
+		}
+	}
+	_, narHash, narSize := fakeNar(bytes.Join(parts, nil))
+	req, _ := json.Marshal(api.PathReq{StorePath: "/nix/store/" + h32 + "-pkg", NarHash: narHash, NarSize: narSize, Chunks: hashes})
+	if r := put(t, ts, "/c/default/web/api/path", req, ""); r.StatusCode != http.StatusOK {
+		t.Fatalf("put path: %d", r.StatusCode)
+	}
+
+	page := ts.URL + "/admin/cache/default/web/path/" + h32
+	resp, _ := c.Get(page + "?chunks[size]=1")
+	first := body(t, resp)
+	if !contains(first, hashes[0][len(hashes[0])-12:]) || contains(first, hashes[1][len(hashes[1])-12:]) {
+		t.Fatal("page 1 should list only the first chunk")
+	}
+	m := regexp.MustCompile(`id="chunk-list-next"[^>]*href="([^"]+)"`).FindStringSubmatch(first)
+	if m == nil {
+		t.Fatal("page 1 has no next link into #chunk-list")
+	}
+	next := html.UnescapeString(m[1])
+	if strings.Contains(next, "#") {
+		t.Fatalf("next link %q carries a fragment, which swallows its query", next)
+	}
+	resp, _ = c.Get(ts.URL + next)
+	second := body(t, resp)
+	if !contains(second, hashes[1][len(hashes[1])-12:]) || contains(second, hashes[0][len(hashes[0])-12:]) {
+		t.Fatalf("following next (%s) did not render the second chunk", next)
+	}
+	if !contains(second, `id="chunk-list"`) || !regexp.MustCompile(`<details[^>]* open[ >]`).MatchString(second) {
+		t.Error("page 2 must render the swap region with the chunk list open")
+	}
 }
 
 func TestAdminTokenCRUD(t *testing.T) {

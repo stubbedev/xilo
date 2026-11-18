@@ -1,6 +1,8 @@
 package views
 
 import (
+	"strings"
+
 	"github.com/stubbedev/xilo/internal/narinfo"
 	"github.com/stubbedev/xilo/internal/store"
 
@@ -91,7 +93,7 @@ templ PathDetail(d PathData) {
 		@card.Card() {
 			@card.Content(card.ContentProps{Class: "py-2"}) {
 				@accordion.Accordion() {
-					@accordion.Item() {
+					@accordion.Item(accordion.ItemProps{Attributes: templ.Attributes{"open": d.ChunkPager.Page > 1}}) {
 						@accordion.Trigger(accordion.TriggerProps{Class: "hover:no-underline"}) {
 							<span class="flex items-center gap-2">
 								<span>{ T(ctx, "path.chunks") }</span>
@@ -102,6 +104,7 @@ templ PathDetail(d PathData) {
 							</span>
 						}
 						@accordion.Content() {
+							<div id={ strings.TrimPrefix(d.ChunkPager.Target, "#") }>
 							@ListBox() {
 								@table.Table(table.Props{Class: "table-fixed"}) {
 									@table.Header() {
@@ -137,6 +140,7 @@ templ PathDetail(d PathData) {
 								}
 							}
 							@PagerNav(d.ChunkPager)
+							</div>
 						}
 					}
 				}
