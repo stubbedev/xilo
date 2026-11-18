@@ -13,7 +13,7 @@ those is not a measurement.
 ## Against other Nix caches
 
 <!-- perfchart:compare -->
-Same machine, same closure (93 paths, 646 MB of NAR), same load script. GitHub ubuntu-latest runner, 2 cores, 2026-11-17.
+Same machine, same closure (93 paths, 646 MB of NAR), same load script. GitHub ubuntu-latest runner, 2 cores, 2026-11-18.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="perf/compare-dark.svg">
@@ -29,12 +29,12 @@ Stored on disk: a host store keeps the closure unpacked, a cache stores it compr
 
 | Measure | xilo | attic | harmonia | nix-serve-ng | Garage + nix copy |
 |---|--:|--:|--:|--:|--:|
-| narinfo throughput (requests/s, higher is better) | 3,257/s | 1,116/s | **3,638/s** | 1,716/s | 2,074/s |
-| NAR pull throughput (MB/s, higher is better) | 633 MB/s | 68 MB/s | **688 MB/s** | 14 MB/s | — |
-| Memory under pull load (peak RAM in use, lower is better) | 100 MiB | 192 MiB | **22 MiB** | 31 MiB | **22 MiB** |
-| CPU per MB/s served (% of a core per MB/s, lower is better) | **0.28** | 2.38 | **0.28** | 8.14 | — |
-| Cold push of the closure (seconds, lower is better) | **3.9 s** | 9.8 s | — | — | 84.1 s |
-| Repeat push of the closure (seconds, lower is better) | **0.1 s** | 0.8 s | — | — | **0.1 s** |
+| narinfo throughput (requests/s, higher is better) | **10,148/s** | 1,718/s | 6,952/s | 3,092/s | 4,352/s |
+| NAR pull throughput (MB/s, higher is better) | 1083 MB/s | 151 MB/s | **1271 MB/s** | 31 MB/s | — |
+| Memory under pull load (peak RAM in use, lower is better) | 89 MiB | 130 MiB | 25 MiB | 42 MiB | **19 MiB** |
+| CPU per MB/s served (% of a core per MB/s, lower is better) | **0.16** | 1.10 | **0.16** | 3.82 | — |
+| Cold push of the closure (seconds, lower is better) | **3.0 s** | 6.6 s | — | — | 79.6 s |
+| Repeat push of the closure (seconds, lower is better) | **0.0 s** | 0.5 s | — | — | 0.1 s |
 | Stored on disk (bytes for this closure) | 225 MB | 212 MB | 654 MB | 654 MB | 157 MB |
 | Image or closure to deploy (bytes, lower is better) | **11 MB** | 87 MB | 78 MB | 220 MB | 28 MB |
 
