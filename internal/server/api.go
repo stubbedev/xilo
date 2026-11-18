@@ -455,7 +455,7 @@ func (s *Server) blobsPresent(ctx context.Context, storageName string, chunkHash
 		}
 	}
 	st := s.stOf(storageName)
-	sem := make(chan struct{}, s.readAhead())
+	sem := make(chan struct{}, s.readAhead().depth)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var firstErr error

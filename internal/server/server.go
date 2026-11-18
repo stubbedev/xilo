@@ -37,17 +37,18 @@ type Server struct {
 	sess     *sessions
 	ceremony ceremonies // in-flight WebAuthn challenges
 	// webAuthn builds the relying party on first use (memoized).
-	webAuthn  func() (*webauthn.WebAuthn, error)
-	uploadSem chan struct{} // bounds concurrent server-side chunk encode+store
-	logins    *loginLimiter // throttles bcrypt attempts per IP
-	niCache   *narinfoCache // rendered+signed narinfo bodies
-	cacheRows *versioned[cacheRef, *store.Cache]
-	narinfos  *versioned[pathRef, narinfoEnt]
-	absent    *versioned[pathRef, struct{}]
-	narPlans  *versioned[pathRef, *narPlan]
-	vfCache   *verifyCache // chunk lists already proven to reassemble
-	gzipPool  sync.Pool    // *gzip.Writer for NAR wire compression
-	touched   sync.Map     // touchKey{cache,hash} → unix secs of last LRU bump
+	webAuthn    func() (*webauthn.WebAuthn, error)
+	uploadSem   chan struct{} // bounds concurrent server-side chunk encode+store
+	sharedAhead chan struct{} // prefetch slots remote streams borrow (see window)
+	logins      *loginLimiter // throttles bcrypt attempts per IP
+	niCache     *narinfoCache // rendered+signed narinfo bodies
+	cacheRows   *versioned[cacheRef, *store.Cache]
+	narinfos    *versioned[pathRef, narinfoEnt]
+	absent      *versioned[pathRef, struct{}]
+	narPlans    *versioned[pathRef, *narPlan]
+	vfCache     *verifyCache // chunk lists already proven to reassemble
+	gzipPool    sync.Pool    // *gzip.Writer for NAR wire compression
+	touched     sync.Map     // touchKey{cache,hash} → unix secs of last LRU bump
 	// chunkFilters memoizes the per-storage chunk presence filter served to
 	// pushers (storage name → *chunkFilterBody).
 	chunkFilters sync.Map
@@ -93,18 +94,19 @@ func New(cfg *config.Config, db *store.DB, sts map[string]storage.Storage) (*Ser
 	}
 	s := &Server{
 		cfg: cfg, db: db, sts: sts, enc: enc, dec: dec,
-		sess:      newSessions(db),
-		started:   time.Now(),
-		uploadSem: make(chan struct{}, max(4, 2*runtime.NumCPU())),
-		logins:    newLoginLimiter(),
-		niCache:   newNarinfoCache(16384), // ~64B/key + body ~600B ⇒ ~10MB cap
-		cacheRows: newVersioned[cacheRef, *store.Cache](1024),
-		narinfos:  newVersioned[pathRef, narinfoEnt](16384),
-		absent:    newVersioned[pathRef, struct{}](32768),
-		narPlans:  newVersioned[pathRef, *narPlan](32768),
-		vfCache:   newVerifyCache(8192), // 32B keys ⇒ well under 1MB
-		webAuthn:  newWebAuthn(cfg),
-		gcPolicy:  gcPolicy,
+		sess:        newSessions(db),
+		started:     time.Now(),
+		uploadSem:   make(chan struct{}, max(4, 2*runtime.NumCPU())),
+		sharedAhead: make(chan struct{}, sharedAhead),
+		logins:      newLoginLimiter(),
+		niCache:     newNarinfoCache(16384), // ~64B/key + body ~600B ⇒ ~10MB cap
+		cacheRows:   newVersioned[cacheRef, *store.Cache](1024),
+		narinfos:    newVersioned[pathRef, narinfoEnt](16384),
+		absent:      newVersioned[pathRef, struct{}](32768),
+		narPlans:    newVersioned[pathRef, *narPlan](32768),
+		vfCache:     newVerifyCache(8192), // 32B keys ⇒ well under 1MB
+		webAuthn:    newWebAuthn(cfg),
+		gcPolicy:    gcPolicy,
 	}
 	s.restoreCounters()
 	return s, nil

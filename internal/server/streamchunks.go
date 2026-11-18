@@ -106,41 +106,62 @@ func readAllInto(buf []byte, r io.Reader) ([]byte, error) {
 	}
 }
 
+type window struct {
+	depth  int
+	extra  int
+	shared chan struct{}
+}
+
 // eachChunkOrdered fetches+decompresses chunks and calls fn with each raw
-// chunk STRICTLY IN ORDER, while prefetching up to `ahead` chunks
-// concurrently. On S3 this overlaps GET latency instead of paying it serially,
-// and memory stays bounded to ~ahead chunks. Used by both NAR serving and
-// upload verification.
-func (s *Server) eachChunkOrdered(ctx context.Context, refs []store.ChunkRef, ahead int, fn func(raw []byte) error) error {
-	return eachOrdered(ctx, refs, ahead, s.fetchChunk, fn)
+// chunk STRICTLY IN ORDER, while prefetching a window of chunks concurrently.
+// On S3 this overlaps GET latency instead of paying it serially. Used by both
+// NAR serving and upload verification.
+func (s *Server) eachChunkOrdered(ctx context.Context, refs []store.ChunkRef, w window, fn func(raw []byte) error) error {
+	return eachOrdered(ctx, refs, w, s.fetchChunk, fn)
 }
 
 // eachChunkOrderedRaw is eachChunkOrdered without the decompression: chunks
 // are delivered as the stored zstd frames.
-func (s *Server) eachChunkOrderedRaw(ctx context.Context, refs []store.ChunkRef, ahead int, fn func(frame []byte) error) error {
-	return eachOrdered(ctx, refs, ahead, s.fetchChunkRaw, fn)
+func (s *Server) eachChunkOrderedRaw(ctx context.Context, refs []store.ChunkRef, w window, fn func(frame []byte) error) error {
+	return eachOrdered(ctx, refs, w, s.fetchChunkRaw, fn)
 }
 
-func eachOrdered(ctx context.Context, refs []store.ChunkRef, ahead int,
+func eachOrdered(ctx context.Context, refs []store.ChunkRef, w window,
 	fetch func(context.Context, store.ChunkRef) ([]byte, error), fn func([]byte) error) error {
-	if ahead < 1 {
-		ahead = 1
-	}
 	type result struct {
 		data []byte
 		err  error
 	}
 	results := make([]chan result, len(refs))
-	launch := func(i int) {
-		results[i] = make(chan result, 1)
-		go func(i int) {
-			data, err := fetch(ctx, refs[i])
-			results[i] <- result{data, err}
-		}(i)
+	depth := max(w.depth, 1)
+	borrowed, next := 0, 0
+	defer func() {
+		for range borrowed {
+			<-w.shared
+		}
+	}()
+	fill := func(delivered int) {
+		for next < len(refs) {
+			if next-delivered >= depth+borrowed {
+				if borrowed >= w.extra {
+					return
+				}
+				select {
+				case w.shared <- struct{}{}:
+					borrowed++
+				default:
+					return
+				}
+			}
+			results[next] = make(chan result, 1)
+			go func(i int) {
+				data, err := fetch(ctx, refs[i])
+				results[i] <- result{data, err}
+			}(next)
+			next++
+		}
 	}
-	for i := 0; i < len(refs) && i < ahead; i++ {
-		launch(i)
-	}
+	fill(0)
 	for i := range refs {
 		r := <-results[i]
 		results[i] = nil
@@ -152,21 +173,24 @@ func eachOrdered(ctx context.Context, refs []store.ChunkRef, ahead int,
 		if err != nil {
 			return err
 		}
-		if j := i + ahead; j < len(refs) {
-			launch(j)
-		}
+		fill(i + 1)
 	}
 	return nil
 }
 
-// readAhead is the chunk prefetch depth for serving/verification. Deep
+const (
+	remoteAhead = 16
+	sharedAhead = 48
+)
+
+// readAhead is the chunk prefetch window for serving/verification. Deep
 // prefetch exists to hide per-object GET latency; local disk has none worth
 // hiding, so a shallow window there halves pull-path memory at no throughput
 // cost.
-func (s *Server) readAhead() int {
+func (s *Server) readAhead() window {
 	if s.cfg.Storage.Backend == "local" {
-		return 4
+		return window{depth: 4}
 	}
-	n := max(s.cfg.Parallelism, 4)
-	return n
+	depth := max(s.cfg.Parallelism, 4)
+	return window{depth: depth, extra: max(remoteAhead-depth, 0), shared: s.sharedAhead}
 }

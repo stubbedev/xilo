@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -493,7 +495,7 @@ func TestEachOrdered(t *testing.T) {
 
 	for _, ahead := range []int{0, 1, 3, 100} {
 		var got []string
-		err := eachOrdered(context.Background(), mkRefs(7), ahead, fetch, func(b []byte) error {
+		err := eachOrdered(context.Background(), mkRefs(7), window{depth: ahead}, fetch, func(b []byte) error {
 			got = append(got, string(b))
 			return nil
 		})
@@ -519,7 +521,7 @@ func TestEachOrdered(t *testing.T) {
 		return []byte(ref.Key), nil
 	}
 	var seen int
-	err := eachOrdered(context.Background(), mkRefs(7), 2, failFetch, func(b []byte) error {
+	err := eachOrdered(context.Background(), mkRefs(7), window{depth: 2}, failFetch, func(b []byte) error {
 		seen++
 		return nil
 	})
@@ -529,13 +531,13 @@ func TestEachOrdered(t *testing.T) {
 
 	// consumer error propagates
 	sink := errors.New("consumer refused")
-	err = eachOrdered(context.Background(), mkRefs(3), 2, fetch, func([]byte) error { return sink })
+	err = eachOrdered(context.Background(), mkRefs(3), window{depth: 2}, fetch, func([]byte) error { return sink })
 	if !errors.Is(err, sink) {
 		t.Fatalf("consumer error: %v", err)
 	}
 
 	// empty refs: no calls, no error
-	if err := eachOrdered(context.Background(), nil, 4, fetch, func([]byte) error {
+	if err := eachOrdered(context.Background(), nil, window{depth: 4}, fetch, func([]byte) error {
 		t.Fatal("fn called for empty refs")
 		return nil
 	}); err != nil {
@@ -585,11 +587,64 @@ func TestReadAllInto(t *testing.T) {
 	}
 }
 
+func TestEachOrderedBorrowsOnlyWhatIsFree(t *testing.T) {
+	refs := make([]store.ChunkRef, 40)
+	inFlight := func(w window) int {
+		t.Helper()
+		var now, peak atomic.Int64
+		release := make(chan struct{})
+		fetch := func(context.Context, store.ChunkRef) ([]byte, error) {
+			if n := now.Add(1); n > peak.Load() {
+				peak.Store(n)
+			}
+			<-release
+			return nil, nil
+		}
+		done := make(chan error, 1)
+		go func() {
+			done <- eachOrdered(context.Background(), refs, w, fetch, func([]byte) error {
+				now.Add(-1)
+				return nil
+			})
+		}()
+		for now.Load() < int64(w.depth) {
+			runtime.Gosched()
+		}
+		time.Sleep(20 * time.Millisecond)
+		filled := int(now.Load())
+		close(release)
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		return filled
+	}
+
+	shared := make(chan struct{}, 5)
+	if got := inFlight(window{depth: 2, extra: 3, shared: shared}); got != 5 {
+		t.Errorf("in flight with 3 to borrow = %d want 5", got)
+	}
+	if len(shared) != 0 {
+		t.Errorf("%d borrowed slots not given back", len(shared))
+	}
+	if got := inFlight(window{depth: 2, extra: 10, shared: shared}); got != 7 {
+		t.Errorf("in flight with all 5 shared slots free = %d want 7", got)
+	}
+	for range cap(shared) {
+		shared <- struct{}{}
+	}
+	if got := inFlight(window{depth: 2, extra: 3, shared: shared}); got != 2 {
+		t.Errorf("in flight with nothing free = %d want its own 2", got)
+	}
+	if len(shared) != cap(shared) {
+		t.Errorf("a stream that borrowed nothing took %d slots back", cap(shared)-len(shared))
+	}
+}
+
 func TestReadAhead(t *testing.T) {
 	// Local backend: shallow fixed window (no GET latency to hide).
 	s, _, _ := newTestServerCfg(t, func(cfg *config.Config) { cfg.Parallelism = 16 })
-	if s.readAhead() != 4 {
-		t.Errorf("local readAhead = %d want 4", s.readAhead())
+	if w := s.readAhead(); w.depth != 4 || w.extra != 0 {
+		t.Errorf("local readAhead = %d+%d want 4+0", w.depth, w.extra)
 	}
 	// S3: deep window scaled to parallelism, floor 4. (Client construction
 	// needs endpoint+bucket but performs no network I/O.)
@@ -602,12 +657,12 @@ func TestReadAhead(t *testing.T) {
 		}
 	}
 	s2, _, _ := newTestServerCfg(t, s3cfg(16))
-	if s2.readAhead() != 16 {
-		t.Errorf("s3 readAhead = %d want 16", s2.readAhead())
+	if w := s2.readAhead(); w.depth != 16 || w.extra != 0 {
+		t.Errorf("s3 readAhead = %d+%d want 16+0", w.depth, w.extra)
 	}
 	s3, _, _ := newTestServerCfg(t, s3cfg(1))
-	if s3.readAhead() != 4 {
-		t.Errorf("s3 readAhead floor = %d want 4", s3.readAhead())
+	if w := s3.readAhead(); w.depth != 4 || w.extra != 12 || cap(w.shared) != sharedAhead {
+		t.Errorf("s3 readAhead on one core = %d+%d of %d want 4+12 of %d", w.depth, w.extra, cap(w.shared), sharedAhead)
 	}
 }
 
