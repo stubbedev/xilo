@@ -18,6 +18,7 @@
           just
           sqlite # inspect the metadata db
           curl
+          nodejs # npx: the Playwright and templUI MCP servers
         ]
         ++ lib.optionals hasWebToolchain [tailwindcss_4]; # admin CSS: `just css`
 

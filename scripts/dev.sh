@@ -20,7 +20,7 @@ XILO=./tmp/xilo
 ADMIN_PW=demo
 
 # Fail on a missing tool now, not sixty seconds into a health-check loop.
-for tool in go templ just air curl; do
+for tool in go just air curl; do
 	command -v "$tool" >/dev/null || { echo "just dev needs '$tool' on PATH" >&2; exit 1; }
 done
 
