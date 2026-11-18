@@ -555,6 +555,31 @@ func queryClosure(ctx context.Context, paths []string) ([]pathInfo, error) {
 	return parsePathInfo(out)
 }
 
+// ValidPaths returns the paths the store holds as valid, in their order. A
+// build that failed still drops its lock, so the store watcher sees output
+// paths that never became valid; pushing one would fail its whole batch.
+func ValidPaths(ctx context.Context, paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	args := append([]string{"--check-validity", "--print-invalid"}, paths...)
+	out, err := exec.CommandContext(ctx, "nix-store", args...).Output()
+	if err != nil {
+		return nil, fmt.Errorf("nix-store --check-validity: %w", cmdErr(err))
+	}
+	invalid := map[string]bool{}
+	for line := range strings.Lines(string(out)) {
+		invalid[strings.TrimSpace(line)] = true
+	}
+	valid := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if !invalid[p] {
+			valid = append(valid, p)
+		}
+	}
+	return valid, nil
+}
+
 func parsePathInfo(out []byte) ([]pathInfo, error) {
 	trimmed := bytes.TrimSpace(out)
 	if len(trimmed) > 0 && trimmed[0] == '[' {

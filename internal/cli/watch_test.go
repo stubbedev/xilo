@@ -18,9 +18,11 @@ func TestStorePath(t *testing.T) {
 		want string
 		ok   bool
 	}{
-		{"abc123-hello", "/nix/store/abc123-hello", true},
-		{"abc123-hello.drv", "", false},
-		{"abc123-hello-source", "", false},
+		{storeName("hello"), "/nix/store/" + storeName("hello"), true},
+		{storeName("hello.drv"), "", false},
+		{storeName("hello-source"), "", false},
+		{"abc123-hello", "", false},
+		{"tmp-1916-188238956", "", false},
 		{"", "", false},
 		{".links", "", false},
 	}
@@ -50,8 +52,9 @@ func TestWatchStore(t *testing.T) {
 	deadline := time.After(5 * time.Second)
 	var path string
 	for i := 0; path == ""; i++ {
-		realise(t, dir, fmt.Sprintf("skip-me-%d.drv", i))
-		realise(t, dir, fmt.Sprintf("abc-pkg-%d", i))
+		realise(t, dir, fmt.Sprintf("tmp-%d-188238956", i))
+		realise(t, dir, storeName(fmt.Sprintf("skip-me-%d.drv", i)))
+		realise(t, dir, storeName(fmt.Sprintf("abc-pkg-%d", i)))
 		select {
 		case p := <-got:
 			path = p
@@ -60,13 +63,13 @@ func TestWatchStore(t *testing.T) {
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
-	if !strings.HasPrefix(path, filepath.Join(dir, "abc-pkg-")) {
-		t.Fatalf("path = %q, want %s/abc-pkg-N (drv locks must be filtered)", path, dir)
+	if !strings.HasPrefix(path, filepath.Join(dir, storeName("abc-pkg-"))) {
+		t.Fatalf("path = %q, want %s/%s (drv locks and temporary directories must be filtered)", path, dir, storeName("abc-pkg-N"))
 	}
 
 	// A build that holds its lock across several rescans is reported once,
 	// when the lock goes, and not while the path is still being written.
-	slow := filepath.Join(dir, "slow-pkg")
+	slow := filepath.Join(dir, storeName("slow-pkg"))
 	lock := slow + ".lock"
 	if err := os.WriteFile(lock, nil, 0o644); err != nil {
 		t.Fatal(err)
@@ -103,6 +106,8 @@ func TestWatchStore(t *testing.T) {
 		t.Fatal("watchStore did not return after cancel without a further store event")
 	}
 }
+
+func storeName(label string) string { return strings.Repeat("0", 32) + "-" + label }
 
 // realise does to dir what Nix does to the store when it builds name: take
 // the lock, write the path, register it, drop the lock.
@@ -172,11 +177,11 @@ func TestWatchStoreReportsThePathRealisedRightAfterReady(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("watchStore never reported ready")
 	}
-	realise(t, dir, "first")
+	realise(t, dir, storeName("first"))
 	select {
 	case p := <-got:
-		if p != filepath.Join(dir, "first") {
-			t.Fatalf("reported %s, want %s", p, filepath.Join(dir, "first"))
+		if p != filepath.Join(dir, storeName("first")) {
+			t.Fatalf("reported %s, want %s", p, filepath.Join(dir, storeName("first")))
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the first path realised after ready was never reported")

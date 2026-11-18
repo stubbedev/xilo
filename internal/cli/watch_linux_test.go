@@ -45,7 +45,7 @@ func TestWatchStoreRescansWhatAnInotifyOverflowDropped(t *testing.T) {
 
 	deadline := time.After(5 * time.Second)
 	for i := 0; ; i++ {
-		realise(t, dir, fmt.Sprintf("warm-%d", i))
+		realise(t, dir, storeName(fmt.Sprintf("warm-%d", i)))
 		select {
 		case <-first:
 		case <-deadline:
@@ -58,7 +58,7 @@ func TestWatchStoreRescansWhatAnInotifyOverflowDropped(t *testing.T) {
 
 	burst := queueLimit + 64
 	for i := range burst {
-		realise(t, dir, fmt.Sprintf("burst-%d", i))
+		realise(t, dir, storeName(fmt.Sprintf("burst-%d", i)))
 	}
 	close(release)
 
@@ -67,7 +67,7 @@ func TestWatchStoreRescansWhatAnInotifyOverflowDropped(t *testing.T) {
 		defer mu.Unlock()
 		var gone []string
 		for i := range burst {
-			if name := fmt.Sprintf("burst-%d", i); !reported[name] {
+			if name := storeName(fmt.Sprintf("burst-%d", i)); !reported[name] {
 				gone = append(gone, name)
 			}
 		}

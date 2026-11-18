@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -33,10 +34,17 @@ func newScanHarness(t *testing.T) *scanHarness {
 	return &scanHarness{t: t, dir: dir, scan: scan}
 }
 
+func scanName(label string) string {
+	if strings.HasPrefix(label, ".") {
+		return label
+	}
+	return storeName(label)
+}
+
 func (h *scanHarness) touch(names ...string) {
 	h.t.Helper()
 	for _, n := range names {
-		if err := os.WriteFile(filepath.Join(h.dir, n), nil, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(h.dir, scanName(n)), nil, 0o644); err != nil {
 			h.t.Fatal(err)
 		}
 	}
@@ -45,13 +53,22 @@ func (h *scanHarness) touch(names ...string) {
 func (h *scanHarness) remove(names ...string) {
 	h.t.Helper()
 	for _, n := range names {
-		if err := os.Remove(filepath.Join(h.dir, n)); err != nil {
+		if err := os.Remove(filepath.Join(h.dir, scanName(n))); err != nil {
 			h.t.Fatal(err)
 		}
 	}
 }
 
-func (h *scanHarness) listed(names ...string) []string {
+func (h *scanHarness) listed(labels ...string) []string {
+	h.t.Helper()
+	names := make([]string, len(labels))
+	for i, l := range labels {
+		names[i] = scanName(l)
+	}
+	return h.listedNames(names...)
+}
+
+func (h *scanHarness) listedNames(names ...string) []string {
 	h.t.Helper()
 	var got []string
 	h.scan.begin()
@@ -76,11 +93,15 @@ func (h *scanHarness) rescan() []string {
 	for _, e := range entries {
 		names = append(names, e.Name())
 	}
-	return h.listed(names...)
+	return h.listedNames(names...)
 }
 
-func (h *scanHarness) expect(got []string, want ...string) {
+func (h *scanHarness) expect(got []string, labels ...string) {
 	h.t.Helper()
+	want := make([]string, len(labels))
+	for i, l := range labels {
+		want[i] = scanName(l)
+	}
 	slices.Sort(got)
 	if !slices.Equal(got, want) {
 		h.t.Fatalf("reported %q, want %q", got, want)
@@ -131,6 +152,16 @@ func TestStoreScanReportsARebuiltPathAgain(t *testing.T) {
 	}
 	h.touch("pkg")
 	h.expect(h.rescan(), "pkg")
+}
+
+func TestStoreScanIgnoresNixTemporaryDirectories(t *testing.T) {
+	h := newScanHarness(t)
+	h.expect(h.rescan())
+	if err := os.Mkdir(filepath.Join(h.dir, "tmp-1916-188238956"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h.touch("built-pkg")
+	h.expect(h.rescan(), "built-pkg")
 }
 
 func TestStoreScanDropsALockThatLeftNoPath(t *testing.T) {

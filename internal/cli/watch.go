@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/stubbedev/xilo/internal/narinfo"
 	"github.com/stubbedev/xilo/internal/push"
 )
 
@@ -69,7 +70,20 @@ func watchCmd() *cobra.Command {
 			cl.Quiet = true
 			pushCtx, abort := abortOnSecondSignal(cmd.Context())
 			defer abort()
-			return watchAndPush(cmd.Context(), pushCtx, storeDir, watchStore, cl.Push, func() {
+			pushValid := func(ctx context.Context, paths []string) error {
+				valid, err := push.ValidPaths(ctx, paths)
+				if err != nil {
+					return err
+				}
+				if skipped := len(paths) - len(valid); skipped > 0 {
+					fmt.Fprintf(os.Stderr, "xilo watch: skipped %d store paths that never became valid (failed builds)\n", skipped)
+				}
+				if len(valid) == 0 {
+					return nil
+				}
+				return cl.Push(ctx, valid)
+			}
+			return watchAndPush(cmd.Context(), pushCtx, storeDir, watchStore, pushValid, func() {
 				fmt.Printf("watching %s → pushing to %s\n", storeDir, cache)
 			})
 		},
@@ -98,7 +112,7 @@ func wakeOnDone(ctx context.Context, storeDir string, wake func() error) (stop f
 }
 
 func storePath(storeDir, base string) (string, bool) {
-	if base == "" || strings.HasPrefix(base, ".") {
+	if !narinfo.ValidStoreName(base) {
 		return "", false
 	}
 	if strings.HasSuffix(base, ".drv") || strings.HasSuffix(base, "-source") {
