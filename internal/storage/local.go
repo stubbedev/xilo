@@ -68,6 +68,14 @@ func syncDir(dir string) error {
 }
 
 func (l *Local) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	f, err := l.Open(key)
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+func (l *Local) Open(key string) (*os.File, error) {
 	return os.Open(l.path(key))
 }
 

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/stubbedev/xilo/internal/config"
 )
@@ -27,6 +28,10 @@ type Storage interface {
 // fakes elsewhere need no change. Like Delete, missing keys are not an error.
 type BulkDeleter interface {
 	DeleteMany(ctx context.Context, keys []string) error
+}
+
+type FileOpener interface {
+	Open(key string) (*os.File, error)
 }
 
 // Space is a filesystem's size and the bytes still available to xilo.

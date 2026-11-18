@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/stubbedev/xilo/internal/narinfo"
+	"github.com/stubbedev/xilo/internal/storage"
 	"github.com/stubbedev/xilo/internal/store"
 )
 
@@ -124,6 +125,28 @@ func (s *Server) renderNarinfo(c *store.Cache, storeHash string, p *store.PathMe
 
 var errIncompletePath = errors.New("chunks missing for")
 
+func (s *Server) sendFrames(w io.Writer, files storage.FileOpener, refs []store.ChunkRef) error {
+	for _, ref := range refs {
+		if err := s.sendFrame(w, files, ref); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Server) sendFrame(w io.Writer, files storage.FileOpener, ref store.ChunkRef) error {
+	f, err := files.Open(ref.Key)
+	if err != nil {
+		return fmt.Errorf("open chunk %s: %w", ref.Hash, err)
+	}
+	defer f.Close()
+	s.metrics.narBytes.Add(ref.Size)
+	if _, err := io.Copy(w, f); err != nil {
+		return fmt.Errorf("send chunk %s: %w", ref.Hash, err)
+	}
+	return nil
+}
+
 type cacheRef struct{ account, name string }
 
 type pathRef struct {
@@ -209,6 +232,10 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Encoding", "zstd")
 		w.Header().Set("Content-Length", strconv.FormatInt(clen, 10))
+		if files, ok := s.stOf(c.Storage).(storage.FileOpener); ok {
+			_ = s.sendFrames(w, files, refs)
+			return
+		}
 		// Count the chunk's UNCOMPRESSED size (frames are delivered strictly in
 		// order, so an index walk matches refs to frames): narBytes must mean
 		// the same thing on every encoding path, and the identity/gzip path

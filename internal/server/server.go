@@ -484,6 +484,11 @@ func (w *logWriter) Write(b []byte) (int, error) {
 	return w.ResponseWriter.Write(b)
 }
 
+func (w *logWriter) ReadFrom(r io.Reader) (int64, error) {
+	w.wrote = true
+	return io.Copy(w.ResponseWriter, r)
+}
+
 // Flush/Unwrap so streaming NAR responses and zstd flushing still work.
 func (w *logWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
