@@ -64,6 +64,15 @@ func serveCmd() *cobra.Command {
 			if err := bootstrapAdmin(db, cfg.Admin.Password, cfg.SelfService); err != nil {
 				return err
 			}
+			if !cfg.SelfService {
+				claimed, err := db.ClaimUnownedAccounts()
+				if err != nil {
+					return err
+				}
+				if claimed > 0 {
+					log.Printf("single-tenant instance: made the superadmin owner of %d workspace(s) nobody was in", claimed)
+				}
+			}
 			sts, err := openStorages(cfg)
 			if err != nil {
 				return err

@@ -114,8 +114,17 @@ func (db *DB) EnsureAccount(slug, kind string) (*Account, error) {
 			a.Slug, a.Kind, a.Created); err != nil {
 			return err
 		}
-		return tx.QueryRow(`SELECT id, kind, plan_id, created FROM accounts WHERE slug=? AND status<>'deleted'`, slug).
-			Scan(&a.ID, &a.Kind, &a.PlanID, &a.Created)
+		if err := tx.QueryRow(`SELECT id, kind, plan_id, created FROM accounts WHERE slug=? AND status<>'deleted'`, slug).
+			Scan(&a.ID, &a.Kind, &a.PlanID, &a.Created); err != nil {
+			return err
+		}
+		if !db.singleTenant {
+			return nil
+		}
+		if _, err := tx.Exec(claimUnowned+` AND a.id=?`, a.ID); err != nil {
+			return fmt.Errorf("give account %s to the superadmin: %w", slug, err)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -248,10 +257,37 @@ func (db *DB) SetMember(accountID, userID int64, role string) error {
 
 // MakeOwner records the account's owner — its original creator. Exactly one
 // per account, set at creation time, never transferable.
+const claimUnowned = `INSERT INTO account_members (account_id, user_id, role)
+	SELECT a.id, u.id, 'owner' FROM accounts a
+	JOIN users u ON u.id = (SELECT MIN(id) FROM users WHERE role='superadmin' AND status='active')
+	WHERE a.status<>'deleted'
+	AND NOT EXISTS (SELECT 1 FROM account_members m WHERE m.account_id = a.id)`
+
+func (db *DB) SetSingleTenant(on bool) { db.singleTenant = on }
+
+func (db *DB) ClaimUnownedAccounts() (int64, error) {
+	var claimed int64
+	err := db.write(func(tx *sql.Tx) error {
+		res, err := tx.Exec(claimUnowned)
+		if err != nil {
+			return fmt.Errorf("give unowned accounts to the superadmin: %w", err)
+		}
+		claimed, err = res.RowsAffected()
+		return err
+	})
+	return claimed, err
+}
+
 func (db *DB) MakeOwner(accountID, userID int64) error {
 	return db.write(func(tx *sql.Tx) error {
-		var one int
-		if tx.QueryRow(`SELECT 1 FROM account_members WHERE account_id=? AND role='owner'`, accountID).Scan(&one) == nil {
+		var owner int64
+		switch err := tx.QueryRow(`SELECT user_id FROM account_members WHERE account_id=? AND role='owner'`, accountID).Scan(&owner); {
+		case errors.Is(err, sql.ErrNoRows):
+		case err != nil:
+			return fmt.Errorf("look up the owner of account %d: %w", accountID, err)
+		case owner == userID:
+			return nil
+		default:
 			return ErrHasOwner
 		}
 		_, err := tx.Exec(`INSERT INTO account_members (account_id, user_id, role) VALUES (?,?,'owner')

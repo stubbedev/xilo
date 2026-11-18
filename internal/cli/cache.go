@@ -493,5 +493,6 @@ func openStore(cfg *config.Config) (*store.DB, error) {
 		db.Close()
 		return nil, err
 	}
+	db.SetSingleTenant(!cfg.SelfService)
 	return db, nil
 }
