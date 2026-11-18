@@ -63,7 +63,7 @@ jobs:
           files: dist/*
           generate_release_notes: true
 
-  # Keep the floating major tag (uses: stubbedev/xilo@v1) on the newest
+  # Keep the floating major tag (uses: stubbedev/xilo@v2) on the newest
   # release — the convention Marketplace consumers pin to. The Marketplace
   # listing itself tracks the latest release automatically after the one-time
   # manual publish (GitHub exposes no API for that step; see RELEASING.md).

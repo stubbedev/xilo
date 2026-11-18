@@ -44,10 +44,10 @@ jobs:
       # internal/nar and internal/push diff their own serialization against
       # `nix-store --dump`; those tests are the contract, not a nicety.
       - uses: DeterminateSystems/nix-installer-action@v23
+      - uses: ./
         with:
-          extra-conf: |
-            extra-substituters = https://xilos.dev/c/stubbedev/main
-            extra-trusted-public-keys = xilos.dev/stubbedev/main-1:397R6S49v/FSvP+mZ3HlKrVN1KXhgzHIEIHxA/UuG6Y=
+          url: https://xilos.dev
+          cache: stubbedev/main
       # Admin CSS is generated (not committed) and embedded via go:embed.
       - name: build admin CSS
         run: |
@@ -318,10 +318,10 @@ jobs:
           go-version-file: go.mod
           cache: true
       - uses: DeterminateSystems/nix-installer-action@v23
+      - uses: ./
         with:
-          extra-conf: |
-            extra-substituters = https://xilos.dev/c/stubbedev/main
-            extra-trusted-public-keys = xilos.dev/stubbedev/main-1:397R6S49v/FSvP+mZ3HlKrVN1KXhgzHIEIHxA/UuG6Y=
+          url: https://xilos.dev
+          cache: stubbedev/main
       - name: build admin CSS
         run: |
           ./scripts/install-tailwind.sh /usr/local/bin/tailwindcss
@@ -344,10 +344,11 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
       - uses: DeterminateSystems/nix-installer-action@v23
+
+      - uses: ./
         with:
-          extra-conf: |
-            extra-substituters = https://xilos.dev/c/stubbedev/main
-            extra-trusted-public-keys = xilos.dev/stubbedev/main-1:397R6S49v/FSvP+mZ3HlKrVN1KXhgzHIEIHxA/UuG6Y=
+          url: https://xilos.dev
+          cache: stubbedev/main
 
       # Inline `just sync-vendor-hash` (no just on the runner). Re-pins
       # nix/package.nix's vendorHash against the current go.mod/go.sum: the sentinel

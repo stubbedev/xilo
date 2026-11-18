@@ -20,10 +20,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
       - uses: DeterminateSystems/nix-installer-action@v23
+      - uses: ./
         with:
-          extra-conf: |
-            extra-substituters = https://xilos.dev/c/stubbedev/main
-            extra-trusted-public-keys = xilos.dev/stubbedev/main-1:397R6S49v/FSvP+mZ3HlKrVN1KXhgzHIEIHxA/UuG6Y=
+          url: https://xilos.dev
+          cache: stubbedev/main
       - uses: nix-community/cache-nix-action@v7
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/flake.lock', '**/Cargo.lock', '**/go.sum') }}

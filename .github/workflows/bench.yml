@@ -61,10 +61,11 @@ jobs:
           cache: true
 
       - uses: DeterminateSystems/nix-installer-action@v23
+
+      - uses: ./
         with:
-          extra-conf: |
-            extra-substituters = https://xilos.dev/c/stubbedev/main
-            extra-trusted-public-keys = xilos.dev/stubbedev/main-1:397R6S49v/FSvP+mZ3HlKrVN1KXhgzHIEIHxA/UuG6Y=
+          url: https://xilos.dev
+          cache: stubbedev/main
 
       # The bench builds xilo from this tree, and that build embeds two
       # generated artifacts: the Tailwind sheet (//go:embed static) and the
