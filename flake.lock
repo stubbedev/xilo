@@ -8,11 +8,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1794957578,
-        "narHash": "sha256-CeoX/kb30rmQsb+H5iEwhpnjXfT7RjhlVP4u0KVXd5Y=",
+        "lastModified": 1795027501,
+        "narHash": "sha256-7iAA6K2EAepKzOdukHLz4Fd6e7uInw1M6meonXVFaQQ=",
         "owner": "stubbedev",
         "repo": "flakes.nix",
-        "rev": "e03d3e79a94df2cabe00f55c2ab0c6647867d589",
+        "rev": "dadd76e3d2297990e19474c15c37e66c2c09d146",
         "type": "github"
       },
       "original": {
