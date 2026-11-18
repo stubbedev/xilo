@@ -17,8 +17,9 @@ import (
 )
 
 type DB struct {
-	r  *sql.DB // read pool (WAL readers never block on the writer)
-	wr chan wtask
+	r   *sql.DB // read pool (WAL readers never block on the writer)
+	wr  chan wtask
+	wal *walIndex
 	// pg is set when backed by Postgres: r is a normal concurrent pool and
 	// writes run directly on it (MVCC — no single-writer funnel needed).
 	pg bool
@@ -80,7 +81,13 @@ func open(path string, sync int) (*DB, error) {
 		return nil, err
 	}
 
-	db := &DB{r: r, wr: make(chan wtask)}
+	wal, err := openWALIndex(path)
+	if err != nil {
+		w.Close()
+		r.Close()
+		return nil, err
+	}
+	db := &DB{r: r, wr: make(chan wtask), wal: wal}
 	go db.writer(w)
 	return db, nil
 }

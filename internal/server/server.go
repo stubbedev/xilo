@@ -41,9 +41,13 @@ type Server struct {
 	uploadSem chan struct{} // bounds concurrent server-side chunk encode+store
 	logins    *loginLimiter // throttles bcrypt attempts per IP
 	niCache   *narinfoCache // rendered+signed narinfo bodies
-	vfCache   *verifyCache  // chunk lists already proven to reassemble
-	gzipPool  sync.Pool     // *gzip.Writer for NAR wire compression
-	touched   sync.Map      // touchKey{cache,hash} → unix secs of last LRU bump
+	cacheRows *versioned[cacheRef, *store.Cache]
+	narinfos  *versioned[pathRef, narinfoEnt]
+	absent    *versioned[pathRef, struct{}]
+	narPlans  *versioned[pathRef, *narPlan]
+	vfCache   *verifyCache // chunk lists already proven to reassemble
+	gzipPool  sync.Pool    // *gzip.Writer for NAR wire compression
+	touched   sync.Map     // touchKey{cache,hash} → unix secs of last LRU bump
 	// chunkFilters memoizes the per-storage chunk presence filter served to
 	// pushers (storage name → *chunkFilterBody).
 	chunkFilters sync.Map
@@ -94,7 +98,11 @@ func New(cfg *config.Config, db *store.DB, sts map[string]storage.Storage) (*Ser
 		uploadSem: make(chan struct{}, max(4, 2*runtime.NumCPU())),
 		logins:    newLoginLimiter(),
 		niCache:   newNarinfoCache(16384), // ~64B/key + body ~600B ⇒ ~10MB cap
-		vfCache:   newVerifyCache(8192),   // 32B keys ⇒ well under 1MB
+		cacheRows: newVersioned[cacheRef, *store.Cache](1024),
+		narinfos:  newVersioned[pathRef, narinfoEnt](16384),
+		absent:    newVersioned[pathRef, struct{}](32768),
+		narPlans:  newVersioned[pathRef, *narPlan](32768),
+		vfCache:   newVerifyCache(8192), // 32B keys ⇒ well under 1MB
 		webAuthn:  newWebAuthn(cfg),
 		gcPolicy:  gcPolicy,
 	}
@@ -656,7 +664,10 @@ func (s *Server) assignStorage(c *store.Cache, stName string) error {
 
 // cache resolves the /c/{account}/{cache} path segments, writing 404 if unknown.
 func (s *Server) cache(w http.ResponseWriter, r *http.Request) (*store.Cache, bool) {
-	c, err := s.db.GetCache(r.Context(), r.PathValue("account"), r.PathValue("cache"))
+	ref := cacheRef{account: r.PathValue("account"), name: r.PathValue("cache")}
+	c, err := s.cacheRows.through(s.db, ref, unitWeight, func() (*store.Cache, error) {
+		return s.db.GetCache(r.Context(), ref.account, ref.name)
+	})
 	if errors.Is(err, store.ErrNotFound) {
 		http.Error(w, "no such cache", http.StatusNotFound)
 		return nil, false

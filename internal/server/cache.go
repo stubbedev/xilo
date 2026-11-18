@@ -2,6 +2,7 @@ package server
 
 import (
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -44,7 +45,7 @@ func (s *Server) handleNarinfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	storeHash := strings.TrimSuffix(file, ".narinfo")
-	p, err := s.db.GetPathMeta(r.Context(), c.ID, storeHash)
+	ent, err := s.signedNarinfo(r.Context(), c, storeHash)
 	if errors.Is(err, store.ErrNotFound) {
 		s.metrics.narinfoMiss.Add(1)
 		// Short negative cache so a CDN doesn't hammer us for absent paths.
@@ -59,30 +60,6 @@ func (s *Server) handleNarinfo(w http.ResponseWriter, r *http.Request) {
 	s.metrics.narinfoHit.Add(1)
 	s.touchPath(c.ID, storeHash)
 
-	key := narinfoKey{cacheID: c.ID, storeHash: storeHash, narHash: p.NarHash, pubKey: c.PubKey}
-	ent, cached := s.niCache.get(key)
-	if !cached {
-		refBases := make([]string, len(p.Refs))
-		for i, ref := range p.Refs {
-			refBases[i] = narinfo.BaseName(ref)
-		}
-		ni := &narinfo.NarInfo{
-			StorePath:   p.StorePath,
-			URL:         "nar/" + storeHash + ".nar",
-			Compression: "none",
-			FileHash:    p.NarHash,
-			FileSize:    p.NarSize,
-			NarHash:     p.NarHash,
-			NarSize:     p.NarSize,
-			References:  refBases,
-			Deriver:     p.Deriver,
-		}
-		fp := narinfo.Fingerprint(p.StorePath, p.NarHash, p.NarSize, p.Refs)
-		ni.Sig = []string{narinfo.Sign(c.KeyName(), c.PrivKey, fp)}
-		ent = narinfoEnt{body: ni.String(), etag: contentETag(p.NarHash, c.PubKey)}
-		s.niCache.put(key, ent)
-	}
-
 	w.Header().Set("Content-Type", "text/x-nix-narinfo")
 	// Cache hard, but key validators on CONTENT, not the store hash: a re-push
 	// can upsert different bytes under the same store hash, and the signature
@@ -91,6 +68,90 @@ func (s *Server) handleNarinfo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.Header().Set("ETag", ent.etag)
 	io.WriteString(w, ent.body)
+}
+
+func (s *Server) signedNarinfo(ctx context.Context, c *store.Cache, storeHash string) (narinfoEnt, error) {
+	ref := pathRef{cacheID: c.ID, storeHash: storeHash}
+	version, versioned := s.db.Version()
+	if versioned {
+		if ent, ok := s.narinfos.get(version, ref); ok {
+			return ent, nil
+		}
+		if _, ok := s.absent.get(version, ref); ok {
+			return narinfoEnt{}, store.ErrNotFound
+		}
+	}
+	p, err := s.db.GetPathMeta(ctx, c.ID, storeHash)
+	if versioned && errors.Is(err, store.ErrNotFound) {
+		s.absent.put(version, ref, struct{}{}, 1)
+	}
+	if err != nil {
+		return narinfoEnt{}, err
+	}
+	ent := s.renderNarinfo(c, storeHash, p)
+	if versioned {
+		s.narinfos.put(version, ref, ent, 1)
+	}
+	return ent, nil
+}
+
+func (s *Server) renderNarinfo(c *store.Cache, storeHash string, p *store.PathMeta) narinfoEnt {
+	key := narinfoKey{cacheID: c.ID, storeHash: storeHash, narHash: p.NarHash, pubKey: c.PubKey}
+	if ent, cached := s.niCache.get(key); cached {
+		return ent
+	}
+	refBases := make([]string, len(p.Refs))
+	for i, ref := range p.Refs {
+		refBases[i] = narinfo.BaseName(ref)
+	}
+	ni := &narinfo.NarInfo{
+		StorePath:   p.StorePath,
+		URL:         "nar/" + storeHash + ".nar",
+		Compression: "none",
+		FileHash:    p.NarHash,
+		FileSize:    p.NarSize,
+		NarHash:     p.NarHash,
+		NarSize:     p.NarSize,
+		References:  refBases,
+		Deriver:     p.Deriver,
+	}
+	fp := narinfo.Fingerprint(p.StorePath, p.NarHash, p.NarSize, p.Refs)
+	ni.Sig = []string{narinfo.Sign(c.KeyName(), c.PrivKey, fp)}
+	ent := narinfoEnt{body: ni.String(), etag: contentETag(p.NarHash, c.PubKey)}
+	s.niCache.put(key, ent)
+	return ent
+}
+
+var errIncompletePath = errors.New("chunks missing for")
+
+type cacheRef struct{ account, name string }
+
+type pathRef struct {
+	cacheID   int64
+	storeHash string
+}
+
+type narPlan struct {
+	narHash string
+	narSize uint64
+	chunks  []store.ChunkRef
+}
+
+func (p *narPlan) weight() int64 { return int64(len(p.chunks)) + 1 }
+
+func (s *Server) narPlan(ctx context.Context, c *store.Cache, storeHash string) (*narPlan, error) {
+	ref := pathRef{cacheID: c.ID, storeHash: storeHash}
+	return s.narPlans.through(s.db, ref, (*narPlan).weight, func() (*narPlan, error) {
+		p, err := s.db.GetPath(ctx, c.ID, storeHash)
+		if err != nil {
+			return nil, err
+		}
+		chunks, err := s.db.ChunkKeys(ctx, c.Storage, p.Chunks)
+		if err != nil {
+			return nil, fmt.Errorf("chunks of %s: %w", p.StorePath, err)
+		}
+		return &narPlan{narHash: p.NarHash, narSize: p.NarSize, chunks: chunks}, nil
+	})
 }
 
 func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
@@ -102,8 +163,8 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	storeHash := strings.TrimSuffix(r.PathValue("id"), ".nar")
-	p, err := s.db.GetPath(r.Context(), c.ID, storeHash)
-	if errors.Is(err, store.ErrNotFound) {
+	p, err := s.narPlan(r.Context(), c, storeHash)
+	if errors.Is(err, store.ErrNotFound) && !errors.Is(err, errIncompletePath) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -111,37 +172,30 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	refs := p.chunks
 
 	// LRU by last pull: a download starting now must not be the next eviction
 	// victim (same bump as narinfo — nix fetches nar right after).
 	s.touchPath(c.ID, storeHash)
-
-	// Resolve all chunk keys up front — if any is missing we can still return a
-	// clean error before committing a 200 + Content-Length.
-	refs, err := s.db.ChunkKeys(r.Context(), c.Storage, p.Chunks)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 
 	// The narinfo advertises Compression: none (FileHash == NarHash). We may
 	// still compress the HTTP transfer via Content-Encoding, which Nix's curl
 	// transparently decodes — saves bandwidth without touching the NAR hash.
 	w.Header().Set("Content-Type", "application/x-nix-nar")
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-	w.Header().Set("ETag", contentETag(p.NarHash, "")) // NAR bytes ⇔ NarHash
+	w.Header().Set("ETag", contentETag(p.narHash, "")) // NAR bytes ⇔ NarHash
 
 	// Existence probes are not downloads: don't read a single chunk (net/http
 	// would discard the body) and don't count them as served NARs/bytes.
 	if r.Method == http.MethodHead {
-		w.Header().Set("Content-Length", strconv.FormatUint(p.NarSize, 10))
+		w.Header().Set("Content-Length", strconv.FormatUint(p.narSize, 10))
 		return
 	}
 	s.metrics.narServed.Add(1)
 	// Egress metering: the logical NAR size is what leaves regardless of
 	// transfer encoding; counting it here (not per-write) keeps the hot loop
 	// allocation-free. Flushed to the DB by the status sampler.
-	s.addEgress(c.AccountID, int64(p.NarSize))
+	s.addEgress(c.AccountID, int64(p.narSize))
 
 	// zstd clients get the stored frames verbatim: chunks are complete zstd
 	// frames and a concatenation of frames is a valid stream (RFC 8878), so
@@ -169,7 +223,7 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out, done := s.narWriter(w, r, p.NarSize, acc)
+	out, done := s.narWriter(w, r, p.narSize, acc)
 	defer done()
 	err = s.eachChunkOrdered(r.Context(), refs, s.readAhead(), func(raw []byte) error {
 		s.metrics.narBytes.Add(int64(len(raw)))
