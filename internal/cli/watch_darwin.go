@@ -19,7 +19,7 @@ const (
 	direntMax    = int(unsafe.Sizeof(syscall.Dirent{}))
 )
 
-func watchStore(ctx context.Context, storeDir string, onValid func(path string)) (err error) {
+func watchStore(ctx context.Context, storeDir string, onValid func(path string)) error {
 	kq, err := syscall.Kqueue()
 	if err != nil {
 		return fmt.Errorf("kqueue: %w", err)
@@ -51,11 +51,7 @@ func watchStore(ctx context.Context, storeDir string, onValid func(path string))
 		return err
 	})()
 
-	scan, err := newStoreScan(storeDir)
-	if err != nil {
-		return err
-	}
-	defer func() { err = errors.Join(err, scan.Close()) }()
+	scan := newStoreScan(storeDir)
 	if err := lister.list(scan, onValid); err != nil {
 		return err
 	}

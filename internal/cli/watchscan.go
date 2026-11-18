@@ -9,18 +9,19 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"syscall"
 	"unsafe"
-
-	memory "github.com/stubbedev/memory-go"
-	"github.com/stubbedev/memory-go/hashmap"
 )
 
+// storeScan's present maps each name to its slot in epochs, the scan that
+// last listed it. The epoch lives in a slice rather than as the map value so a
+// rescan updates it through a lookup, which Go compiles without converting the
+// name to a string: an unchanged rescan allocates nothing.
 type storeScan struct {
 	storeDir   string
-	alloc      memory.Local
-	present    *hashmap.Strings[uint64]
+	present    map[string]int
+	epochs     []uint64
+	free       []int
 	locked     map[string]struct{}
 	listed     map[string]struct{}
 	candidates []string
@@ -29,17 +30,33 @@ type storeScan struct {
 	primed     bool
 }
 
-func newStoreScan(storeDir string) (*storeScan, error) {
-	s := &storeScan{storeDir: storeDir, locked: map[string]struct{}{}, listed: map[string]struct{}{}}
-	present, err := hashmap.NewStrings[uint64](&s.alloc, 1<<12)
-	if err != nil {
-		return nil, fmt.Errorf("allocate the listing of %s: %w", storeDir, errors.Join(err, s.alloc.Close()))
+func newStoreScan(storeDir string) *storeScan {
+	return &storeScan{
+		storeDir: storeDir,
+		present:  make(map[string]int, 1<<12),
+		locked:   map[string]struct{}{},
+		listed:   map[string]struct{}{},
 	}
-	s.present = present
-	return s, nil
 }
 
-func (s *storeScan) Close() error { return s.alloc.Close() }
+// mark stamps name with the current epoch and reports whether the previous
+// scan missed it.
+func (s *storeScan) mark(name []byte) bool {
+	if i, ok := s.present[string(name)]; ok {
+		fresh := s.epochs[i] != s.epoch-1
+		s.epochs[i] = s.epoch
+		return fresh
+	}
+	i := len(s.epochs)
+	if n := len(s.free); n > 0 {
+		i, s.free = s.free[n-1], s.free[:n-1]
+		s.epochs[i] = s.epoch
+	} else {
+		s.epochs = append(s.epochs, s.epoch)
+	}
+	s.present[string(name)] = i
+	return true
+}
 
 func (s *storeScan) begin() {
 	s.epoch++
@@ -58,14 +75,7 @@ func (s *storeScan) entry(name []byte) error {
 		return nil
 	}
 	s.names++
-	key := unsafe.String(unsafe.SliceData(name), len(name))
-	fresh := true
-	if last, ok := s.present.Ptr(key); ok {
-		fresh = *last != s.epoch-1
-		*last = s.epoch
-	} else if err := s.present.Set(key, s.epoch); err != nil {
-		return fmt.Errorf("record %s/%s: %w", s.storeDir, name, err)
-	}
+	fresh := s.mark(name)
 	if !s.primed {
 		return nil
 	}
@@ -100,36 +110,21 @@ func (s *storeScan) finish(onValid func(path string)) error {
 		onValid(path)
 	}
 	s.primed = true
-	if s.present.Len() > s.names {
-		return s.forgetUnlisted()
+	if len(s.present) > s.names {
+		s.forgetUnlisted()
 	}
 	return nil
 }
 
-func (s *storeScan) saw(name string) error {
-	if last, ok := s.present.Ptr(name); ok {
-		*last = s.epoch
-		return nil
-	}
-	if err := s.present.Set(name, s.epoch); err != nil {
-		return fmt.Errorf("record %s/%s: %w", s.storeDir, name, err)
-	}
-	return nil
-}
+func (s *storeScan) saw(name string) { s.mark([]byte(name)) }
 
-func (s *storeScan) forgetUnlisted() error {
-	var gone []string
-	for name, epoch := range s.present.All() {
-		if epoch != s.epoch {
-			gone = append(gone, strings.Clone(name))
+func (s *storeScan) forgetUnlisted() {
+	for name, i := range s.present {
+		if s.epochs[i] != s.epoch {
+			delete(s.present, name)
+			s.free = append(s.free, i)
 		}
 	}
-	for _, name := range gone {
-		if _, err := s.present.Delete(name); err != nil {
-			return fmt.Errorf("forget %s/%s: %w", s.storeDir, name, err)
-		}
-	}
-	return nil
 }
 
 const (

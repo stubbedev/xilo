@@ -16,7 +16,6 @@ require (
 	github.com/klauspost/compress v1.20.4
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/spf13/cobra v1.10.2
-	github.com/stubbedev/memory-go v0.6.0
 	github.com/templui/templui v1.13.4
 	golang.org/x/crypto v0.59.0
 	golang.org/x/sys v0.50.0

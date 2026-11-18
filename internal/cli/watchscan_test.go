@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
+	"time"
 )
 
 type scanHarness struct {
@@ -19,16 +21,7 @@ type scanHarness struct {
 func newScanHarness(t *testing.T) *scanHarness {
 	t.Helper()
 	dir := t.TempDir()
-	scan, err := newStoreScan(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := scan.Close(); err != nil {
-			t.Error(err)
-		}
-	})
-	return &scanHarness{t: t, dir: dir, scan: scan}
+	return &scanHarness{t: t, dir: dir, scan: newStoreScan(dir)}
 }
 
 func (h *scanHarness) touch(names ...string) {
@@ -124,7 +117,7 @@ func TestStoreScanReportsARebuiltPathAgain(t *testing.T) {
 	h.expect(h.rescan())
 	h.remove("pkg")
 	h.expect(h.rescan())
-	if n := h.scan.present.Len(); n != 0 {
+	if n := len(h.scan.present); n != 0 {
 		t.Fatalf("listing still holds %d names after the store emptied", n)
 	}
 	h.touch("pkg")
@@ -165,4 +158,40 @@ func TestStoreScanRescanAllocatesNothingForKnownNames(t *testing.T) {
 	if allocs := testing.AllocsPerRun(10, scan); allocs != 0 {
 		t.Fatalf("rescan of an unchanged store allocated %v times", allocs)
 	}
+}
+
+// BenchmarkStoreRescan rescans an unchanged store of 200k names, the size of a
+// well-used developer store, and reports what one full GC costs with the name
+// set alive: the set is long-lived, so that is the price of holding it.
+func BenchmarkStoreRescan(b *testing.B) {
+	names := make([][]byte, 200_000)
+	for i := range names {
+		names[i] = fmt.Appendf(nil, "%032d-some-package-1.2.3", i)
+	}
+	scan := newStoreScan(b.TempDir())
+	rescan := func() {
+		scan.begin()
+		for _, n := range names {
+			if err := scan.entry(n); err != nil {
+				b.Fatal(err)
+			}
+		}
+		if err := scan.finish(func(string) {}); err != nil {
+			b.Fatal(err)
+		}
+	}
+	rescan()
+	rescan()
+	b.ReportAllocs()
+	for b.Loop() {
+		rescan()
+	}
+	b.StopTimer()
+	const cycles = 10
+	start := time.Now()
+	for range cycles {
+		runtime.GC()
+	}
+	b.ReportMetric(float64(time.Since(start).Microseconds())/cycles, "gc-µs")
+	runtime.KeepAlive(names)
 }
