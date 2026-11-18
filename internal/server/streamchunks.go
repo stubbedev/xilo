@@ -183,12 +183,14 @@ const (
 	sharedAhead = 48
 )
 
-// readAhead is the chunk prefetch window for serving/verification. Deep
-// prefetch exists to hide per-object GET latency; local disk has none worth
-// hiding, so a shallow window there halves pull-path memory at no throughput
-// cost.
-func (s *Server) readAhead() window {
-	if s.cfg.Storage.Backend == "local" {
+// readAhead is the chunk prefetch window for serving/verification from the
+// named backend. Deep prefetch exists to hide per-read latency; a local disk
+// has none worth hiding, so a shallow window there halves pull-path memory at
+// no throughput cost. A local root on a network mount is latency-bound like
+// S3 and gets the deep window: at 4 in flight a CIFS-mounted root served a
+// cold NAR at 2.7 MB/s.
+func (s *Server) readAhead(storageName string) window {
+	if !s.stOf(storageName).LatencyBound() {
 		return window{depth: 4}
 	}
 	depth := max(s.cfg.Parallelism, 4)

@@ -615,6 +615,7 @@ func (failDelete) Put(context.Context, string, io.Reader) error       { return e
 func (failDelete) Get(context.Context, string) (io.ReadCloser, error) { return nil, errors.New("no") }
 func (failDelete) Has(context.Context, string) (bool, error)          { return false, nil }
 func (failDelete) Delete(context.Context, string) error               { return errors.New("delete fail") }
+func (failDelete) LatencyBound() bool                                 { return false }
 
 func TestGCStorageDeleteError(t *testing.T) {
 	db := openTest(t)
@@ -644,6 +645,8 @@ func (m *memStore) Put(_ context.Context, key string, _ io.Reader) error {
 	return nil
 }
 func (m *memStore) Get(context.Context, string) (io.ReadCloser, error) { return nil, ErrNotFound }
+func (m *memStore) LatencyBound() bool                                 { return false }
+
 func (m *memStore) Has(_ context.Context, key string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

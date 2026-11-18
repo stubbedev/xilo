@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -20,6 +21,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/stubbedev/xilo/internal/config"
+	"github.com/stubbedev/xilo/internal/storage"
 	"github.com/stubbedev/xilo/internal/store"
 )
 
@@ -640,29 +642,90 @@ func TestEachOrderedBorrowsOnlyWhatIsFree(t *testing.T) {
 	}
 }
 
+// networkRoot is a local backend standing on a network mount: it serves
+// files like any local root but reports itself latency-bound, as NewLocal
+// does for a CIFS or NFS root. It counts how chunks were read.
+type networkRoot struct {
+	*storage.Local
+	gets, opens atomic.Int64
+}
+
+func (n *networkRoot) LatencyBound() bool { return true }
+
+func (n *networkRoot) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	n.gets.Add(1)
+	return n.Local.Get(ctx, key)
+}
+
+func (n *networkRoot) Open(key string) (*os.File, error) {
+	n.opens.Add(1)
+	return n.Local.Open(key)
+}
+
 func TestReadAhead(t *testing.T) {
-	// Local backend: shallow fixed window (no GET latency to hide).
-	s, _, _ := newTestServerCfg(t, func(cfg *config.Config) { cfg.Parallelism = 16 })
-	if w := s.readAhead(); w.depth != 4 || w.extra != 0 {
-		t.Errorf("local readAhead = %d+%d want 4+0", w.depth, w.extra)
+	local, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
 	}
-	// S3: deep window scaled to parallelism, floor 4. (Client construction
-	// needs endpoint+bucket but performs no network I/O.)
-	s3cfg := func(par int) func(*config.Config) {
-		return func(cfg *config.Config) {
-			cfg.Storage.Backend = "s3"
-			cfg.Storage.S3.Endpoint = "s3.invalid"
-			cfg.Storage.S3.Bucket = "b"
-			cfg.Parallelism = par
+	if local.LatencyBound() {
+		t.Fatal("a temp dir reports itself latency-bound")
+	}
+	s3, err := storage.NewS3(config.S3{Endpoint: "s3.invalid", Bucket: "b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := func(par int) *Server {
+		return &Server{
+			cfg:         &config.Config{Parallelism: par},
+			sts:         map[string]storage.Storage{"default": local, "net": &networkRoot{Local: local}, "s3": s3},
+			sharedAhead: make(chan struct{}, sharedAhead),
 		}
 	}
-	s2, _, _ := newTestServerCfg(t, s3cfg(16))
-	if w := s2.readAhead(); w.depth != 16 || w.extra != 0 {
-		t.Errorf("s3 readAhead = %d+%d want 16+0", w.depth, w.extra)
+	for _, c := range []struct {
+		backend      string
+		par          int
+		depth, extra int
+	}{
+		{"default", 16, 4, 0},
+		{"default", 1, 4, 0},
+		{"s3", 16, 16, 0},
+		{"s3", 1, 4, 12},
+		{"net", 1, 4, 12},
+		{"net", 16, 16, 0},
+	} {
+		w := srv(c.par).readAhead(c.backend)
+		if w.depth != c.depth || w.extra != c.extra {
+			t.Errorf("readAhead(%s) at parallelism %d = %d+%d want %d+%d", c.backend, c.par, w.depth, w.extra, c.depth, c.extra)
+		}
+		if c.extra > 0 && cap(w.shared) != sharedAhead {
+			t.Errorf("readAhead(%s) borrows from a pool of %d want %d", c.backend, cap(w.shared), sharedAhead)
+		}
 	}
-	s3, _, _ := newTestServerCfg(t, s3cfg(1))
-	if w := s3.readAhead(); w.depth != 4 || w.extra != 12 || cap(w.shared) != sharedAhead {
-		t.Errorf("s3 readAhead on one core = %d+%d of %d want 4+12 of %d", w.depth, w.extra, cap(w.shared), sharedAhead)
+}
+
+// A zstd NAR on a latency-bound file backend must go through the prefetching
+// reader, not the sequential sendfile path: on a CIFS root the latter pays one
+// round trip per chunk in series.
+func TestNetworkRootServesThroughPrefetch(t *testing.T) {
+	var root *networkRoot
+	_, db, ts := newTestServerWith(t, nil, func(base storage.Storage) storage.Storage {
+		root = &networkRoot{Local: base.(*storage.Local)}
+		return root
+	})
+	if _, err := db.CreateCache("default", "c", true, 40); err != nil {
+		t.Fatal(err)
+	}
+	parts := [][]byte{bytes.Repeat([]byte("a"), 4096), bytes.Repeat([]byte("b"), 4096), bytes.Repeat([]byte("c"), 4096)}
+	pushChunked(t, ts, "c", h32, parts, nil, "")
+	gets := root.gets.Load()
+	if got := getNar(t, ts, "/c/default/c/nar/"+h32+".nar", "zstd"); !bytes.Equal(got, bytes.Join(parts, nil)) {
+		t.Fatal("zstd NAR from a network root does not match what was pushed")
+	}
+	if n := root.opens.Load(); n != 0 {
+		t.Errorf("opened %d chunk files for sendfile on a latency-bound root", n)
+	}
+	if n := root.gets.Load() - gets; n != int64(len(parts)) {
+		t.Errorf("read %d chunks through the prefetcher want %d", n, len(parts))
 	}
 }
 

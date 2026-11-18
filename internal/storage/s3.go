@@ -97,6 +97,8 @@ func (s *S3) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	return out.Body, nil
 }
 
+func (s *S3) LatencyBound() bool { return true }
+
 func (s *S3) Has(ctx context.Context, key string) (bool, error) {
 	_, err := s.c.HeadObject(ctx, &s3.HeadObjectInput{Bucket: &s.bucket, Key: &key})
 	if err == nil {

@@ -12,7 +12,10 @@ import (
 
 // Local stores blobs as files under Root. Writes are atomic (temp file +
 // rename) so a crashed push never leaves a half-written chunk.
-type Local struct{ root string }
+type Local struct {
+	root    string
+	network bool
+}
 
 func NewLocal(root string) (*Local, error) {
 	if root == "" {
@@ -21,8 +24,17 @@ func NewLocal(root string) (*Local, error) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, err
 	}
-	return &Local{root: root}, nil
+	network, err := onNetworkFS(root)
+	if err != nil {
+		return nil, fmt.Errorf("storage.local.root %s: %w", root, err)
+	}
+	return &Local{root: root, network: network}, nil
 }
+
+// LatencyBound is true when the root is a network mount (NFS, SMB, a FUSE
+// bridge to remote storage): every chunk read is then a round trip, as it is
+// against S3, and wants the same prefetch.
+func (l *Local) LatencyBound() bool { return l.network }
 
 func (l *Local) path(key string) string { return filepath.Join(l.root, filepath.FromSlash(key)) }
 

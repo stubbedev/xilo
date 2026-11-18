@@ -8,12 +8,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
 
 	"github.com/stubbedev/xilo/internal/api"
-	"github.com/stubbedev/xilo/internal/config"
 	"github.com/stubbedev/xilo/internal/storage"
 	"github.com/stubbedev/xilo/internal/store"
 )
@@ -39,34 +37,11 @@ func (c *countingStorage) Has(ctx context.Context, key string) (bool, error) {
 // reads, and small chunks so a modest NAR spans several of them.
 func newCountingServer(t *testing.T) (*Server, *store.DB, *httptest.Server, *countingStorage) {
 	t.Helper()
-	dir := t.TempDir()
-	cfg, err := config.Load("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg.DataDir = dir
-	cfg.BaseURL = "http://example"
-	cfg.Storage.Local.Root = filepath.Join(dir, "storage")
-	cfg.Security.AllowOpenBootstrap = true
-
-	db, err := store.Open(cfg.DBPath())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.SetKeyHost("xilo.test"); err != nil {
-		t.Fatal(err)
-	}
-	base, err := storage.New(cfg.Storage)
-	if err != nil {
-		t.Fatal(err)
-	}
-	st := &countingStorage{Storage: base}
-	s, err := New(cfg, db, map[string]storage.Storage{"default": st})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ts := httptest.NewServer(s.Handler())
-	t.Cleanup(func() { ts.Close(); db.Close() })
+	var st *countingStorage
+	s, db, ts := newTestServerWith(t, nil, func(base storage.Storage) storage.Storage {
+		st = &countingStorage{Storage: base}
+		return st
+	})
 	return s, db, ts, st
 }
 

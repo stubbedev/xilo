@@ -455,7 +455,7 @@ func (s *Server) blobsPresent(ctx context.Context, storageName string, chunkHash
 		}
 	}
 	st := s.stOf(storageName)
-	sem := make(chan struct{}, s.readAhead().depth)
+	sem := make(chan struct{}, s.readAhead(storageName).depth)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var firstErr error
@@ -500,7 +500,7 @@ func (s *Server) verifyReassembly(r *http.Request, storageName string, chunkHash
 	}
 	h := sha256.New()
 	var total uint64
-	err = s.eachChunkOrdered(r.Context(), refs, s.readAhead(), func(raw []byte) error {
+	err = s.eachChunkOrdered(r.Context(), refs, s.readAhead(storageName), func(raw []byte) error {
 		h.Write(raw)
 		total += uint64(len(raw))
 		return nil

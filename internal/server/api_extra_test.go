@@ -30,6 +30,13 @@ const h32b = "0123456789abcdfghijklmnpqrsvwxyz"
 // newTestServerCfg is newTestServer with a config hook.
 func newTestServerCfg(t *testing.T, mut func(*config.Config)) (*Server, *store.DB, *httptest.Server) {
 	t.Helper()
+	return newTestServerWith(t, mut, nil)
+}
+
+// newTestServerWith is newTestServerCfg with the default storage backend
+// passed through wrap, so a test can observe or reshape it.
+func newTestServerWith(t *testing.T, mut func(*config.Config), wrap func(storage.Storage) storage.Storage) (*Server, *store.DB, *httptest.Server) {
+	t.Helper()
 	dir := t.TempDir()
 	cfg, err := config.Load("")
 	if err != nil {
@@ -52,6 +59,9 @@ func newTestServerCfg(t *testing.T, mut func(*config.Config)) (*Server, *store.D
 	st, err := storage.New(cfg.Storage)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if wrap != nil {
+		st = wrap(st)
 	}
 	s, err := New(cfg, db, map[string]storage.Storage{"default": st})
 	if err != nil {

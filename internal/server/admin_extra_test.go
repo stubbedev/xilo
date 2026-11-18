@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"html"
@@ -19,7 +18,6 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/stubbedev/xilo/internal/api"
 	"github.com/stubbedev/xilo/internal/config"
 	"github.com/stubbedev/xilo/internal/store"
 )
@@ -294,19 +292,7 @@ func TestPathChunkPager(t *testing.T) {
 	if _, err := db.CreateCache("default", "web", true, 40); err != nil {
 		t.Fatal(err)
 	}
-	parts := [][]byte{[]byte("first chunk bytes"), []byte("second chunk bytes")}
-	hashes := make([]string, len(parts))
-	for i, b := range parts {
-		hashes[i], _, _ = fakeNar(b)
-		if r := put(t, ts, "/c/default/web/api/chunk/"+hashes[i], b, ""); r.StatusCode != http.StatusOK {
-			t.Fatalf("put chunk %d: %d", i, r.StatusCode)
-		}
-	}
-	_, narHash, narSize := fakeNar(bytes.Join(parts, nil))
-	req, _ := json.Marshal(api.PathReq{StorePath: "/nix/store/" + h32 + "-pkg", NarHash: narHash, NarSize: narSize, Chunks: hashes})
-	if r := put(t, ts, "/c/default/web/api/path", req, ""); r.StatusCode != http.StatusOK {
-		t.Fatalf("put path: %d", r.StatusCode)
-	}
+	hashes := pushChunked(t, ts, "web", h32, [][]byte{[]byte("first chunk bytes"), []byte("second chunk bytes")}, nil, "").Chunks
 
 	page := ts.URL + "/admin/cache/default/web/path/" + h32
 	resp, _ := c.Get(page + "?chunks[size]=1")

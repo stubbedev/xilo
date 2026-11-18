@@ -20,6 +20,10 @@ type Storage interface {
 	Get(ctx context.Context, key string) (io.ReadCloser, error)
 	Has(ctx context.Context, key string) (bool, error)
 	Delete(ctx context.Context, key string) error
+	// LatencyBound reports whether every read pays a round trip worth hiding
+	// behind prefetch: an object store, or a local root on a network
+	// filesystem.
+	LatencyBound() bool
 }
 
 // BulkDeleter is an optional fast path a Storage may offer: delete many keys

@@ -232,7 +232,8 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Encoding", "zstd")
 		w.Header().Set("Content-Length", strconv.FormatInt(clen, 10))
-		if files, ok := s.stOf(c.Storage).(storage.FileOpener); ok {
+		st := s.stOf(c.Storage)
+		if files, ok := st.(storage.FileOpener); ok && !st.LatencyBound() {
 			_ = s.sendFrames(w, files, refs)
 			return
 		}
@@ -241,7 +242,7 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 		// the same thing on every encoding path, and the identity/gzip path
 		// below counts uncompressed bytes.
 		i := 0
-		_ = s.eachChunkOrderedRaw(r.Context(), refs, s.readAhead(), func(frame []byte) error {
+		_ = s.eachChunkOrderedRaw(r.Context(), refs, s.readAhead(c.Storage), func(frame []byte) error {
 			s.metrics.narBytes.Add(refs[i].Size)
 			i++
 			_, werr := w.Write(frame)
@@ -252,7 +253,7 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 
 	out, done := s.narWriter(w, r, p.narSize, acc)
 	defer done()
-	err = s.eachChunkOrdered(r.Context(), refs, s.readAhead(), func(raw []byte) error {
+	err = s.eachChunkOrdered(r.Context(), refs, s.readAhead(c.Storage), func(raw []byte) error {
 		s.metrics.narBytes.Add(int64(len(raw)))
 		_, werr := out.Write(raw)
 		return werr

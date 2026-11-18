@@ -188,6 +188,7 @@ type touchOnDelete struct {
 func (s touchOnDelete) Put(context.Context, string, io.Reader) error       { return nil }
 func (s touchOnDelete) Get(context.Context, string) (io.ReadCloser, error) { return nil, ErrNotFound }
 func (s touchOnDelete) Has(context.Context, string) (bool, error)          { return false, nil }
+func (s touchOnDelete) LatencyBound() bool                                 { return false }
 func (s touchOnDelete) Delete(_ context.Context, key string) error {
 	if o, ok := s.other[key]; ok {
 		return s.db.TouchChunks("default", []string{o}, 1<<62)
@@ -205,6 +206,7 @@ type dropOnDelete struct {
 func (s dropOnDelete) Put(context.Context, string, io.Reader) error       { return nil }
 func (s dropOnDelete) Get(context.Context, string) (io.ReadCloser, error) { return nil, ErrNotFound }
 func (s dropOnDelete) Has(context.Context, string) (bool, error)          { return false, nil }
+func (s dropOnDelete) LatencyBound() bool                                 { return false }
 func (s dropOnDelete) Delete(context.Context, string) error {
 	exec(s.t, s.db, `DROP TABLE IF EXISTS chunks`)
 	return nil

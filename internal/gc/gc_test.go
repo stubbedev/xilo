@@ -39,6 +39,8 @@ func (m *memStorage) Get(_ context.Context, key string) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(m.blobs[key])), nil
 }
 
+func (m *memStorage) LatencyBound() bool { return false }
+
 func (m *memStorage) Has(_ context.Context, key string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
