@@ -296,8 +296,10 @@ templ RowActions() {
 // Meta is the secondary fact riding beside a name in a list row — a plan's
 // limits, an organization's usage. Mono because it is always quantities.
 templ Meta() {
-	<span class="min-w-0 truncate font-mono text-xs text-muted-foreground tabular-nums">
-		{ children... }
+	<span class="min-w-0 truncate text-sm">
+		<span class="font-mono text-xs leading-none text-muted-foreground tabular-nums">
+			{ children... }
+		</span>
 	</span>
 }
 
@@ -602,7 +604,9 @@ templ SettingRow(label, value string) {
 		<div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
 			<p class="text-sm font-medium">{ label }</p>
 			if value != "" {
-				<span class="min-w-0 truncate font-mono text-xs text-muted-foreground">{ value }</span>
+				@Meta() {
+					{ value }
+				}
 			}
 		</div>
 		<div class="flex shrink-0 items-center gap-2">
