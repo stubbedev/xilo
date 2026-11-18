@@ -5,12 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
+	"net/url"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
+	smithyendpoints "github.com/aws/smithy-go/endpoints"
 
 	"github.com/stubbedev/xilo/internal/config"
 )
@@ -34,13 +39,45 @@ func NewS3(cfg config.S3) (*S3, error) {
 	if cfg.Insecure {
 		scheme = "http://"
 	}
+	base, err := url.Parse(scheme + cfg.Endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("storage.s3 endpoint %q: %w", cfg.Endpoint, err)
+	}
 	client := s3.New(s3.Options{
-		Region:       region,
-		Credentials:  credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
-		BaseEndpoint: aws.String(scheme + cfg.Endpoint),
-		UsePathStyle: true, // S3-compatible servers rarely do virtual-host style
+		Region:             region,
+		Credentials:        credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
+		EndpointResolverV2: pathStyleEndpoint{base: *base},
+		HTTPClient:         newS3HTTPClient(),
 	})
 	return &S3{c: client, bucket: cfg.Bucket}, nil
+}
+
+type pathStyleEndpoint struct{ base url.URL }
+
+func (e pathStyleEndpoint) ResolveEndpoint(_ context.Context, p s3.EndpointParameters) (smithyendpoints.Endpoint, error) {
+	if p.Bucket == nil {
+		return smithyendpoints.Endpoint{}, errors.New("s3 request names no bucket")
+	}
+	u := e.base
+	u.Path = "/" + *p.Bucket
+	return smithyendpoints.Endpoint{URI: u}, nil
+}
+
+const s3IdleConns = 256
+
+func newS3HTTPClient() *awshttp.BuildableClient {
+	return awshttp.NewBuildableClient().WithTransportOptions(func(t *http.Transport) {
+		t.MaxIdleConns = s3IdleConns
+		t.MaxIdleConnsPerHost = s3IdleConns
+		dial := t.DialContext
+		t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			c, err := dial(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+			return promptAcks(c), nil
+		}
+	})
 }
 
 func (s *S3) Put(ctx context.Context, key string, r io.Reader) error {
