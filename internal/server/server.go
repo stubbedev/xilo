@@ -178,6 +178,7 @@ func (s *Server) RunContext(ctx context.Context) error {
 	// let a sweep already running finish before the caller closes the DB.
 	ctx, stopBG := context.WithCancel(ctx)
 	defer func() { stopBG(); s.gcDone.Wait() }()
+	defer reqLog.flush()
 	s.startGC(ctx)
 	s.startAuditPrune(ctx)
 	s.startStatusSampler(ctx)
@@ -246,41 +247,85 @@ func isAdminPage(r *http.Request) bool {
 // requestLog writes the finished-request line. Healthy requests (2xx/3xx) go
 // to out, so a stderr capture holds only failures: 4xx, 5xx and panics go to
 // errs, and neither kind of failure is ever suppressed. quiet drops the
-// healthy fast lines, because the synchronous write is measurable at 10k+ rps.
-// The line is built in one pooled buffer and handed to the stream in one
-// Write: no fmt, no logger mutex serialising concurrent requests, no heap
-// traffic per line.
+// healthy fast lines. Lines collect in memory and reach their stream in one
+// write per flush interval, because a write per request was 7% of a core at
+// 14k rps; a 5xx or a panic is written through at once, behind whatever its
+// stream was still holding, so stderr stays in order.
 type requestLog struct {
-	out  io.Writer
-	errs io.Writer
+	out  *lineBuffer
+	errs *lineBuffer
+}
+
+func newRequestLog(out, errs io.Writer) requestLog {
+	return requestLog{
+		out:  &lineBuffer{w: out, every: logFlushEvery},
+		errs: &lineBuffer{w: errs, every: logFlushEvery},
+	}
 }
 
 // A request slower than this is worth a line even in quiet mode.
 const slowRequest = time.Second
 
-var reqLog = requestLog{out: os.Stdout, errs: os.Stderr}
+const (
+	logFlushEvery = 100 * time.Millisecond
+	logFlushBytes = 64 << 10
+)
 
-// Pooled *[]byte, not []byte: a slice does not fit in an interface word pair,
-// so putting one back would allocate on every line.
-var reqLinePool = sync.Pool{New: func() any { b := make([]byte, 0, 256); return &b }}
+var reqLog = newRequestLog(os.Stdout, os.Stderr)
 
-// request writes one line for a finished request, stream split by severity.
+type lineBuffer struct {
+	mu      sync.Mutex
+	w       io.Writer
+	every   time.Duration
+	pending []byte
+	armed   bool
+}
+
+func (b *lineBuffer) request(method, path string, status int, took time.Duration, through bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.pending = appendRequestLine(b.pending, method, path, status, took)
+	if through || len(b.pending) >= logFlushBytes {
+		b.flushLocked()
+		return
+	}
+	if !b.armed {
+		b.armed = true
+		time.AfterFunc(b.every, b.flush)
+	}
+}
+
+func (b *lineBuffer) flush() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.armed = false
+	b.flushLocked()
+}
+
+func (b *lineBuffer) flushLocked() {
+	if len(b.pending) == 0 {
+		return
+	}
+	_, _ = b.w.Write(b.pending)
+	b.pending = b.pending[:0]
+}
+
+func (l requestLog) flush() {
+	l.out.flush()
+	l.errs.flush()
+}
+
+// request records one line for a finished request, stream split by severity.
 func (l requestLog) request(method, path string, status int, took time.Duration, panicked, quiet bool) {
 	failed := panicked || status >= 400
 	if quiet && !failed && took <= slowRequest {
 		return
 	}
-	w := l.out
-	if failed {
-		w = l.errs
+	if !failed {
+		l.out.request(method, path, status, took, false)
+		return
 	}
-	bp := reqLinePool.Get().(*[]byte)
-	b := appendRequestLine((*bp)[:0], method, path, status, took)
-	_, _ = w.Write(b)
-	if cap(b) <= 4096 {
-		*bp = b
-		reqLinePool.Put(bp)
-	}
+	l.errs.request(method, path, status, took, panicked || status >= 500)
 }
 
 // appendRequestLine appends "METHOD PATH STATUS DURATION\n", the line

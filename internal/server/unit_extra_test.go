@@ -312,7 +312,7 @@ func TestMiddlewarePanicAndLogging(t *testing.T) {
 func TestRequestLogStreams(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	prevReqLog, prevOut := reqLog, log.Writer()
-	reqLog = requestLog{out: &stdout, errs: &stderr}
+	reqLog = newRequestLog(&stdout, &stderr)
 	log.SetOutput(&stderr)
 	t.Cleanup(func() { reqLog = prevReqLog; log.SetOutput(prevOut) })
 
@@ -333,6 +333,14 @@ func TestRequestLogStreams(t *testing.T) {
 			panic("late boom")
 		})
 	}
+
+	if !strings.Contains(stderr.String(), "full-failed ") || !strings.Contains(stderr.String(), "full-panic ") {
+		t.Errorf("a 5xx or a panic waited for a flush\nstderr: %s", &stderr)
+	}
+	if missing, failed := strings.Index(stderr.String(), "full-missing "), strings.Index(stderr.String(), "full-failed "); missing < 0 || missing > failed {
+		t.Errorf("the 404 before a 500 is not ahead of it on stderr\nstderr: %s", &stderr)
+	}
+	reqLog.flush()
 
 	for path, want := range map[string]string{
 		"full-ok":       "stdout",
@@ -355,6 +363,39 @@ func TestRequestLogStreams(t *testing.T) {
 		if got != want || (strings.Contains(stdout.String(), path+" ") && strings.Contains(stderr.String(), path+" ")) {
 			t.Errorf("%s logged to %q want %q\nstdout: %s\nstderr: %s", path, got, want, &stdout, &stderr)
 		}
+	}
+}
+
+func TestRequestLogCollectsHealthyLines(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	l := requestLog{
+		out:  &lineBuffer{w: &stdout, every: time.Hour},
+		errs: &lineBuffer{w: &stderr, every: time.Hour},
+	}
+	l.request("GET", "/ok", 200, 0, false, false)
+	l.request("GET", "/missing", 404, 0, false, false)
+	if stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Fatalf("lines written before a flush\nstdout: %s\nstderr: %s", &stdout, &stderr)
+	}
+	l.request("GET", "/failed", 500, 0, false, false)
+	if got, want := stderr.String(), "GET /missing 404 0s\nGET /failed 500 0s\n"; got != want {
+		t.Fatalf("stderr after a 500 = %q want %q", got, want)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("a 500 flushed stdout: %s", &stdout)
+	}
+	l.flush()
+	if got, want := stdout.String(), "GET /ok 200 0s\n"; got != want {
+		t.Fatalf("stdout after a flush = %q want %q", got, want)
+	}
+
+	var full bytes.Buffer
+	b := &lineBuffer{w: &full, every: time.Hour}
+	for full.Len() == 0 {
+		b.request("GET", "/a-path-long-enough-to-fill-the-buffer-in-few-lines", 200, 0, false)
+	}
+	if full.Len() < logFlushBytes {
+		t.Fatalf("buffer flushed at %d bytes, before reaching %d", full.Len(), logFlushBytes)
 	}
 }
 
@@ -390,7 +431,7 @@ func TestRequestLineFormat(t *testing.T) {
 }
 
 func TestRequestLogAllocations(t *testing.T) {
-	l := requestLog{out: io.Discard, errs: io.Discard}
+	l := newRequestLog(io.Discard, io.Discard)
 	run := func() {
 		l.request("GET", "/c/a/c/nix/store/0aaaa-hello-2.12.1.drv", 200, 3*time.Millisecond, false, false)
 		l.request("POST", "/admin/orgs", 500, time.Second+time.Millisecond, false, true)
@@ -409,7 +450,7 @@ func TestRequestLogAllocations(t *testing.T) {
 func BenchmarkRequestLog(b *testing.B) {
 	line := "/c/a/c/nix/store/0aaaa-hello-2.12.1.drv"
 	b.Run("sink", func(b *testing.B) {
-		l := requestLog{out: io.Discard, errs: io.Discard}
+		l := newRequestLog(io.Discard, io.Discard)
 		b.ReportAllocs()
 		for b.Loop() {
 			l.request("GET", line, 200, 3*time.Millisecond, false, false)
