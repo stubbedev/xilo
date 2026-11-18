@@ -10,7 +10,7 @@ import (
 
 type pushFunc func(context.Context, []string) error
 
-type watchFunc func(ctx context.Context, storeDir string, onValid func(path string)) error
+type watchFunc func(ctx context.Context, storeDir string, onValid func(path string), watching func()) error
 
 type pathQueue struct {
 	mu      sync.Mutex
@@ -73,14 +73,14 @@ func notPushed(paths []string, cause error) error {
 	return fmt.Errorf("%d store paths not pushed: %s: %w", len(paths), strings.Join(paths, ", "), cause)
 }
 
-func watchAndPush(stopCtx, pushCtx context.Context, storeDir string, watch watchFunc, push pushFunc) error {
+func watchAndPush(stopCtx, pushCtx context.Context, storeDir string, watch watchFunc, push pushFunc, watching func()) error {
 	watchCtx, stopWatching := context.WithCancel(stopCtx)
 	defer stopWatching()
 	q := newPathQueue()
 	watched := make(chan struct{})
 	var watchErr error
 	go func() {
-		watchErr = watch(watchCtx, storeDir, q.add)
+		watchErr = watch(watchCtx, storeDir, q.add, watching)
 		close(watched)
 	}()
 	pushErr := q.run(watched, pushCtx, push)

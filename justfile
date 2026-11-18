@@ -189,7 +189,11 @@ coverage:
     }
 
 # Everything CI checks.
-check: lint test schema-check toolchain-check nix-check brand-check coverage
+check: lint test schema-check toolchain-check nix-check brand-check action-check coverage
+
+# Syntax-check the GitHub Action's scripts.
+action-check:
+    for f in action/*.mjs; do node --check "$f"; done
 
 # ─────────────────────────── Run & Dev ───────────────────────────
 

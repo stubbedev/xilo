@@ -40,7 +40,7 @@ func TestWatchStore(t *testing.T) {
 	got := make(chan string, 16)
 	done := make(chan error, 1)
 	go func() {
-		done <- watchStore(ctx, dir, func(p string) { got <- p })
+		done <- watchStore(ctx, dir, func(p string) { got <- p }, func() {})
 	}()
 
 	// Realise paths as Nix does (lock, path, unlock) until the watcher
@@ -152,5 +152,37 @@ func TestWatchCmdRunsAndStops(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		os.Stdout = old
 		t.Fatal("watch did not stop after cancel without a further store event")
+	}
+}
+
+func TestWatchStoreReportsThePathRealisedRightAfterReady(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	got := make(chan string, 4)
+	ready := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- watchStore(ctx, dir, func(p string) { got <- p }, func() { close(ready) })
+	}()
+	select {
+	case <-ready:
+	case err := <-done:
+		t.Fatalf("watchStore returned before it was ready: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("watchStore never reported ready")
+	}
+	realise(t, dir, "first")
+	select {
+	case p := <-got:
+		if p != filepath.Join(dir, "first") {
+			t.Fatalf("reported %s, want %s", p, filepath.Join(dir, "first"))
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the first path realised after ready was never reported")
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

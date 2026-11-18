@@ -67,11 +67,11 @@ func watchCmd() *cobra.Command {
 			}
 			cl := push.NewClient(url, cache, token, 0)
 			cl.Quiet = true
-			fmt.Printf("watching %s → pushing to %s\n", storeDir, cache)
-
 			pushCtx, abort := abortOnSecondSignal(cmd.Context())
 			defer abort()
-			return watchAndPush(cmd.Context(), pushCtx, storeDir, watchStore, cl.Push)
+			return watchAndPush(cmd.Context(), pushCtx, storeDir, watchStore, cl.Push, func() {
+				fmt.Printf("watching %s → pushing to %s\n", storeDir, cache)
+			})
 		},
 	}
 	c.Flags().StringVar(&url, "url", "", "server base URL (env XILO_URL / saved login)")

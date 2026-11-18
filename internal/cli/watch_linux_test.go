@@ -41,7 +41,7 @@ func TestWatchStoreRescansWhatAnInotifyOverflowDropped(t *testing.T) {
 		mu.Unlock()
 	}
 	done := make(chan error, 1)
-	go func() { done <- watchStore(ctx, dir, onValid) }()
+	go func() { done <- watchStore(ctx, dir, onValid, func() {}) }()
 
 	deadline := time.After(5 * time.Second)
 	for i := 0; ; i++ {

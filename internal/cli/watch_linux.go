@@ -14,7 +14,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func watchStore(ctx context.Context, storeDir string, onValid func(path string)) (err error) {
+func watchStore(ctx context.Context, storeDir string, onValid func(path string), watching func()) (err error) {
 	fd, err := syscall.InotifyInit1(syscall.IN_CLOEXEC | syscall.IN_NONBLOCK)
 	if err != nil {
 		return fmt.Errorf("inotify_init: %w", err)
@@ -58,6 +58,7 @@ func watchStore(ctx context.Context, storeDir string, onValid func(path string))
 	if err := lister.list(scan, onValid); err != nil {
 		return err
 	}
+	watching()
 
 	ready := make([]syscall.EpollEvent, 2)
 	buf := make([]byte, 64*1024)

@@ -20,7 +20,8 @@ type fakeWatcher struct {
 
 func newFakeWatcher() *fakeWatcher { return &fakeWatcher{ready: make(chan func(string), 1)} }
 
-func (w *fakeWatcher) watch(ctx context.Context, _ string, onValid func(string)) error {
+func (w *fakeWatcher) watch(ctx context.Context, _ string, onValid func(string), ready func()) error {
+	ready()
 	w.ready <- onValid
 	<-ctx.Done()
 	return nil
@@ -76,7 +77,7 @@ func TestWatchDropsNothingWhilePushIsSlow(t *testing.T) {
 	defer cancel()
 	w, p := newFakeWatcher(), newRecordingPusher()
 	done := make(chan error, 1)
-	go func() { done <- watchAndPush(stop, context.Background(), "", w.watch, p.push) }()
+	go func() { done <- watchAndPush(stop, context.Background(), "", w.watch, p.push, func() {}) }()
 
 	add := <-w.ready
 	want := storePaths(total)
@@ -104,7 +105,7 @@ func TestWatchStopFinishesTheInFlightPushAndDrainsTheQueue(t *testing.T) {
 	stop, cancel := context.WithCancel(context.Background())
 	w, p := newFakeWatcher(), newRecordingPusher()
 	done := make(chan error, 1)
-	go func() { done <- watchAndPush(stop, context.Background(), "", w.watch, p.push) }()
+	go func() { done <- watchAndPush(stop, context.Background(), "", w.watch, p.push, func() {}) }()
 
 	add := <-w.ready
 	paths := storePaths(3)
@@ -129,7 +130,7 @@ func TestWatchFailedDrainNamesEveryUnpushedPath(t *testing.T) {
 	w, p := newFakeWatcher(), newRecordingPusher()
 	p.fail = errors.New("server down")
 	done := make(chan error, 1)
-	go func() { done <- watchAndPush(stop, context.Background(), "", w.watch, p.push) }()
+	go func() { done <- watchAndPush(stop, context.Background(), "", w.watch, p.push, func() {}) }()
 
 	add := <-w.ready
 	paths := storePaths(3)
@@ -156,7 +157,7 @@ func TestWatchAbortDuringDrainNamesEveryUnpushedPath(t *testing.T) {
 	pushCtx, abort := context.WithCancelCause(context.Background())
 	w, p := newFakeWatcher(), newRecordingPusher()
 	done := make(chan error, 1)
-	go func() { done <- watchAndPush(stop, pushCtx, "", w.watch, p.push) }()
+	go func() { done <- watchAndPush(stop, pushCtx, "", w.watch, p.push, func() {}) }()
 
 	add := <-w.ready
 	paths := storePaths(2)
@@ -181,7 +182,7 @@ func TestWatchStoppedIdleIsClean(t *testing.T) {
 	stop, cancel := context.WithCancel(context.Background())
 	w, p := newFakeWatcher(), newRecordingPusher()
 	done := make(chan error, 1)
-	go func() { done <- watchAndPush(stop, context.Background(), "", w.watch, p.push) }()
+	go func() { done <- watchAndPush(stop, context.Background(), "", w.watch, p.push, func() {}) }()
 	<-w.ready
 	cancel()
 	if err := <-done; err != nil {
@@ -194,12 +195,12 @@ func TestWatcherErrorStillDrainsTheQueue(t *testing.T) {
 	p := newRecordingPusher()
 	close(p.release)
 	paths := storePaths(2)
-	err := watchAndPush(context.Background(), context.Background(), "", func(_ context.Context, _ string, onValid func(string)) error {
+	err := watchAndPush(context.Background(), context.Background(), "", func(_ context.Context, _ string, onValid func(string), _ func()) error {
 		for _, path := range paths {
 			onValid(path)
 		}
 		return broken
-	}, p.push)
+	}, p.push, func() {})
 	if !errors.Is(err, broken) {
 		t.Fatalf("err = %v, want the watcher's failure", err)
 	}

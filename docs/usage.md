@@ -73,25 +73,40 @@ narinfo whose closure the cache cannot serve.
 
 ### GitHub Actions
 
-The repository doubles as a composite action: it installs the CLI, saves the
-login, and adds the cache as a substituter, so a build pulls what previous runs
-cached and `xilo push` needs no environment of its own:
+The repository doubles as an action that covers both directions in one step.
+It installs the CLI, saves the login and adds the cache as a substituter, so
+everything after it pulls what earlier runs cached. Given a token, it also
+starts the store watcher, and its post step, which runs when the job ends,
+stops the watcher, waits until every path the job built is pushed, and fails
+the job if one was not. Put it right after the Nix installer, before anything
+builds:
 
 ```yaml
 - uses: DeterminateSystems/nix-installer-action@main
-- uses: stubbedev/xilo@v1
+- uses: stubbedev/xilo@v2
   with:
     url: https://cache.example.com
-    cache: mycache
+    cache: myteam/mycache
     token: ${{ secrets.XILO_TOKEN }} # a push token from the dashboard
 - run: nix build
-- run: xilo push mycache ./result
 ```
 
-Inputs are `url`, `cache`, `token` (optional for a public cache) and `version`
-(defaults to the latest release). The `v1` tag follows the newest release on
-every tag push; pin a full `v1.2.3` tag to opt into upgrades explicitly. Full
-workflow in [`examples/github-actions.yml`](../examples/github-actions.yml).
+Paths signed by an `upstream_keys` key (cache.nixos.org) are skipped, so a job
+pushes what it built, not what it downloaded.
+
+| input | default | |
+|---|---|---|
+| `url` | | server base URL |
+| `cache` | | `account/cache` to pull from and push to |
+| `token` | none | push token; leave it out to only pull from a public cache |
+| `push` | `auto` | `auto` pushes when a token is given; `true` or `false` force it |
+| `push-timeout-minutes` | `60` | how long the post step waits for the last pushes |
+| `version` | `latest` | xilo release to install |
+
+The `v2` tag follows the newest release on every tag push; pin a full `v2.0.0`
+tag to opt into upgrades explicitly. `v1` installs the CLI and configures the
+cache without pushing. Full workflow in
+[`examples/github-actions.yml`](../examples/github-actions.yml).
 
 ### CLI reference
 

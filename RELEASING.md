@@ -41,10 +41,10 @@ That one push does everything automatable:
   stable install URL) and publishes the GitHub release with generated notes.
 - **Docker workflow** publishes `ghcr.io/stubbedev/xilo` tagged `latest`,
   `<version>`, and the commit SHA.
-- **major-tag job** force-moves the floating major tag (`v1`) to the new
-  release, so `uses: stubbedev/xilo@v0` consumers get it immediately.
+- **major-tag job** force-moves the floating major tag (`v2`) to the new
+  release, so `uses: stubbedev/xilo@v2` consumers get it immediately.
 
-## GitHub Marketplace (composite action)
+## GitHub Marketplace (action)
 
 GitHub provides **no API** to publish an action release to the Marketplace —
 it is a checkbox in the release UI, gated on 2FA

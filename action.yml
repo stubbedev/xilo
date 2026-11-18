@@ -1,19 +1,5 @@
-# Composite action: install the xilo CLI and point Nix at a xilo cache.
-#
-#   - uses: stubbedev/xilo@master
-#     with:
-#       url: https://cache.example.com
-#       cache: mycache
-#       token: ${{ secrets.XILO_TOKEN }}
-#
-# After this step, builds substitute from the cache and `xilo push <cache> <path>`
-# uploads results (the token is saved via `xilo login`, no env needed).
-# Run your Nix installer step before this one — `xilo use` writes
-# ~/.config/nix/nix.conf, which Nix reads on the next invocation.
-# Marketplace display name — must be globally unique across actions, users,
-# and orgs ("xilo" collides). The `uses: stubbedev/xilo@v0` path is unaffected.
 name: xilo-nix-cache
-description: Install the xilo CLI and configure Nix to pull from (and push to) a xilo binary cache
+description: Pull from a xilo binary cache, and push every path the job builds to it
 branding:
   icon: package
   color: blue
@@ -23,42 +9,22 @@ inputs:
     description: xilo server base URL, e.g. https://cache.example.com
     required: true
   cache:
-    description: Cache to add as a substituter (nix.conf + trusted key, netrc if private)
+    description: Cache to pull from and push to, as account/cache
     required: true
   token:
-    description: Push/pull token (store it in a repo secret). Optional for pulling from a public cache.
+    description: Push token (store it in a repo secret). Optional for pulling from a public cache.
     default: ""
+  push:
+    description: Push every store path the job builds, through a store watcher that the post step drains. auto pushes when a token is given; true or false force it.
+    default: auto
+  push-timeout-minutes:
+    description: How long the post step waits for the watcher to finish pushing before failing the job.
+    default: "60"
   version:
-    description: xilo release to install, e.g. v0.3.0. Defaults to the latest release.
+    description: xilo release to install, e.g. v2.0.0. Defaults to the latest release.
     default: latest
 
 runs:
-  using: composite
-  steps:
-    - name: Install xilo
-      shell: bash
-      env:
-        VERSION: ${{ inputs.version }}
-      run: |
-        case "$(uname -s)-$(uname -m)" in
-          Linux-x86_64)  plat=linux-amd64 ;;
-          Linux-aarch64) plat=linux-arm64 ;;
-          Linux-riscv64) plat=linux-riscv64 ;;
-          Darwin-arm64)  plat=darwin-arm64 ;;
-          *) echo "unsupported platform: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
-        esac
-        if [ "$VERSION" = latest ]; then rel="latest/download"; else rel="download/$VERSION"; fi
-        curl -fsSL "https://github.com/stubbedev/xilo/releases/${rel}/xilo-${plat}.tar.gz" | tar -xz -C "$RUNNER_TEMP"
-        mkdir -p "$HOME/.local/bin"
-        mv "$RUNNER_TEMP/xilo" "$HOME/.local/bin/xilo"
-        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-    - name: Configure cache
-      shell: bash
-      env:
-        XILO_URL: ${{ inputs.url }}
-        XILO_TOKEN: ${{ inputs.token }}
-        XILO_CACHE: ${{ inputs.cache }}
-      run: |
-        "$HOME/.local/bin/xilo" login "$XILO_URL"
-        "$HOME/.local/bin/xilo" use "$XILO_CACHE"
+  using: node24
+  main: action/main.mjs
+  post: action/post.mjs

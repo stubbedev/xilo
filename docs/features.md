@@ -33,7 +33,7 @@ binary:
 - Paths signed by a configured upstream key (`cache.nixos.org-1`, for example)
   are skipped.
 - Automatic push through a `post-build-hook`, a detached background push, a
-  store watcher (inotify on Linux, kqueue on macOS), or the composite GitHub Action.
+  store watcher (inotify on Linux, kqueue on macOS), or the GitHub Action, which watches the store for the whole job.
 
 ### Storage and deduplication
 
