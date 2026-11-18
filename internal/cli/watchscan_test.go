@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
+	"time"
 )
 
 type scanHarness struct {
@@ -165,4 +167,45 @@ func TestStoreScanRescanAllocatesNothingForKnownNames(t *testing.T) {
 	if allocs := testing.AllocsPerRun(10, scan); allocs != 0 {
 		t.Fatalf("rescan of an unchanged store allocated %v times", allocs)
 	}
+}
+
+func BenchmarkStoreRescan(b *testing.B) {
+	names := make([][]byte, 200_000)
+	for i := range names {
+		names[i] = fmt.Appendf(nil, "%032d-some-package-1.2.3", i)
+	}
+	scan, err := newStoreScan(b.TempDir())
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() {
+		if err := scan.Close(); err != nil {
+			b.Error(err)
+		}
+	})
+	rescan := func() {
+		scan.begin()
+		for _, n := range names {
+			if err := scan.entry(n); err != nil {
+				b.Fatal(err)
+			}
+		}
+		if err := scan.finish(func(string) {}); err != nil {
+			b.Fatal(err)
+		}
+	}
+	rescan()
+	rescan()
+	b.ReportAllocs()
+	for b.Loop() {
+		rescan()
+	}
+	b.StopTimer()
+	const cycles = 10
+	start := time.Now()
+	for range cycles {
+		runtime.GC()
+	}
+	b.ReportMetric(float64(time.Since(start).Microseconds())/cycles, "gc-µs")
+	runtime.KeepAlive(names)
 }
