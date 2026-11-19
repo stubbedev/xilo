@@ -272,6 +272,12 @@ func TestSmallHelpers(t *testing.T) {
 	}
 }
 
+func serveRecovering(h http.Handler, w http.ResponseWriter, r *http.Request) (rec any) {
+	defer func() { rec = recover() }()
+	h.ServeHTTP(w, r)
+	return nil
+}
+
 func TestMiddlewarePanicAndLogging(t *testing.T) {
 	s, _, _ := newTestServerCfg(t, nil)
 
@@ -285,14 +291,17 @@ func TestMiddlewarePanicAndLogging(t *testing.T) {
 		t.Fatalf("panic → %d want 500", rr.Code)
 	}
 
-	// panic after a write → response stays as written
+	// panic after a write → the response is aborted, never finished cleanly
 	h = s.middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		w.Write([]byte("partial"))
 		panic("late boom")
 	}))
 	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/c/default/c/nar/x.nar", nil))
+	rec := serveRecovering(h, rr, httptest.NewRequest(http.MethodGet, "/c/default/c/nar/x.nar", nil))
+	if err, _ := rec.(error); !errors.Is(err, http.ErrAbortHandler) {
+		t.Fatalf("late panic propagated %v, want http.ErrAbortHandler", rec)
+	}
 	if rr.Code != 201 || rr.Body.String() != "partial" {
 		t.Fatalf("late panic → %d %q", rr.Code, rr.Body.String())
 	}
@@ -323,7 +332,7 @@ func TestRequestLogStreams(t *testing.T) {
 	for _, logging := range []string{"full", "quiet"} {
 		s, _, _ := newTestServerCfg(t, func(c *config.Config) { c.Logging = logging })
 		hit := func(path string, h http.HandlerFunc) {
-			s.middleware(h).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/c/default/c/"+logging+"-"+path, nil))
+			serveRecovering(s.middleware(h), httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/c/default/c/"+logging+"-"+path, nil))
 		}
 		status := func(code int) http.HandlerFunc {
 			return func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(code) }

@@ -412,11 +412,12 @@ func (s *Server) middleware(h http.Handler) http.Handler {
 		lw := &logWriter{ResponseWriter: w, status: http.StatusOK}
 		defer func() {
 			rec := recover()
-			if rec != nil {
+			if err, _ := rec.(error); rec != nil && !errors.Is(err, http.ErrAbortHandler) {
 				log.Printf("panic: %v", rec)
-				if !lw.wrote {
-					http.Error(lw, "internal error", http.StatusInternalServerError)
-				}
+			}
+			midResponse := rec != nil && lw.wrote
+			if rec != nil && !midResponse {
+				http.Error(lw, "internal error", http.StatusInternalServerError)
 			}
 			elapsed := time.Since(start)
 			if isCacheTraffic(r.URL.Path) {
@@ -430,8 +431,11 @@ func (s *Server) middleware(h http.Handler) http.Handler {
 			}
 			reqLog.request(r.Method, r.URL.Path, lw.status, elapsed, rec != nil, s.cfg.Logging == "quiet")
 			// Activities: successful admin/API mutations only.
-			if lw.status < 400 && auditable(r) {
+			if lw.status < 400 && !midResponse && auditable(r) {
 				s.recordAudit(r, lw.status, elapsed)
+			}
+			if midResponse {
+				panic(http.ErrAbortHandler)
 			}
 		}()
 		h.ServeHTTP(lw, r)
