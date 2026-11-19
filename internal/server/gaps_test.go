@@ -3,12 +3,15 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -433,5 +436,52 @@ func TestStartGCSweepsAtStartup(t *testing.T) {
 			t.Fatalf("startup GC never swept the orphan chunk (%d bytes left)", g.StoredBytes)
 		}
 		time.Sleep(2 * time.Millisecond) // ponytail: async sweep, poll with deadline
+	}
+}
+
+func TestNarChunkLossFailsInsteadOfTruncating(t *testing.T) {
+	s, db, ts := newTestServerCfg(t, nil)
+	db.CreateCache("default", "c", true, 40)
+	rng := rand.New(rand.NewPCG(5, 6))
+	parts := make([][]byte, runtime.GOMAXPROCS(0)+4)
+	for i := range parts {
+		parts[i] = make([]byte, 1<<20)
+		for j := range parts[i] {
+			parts[i][j] = byte(rng.Uint32())
+		}
+	}
+	early := pushChunked(t, ts, "c", h32, parts[:1], nil, "")
+	late := pushChunked(t, ts, "c", h32b, parts[1:], nil, "")
+	lost := late.Chunks[len(late.Chunks)-1]
+	if err := os.Remove(filepath.Join(s.cfg.Storage.Local.Root, filepath.FromSlash(storage.ChunkKey(lost)))); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(s.cfg.Storage.Local.Root, filepath.FromSlash(storage.ChunkKey(early.Chunks[0])))); err != nil {
+		t.Fatal(err)
+	}
+
+	served := httptest.NewServer(s.middleware(s.Handler()))
+	t.Cleanup(served.Close)
+	for _, enc := range []string{"identity", "zstd", "gzip"} {
+		resp := rawGet(t, served, "/c/default/c/nar/"+h32+".nar", enc, "")
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusInternalServerError {
+			t.Errorf("%s: first chunk lost → %d, want 500", enc, resp.StatusCode)
+		}
+		for _, k := range []string{"Content-Encoding", "ETag", "Cache-Control"} {
+			if v := resp.Header.Get(k); v != "" {
+				t.Errorf("%s: error response carries %s: %q", enc, k, v)
+			}
+		}
+
+		resp = rawGet(t, served, "/c/default/c/nar/"+h32b+".nar", enc, "")
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: last chunk lost → %d before streaming, want 200 then an aborted body", enc, resp.StatusCode)
+		}
+		if err == nil {
+			t.Errorf("%s: last chunk lost, yet the body ended cleanly after %d bytes", enc, len(body))
+		}
 	}
 }

@@ -19,7 +19,9 @@
 - Responses carry `ETag` and `immutable`, so a CDN or proxy in front can cache
   them indefinitely.
 - A path whose chunks are incomplete fails with an error rather than a
-  truncated `200`.
+  truncated `200`. A chunk that cannot be read answers `500` if nothing has
+  been sent yet, and otherwise aborts the connection mid-body on every
+  encoding, so no client or proxy is handed a finished, truncated NAR.
 - Per-cache substituter priority and public/private visibility.
 
 ### Push client

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -225,6 +226,13 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 	// the whole transfer costs zero compression CPU and has an exact
 	// Content-Length. Identity/gzip clients pay the decompress (+ gzip).
 	acc := parseAcceptEncoding(r.Header.Get("Accept-Encoding"))
+	body := &narBody{ResponseWriter: w}
+	if err := s.streamNar(r.Context(), body, c, refs, p.narSize, acc); err != nil {
+		body.fail(r, err)
+	}
+}
+
+func (s *Server) streamNar(ctx context.Context, w *narBody, c *store.Cache, refs []store.ChunkRef, narSize uint64, acc acceptEncodings) error {
 	if acc.allows("zstd") {
 		var clen int64
 		for _, ref := range refs {
@@ -234,49 +242,67 @@ func (s *Server) handleNar(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", strconv.FormatInt(clen, 10))
 		st := s.stOf(c.Storage)
 		if files, ok := st.(storage.FileOpener); ok && !st.LatencyBound() {
-			_ = s.sendFrames(w, files, refs)
-			return
+			return s.sendFrames(w, files, refs)
 		}
 		// Count the chunk's UNCOMPRESSED size (frames are delivered strictly in
 		// order, so an index walk matches refs to frames): narBytes must mean
 		// the same thing on every encoding path, and the identity/gzip path
 		// below counts uncompressed bytes.
 		i := 0
-		_ = s.eachChunkOrderedRaw(r.Context(), refs, s.readAhead(c.Storage), func(frame []byte) error {
+		return s.eachChunkOrderedRaw(ctx, refs, s.readAhead(c.Storage), func(frame []byte) error {
 			s.metrics.narBytes.Add(refs[i].Size)
 			i++
 			_, werr := w.Write(frame)
 			return werr
 		})
-		return
 	}
-
-	out, done := s.narWriter(w, r, p.narSize, acc)
-	defer done()
-	err = s.eachChunkOrdered(r.Context(), refs, s.readAhead(c.Storage), func(raw []byte) error {
+	if !acc.allows("gzip") {
+		w.Header().Set("Content-Length", strconv.FormatUint(narSize, 10))
+		return s.eachChunkOrdered(ctx, refs, s.readAhead(c.Storage), func(raw []byte) error {
+			s.metrics.narBytes.Add(int64(len(raw)))
+			_, werr := w.Write(raw)
+			return werr
+		})
+	}
+	w.Header().Set("Content-Encoding", "gzip")
+	gz := pgzip.NewWriter(w)
+	if err := s.eachChunkOrdered(ctx, refs, s.readAhead(c.Storage), func(raw []byte) error {
 		s.metrics.narBytes.Add(int64(len(raw)))
-		_, werr := out.Write(raw)
+		_, werr := gz.Write(raw)
 		return werr
-	})
-	if err != nil {
-		return // headers/body already partially sent; best we can do is stop
+	}); err != nil {
+		return err
 	}
+	return gz.Close()
 }
 
-// narWriter picks the transfer encoding for a NAR already negotiated by the
-// caller and returns the writer to stream the NAR into plus a cleanup func.
-// Raw transfers keep a Content-Length; gzip ones are chunked. (zstd never
-// reaches here — it is served as stored frames in handleNar.)
-func (s *Server) narWriter(w http.ResponseWriter, r *http.Request, narSize uint64, acc acceptEncodings) (io.Writer, func()) {
-	switch {
-	case acc.allows("gzip"):
-		w.Header().Set("Content-Encoding", "gzip")
-		gz := pgzip.NewWriter(w)
-		return gz, func() { _ = gz.Close() }
-	default:
-		w.Header().Set("Content-Length", strconv.FormatUint(narSize, 10))
-		return w, func() {}
+type narBody struct {
+	http.ResponseWriter
+	started bool
+}
+
+func (b *narBody) Write(p []byte) (int, error) {
+	b.started = true
+	return b.ResponseWriter.Write(p)
+}
+
+func (b *narBody) ReadFrom(r io.Reader) (int64, error) {
+	b.started = true
+	return io.Copy(b.ResponseWriter, r)
+}
+
+func (b *narBody) fail(r *http.Request, err error) {
+	if r.Context().Err() == nil {
+		log.Printf("nar %s: %v", r.URL.Path, err)
 	}
+	if b.started {
+		panic(http.ErrAbortHandler)
+	}
+	h := b.Header()
+	for _, k := range []string{"Content-Encoding", "Content-Length", "ETag", "Cache-Control"} {
+		h.Del(k)
+	}
+	http.Error(b, "nar unavailable", http.StatusInternalServerError)
 }
 
 // touchKey is the touched map's key. A struct, not a "<cacheID>/<hash>"
