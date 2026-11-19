@@ -73,7 +73,7 @@ func newTestServerWith(t *testing.T, mut func(*config.Config), wrap func(storage
 }
 
 // pushChunked uploads parts as individual chunks then registers the path.
-func pushChunked(t *testing.T, ts *httptest.Server, cache, storeHash string, parts [][]byte, refs []string, deriver string) api.PathReq {
+func pushChunked(t testing.TB, ts *httptest.Server, cache, storeHash string, parts [][]byte, refs []string, deriver string) api.PathReq {
 	t.Helper()
 	h := sha256.New()
 	var chunks []string

@@ -64,7 +64,7 @@ func fakeNar(data []byte) (chunkHash, narHash string, narSize uint64) {
 	return hex.EncodeToString(sum[:]), "sha256:" + narinfo.Base32Encode(sum[:]), uint64(len(data))
 }
 
-func put(t *testing.T, ts *httptest.Server, path string, body []byte, token string) *http.Response {
+func put(t testing.TB, ts *httptest.Server, path string, body []byte, token string) *http.Response {
 	t.Helper()
 	req, _ := http.NewRequest(http.MethodPut, ts.URL+path, bytes.NewReader(body))
 	if token != "" {
