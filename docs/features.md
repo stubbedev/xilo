@@ -12,7 +12,10 @@
   instance or across instances, give a client two keys under one name; a
   rotation moves to the next generation.
 - `zstd`, `gzip` and identity are negotiated; zstd pulls come straight from the
-  stored frames, so no compression runs on the pull path.
+  stored frames, so no compression runs on the pull path. gzip pulls are
+  deflated at the fastest level in 1 MiB blocks on every core, each block
+  primed with the 32 KiB before it, so the result is still one ordinary gzip
+  stream.
 - Responses carry `ETag` and `immutable`, so a CDN or proxy in front can cache
   them indefinitely.
 - A path whose chunks are incomplete fails with an error rather than a

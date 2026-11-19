@@ -47,7 +47,6 @@ type Server struct {
 	absent      *versioned[pathRef, struct{}]
 	narPlans    *versioned[pathRef, *narPlan]
 	vfCache     *verifyCache // chunk lists already proven to reassemble
-	gzipPool    sync.Pool    // *gzip.Writer for NAR wire compression
 	touched     sync.Map     // touchKey{cache,hash} → unix secs of last LRU bump
 	// chunkFilters memoizes the per-storage chunk presence filter served to
 	// pushers (storage name → *chunkFilterBody).

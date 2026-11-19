@@ -1,7 +1,6 @@
 package server
 
 import (
-	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"github.com/stubbedev/xilo/internal/narinfo"
+	"github.com/stubbedev/xilo/internal/pgzip"
 	"github.com/stubbedev/xilo/internal/storage"
 	"github.com/stubbedev/xilo/internal/store"
 )
@@ -271,13 +271,8 @@ func (s *Server) narWriter(w http.ResponseWriter, r *http.Request, narSize uint6
 	switch {
 	case acc.allows("gzip"):
 		w.Header().Set("Content-Encoding", "gzip")
-		gz, _ := s.gzipPool.Get().(*gzip.Writer)
-		if gz == nil {
-			gz = gzip.NewWriter(w)
-		} else {
-			gz.Reset(w)
-		}
-		return gz, func() { gz.Close(); s.gzipPool.Put(gz) }
+		gz := pgzip.NewWriter(w)
+		return gz, func() { _ = gz.Close() }
 	default:
 		w.Header().Set("Content-Length", strconv.FormatUint(narSize, 10))
 		return w, func() {}
