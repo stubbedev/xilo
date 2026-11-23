@@ -103,7 +103,7 @@ Prebuilt binaries, the Nix flake, and the NixOS and home-manager modules are cov
 ## Performance
 
 <!-- perfchart:compare -->
-Same machine, same closure (93 paths, 646 MB of NAR), same load script. GitHub ubuntu-latest runner, 2 cores, 2026-11-18.
+Same machine, same closure (93 paths, 646 MB of NAR), same load script. GitHub ubuntu-latest runner, 2 cores, 2026-11-23.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/perf/compare-dark.svg">
@@ -119,12 +119,12 @@ Stored on disk: a host store keeps the closure unpacked, a cache stores it compr
 
 | Measure | xilo | attic | harmonia | nix-serve-ng | Garage + nix copy |
 |---|--:|--:|--:|--:|--:|
-| narinfo throughput (requests/s, higher is better) | **10,148/s** | 1,718/s | 6,952/s | 3,092/s | 4,352/s |
-| NAR pull throughput (MB/s, higher is better) | 1083 MB/s | 151 MB/s | **1271 MB/s** | 31 MB/s | — |
-| Memory under pull load (peak RAM in use, lower is better) | 89 MiB | 130 MiB | 25 MiB | 42 MiB | **19 MiB** |
-| CPU per MB/s served (% of a core per MB/s, lower is better) | **0.16** | 1.10 | **0.16** | 3.82 | — |
-| Cold push of the closure (seconds, lower is better) | **3.0 s** | 6.6 s | — | — | 79.6 s |
-| Repeat push of the closure (seconds, lower is better) | **0.0 s** | 0.5 s | — | — | 0.1 s |
+| narinfo throughput (requests/s, higher is better) | **5,324/s** | 1,106/s | 3,844/s | 1,409/s | 2,269/s |
+| NAR pull throughput (MB/s, higher is better) | **676 MB/s** | 74 MB/s | 675 MB/s | 15 MB/s | — |
+| Memory under pull load (peak RAM in use, lower is better) | 99 MiB | 129 MiB | 23 MiB | 31 MiB | **20 MiB** |
+| CPU per MB/s served (% of a core per MB/s, lower is better) | **0.24** | 2.15 | 0.29 | 7.48 | — |
+| Cold push of the closure (seconds, lower is better) | **4.0 s** | 9.5 s | — | — | 94.8 s |
+| Repeat push of the closure (seconds, lower is better) | **0.1 s** | 0.7 s | — | — | **0.1 s** |
 | Stored on disk (bytes for this closure) | 225 MB | 212 MB | 654 MB | 654 MB | 157 MB |
 | Image or closure to deploy (bytes, lower is better) | **11 MB** | 87 MB | 78 MB | 220 MB | 28 MB |
 
