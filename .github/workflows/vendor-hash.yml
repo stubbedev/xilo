@@ -1,0 +1,18 @@
+name: vendor-hash
+
+on:
+  pull_request:
+    paths:
+      - "**/go.mod"
+      - "**/go.sum"
+
+permissions:
+  contents: read
+
+jobs:
+  vendor-hash:
+    uses: stubbedev/lys-ci/.github/workflows/vendor-hash.yml@f5bf1ded8f2fbff93f695f91d9884dfccea0a62e
+    with:
+      recipe: sync-vendor-hash
+    secrets:
+      VENDOR_HASH_DEPLOY_KEY: ${{ secrets.VENDOR_HASH_DEPLOY_KEY }}
