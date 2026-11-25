@@ -1,15 +1,5 @@
 name: dependabot-auto-merge
 
-# Squash-merges dependabot PRs once every check on the head commit is green.
-#
-# Deliberately a schedule and not `workflow_run` / `pull_request_target`:
-# dependabot PRs get a read-only GITHUB_TOKEN on `pull_request`, so nothing
-# running in the PR's own context can merge them. A scheduled run executes in
-# the default-branch context with a write token, so this needs no PAT, no
-# ruleset, and no hardcoded list of CI workflow names.
-#
-# Whatever CI actually rejects stays open for a human — that is the point.
-
 on:
   schedule:
     - cron: "0 */6 * * *"
@@ -18,7 +8,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  # Needed to dispatch the hash-maintenance workflow after a merge.
   actions: write
 
 jobs:
@@ -35,13 +24,11 @@ jobs:
           prs=$(gh pr list --state open --author "app/dependabot" --json number --jq '.[].number')
           [ -n "$prs" ] || { echo "No open dependabot PRs."; exit 0; }
 
-          for pr in $prs; do
-            # `cancel-in-progress` concurrency leaves CANCELLED rows from
-            # superseded attempts alongside the real ones, so judge by bucket and
-            # ignore "cancel": a cancelled run always has a newer one behind it.
-            buckets=$(gh pr checks "$pr" --json bucket --jq '[.[].bucket]|unique|join(",")' 2>/dev/null || echo "none")
-            mergeable=$(gh pr view "$pr" --json mergeable --jq .mergeable)
+          merged=0
+          failed=()
 
+          for pr in $prs; do
+            buckets=$(gh pr checks "$pr" --json bucket --jq '[.[].bucket]|unique|join(",")' 2>/dev/null || echo "none")
             case "$buckets" in
               *fail*)     echo "#$pr: checks failing ($buckets) — leaving for a human"; continue ;;
               *pending*)  echo "#$pr: checks still running ($buckets)"; continue ;;
@@ -49,18 +36,32 @@ jobs:
               *)          echo "#$pr: no passing checks ($buckets) — refusing to merge blind"; continue ;;
             esac
 
+            mergeable=$(gh pr view "$pr" --json mergeable --jq .mergeable)
             if [ "$mergeable" != "MERGEABLE" ]; then
               echo "#$pr: not mergeable ($mergeable)"
               continue
             fi
 
-            gh pr merge "$pr" --squash --delete-branch
-            echo "::notice::Auto-merged dependabot PR #$pr ($buckets)."
+            workflow_files=$(gh api "repos/$GH_REPO/pulls/$pr/files" --paginate --jq '.[].filename | select(startswith(".github/workflows/"))')
+            if [ -n "$workflow_files" ]; then
+              echo "::notice::#$pr modifies workflow files, which GITHUB_TOKEN may not merge; merge it manually: ${workflow_files//$'\n'/, }"
+              continue
+            fi
 
-            # The squash push is made with GITHUB_TOKEN, so it does not trigger
-            # the `push` workflows — ci.yml never reran on the default branch and
-            # the flake hash stayed at its pre-bump value, breaking `nix build`
-            # for every consumer. workflow_dispatch is the documented exception:
-            # it fires even from GITHUB_TOKEN.
-            gh workflow run ci.yml --ref "$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)"
+            if ! gh pr merge "$pr" --squash --delete-branch; then
+              echo "::error::#$pr: merge failed"
+              failed+=("$pr")
+              continue
+            fi
+            echo "::notice::Auto-merged dependabot PR #$pr ($buckets)."
+            merged=$((merged + 1))
           done
+
+          if [ "$merged" -gt 0 ]; then
+            gh workflow run ci.yml --ref "$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)"
+          fi
+
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "::error::Failed to merge: ${failed[*]/#/#}"
+            exit 1
+          fi
