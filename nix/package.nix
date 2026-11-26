@@ -32,7 +32,7 @@
             ]
           );
         };
-        vendorHash = "sha256-X7wipV9oz0XKi36kzW6C2S3LrWOGm0wQqvKDgQdHf04=";
+        vendorHash = "sha256-aZi0GxdFlPZ++nh1gvogCXYW18h6v6YdPguPfhoJ1K4=";
         # Hash the module cache (go mod download), not a vendor tree: `go mod
         # vendor` walks the import graph, so its output would depend on the
         # generated _templ.go (templui is imported only from codegen) and on
